@@ -34,14 +34,18 @@ export async function produceScheduledJobs(event, env) {
     }
   }
   const queue = env?.MKT_SYNC_QUEUE;
-  if (typeof queue?.send !== 'function') {
+  if (typeof queue?.send !== 'function' && typeof queue?.sendBatch !== 'function') {
     throw permanentError('Missing Queue producer binding MKT_SYNC_QUEUE', {
       code: 'MKT_SYNC_QUEUE_BINDING_REQUIRED',
     });
   }
 
+  if (typeof queue.sendBatch === 'function' && jobs.length > 1) {
+    await queue.sendBatch(jobs.map((body) => Object.freeze({ body })));
+  } else {
+    for (const job of jobs) await queue.send(job);
+  }
   for (const job of jobs) {
-    await queue.send(job);
     logQueueResult({
       ok: true,
       scope: 'scheduler',

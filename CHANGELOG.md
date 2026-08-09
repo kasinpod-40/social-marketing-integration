@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — Multichannel Report & Schedule Final Closure — 2026-08-09
+
+### Changed
+
+- Promoted Meta Ads, Google Ads and Chatwoot connector/job catalogs to active from retained
+  Source and Shared Report UAT evidence; all execution and schedule gates remain default false.
+- Replaced scheduled legacy TikTok-only Daily/Weekly generation with the shared
+  `report.materialization.generate` path for eight reviewed platforms at `1D/3D/7D/30D`.
+- Added deterministic prior-day Meta Ads jobs per reviewed account alias and one account-scoped
+  Chatwoot daily incremental job on the existing primary cron.
+- Preserved Google Ads Manager Script as the external schedule boundary while allowing its signed
+  ingress runtime to process scheduled deliveries.
+- Added canonical scheduled Report setting keys, stable Queue operation identity and batched Queue
+  fan-out with sequential compatibility fallback.
+
+### Safety
+
+- Schedule admission validates producer/consumer gates before Queue mutation; Meta Ads mappings,
+  Chatwoot polling/Webhook exclusivity and all Report read gates fail closed.
+- Daily/Weekly jobs use the previous completed local day and existing Shared D1/Lark upsert keys,
+  preserving null, observed-zero, negative-correction and money display semantics.
+- TikTok Ads remains planned, Facebook R2 retained evidence is not replayed, no schema migration is
+  introduced and Production remains blocked.
+
 ## Unreleased — Meta Ads July Activity Scope — 2026-08-02
 
 ### Changed

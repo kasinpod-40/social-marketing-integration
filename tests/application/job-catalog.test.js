@@ -20,26 +20,25 @@ test('active jobs pass implementation guard', () => {
   assert.equal(assertJobImplemented(definition), definition);
 });
 
-test('Chatwoot job is centrally registered as manual-only UAT-pending', () => {
+test('Chatwoot job is active for retained manual and scheduled daily triggers', () => {
   const definition = getJobDefinition(JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC);
   assert.equal(definition.connectorKey, 'chatwoot');
-  assert.equal(definition.implementationStatus, 'uat_pending');
-  assert.equal(definition.manualOnly, true);
-  assert.throws(
-    () => assertJobImplemented(definition),
-    (error) => error?.code === 'SYNC_JOB_UAT_PENDING',
-  );
+  assert.equal(definition.implementationStatus, 'active');
+  assert.notEqual(definition.manualOnly, true);
+  assert.deepEqual(definition.allowedTriggers, [
+    JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
+    JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
+    JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY,
+  ]);
+  assert.equal(assertJobImplemented(definition), definition);
 });
 
-test('Google Ads signed-delivery job is centrally registered and remains UAT-pending', () => {
+test('Google Ads signed-delivery job is active after retained LIVE UAT', () => {
   const definition = getJobDefinition(JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS);
   assert.equal(definition.connectorKey, 'google_ads');
-  assert.equal(definition.implementationStatus, 'uat_pending');
-  assert.equal(definition.manualOnly, true);
-  assert.throws(
-    () => assertJobImplemented(definition),
-    (error) => error?.code === 'SYNC_JOB_UAT_PENDING',
-  );
+  assert.equal(definition.implementationStatus, 'active');
+  assert.notEqual(definition.manualOnly, true);
+  assert.equal(assertJobImplemented(definition), definition);
 });
 
 test('YouTube job is active after Live DEV reliability UAT passed', () => {
@@ -67,10 +66,15 @@ test('Lark notification job admits controlled UAT and reviewed runtime without s
   assert.equal(assertJobImplemented(definition), definition);
 });
 
-test('Dashboard materialization job is one manual shared report type, not one type per preset', () => {
+test('Dashboard materialization job is one shared manual/scheduled report type', () => {
   const definition = getJobDefinition(JOB_TYPES.REPORT_MATERIALIZATION_GENERATE);
   assert.equal(definition.implementationStatus, 'active');
-  assert.equal(definition.manualOnly, true);
+  assert.notEqual(definition.manualOnly, true);
+  assert.deepEqual(definition.allowedTriggers, [
+    JOB_TRIGGERS.DASHBOARD_PRESET,
+    JOB_TRIGGERS.DASHBOARD_CUSTOM_RANGE,
+    JOB_TRIGGERS.DASHBOARD_SCHEDULED,
+  ]);
   assert.equal(definition.connectorKey, null);
   assert.equal(listJobDefinitions().some((item) => /report\.(3|7|9|15|30|90)d/u.test(item.type)), false);
 });

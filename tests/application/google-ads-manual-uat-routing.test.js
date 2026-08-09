@@ -47,7 +47,7 @@ function enabledEnv(overrides = {}) {
   };
 }
 
-test('manual UAT runtime accepts only developer Integration Workspace with every gate enabled', () => {
+test('signed-delivery runtime accepts manual or external scheduled LIVE with every processing gate enabled', () => {
   const connector = assertGoogleAdsManualUatRuntime(runtime(), enabledEnv());
   assert.equal(connector.accountKey, 'chemistry_k');
 
@@ -59,10 +59,9 @@ test('manual UAT runtime accepts only developer Integration Workspace with every
     () => assertGoogleAdsManualUatRuntime(runtime(), enabledEnv({ MKT_GOOGLE_ADS_LARK_WRITE_ENABLED: 'false' })),
     (error) => error.code === 'GOOGLE_ADS_MANUAL_UAT_GATES_DISABLED',
   );
-  assert.throws(
-    () => assertGoogleAdsManualUatRuntime(runtime(), enabledEnv({ MKT_SCHEDULE_GOOGLE_ADS_ENABLED: 'true' })),
-    (error) => error.code === 'GOOGLE_ADS_MANUAL_UAT_SCHEDULE_ENABLED',
-  );
+  assert.equal(assertGoogleAdsManualUatRuntime(runtime(), enabledEnv({
+    MKT_SCHEDULE_GOOGLE_ADS_ENABLED: 'true',
+  })).accountKey, 'chemistry_k');
 });
 
 test('Queue receipt promotes only send_pending admission after identity verification', async () => {

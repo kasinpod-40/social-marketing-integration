@@ -50,31 +50,27 @@ test('Chatwoot defaults are safe-closed without reading Provider credentials', (
   assert.equal(config.reportingTimezone, 'Asia/Bangkok');
 });
 
-test('Chatwoot catalog and Queue job are UAT-pending manual-only', () => {
+test('Chatwoot catalog and Queue job are active after retained Source and Report UAT', () => {
   const connector = getConnectorCatalogEntry('chatwoot');
   const job = getJobDefinition(JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC);
-  assert.equal(connector.implementationStatus, 'uat_pending');
-  assert.equal(job.implementationStatus, 'uat_pending');
-  assert.equal(job.manualOnly, true);
+  assert.equal(connector.implementationStatus, 'active');
+  assert.equal(job.implementationStatus, 'active');
+  assert.notEqual(job.manualOnly, true);
 });
 
-test('protected Chatwoot runtime allows D1-only manual state processing', () => {
+test('active Chatwoot runtime allows manual and scheduled configuration without protected-UAT alias', () => {
   const env = protectedEnv();
   const runtime = loadCustomerRuntimeConfig(env);
   const config = readChatwootRuntimeConfig(env);
   assert.equal(runtime.connectors.chatwoot.enabled, true);
-  assert.equal(runtime.connectors.chatwoot.protectedUatRuntime, true);
+  assert.equal(runtime.connectors.chatwoot.protectedUatRuntime, false);
   assert.equal(config.flags.larkWrite, false);
   assert.equal(config.source.baseUrl, 'https://chatwoot.example.test');
 
-  assert.throws(
-    () => loadCustomerRuntimeConfig({ ...env, MKT_SCHEDULE_CHATWOOT_ENABLED: 'true' }),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
-  assert.throws(
-    () => loadCustomerRuntimeConfig({ ...env, MKT_CHATWOOT_WEBHOOK_ENABLED: 'true' }),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
+  assert.equal(loadCustomerRuntimeConfig({
+    ...env,
+    MKT_SCHEDULE_CHATWOOT_ENABLED: 'true',
+  }).connectors.chatwoot.enabled, true);
 });
 
 test('Chatwoot Queue identity is account-scoped and continuation preserves it', () => {

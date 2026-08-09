@@ -26,7 +26,8 @@ export function resolveChatwootRuntimeMode(trigger) {
   if (trigger === JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT) {
     return CHATWOOT_RUNTIME_MODES.INITIAL_30_DAY_UAT;
   }
-  if (trigger === JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL) {
+  if (trigger === JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL
+    || trigger === JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY) {
     return CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL;
   }
   throw permanentError('Chatwoot runtime received an unsupported trigger', {

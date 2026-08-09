@@ -33,6 +33,9 @@ export const JOB_TRIGGERS = Object.freeze({
   TIKTOK_POST_LARK_WATERMARK: 'post_lark_watermark',
   META_MANUAL_UAT: 'manual_uat',
   META_ORGANIC_SCHEDULED: 'scheduled',
+  DASHBOARD_PRESET: 'dashboard_preset',
+  DASHBOARD_CUSTOM_RANGE: 'dashboard_custom_range',
+  DASHBOARD_SCHEDULED: 'dashboard_scheduled',
   YOUTUBE_WORKER_DRY_RUN: 'youtube_worker_dry_run',
   YOUTUBE_LARK_FULL_SYNC_UAT: 'youtube_lark_full_sync_uat',
   WOOCOMMERCE_MANUAL_UAT: 'manual_uat',
@@ -40,6 +43,7 @@ export const JOB_TRIGGERS = Object.freeze({
   CHATWOOT_LEGACY_MANUAL_UAT: 'manual_uat',
   CHATWOOT_INITIAL_30_DAY_UAT: 'chatwoot_initial_30_day_uat',
   CHATWOOT_DAILY_INCREMENTAL: 'chatwoot_daily_incremental',
+  CHATWOOT_SCHEDULED_DAILY: 'chatwoot_scheduled_daily',
   LARK_NOTIFICATION_CONTROLLED_UAT: 'lark_notification_controlled_uat',
   LARK_NOTIFICATION_RUNTIME: 'lark_notification_runtime',
 });
@@ -117,15 +121,17 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.META_ADS_SYNC]: freezeJob({
     type: JOB_TYPES.META_ADS_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.META_ADS,
-    manualOnly: true,
+    allowedTriggers: [
+      JOB_TRIGGERS.META_MANUAL_UAT,
+      JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
+    ],
   }),
   [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS]: freezeJob({
     type: JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.GOOGLE_ADS,
-    manualOnly: true,
   }),
   [JOB_TYPES.YOUTUBE_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
@@ -144,12 +150,12 @@ const JOB_CATALOG = Object.freeze({
   [JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC]: freezeJob({
     type: JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC,
     schemaVersion: JOB_SCHEMA_VERSIONS.CHATWOOT_RUNTIME,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.CHATWOOT,
-    manualOnly: true,
     allowedTriggers: [
       JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
       JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
+      JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY,
     ],
   }),
 
@@ -172,7 +178,11 @@ const JOB_CATALOG = Object.freeze({
     type: JOB_TYPES.REPORT_MATERIALIZATION_GENERATE,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: null,
-    manualOnly: true,
+    allowedTriggers: [
+      JOB_TRIGGERS.DASHBOARD_PRESET,
+      JOB_TRIGGERS.DASHBOARD_CUSTOM_RANGE,
+      JOB_TRIGGERS.DASHBOARD_SCHEDULED,
+    ],
   }),
   [JOB_TYPES.LARK_NOTIFICATION_SEND]: freezeJob({
     type: JOB_TYPES.LARK_NOTIFICATION_SEND,

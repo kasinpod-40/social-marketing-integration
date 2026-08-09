@@ -57,15 +57,13 @@ test('reviewed Meta Organic connector is runnable only after explicit Integratio
   );
 });
 
-test('Google Ads UAT-pending connector cannot enter generic runtime routing', () => {
-  assert.throws(
-    () => loadCustomerRuntimeConfig({
-      MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'integration_workspace',
-      MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
-    }),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
+test('Google Ads connector is runnable after retained LIVE UAT promotion', () => {
+  const runtimeConfig = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
+  });
+  assert.equal(assertConnectorRunnable(runtimeConfig, 'google_ads').enabled, true);
 });
 
 test('YouTube connector is runnable after manual activation in Integration Workspace', () => {

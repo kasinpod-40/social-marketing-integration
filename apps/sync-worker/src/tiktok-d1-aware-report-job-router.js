@@ -1,5 +1,10 @@
 import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
-import { JOB_TYPES, assertJobImplemented, getJobDefinition } from '../../../packages/application/src/jobs/job-catalog.js';
+import {
+  JOB_TRIGGERS,
+  JOB_TYPES,
+  assertJobImplemented,
+  getJobDefinition,
+} from '../../../packages/application/src/jobs/job-catalog.js';
 import {
   REPORT_PLATFORM_CAPABILITY,
   createReportPlatformAdapterRegistry,
@@ -18,6 +23,7 @@ import { generateReportAiSummary } from '../../../packages/application/src/use-c
 import { generateTikTokOrganicReportD1Aware } from '../../../packages/application/src/use-cases/generate-tiktok-organic-report-d1-aware.js';
 import { writeDashboardMaterializationToLark } from '../../../packages/application/src/use-cases/write-dashboard-materialization-to-lark.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
+import { loadMetaEndToEndRuntimeConfig } from '../../../packages/config/src/meta-end-to-end-runtime-config.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import { readTikTokPostLarkRuntimeConfig } from '../../../packages/config/src/tiktok-post-lark-runtime-config.js';
 import { readWooCommerceRuntimeConfig } from '../../../packages/config/src/woocommerce-runtime-config.js';
@@ -61,22 +67,22 @@ async function processDashboardReportJob(input) {
     ? readWooCommerceRuntimeConfig(input.env)
     : null;
   const requestId = optionalText(body.reportRequestId);
-  const customRequest = body.trigger === 'dashboard_custom_range';
-  const presetRequest = body.trigger === 'dashboard_preset';
+  const customRequest = body.trigger === JOB_TRIGGERS.DASHBOARD_CUSTOM_RANGE;
+  const presetRequest = body.trigger === JOB_TRIGGERS.DASHBOARD_PRESET;
+  const scheduledRequest = body.trigger === JOB_TRIGGERS.DASHBOARD_SCHEDULED;
   const validShape = (customRequest && body.periodKind === 'custom_range' && requestId)
-    || (presetRequest && body.periodKind === 'rolling_days' && !requestId);
+    || ((presetRequest || scheduledRequest) && body.periodKind === 'rolling_days' && !requestId);
   const storageConfig = readStorageRuntimeConfig(input.env);
+  const metaConfig = ['facebook', 'instagram', 'meta_ads'].includes(platformScope)
+    ? loadMetaEndToEndRuntimeConfig(input.env)
+    : null;
   if (definition.type !== JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
     || !validShape
     || storageConfig.reportD1ReadEnabled !== true
+    || storageConfig.reportPresetMaterializationEnabled !== true
+    || (metaConfig && metaConfig.flags.reportRead !== true)
     || (commerceConfig && commerceConfig.flags.reportRead !== true)
-    || (commerceConfig && [
-      commerceConfig.flags.connector,
-      commerceConfig.flags.d1Write,
-      commerceConfig.flags.larkWrite,
-      commerceConfig.flags.fullReconciliation,
-      commerceConfig.flags.schedule,
-    ].some(Boolean))
+    || (commerceConfig && commerceConfig.flags.fullReconciliation === true)
     || (commerceConfig && !commerceConfig.defaultCurrency)) {
     throw permanentError('Dashboard report requires a reviewed D1-primary job contract', {
       code: 'DASHBOARD_REPORT_CONFIGURATION_INVALID',

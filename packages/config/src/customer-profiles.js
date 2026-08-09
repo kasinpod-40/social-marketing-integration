@@ -45,12 +45,12 @@ const CUSTOMER_PROFILES = Object.freeze({
       meta_ads: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'Meta Ads — Chemistry K preflight pending',
+        displayLabel: 'Meta Ads — Chemistry K reviewed runtime',
       },
       google_ads: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'Google Ads — Chemistry K signed delivery planned',
+        displayLabel: 'Google Ads — Chemistry K signed delivery',
       },
       youtube: {
         enabledByDefault: false,
@@ -65,7 +65,7 @@ const CUSTOMER_PROFILES = Object.freeze({
       chatwoot: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'Chatwoot — Chemistry K pending',
+        displayLabel: 'Chatwoot — Chemistry K reviewed runtime',
       },
     },
   }),

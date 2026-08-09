@@ -18,7 +18,7 @@ import {
   getConnectorCatalogEntry,
 } from '../../packages/config/src/connector-catalog.js';
 
-test('reviewed Facebook and Instagram Organic are active while Meta Ads remains manual UAT', () => {
+test('reviewed Facebook, Instagram and Meta Ads catalogs are active', () => {
   for (const connectorKey of ['facebook', 'instagram']) {
     assert.equal(
       getConnectorCatalogEntry(connectorKey).implementationStatus,
@@ -37,8 +37,12 @@ test('reviewed Facebook and Instagram Organic are active while Meta Ads remains 
   }
 
   const ads = getJobDefinition(JOB_TYPES.META_ADS_SYNC);
-  assert.equal(ads.implementationStatus, JOB_IMPLEMENTATION_STATUS.UAT_PENDING);
-  assert.equal(ads.manualOnly, true);
+  assert.equal(ads.implementationStatus, JOB_IMPLEMENTATION_STATUS.ACTIVE);
+  assert.notEqual(ads.manualOnly, true);
+  assert.deepEqual(ads.allowedTriggers, [
+    JOB_TRIGGERS.META_MANUAL_UAT,
+    JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
+  ]);
 });
 
 test('Integration Workspace can enable reviewed Meta Organic connectors without protected UAT mode', () => {
@@ -137,7 +141,7 @@ test('Meta continuation keeps the originating trigger instead of reverting sched
   );
   assert.match(source, /trigger:\s*input\.job\.body\.trigger/u);
   assert.doesNotMatch(source, /trigger:\s*'manual_uat',\s*\n\s*continuation:/u);
-  assert.match(source, /Meta Ads remains protected manual UAT only/u);
+  assert.match(source, /Scheduled Meta job cannot reduce into dry-run or D1-only mode/u);
 });
 
 function buildPrimary({ scheduledAt, env }) {

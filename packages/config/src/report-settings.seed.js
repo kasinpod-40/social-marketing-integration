@@ -21,6 +21,18 @@ export const LEGACY_REPORT_SETTING_KEYS = Object.freeze([
   'uat_chemistry_k:tiktok:weekly',
 ]);
 
+/** สร้าง Stable setting identity เดียวกับ Seed โดยไม่อ่าน Lark ระหว่าง Cron admission. */
+export function createDashboardReportSettingKey(input = {}) {
+  const requestedProfileKey = requireText(input.profileKey, 'profileKey');
+  const profileKey = REPORT_SETTING_PROFILE_ALIASES[requestedProfileKey] ?? requestedProfileKey;
+  if (!REPORT_SETTING_TEMPLATES[profileKey]) {
+    throw new Error(`Unsupported report setting profile: ${requestedProfileKey}`);
+  }
+  const platformScope = requirePlatformScope(input.platformScope);
+  const windowDays = requireWindowDays(input.windowDays);
+  return `${profileKey}:${platformScope}:rolling:${windowDays}d`;
+}
+
 /** Canonical Integration Workspace Dashboard settings plus TikTok 1D/7D compatibility rows. */
 export function createReportSettingRowsForProfile(profileKey) {
   const requestedProfileKey = requireText(profileKey, 'profileKey');

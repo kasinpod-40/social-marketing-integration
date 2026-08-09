@@ -7,7 +7,7 @@ import { processGoogleAdsManualUatJob } from './google-ads-job-router.js';
 import { processJobWithMetaEndToEnd } from './meta-active-job-router.js';
 import { readBoolean, requireJobText } from './worker-runtime-support.js';
 
-/** Route protected Google Ads UAT and exact redrive before generic active-job enforcement. */
+/** Route Google Ads signed-delivery and exact redrive before the generic chain. */
 export async function processJobWithGoogleAdsUat(input) {
   const type = input.job?.body?.type;
   if (type === JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS) {

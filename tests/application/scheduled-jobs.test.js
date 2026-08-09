@@ -8,7 +8,7 @@ import {
   resolveYouTubeAnalyticsEnabled,
 } from '../../apps/sync-worker/src/index.js';
 
-test('scheduler queues TikTok watermark probe first and daily report at Bangkok 08:10', () => {
+test('scheduler queues TikTok probe plus all active 1D/3D/7D/30D Shared materializations', () => {
   const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2026-07-13T01:10:00.000Z',
     env: {
@@ -17,19 +17,22 @@ test('scheduler queues TikTok watermark probe first and daily report at Bangkok 
       MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+      ...reportRuntimeEnv(),
     },
   });
 
-  assert.deepEqual(jobs.map((job) => job.type), [
-    'tiktok.creator.native.probe',
-    'report.daily.generate',
-    'system.reliability-mirror.deliver',
-  ]);
+  assert.equal(jobs.length, 34);
+  assert.equal(jobs[0].type, 'tiktok.creator.native.probe');
+  assert.deepEqual(jobs.slice(1, -1).map((job) => job.type),
+    Array(32).fill('report.materialization.generate'));
+  assert.equal(jobs.at(-1).type, 'system.reliability-mirror.deliver');
   assert.equal(jobs[0].metricDate, '2026-07-12');
   assert.equal(jobs[1].periodEnd, '2026-07-12');
-  assert.equal(jobs[1].reportSettingKey, 'dev_ft_pumkin:tiktok:daily');
+  assert.equal(jobs[1].reportSettingKey, 'integration_workspace:facebook:rolling:1d');
+  assert.deepEqual([...new Set(jobs.slice(1, -1).map((job) => job.windowDays))], [1, 3, 7, 30]);
+  assert.equal(jobs[1].operationId, 'report-daily-facebook-1d-20260712');
+  assert.equal(jobs[1].workKey, 'report:report-daily-facebook-1d-20260712');
 });
 
 test('TikTok schedule fails closed without watermark admission', () => {
@@ -51,15 +54,17 @@ test('weekly report is due only on configured Bangkok weekday and time', () => {
     MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'true',
     MKT_WEEKLY_REPORT_TIME: '08:15',
     MKT_WEEKLY_REPORT_WEEKDAY: 'monday',
-    MKT_WEEKLY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:weekly',
+    ...reportRuntimeEnv(),
   };
 
   const weeklyJobs = buildPrimaryScheduledJobs({ scheduledAt: '2026-07-13T01:15:00Z', env });
-  assert.deepEqual(weeklyJobs.map((job) => job.type), [
-    'report.weekly.generate',
-    'system.reliability-mirror.deliver',
-  ]);
+  assert.equal(weeklyJobs.length, 9);
+  assert.deepEqual(weeklyJobs.slice(0, -1).map((job) => job.type),
+    Array(8).fill('report.materialization.generate'));
+  assert.equal(weeklyJobs.at(-1).type, 'system.reliability-mirror.deliver');
   assert.equal(weeklyJobs[0].periodEnd, '2026-07-12');
+  assert.equal(weeklyJobs[0].windowDays, 7);
+  assert.equal(weeklyJobs[0].operationId, 'report-weekly-facebook-7d-20260712');
   assert.deepEqual(
     buildPrimaryScheduledJobs({ scheduledAt: '2026-07-14T01:15:00Z', env }).map((job) => job.type),
     ['system.reliability-mirror.deliver'],
@@ -81,7 +86,7 @@ test('enabled report schedules fail closed when time or setting key is invalid',
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:12',
-      MKT_DAILY_REPORT_SETTING_KEY: 'daily',
+      ...reportRuntimeEnv(),
     },
   }), (error) => error.code === 'MKT_SCHEDULE_CONFIG_INVALID');
 
@@ -91,6 +96,7 @@ test('enabled report schedules fail closed when time or setting key is invalid',
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
+      ...reportRuntimeEnv({ MKT_CUSTOMER_PROFILE: '' }),
     },
   }), (error) => error.code === 'MKT_RUNTIME_CONFIG_INVALID');
 });
@@ -120,8 +126,8 @@ test('scheduled report period uses the last completed local day across a year bo
       MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+      ...reportRuntimeEnv(),
     },
   });
 
@@ -136,8 +142,8 @@ test('scheduled report period uses the last completed local day across a month b
       MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+      ...reportRuntimeEnv(),
     },
   });
 
@@ -152,12 +158,102 @@ test('scheduled report period uses leap day as the last completed local day', ()
       MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+      ...reportRuntimeEnv(),
     },
   });
 
   assert.equal(jobs[0].periodEnd, '2028-02-29');
+});
+
+test('Meta Ads schedule emits one previous-day stable operation per reviewed account mapping', () => {
+  const scheduledAt = '2026-08-09T00:40:00.000Z';
+  const jobs = buildPrimaryScheduledJobs({
+    scheduledAt,
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_META_ADS_ENABLED: 'true',
+      MKT_CONNECTOR_META_ADS_ENABLED: 'true',
+      MKT_META_SOURCE_READ_ENABLED: 'true',
+      MKT_META_D1_WRITE_ENABLED: 'true',
+      MKT_META_LARK_WRITE_ENABLED: 'true',
+      META_AD_ACCOUNT_MAPPINGS: 'chemistry_k2=111,chemistry_k3=222',
+    },
+  });
+
+  assert.deepEqual(jobs.map((job) => job.type), [
+    'meta.ads.sync',
+    'meta.ads.sync',
+    'system.reliability-mirror.deliver',
+  ]);
+  assert.deepEqual(jobs.slice(0, 2).map((job) => job.sourceAccountKey), [
+    'chemistry_k2',
+    'chemistry_k3',
+  ]);
+  assert.equal(jobs[0].operationId, 'meta-ads-chemistry_k2-scheduled-20260808');
+  assert.equal(jobs[0].workKey, 'meta_ads:chemistry_k2:meta-ads-chemistry_k2-scheduled-20260808');
+  assert.equal(jobs[0].periodStart, '2026-08-08');
+  assert.equal(jobs[0].periodEnd, '2026-08-08');
+  assert.equal(jobs[0].originalRequestedAt, Date.parse(scheduledAt));
+});
+
+test('Meta Ads schedule fails closed before enqueue when a consumer gate or mapping is missing', () => {
+  const base = {
+    DEFAULT_TIMEZONE: 'Asia/Bangkok',
+    MKT_SCHEDULE_META_ADS_ENABLED: 'true',
+    MKT_CONNECTOR_META_ADS_ENABLED: 'true',
+    MKT_META_SOURCE_READ_ENABLED: 'true',
+    MKT_META_D1_WRITE_ENABLED: 'true',
+    MKT_META_LARK_WRITE_ENABLED: 'true',
+  };
+  assert.throws(() => buildPrimaryScheduledJobs({
+    scheduledAt: '2026-08-09T00:40:00.000Z',
+    env: { ...base, MKT_META_LARK_WRITE_ENABLED: 'false' },
+  }), (error) => error?.code === 'MKT_SCHEDULE_CONFIG_INVALID'
+    && error?.details?.fieldName === 'MKT_META_LARK_WRITE_ENABLED');
+  assert.throws(() => buildPrimaryScheduledJobs({
+    scheduledAt: '2026-08-09T00:40:00.000Z',
+    env: base,
+  }), (error) => error?.code === 'MKT_SCHEDULE_CONFIG_INVALID'
+    && error?.details?.fieldName === 'META_AD_ACCOUNT_MAPPINGS');
+});
+
+test('Chatwoot schedule emits one account-scoped daily incremental operation', () => {
+  const scheduledAt = '2026-08-09T00:45:00.000Z';
+  const jobs = buildPrimaryScheduledJobs({
+    scheduledAt,
+    env: {
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_CHATWOOT_ENABLED: 'true',
+      MKT_CONNECTOR_CHATWOOT_ENABLED: 'true',
+      MKT_CHATWOOT_D1_WRITE_ENABLED: 'true',
+      MKT_CHATWOOT_LARK_WRITE_ENABLED: 'true',
+      MKT_CHATWOOT_REPORT_WRITE_ENABLED: 'true',
+      MKT_CHATWOOT_WEBHOOK_ENABLED: 'false',
+    },
+  });
+
+  assert.deepEqual(jobs.map((job) => job.type), [
+    'chatwoot.conversations.sync',
+    'system.reliability-mirror.deliver',
+  ]);
+  assert.equal(jobs[0].trigger, 'chatwoot_scheduled_daily');
+  assert.equal(jobs[0].operationId, 'chatwoot-daily-20260808');
+  assert.equal(jobs[0].workKey, 'chatwoot:chemistry_k:chatwoot-daily-20260808');
+  assert.equal(jobs[0].accountKey, 'chemistry_k');
+});
+
+test('Google Ads schedule remains at the external Manager Script provider boundary', () => {
+  const jobs = buildPrimaryScheduledJobs({
+    scheduledAt: '2026-08-09T00:40:00.000Z',
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_GOOGLE_ADS_ENABLED: 'true',
+    },
+  });
+  assert.deepEqual(jobs.map((job) => job.type), ['system.reliability-mirror.deliver']);
 });
 
 test('YouTube cron queues an auto sync every 6 hours without duplicating primary jobs', () => {
@@ -328,4 +424,15 @@ function buildPrimaryScheduledJobs(input) {
       scheduledTime: scheduledAt,
     },
   });
+}
+
+function reportRuntimeEnv(overrides = {}) {
+  return {
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_REPORT_D1_READ_ENABLED: 'true',
+    MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: 'true',
+    MKT_META_REPORT_READ_ENABLED: 'true',
+    MKT_WOOCOMMERCE_REPORT_READ_ENABLED: 'true',
+    ...overrides,
+  };
 }
