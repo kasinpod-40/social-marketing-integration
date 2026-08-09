@@ -117,7 +117,7 @@ Retained evidence ที่อนุญาตให้ promote:
 ```text
 npm ci                                      PASS
 npm run check                               PASS
-npm test                                    PASS (Unit 2,872; Workers 18)
+npm test                                    PASS (Unit 2,873; Workers 18)
 npm run test:report-reliability             PASS (105)
 npm audit --audit-level=high                PASS (0 vulnerabilities)
 WRANGLER_LOG_PATH=/tmp/... npm run deploy:dry-run
@@ -128,6 +128,12 @@ focused catalog/router/scheduler tests      PASS
 The Workers runtime suite is invoked through `vitest.worker.config.js`; a direct standalone
 Vitest attempt was discarded because it did not load the Cloudflare Workers pool and therefore
 could not resolve `cloudflare:test`.
+
+Initial push-event CI on Head `d031353f` completed every functional gate but its final whitespace
+step built the invalid revision `origin/...HEAD` because `github.base_ref` is empty on `push`.
+The PR-event Branch Verification and Meta End-to-End Verification on the same exact Head passed.
+The workflow now falls back to the repository default branch for push/manual events and includes a
+regression test; no product runtime behavior was changed by this CI correction.
 
 ### Remote and release result
 
