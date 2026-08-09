@@ -16,7 +16,10 @@ import {
 import { extractLarkNotificationWranglerD1Rows } from './lib/lark-notification-remote-rollout-operator.js';
 import { collectLarkNativeAiWeekly7dControlledUatSource } from './lib/lark-native-ai-weekly-7d-controlled-uat.js';
 import {
-  LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONFIRMATION,
+  assertLarkWeekly7dFullChannelAiGenerated,
+  buildLarkWeekly7dFullChannelAiSynthesis,
+} from './lib/lark-weekly-7d-full-channel-ai-synthesis.js';
+import {
   assertFullChannelMessage,
   assertLarkWeekly7dFullChannelNotificationConfirmation,
   assertLarkWeekly7dFullChannelSourceAlignment,
@@ -63,7 +66,7 @@ const OUTPUT_ROOT = resolve(
   process.env.MKT_LARK_WEEKLY_7D_FULL_CHANNEL_EVIDENCE_ROOT
     ?? 'outputs/lark-weekly-7d-full-channel-notification',
 );
-const CONTRACT_VERSION = 'lark_weekly_7d_full_channel_notification_terminal_v1';
+const CONTRACT_VERSION = 'lark_weekly_7d_full_channel_notification_terminal_v2';
 const RECOVERY_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_LARK_WEEKLY_7D_FULL_CHANNEL_RECOVERY',
   value: 'RECOVER_CORRECTED_FULL_CHANNEL_WEEKLY_7D_WITHOUT_RESEND',
@@ -83,6 +86,10 @@ const SOURCE_HASH_FIELDS = Object.freeze([
   'notification_eligible', 'sent_to_group', 'dedupe_key', 'source_report_ids_json',
   'metric_summary_json', 'channel_status_vector_json', 'insight_summary', 'strengths',
   'weaknesses', 'recommendations',
+]);
+const SYNTHESIS_HASH_FIELDS = Object.freeze([
+  ...SOURCE_HASH_FIELDS,
+  'source_report_checksum', 'generated_at', 'notification_reason', 'sent_at', 'cooldown_until',
 ]);
 
 let action = 'preview';
@@ -113,6 +120,7 @@ try {
     workerDeploymentCount: 0,
     reportSettingWriteCount: 0,
     sourceV9MutationCount: 0,
+    synthesisMutationCount: 0,
     automationActivationCount: 0,
     scheduleActivationCount: 0,
     production: 'BLOCKED',
@@ -145,10 +153,14 @@ async function preview() {
     status: 'weekly_7d_full_channel_notification_preview_passed',
     repository: repositoryState,
     sourceV9MutationCount: 0,
+    synthesisMutationCount: 0,
     sourceReportIds: context.admission.sourceReportIds,
     period: context.factualReport.period,
     channelSectionCount: accepted.channelSectionCount,
     businessFactChannelCount: accepted.businessFactChannelCount,
+    comparisonEvidenceChannelCount: context.admission.evidence.comparisonEvidenceChannelCount,
+    synthesisAiRunKeySha256: sha256(context.admission.synthesisAiRunKey),
+    synthesisQualityGatePassed: context.admission.qualityGate.passed,
     factualReportSha256: context.admission.factualReportSha256,
     correctedAiRunKeySha256: sha256(context.admission.aiRunKey),
     messageBytes,
@@ -181,7 +193,9 @@ async function execute() {
     contractVersion: CONTRACT_VERSION,
     repositoryHead: context.repositoryHead,
     sourceStateSha256: context.sourceStateSha256,
+    synthesisStateSha256: context.synthesisStateSha256,
     sourceAiRunKeySha256: sha256(context.admission.sourceAiRunKey),
+    synthesisAiRunKeySha256: sha256(context.admission.synthesisAiRunKey),
     correctedAiRunKeySha256: sha256(context.admission.aiRunKey),
     factualReportSha256: context.admission.factualReportSha256,
     sourceReportIds: context.admission.sourceReportIds,
@@ -218,9 +232,10 @@ async function execute() {
     messageBytes,
     channelSectionCount: acceptedMessage.channelSectionCount,
     businessFactChannelCount: acceptedMessage.businessFactChannelCount,
+    synthesisQualityGatePassed: context.admission.qualityGate.passed,
     rawDestinationPersisted: false,
   });
-  await assertSourceUnchanged(context);
+  await assertAuthoritiesUnchanged(context);
 
   stage = 'build-existing-runtime-job';
   const operationId = `lark_weekly_7d_full_channel_${sha256(context.admission.aiRunKey).slice(0, 32)}`;
@@ -235,9 +250,11 @@ async function execute() {
     repositoryHead: context.repositoryHead,
     aiRunKey: context.admission.aiRunKey,
     aiRunKeySha256: sha256(context.admission.aiRunKey),
+    synthesisAiRunKeySha256: sha256(context.admission.synthesisAiRunKey),
     operationId,
     jobSha256: sha256(JSON.stringify(job)),
     sourceStateSha256: context.sourceStateSha256,
+    synthesisStateSha256: context.synthesisStateSha256,
     factualReportSha256: context.admission.factualReportSha256,
     attemptedAt: new Date().toISOString(),
     maximumQueueAdmissionCount: 1,
@@ -250,9 +267,9 @@ async function execute() {
   queueAdmissionConfirmed = true;
   stage = 'poll-sent-and-mirrored';
   const delivered = await pollDelivered(context, beforeD1);
-  stage = 'verify-lark-mirror-and-v9-immutability';
+  stage = 'verify-lark-mirror-and-authority-immutability';
   const afterLark = await verifyLarkDelivery(context, beforeLark);
-  await assertSourceUnchanged(context);
+  await assertAuthoritiesUnchanged(context);
   stage = 'bounded-no-additional-admission-observation';
   await sleep(readObservationMs(context.env));
   const observed = readD1State(context);
@@ -262,7 +279,7 @@ async function execute() {
     'Corrected Weekly Lark mirror changed during no-admission observation',
     'LARK_WEEKLY_7D_FULL_CHANNEL_LARK_STABILITY_FAILED',
   );
-  await assertSourceUnchanged(context);
+  await assertAuthoritiesUnchanged(context);
   const automationAfter = await verifyAutomationState(context.client);
   if (JSON.stringify(context.automation) !== JSON.stringify(automationAfter)) fail(
     'Automation identity/status changed during corrected Weekly notification',
@@ -278,10 +295,14 @@ async function execute() {
     status: 'weekly_7d_full_channel_notification_sent_and_verified',
     repository: repositoryState,
     sourceV9MutationCount: 0,
+    synthesisMutationCount: 0,
     sourceReportIds: context.admission.sourceReportIds,
     period: context.factualReport.period,
     channelSectionCount: context.admission.channelSectionCount,
     businessFactChannelCount: context.admission.businessFactChannelCount,
+    comparisonEvidenceChannelCount: context.admission.evidence.comparisonEvidenceChannelCount,
+    synthesisAiRunKeySha256: sha256(context.admission.synthesisAiRunKey),
+    synthesisQualityGatePassed: context.admission.qualityGate.passed,
     factualReportSha256: context.admission.factualReportSha256,
     correctedAiRunKeySha256: sha256(context.admission.aiRunKey),
     queueAdmissionCount: 1,
@@ -322,8 +343,9 @@ async function recover() {
   const attempt = JSON.parse(await readFile(attemptPath, 'utf8'));
   if (attempt.aiRunKey !== context.admission.aiRunKey
       || attempt.sourceStateSha256 !== context.sourceStateSha256
+      || attempt.synthesisStateSha256 !== context.synthesisStateSha256
       || attempt.factualReportSha256 !== context.admission.factualReportSha256) fail(
-    'Recovery evidence differs from current accepted source/factual authority',
+    'Recovery evidence differs from current source/synthesis/factual authority',
     'LARK_WEEKLY_7D_FULL_CHANNEL_RECOVERY_EVIDENCE_INVALID',
   );
   queueAttemptRecorded = true;
@@ -335,7 +357,7 @@ async function recover() {
   const delivered = await pollExistingDelivered(context);
   stage = 'verify-recovered-lark-mirror';
   const afterLark = await verifyRecoveredLarkDelivery(context, beforeLark);
-  await assertSourceUnchanged(context);
+  await assertAuthoritiesUnchanged(context);
   stage = 'recovery-no-admission-observation';
   await sleep(readObservationMs(context.env));
   const observed = readD1State(context);
@@ -357,6 +379,7 @@ async function recover() {
     workerDeploymentCount: 0,
     reportSettingWriteCount: 0,
     sourceV9MutationCount: 0,
+    synthesisMutationCount: 0,
     notificationProducerEnabled: false,
     scheduleActivationCount: 0,
     production: 'BLOCKED',
@@ -382,6 +405,7 @@ async function prepare(mode) {
     stage = 'local-focused-gates';
     run('node', ['--test',
       'tests/application/lark-weekly-executive-factual-report.test.js',
+      'tests/application/lark-weekly-executive-full-channel-ai-evidence.test.js',
       'tests/application/lark-weekly-7d-full-channel-notification.test.js',
       'tests/application/lark-weekly-7d-notification-admission.test.js',
       'tests/application/deliver-lark-executive-notification.test.js',
@@ -421,7 +445,7 @@ async function prepare(mode) {
     { candidates: sourceCandidates.length, exactMatches: matches.length },
   );
   const sourceRecord = matches[0];
-  const sourceStateSha256 = hashSourceState(sourceRecord.fields);
+  const sourceStateSha256 = hashRecordState(sourceRecord.fields, SOURCE_HASH_FIELDS);
 
   stage = 'collect-exact-aligned-factual-report-source';
   const collected = await collectLarkNativeAiWeekly7dControlledUatSource({ client });
@@ -437,7 +461,37 @@ async function prepare(mode) {
     targetPeriod: collected.targetPeriod,
     reportBundles: collected.reportBundles,
   });
-  const admission = buildLarkWeekly7dFullChannelNotificationRow({ sourceRecord, factualReport });
+
+  stage = 'load-exact-generated-full-channel-ai-synthesis';
+  const expectedSynthesis = buildLarkWeekly7dFullChannelAiSynthesis({ sourceRecord, factualReport });
+  const synthesisRows = await larkRepository.listByFieldValues(
+    tableIds.aiRuns,
+    'ai_run_key',
+    [expectedSynthesis.aiRunKey],
+  );
+  const synthesisMatches = synthesisRows.filter((record) => (
+    String(readScalar(record?.fields?.ai_run_key) ?? '') === expectedSynthesis.aiRunKey
+  ));
+  if (synthesisMatches.length !== 1) fail(
+    'Corrected Weekly notification requires one generated full-channel AI synthesis row',
+    'LARK_WEEKLY_7D_FULL_CHANNEL_SYNTHESIS_MISSING',
+    { matchCount: synthesisMatches.length },
+  );
+  const synthesisRecord = synthesisMatches[0];
+  const synthesisAccepted = assertLarkWeekly7dFullChannelAiGenerated(
+    synthesisRecord.fields,
+    expectedSynthesis,
+  );
+  const synthesisStateSha256 = hashRecordState(synthesisRecord.fields, SYNTHESIS_HASH_FIELDS);
+  const admission = buildLarkWeekly7dFullChannelNotificationRow({
+    sourceRecord,
+    factualReport,
+    synthesisRecord,
+  });
+  if (!synthesisAccepted.qualityGate.passed || !admission.qualityGate.passed) fail(
+    'Corrected Weekly notification requires a passed full-channel AI quality gate',
+    'LARK_WEEKLY_7D_FULL_CHANNEL_SYNTHESIS_QUALITY_INVALID',
+  );
   const evidenceDir = resolve(OUTPUT_ROOT, sha256(admission.aiRunKey));
   await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
   await chmod(evidenceDir, 0o700);
@@ -487,7 +541,8 @@ async function prepare(mode) {
 
   return Object.freeze({
     env, mode, repositoryHead, evidenceDir, client, tableIds, larkRepository, syncEngine,
-    sourceRecord, sourceStateSha256, collected, factualReport, admission, previews,
+    sourceRecord, sourceStateSha256, synthesisRecord, synthesisStateSha256,
+    expectedSynthesis, collected, factualReport, admission, previews,
     snapshotRows, settingsAuthority, settingRows, cloudflare, databaseName, queueName, queueId,
     automation,
   });
@@ -694,22 +749,32 @@ async function verifyLarkDelivery(context, baseline) {
 }
 
 async function verifyRecoveredLarkDelivery(context, baseline) {
-  const after = await verifyLarkDelivery(context, { totalSentNotificationLogRows: Math.max(0, baseline.totalSentNotificationLogRows - (baseline.admissionLogRowsBefore ? 1 : 0)) });
-  return after;
+  return verifyLarkDelivery(context, {
+    totalSentNotificationLogRows: Math.max(0, baseline.totalSentNotificationLogRows - (baseline.admissionLogRowsBefore ? 1 : 0)),
+  });
 }
 
-async function assertSourceUnchanged(context) {
-  const rows = await context.larkRepository.listByFieldValues(context.tableIds.aiRuns, 'ai_run_key', [context.admission.sourceAiRunKey]);
-  const exactRows = rows.filter((row) => String(readScalar(row?.fields?.ai_run_key) ?? '') === context.admission.sourceAiRunKey);
-  if (exactRows.length !== 1 || hashSourceState(exactRows[0].fields) !== context.sourceStateSha256) fail(
+async function assertAuthoritiesUnchanged(context) {
+  const [sourceRows, synthesisRows] = await Promise.all([
+    context.larkRepository.listByFieldValues(context.tableIds.aiRuns, 'ai_run_key', [context.admission.sourceAiRunKey]),
+    context.larkRepository.listByFieldValues(context.tableIds.aiRuns, 'ai_run_key', [context.admission.synthesisAiRunKey]),
+  ]);
+  const source = sourceRows.filter((row) => String(readScalar(row?.fields?.ai_run_key) ?? '') === context.admission.sourceAiRunKey);
+  const synthesis = synthesisRows.filter((row) => String(readScalar(row?.fields?.ai_run_key) ?? '') === context.admission.synthesisAiRunKey);
+  if (source.length !== 1 || hashRecordState(source[0].fields, SOURCE_HASH_FIELDS) !== context.sourceStateSha256) fail(
     'Accepted V9 source changed during corrected Weekly notification',
     'LARK_WEEKLY_7D_FULL_CHANNEL_SOURCE_MUTATED',
-    { matchCount: exactRows.length },
+    { matchCount: source.length },
+  );
+  if (synthesis.length !== 1 || hashRecordState(synthesis[0].fields, SYNTHESIS_HASH_FIELDS) !== context.synthesisStateSha256) fail(
+    'Full-channel AI synthesis changed during corrected Weekly notification',
+    'LARK_WEEKLY_7D_FULL_CHANNEL_SYNTHESIS_MUTATED',
+    { matchCount: synthesis.length },
   );
 }
 
-function hashSourceState(fields) {
-  return sha256(JSON.stringify(Object.fromEntries(SOURCE_HASH_FIELDS.map((name) => [
+function hashRecordState(fields, fieldNames) {
+  return sha256(JSON.stringify(Object.fromEntries(fieldNames.map((name) => [
     name,
     ['preview_mode', 'notification_eligible', 'sent_to_group'].includes(name)
       ? readBoolean(fields?.[name])

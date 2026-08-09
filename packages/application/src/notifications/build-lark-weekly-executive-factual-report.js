@@ -2,7 +2,7 @@ import { LARK_NATIVE_AI_CHANNELS } from '../../../config/src/lark-native-ai-all-
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 
 export const LARK_WEEKLY_EXECUTIVE_FACTUAL_REPORT_SHAPE =
-  'executive_notification_full_channel_v2';
+  'executive_notification_full_channel_v3';
 export const LARK_WEEKLY_EXECUTIVE_FACTUAL_CHANNEL_COUNT = 9;
 
 const MAX_METRICS_PER_CHANNEL = 4;
@@ -288,15 +288,21 @@ function formatMetric(metric) {
 }
 
 function formatComparison(metric) {
-  if (metric.changePercent !== null) {
-    const prefix = metric.changePercent > 0 ? '+' : '';
-    return ` (${prefix}${formatNumber(metric.changePercent, 2)}% เทียบช่วงก่อน)`;
+  if (metric.compareValue !== null && metric.compareValue !== 0) {
+    const derivedPercent = ((metric.currentValue - metric.compareValue) / Math.abs(metric.compareValue)) * 100;
+    const prefix = derivedPercent > 0 ? '+' : '';
+    return ` (${prefix}${formatNumber(derivedPercent, 2)}% เทียบช่วงก่อน)`;
   }
   if (metric.compareValue !== null) {
     const compare = metric.unit === 'currency' && metric.metricKey.endsWith('_micros')
       ? metric.compareValue / 1_000_000
       : metric.compareValue;
     return ` (ช่วงก่อน ${formatNumber(compare, 2)})`;
+  }
+  if (metric.changePercent !== null) {
+    const percent = metric.changePercent * 100;
+    const prefix = percent > 0 ? '+' : '';
+    return ` (${prefix}${formatNumber(percent, 2)}% เทียบช่วงก่อน)`;
   }
   return '';
 }

@@ -60,7 +60,7 @@ function organicBundle(channelKey) {
     metricValues: [
       {
         metric_key: `${prefix}:period_views`, display_name: 'Views', current_value: 125000,
-        compare_value: 100000, change_percent: 25, unit: 'count',
+        compare_value: 100000, change_percent: 0.25, unit: 'count',
         availability_status: 'available', metric_scope: 'period_delta', dimension_type: 'summary', rank: 1,
       },
       {
@@ -85,7 +85,7 @@ function wooBundle() {
     metricValues: [
       {
         metric_key: 'woocommerce:net_sales_micros', display_name: 'Net sales', current_value: 125000000000,
-        compare_value: 100000000000, change_percent: 25, unit: 'currency',
+        compare_value: 100000000000, change_percent: 0.25, unit: 'currency',
         availability_status: 'available', metric_scope: 'period_delta', dimension_type: 'summary', rank: 1,
       },
       {
@@ -105,7 +105,7 @@ function wooBundle() {
 test('full-channel factual report always preserves all nine channels in reviewed order', () => {
   const report = buildLarkWeeklyExecutiveFactualReport({ targetPeriod: PERIOD, reportBundles: [metaBundle()] });
   assert.equal(report.evidenceShape, LARK_WEEKLY_EXECUTIVE_FACTUAL_REPORT_SHAPE);
-  assert.equal(report.evidenceShape, 'executive_notification_full_channel_v2');
+  assert.equal(report.evidenceShape, 'executive_notification_full_channel_v3');
   assert.equal(report.channelCount, 9);
   assert.equal(report.businessFactChannelCount, 1);
   assert.deepEqual(report.channels.map(({ channelKey }) => channelKey), [
@@ -168,7 +168,7 @@ test('currency micros are presentation-scaled without changing canonical current
   assert.equal(meta.metrics[0].compareValue, 700000000000);
   const rendered = renderLarkWeeklyExecutiveChannelSections(report).find(({ channelKey }) => channelKey === 'meta_ads');
   assert.ok(rendered.lines.some((line) => line.includes('807,690')));
-  assert.ok(rendered.lines.some((line) => line.includes('ช่วงก่อน 700,000')));
+  assert.ok(rendered.lines.some((line) => line.includes('+15.38% เทียบช่วงก่อน')));
   assert.equal(rendered.lines.some((line) => line.includes('807,690,000,000')), false);
 });
 
