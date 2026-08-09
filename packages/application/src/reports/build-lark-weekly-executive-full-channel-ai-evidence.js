@@ -1,0 +1,253 @@
+import {
+  LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK,
+  LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK,
+  validateLarkNativeAiExecutiveWriterOutputs,
+} from './lark-native-ai-executive-writer-quality.js';
+import {
+  parseLarkWeeklyExecutiveFactualReport,
+} from '../notifications/build-lark-weekly-executive-factual-report.js';
+import { stableStringify } from '../use-cases/build-report-snapshot.js';
+
+export const LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE =
+  'lark_ai_full_channel_synthesis_v1';
+
+const MAX_AI_METRICS_PER_CHANNEL = 2;
+const MAX_METRIC_SUMMARY_CHARS = 3_200;
+const MAX_STATUS_VECTOR_CHARS = 700;
+
+export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
+  const factual = parseLarkWeeklyExecutiveFactualReport(input.factualReport);
+  const statusVector = parseStatusVector(input.channelStatusVectorJson);
+  if (statusVector.length !== 9) {
+    throw evidenceError(
+      'Full-channel Weekly AI evidence requires exactly nine channel-status rows',
+      'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_STATUS_INVALID',
+      { observed: statusVector.length },
+    );
+  }
+
+  const channels = factual.channels.map(toAiChannelEvidence);
+  const businessChannels = channels.filter(({ businessEvidencePresent }) => businessEvidencePresent);
+  const comparisonChannels = businessChannels.filter(({ comparisonEvidencePresent }) => comparisonEvidencePresent);
+  const positiveComparisonChannelNames = comparisonChannels
+    .filter((channel) => channel.availableMetrics.some(({ change_percent }) => change_percent !== null && change_percent > 0))
+    .map(({ displayName }) => displayName);
+  const negativeComparisonChannelNames = comparisonChannels
+    .filter((channel) => channel.availableMetrics.some(({ change_percent }) => change_percent !== null && change_percent < 0))
+    .map(({ displayName }) => displayName);
+  const summaryRequiredFacts = collectCrossChannelRequiredFacts(businessChannels);
+  const derivedCtrFacts = businessChannels.flatMap((channel) => channel.topAds.map((ad) => Object.freeze({
+    channel: channel.displayName,
+    adName: ad.ad_name,
+    clicks: ad.clicks,
+    impressions: ad.impressions,
+    derivedCtrPercent: ad.derived_ctr_percent,
+  })));
+
+  const qualityContext = Object.freeze({
+    businessEvidenceChannelCount: businessChannels.length,
+    comparisonEvidenceChannelCount: comparisonChannels.length,
+    strengthsMode: comparisonChannels.length > 0 ? 'evidence_only' : 'fallback_no_comparison',
+    recommendationMode: 'cross_channel_business_followup',
+    summaryRequiredFacts,
+  });
+  const metricSummary = Object.freeze({
+    evidenceShape: 'executive_business_first_v2',
+    promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
+    qualityContext,
+    writerContract: Object.freeze({
+      overview: 'สรุปข้ามช่องทางจาก business facts จริง; เมื่อมีหลายช่องทางให้กล่าวอย่างน้อยสองช่องทาง; ใช้ค่าจริงและ comparison ที่ให้มาเท่านั้น',
+      strengths: 'ใช้เฉพาะ comparison/rank ที่รองรับจริง',
+      weaknesses: 'ใช้เฉพาะสัญญาณเชิงลบจาก comparison จริง; ห้ามใช้การไม่มีข้อมูลเป็น weakness',
+      recommendations: 'ให้ action ทางการตลาดจาก facts จริง; ห้าม Data Ops และห้ามสรุปช่องทางที่ไม่มีข้อมูลเป็นปัญหา',
+    }),
+    channelBusinessEvidence: channels,
+  });
+  const metricSummaryJson = stableStringify(metricSummary);
+  const normalizedStatusVectorJson = stableStringify(statusVector);
+  if (metricSummaryJson.length > MAX_METRIC_SUMMARY_CHARS) {
+    throw evidenceError(
+      'Full-channel Weekly AI evidence exceeds the bounded metric-summary budget',
+      'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_METRIC_LIMIT_EXCEEDED',
+      { observedChars: metricSummaryJson.length, maximumChars: MAX_METRIC_SUMMARY_CHARS },
+    );
+  }
+  if (normalizedStatusVectorJson.length > MAX_STATUS_VECTOR_CHARS) {
+    throw evidenceError(
+      'Full-channel Weekly AI status vector exceeds the reviewed budget',
+      'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_STATUS_LIMIT_EXCEEDED',
+      { observedChars: normalizedStatusVectorJson.length, maximumChars: MAX_STATUS_VECTOR_CHARS },
+    );
+  }
+
+  const evidence = deepFreeze({
+    promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
+    businessEvidenceChannelCount: businessChannels.length,
+    comparisonEvidenceChannelCount: comparisonChannels.length,
+    strengthsMode: qualityContext.strengthsMode,
+    recommendationMode: qualityContext.recommendationMode,
+    businessEvidenceChannelNames: businessChannels.map(({ displayName }) => displayName),
+    comparisonEvidenceChannelNames: comparisonChannels.map(({ displayName }) => displayName),
+    positiveComparisonChannelNames,
+    negativeComparisonChannelNames,
+    summaryRequiredFacts,
+    derivedCtrFacts,
+  });
+
+  return deepFreeze({
+    metricSummaryJson,
+    channelStatusVectorJson: normalizedStatusVectorJson,
+    metricSummaryChars: metricSummaryJson.length,
+    channelStatusVectorChars: normalizedStatusVectorJson.length,
+    evidence,
+  });
+}
+
+export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, evidence = {}) {
+  const base = validateLarkNativeAiExecutiveWriterOutputs(outputs, evidence);
+  const violations = [...base.violations];
+  const insight = text(outputs.insight_summary);
+  const strengths = text(outputs.strengths);
+  const weaknesses = text(outputs.weaknesses);
+
+  const businessNames = Array.isArray(evidence.businessEvidenceChannelNames)
+    ? evidence.businessEvidenceChannelNames
+    : [];
+  if (businessNames.length >= 2) {
+    const mentioned = businessNames.filter((name) => insight.includes(name));
+    if (mentioned.length < 2) violations.push('insight_missing_cross_channel_coverage');
+  }
+
+  const positiveNames = Array.isArray(evidence.positiveComparisonChannelNames)
+    ? evidence.positiveComparisonChannelNames
+    : [];
+  if (positiveNames.length > 0) {
+    if (strengths === LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK) {
+      violations.push('strengths_ignored_positive_comparison');
+    } else if (!positiveNames.some((name) => strengths.includes(name))) {
+      violations.push('strengths_missing_positive_channel');
+    }
+  }
+
+  const negativeNames = Array.isArray(evidence.negativeComparisonChannelNames)
+    ? evidence.negativeComparisonChannelNames
+    : [];
+  if (negativeNames.length > 0) {
+    if (weaknesses === LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK) {
+      violations.push('weaknesses_ignored_negative_comparison');
+    } else if (!negativeNames.some((name) => weaknesses.includes(name))) {
+      violations.push('weaknesses_missing_negative_channel');
+    }
+  }
+
+  return Object.freeze({
+    passed: violations.length === 0,
+    violations: Object.freeze([...new Set(violations)]),
+  });
+}
+
+function toAiChannelEvidence(channel) {
+  const metrics = channel.metrics.slice(0, MAX_AI_METRICS_PER_CHANNEL).map((metric) => {
+    const currentValue = presentationValue(metric.currentValue, metric.metricKey, metric.unit);
+    const compareValue = metric.compareValue === null
+      ? null
+      : presentationValue(metric.compareValue, metric.metricKey, metric.unit);
+    return Object.freeze({
+      metric_key: metric.metricKey,
+      display_name: metric.displayName,
+      current_value: currentValue,
+      compare_value: compareValue,
+      change_percent: deriveChangePercent(metric.currentValue, metric.compareValue),
+      unit: metric.unit,
+    });
+  });
+  const topContent = channel.topContent ? [Object.freeze({
+    caption: channel.topContent.caption,
+    views: channel.topContent.periodViews ?? channel.topContent.latestTotalViews,
+    engagement: channel.topContent.periodEngagement,
+  })] : [];
+  const topAds = channel.topAd ? [Object.freeze({
+    ad_name: channel.topAd.adName,
+    clicks: channel.topAd.clicks,
+    impressions: channel.topAd.impressions,
+    derived_ctr_percent: channel.topAd.derivedCtrPercent,
+  })] : [];
+  const comparisonEvidencePresent = metrics.some(({ compare_value }) => compare_value !== null);
+  return deepFreeze({
+    channelKey: channel.channelKey,
+    displayName: channel.displayName,
+    businessEvidencePresent: channel.hasBusinessFacts,
+    comparisonEvidencePresent,
+    availableMetrics: metrics,
+    topContent,
+    topAds,
+  });
+}
+
+function collectCrossChannelRequiredFacts(channels) {
+  const ordered = [...channels].sort((left, right) => (
+    Number(right.comparisonEvidencePresent) - Number(left.comparisonEvidencePresent)
+    || left.displayName.localeCompare(right.displayName)
+  ));
+  const facts = [];
+  for (const channel of ordered) {
+    const metric = channel.availableMetrics[0];
+    if (metric && Number.isFinite(metric.current_value)) {
+      facts.push(Object.freeze({
+        channel: channel.displayName,
+        metric: metric.metric_key,
+        value: metric.current_value,
+      }));
+    } else if (channel.topAds[0]?.clicks !== null && Number.isFinite(channel.topAds[0]?.clicks)) {
+      facts.push(Object.freeze({ channel: channel.displayName, metric: 'clicks', value: channel.topAds[0].clicks }));
+    }
+    if (facts.length >= 3) break;
+  }
+  return Object.freeze(facts);
+}
+
+function deriveChangePercent(currentValue, compareValue) {
+  if (!Number.isFinite(currentValue) || !Number.isFinite(compareValue) || compareValue === 0) return null;
+  return round(((currentValue - compareValue) / Math.abs(compareValue)) * 100, 4);
+}
+
+function presentationValue(value, metricKey, unit) {
+  if (!Number.isFinite(value)) return null;
+  return unit === 'currency' && metricKey.endsWith('_micros')
+    ? round(value / 1_000_000, 4)
+    : value;
+}
+
+function parseStatusVector(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) throw new Error('not array');
+    return parsed;
+  } catch {
+    throw evidenceError(
+      'Full-channel Weekly AI status vector must be valid JSON array',
+      'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_STATUS_INVALID',
+    );
+  }
+}
+
+function text(value) {
+  return value === null || value === undefined ? '' : String(value).trim();
+}
+function round(value, digits) {
+  const factor = 10 ** digits;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+function evidenceError(message, code, details = {}) {
+  const error = new Error(message);
+  error.name = 'LarkWeeklyExecutiveFullChannelAiEvidenceError';
+  error.code = code;
+  error.details = Object.freeze({ ...details });
+  return error;
+}
+function deepFreeze(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value)) deepFreeze(nested, seen);
+  return Object.freeze(value);
+}
