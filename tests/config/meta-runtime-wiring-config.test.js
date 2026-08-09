@@ -24,16 +24,18 @@ function baseEnv() {
   };
 }
 
-test('allows only source-gated Meta uat_pending connectors in the Integration Workspace', () => {
+test('allows only source-gated reviewed Meta Organic in the Integration Workspace', () => {
   const env = baseEnv();
   const runtime = loadCustomerRuntimeConfig(env);
   assert.equal(runtime.connectors.facebook.enabled, true);
-  assert.equal(runtime.connectors.facebook.protectedUatRuntime, true);
+  assert.equal(runtime.connectors.facebook.protectedUatRuntime, false);
   assert.equal(assertMetaManualUatRuntime(runtime, 'facebook', env).accountKey, 'chemistry_k');
 
+  const sourceDisabledEnv = { ...env, MKT_META_SOURCE_READ_ENABLED: 'false' };
+  const sourceDisabledRuntime = loadCustomerRuntimeConfig(sourceDisabledEnv);
   assert.throws(
-    () => loadCustomerRuntimeConfig({ ...env, MKT_META_SOURCE_READ_ENABLED: 'false' }),
-    (error) => error.code === 'MKT_CONNECTOR_UAT_PENDING',
+    () => assertMetaManualUatRuntime(sourceDisabledRuntime, 'facebook', sourceDisabledEnv),
+    (error) => error.code === 'META_END_TO_END_GATES_DISABLED',
   );
 });
 

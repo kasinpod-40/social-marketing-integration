@@ -1,5 +1,6 @@
 import {
   JOB_IMPLEMENTATION_STATUS,
+  JOB_TRIGGERS,
   JOB_TYPES,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
@@ -32,13 +33,17 @@ const META_JOB_TYPES = new Set([
   JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
   JOB_TYPES.META_ADS_SYNC,
 ]);
+const META_ORGANIC_JOB_TYPES = new Set([
+  JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
+  JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+]);
 const CONTINUATION_STATUSES = new Set([
   'source_continuation',
   'd1_continuation',
   'lark_continuation',
 ]);
 
-/** Protected manual Integration route for Meta uat_pending jobs. */
+/** Integration Workspace route for reviewed Meta Organic jobs plus protected manual Meta Ads UAT. */
 export async function processJobWithMetaEndToEnd(input = {}) {
   const type = input.job?.body?.type;
   if (!META_JOB_TYPES.has(type)) return processJobWithTikTokD1AwareReport(input);
@@ -47,9 +52,9 @@ export async function processJobWithMetaEndToEnd(input = {}) {
   const router = createMetaEndToEndJobRouter({
     runtimeConfig,
     handlers: {
-      facebook: () => processMetaManualJob(input, 'facebook', runtimeConfig),
-      instagram: () => processMetaManualJob(input, 'instagram', runtimeConfig),
-      meta_ads: () => processMetaManualJob(input, 'meta_ads', runtimeConfig),
+      facebook: () => processMetaJob(input, 'facebook', runtimeConfig),
+      instagram: () => processMetaJob(input, 'instagram', runtimeConfig),
+      meta_ads: () => processMetaJob(input, 'meta_ads', runtimeConfig),
     },
   });
   return router.route(input.job.body, {
@@ -58,9 +63,9 @@ export async function processJobWithMetaEndToEnd(input = {}) {
   });
 }
 
-async function processMetaManualJob(input, connectorKey, metaConfig) {
+async function processMetaJob(input, connectorKey, metaConfig) {
   const definition = getJobDefinition(input.job.body.type);
-  assertMetaManualJobDefinition(definition, connectorKey, input.job.body);
+  assertMetaJobDefinition(definition, connectorKey, input.job.body);
   const customerRuntime = input.getRuntimeConfig();
   const connectorConfig = assertMetaManualUatRuntime(customerRuntime, connectorKey, input.env);
   const operation = requireStableOperation(input.operation);
@@ -83,7 +88,9 @@ async function processMetaManualJob(input, connectorKey, metaConfig) {
   const deterministicSyncRunId = `meta:${connectorKey}:${operationScope}:${operation.operationId}`;
   const reliabilitySyncType = connectorKey === 'meta_ads'
     ? `manual_end_to_end_${operationScope}`
-    : 'manual_end_to_end';
+    : input.job.body.trigger === JOB_TRIGGERS.META_ORGANIC_SCHEDULED
+      ? 'scheduled_end_to_end'
+      : 'manual_end_to_end';
 
   const result = await runReliableSync({
     syncRunId: deterministicSyncRunId,
@@ -144,21 +151,27 @@ async function processMetaManualJob(input, connectorKey, metaConfig) {
   return result;
 }
 
+/**
+ * Compatibility export retained for existing UAT callers.
+ * Reviewed Facebook/Instagram may run scheduled in Integration Workspace after connector/job activation;
+ * Meta Ads remains protected manual UAT only.
+ */
 export function assertMetaManualUatRuntime(runtimeConfig, connectorKey, env = {}) {
   if (runtimeConfig?.environment !== 'development'
     || runtimeConfig?.profileKey !== 'integration_workspace'
     || runtimeConfig?.infrastructureOwner !== 'developer'
     || runtimeConfig?.customerKey !== 'chemistry_k') {
-    throw permanentError('Meta manual UAT requires the developer-owned Integration Workspace', {
+    throw permanentError('Meta runtime requires the developer-owned Integration Workspace', {
       code: 'META_MANUAL_UAT_TARGET_INVALID',
     });
   }
   const connector = runtimeConfig?.connectors?.[connectorKey];
+  const requiresProtectedUat = connectorKey === 'meta_ads';
   if (!connector
     || connector.accountKey !== 'chemistry_k'
     || connector.enabled !== true
-    || connector.protectedUatRuntime !== true) {
-    throw permanentError('Meta connector is disabled or outside the protected UAT runtime', {
+    || (requiresProtectedUat && connector.protectedUatRuntime !== true)) {
+    throw permanentError('Meta connector is disabled or outside the allowed Integration runtime', {
       code: 'META_MANUAL_UAT_CONNECTOR_INVALID',
       details: { connectorKey },
     });
@@ -172,20 +185,40 @@ export function assertMetaManualUatRuntime(runtimeConfig, connectorKey, env = {}
   return connector;
 }
 
-function assertMetaManualJobDefinition(definition, connectorKey, body) {
-  if (definition?.connectorKey !== connectorKey
-    || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING
-    || definition?.manualOnly !== true) {
-    throw permanentError('Meta Queue job is not registered as protected manual UAT', {
+function assertMetaJobDefinition(definition, connectorKey, body) {
+  if (definition?.connectorKey !== connectorKey) {
+    throw permanentError('Meta Queue job connector binding is invalid', {
       code: 'META_END_TO_END_JOB_UNSUPPORTED',
       details: { type: definition?.type ?? null, connectorKey },
     });
   }
-  if (body?.trigger !== 'manual_uat') {
-    throw permanentError('Meta end-to-end jobs accept manual_uat trigger only', {
-      code: 'META_END_TO_END_MANUAL_ONLY',
-    });
+
+  if (connectorKey === 'meta_ads') {
+    if (definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING
+      || definition?.manualOnly !== true
+      || body?.trigger !== JOB_TRIGGERS.META_MANUAL_UAT) {
+      throw permanentError('Meta Ads remains protected manual UAT only', {
+        code: 'META_END_TO_END_MANUAL_ONLY',
+      });
+    }
+  } else {
+    if (!META_ORGANIC_JOB_TYPES.has(definition?.type)
+      || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.ACTIVE
+      || definition?.manualOnly === true
+      || !definition?.allowedTriggers?.includes(body?.trigger)) {
+      throw permanentError('Meta Organic Queue job trigger is not activated', {
+        code: 'META_END_TO_END_JOB_UNSUPPORTED',
+        details: { type: definition?.type ?? null, connectorKey, trigger: body?.trigger ?? null },
+      });
+    }
+    if (body?.trigger === JOB_TRIGGERS.META_ORGANIC_SCHEDULED
+      && (body?.dryRun === true || body?.d1Only === true)) {
+      throw permanentError('Scheduled Meta Organic cannot reduce into dry-run or D1-only mode', {
+        code: 'META_END_TO_END_JOB_INVALID',
+      });
+    }
   }
+
   if (body?.dryRun === true && body?.d1Only === true) {
     throw permanentError('Meta dry-run and d1Only cannot be combined', {
       code: 'META_END_TO_END_JOB_INVALID',
@@ -258,7 +291,7 @@ async function enqueueMetaContinuation({ input, operation, connectorKey, result 
   const body = withQueueOperation({
     ...input.job.body,
     schemaVersion: input.job.schemaVersion ?? input.job.body.schemaVersion ?? 1,
-    trigger: 'manual_uat',
+    trigger: input.job.body.trigger,
     continuation: true,
     continuationStatus: result.status,
     continuationPhase: result.continuationPhase ?? null,
@@ -280,7 +313,7 @@ function readDateRange(body) {
   const since = body?.periodStart;
   const until = body?.periodEnd;
   if (!since || !until) {
-    throw permanentError('Meta manual UAT requires periodStart and periodEnd', {
+    throw permanentError('Meta end-to-end requires periodStart and periodEnd', {
       code: 'META_END_TO_END_DATE_RANGE_REQUIRED',
     });
   }
@@ -296,7 +329,7 @@ function requireStableOperation(value) {
     || typeof value.workKey !== 'string'
     || !Number.isSafeInteger(value.generation)
     || !Number.isSafeInteger(value.originalRequestedAt)) {
-    throw permanentError('Meta manual UAT requires stable Queue operation metadata', {
+    throw permanentError('Meta end-to-end requires stable Queue operation metadata', {
       code: 'META_END_TO_END_QUEUE_OPERATION_REQUIRED',
     });
   }

@@ -64,7 +64,7 @@ test('health endpoint fails safely when an unfinished connector is enabled', asy
     {
       MKT_ENV: 'production',
       MKT_CUSTOMER_PROFILE: 'chemistry_k',
-      MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
+      MKT_CONNECTOR_META_ADS_ENABLED: 'true',
       LARK_APP_SECRET: 'must-never-appear',
     },
     {},
