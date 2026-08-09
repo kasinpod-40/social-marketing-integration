@@ -9,15 +9,16 @@ import {
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 
 export const LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE =
-  'lark_ai_full_channel_synthesis_v1';
+  'lark_ai_full_channel_synthesis_v2';
 
-const MAX_AI_METRICS_PER_CHANNEL = 2;
-const MAX_METRIC_SUMMARY_CHARS = 3_400;
+const MAX_AI_METRICS_PER_CHANNEL = 3;
+const MAX_METRIC_SUMMARY_CHARS = 4_000;
 const MAX_STATUS_VECTOR_CHARS = 700;
 const LOWER_IS_BETTER = /(?:cpc|cpm|cpa|cost_per|refund)/iu;
-const NEUTRAL_DIRECTION = /(?:spend|budget)/iu;
+const NEUTRAL_DIRECTION = /(?:spend|budget|ค่าใช้จ่าย|งบ)/iu;
 const INTERNAL_METRIC_LANGUAGE = /\b(?:metric_key|change_percent|compare_value|current_value|derived_ctr_percent)\b/iu;
 const NON_BUSINESS_METRIC_LANGUAGE = /ความทบทวนหน้า/u;
+const NON_EXECUTIVE_COMPARISON_LANGUAGE = /ค่าเปรียบเทียบ|พร้อมการเปรียบเทียบ|ข้อมูลการเปรียบเทียบที่มี/u;
 
 export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const factual = parseLarkWeeklyExecutiveFactualReport(input.factualReport);
@@ -33,12 +34,19 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const channels = factual.channels.map(toAiChannelEvidence);
   const businessChannels = channels.filter(({ businessEvidencePresent }) => businessEvidencePresent);
   const comparisonChannels = businessChannels.filter(({ comparisonEvidencePresent }) => comparisonEvidencePresent);
-  const positiveComparisonChannelNames = comparisonChannels
-    .filter((channel) => channel.availableMetrics.some((metric) => metricSignal(metric) === 'positive'))
-    .map(({ displayName }) => displayName);
-  const negativeComparisonChannelNames = comparisonChannels
-    .filter((channel) => channel.availableMetrics.some((metric) => metricSignal(metric) === 'negative'))
-    .map(({ displayName }) => displayName);
+  const comparisonFacts = businessChannels.flatMap((channel) => channel.availableMetrics
+    .filter((metric) => metric.compare_value !== null && Number.isFinite(metric.change_percent))
+    .map((metric) => Object.freeze({
+      channel: channel.displayName,
+      metric: metric.display_name,
+      changePercent: metric.change_percent,
+      signal: metric.signal,
+    })));
+  const positiveComparisonFacts = comparisonFacts.filter(({ signal }) => signal === 'positive');
+  const negativeComparisonFacts = comparisonFacts.filter(({ signal }) => signal === 'negative');
+  const neutralComparisonFacts = comparisonFacts.filter(({ signal }) => signal === 'neutral');
+  const positiveComparisonChannelNames = unique(positiveComparisonFacts.map(({ channel }) => channel));
+  const negativeComparisonChannelNames = unique(negativeComparisonFacts.map(({ channel }) => channel));
   const summaryRequiredFacts = collectCrossChannelRequiredFacts(businessChannels);
   const derivedCtrFacts = businessChannels.flatMap((channel) => (channel.topAds ?? []).map((ad) => Object.freeze({
     channel: channel.displayName,
@@ -51,7 +59,7 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const qualityContext = Object.freeze({
     businessEvidenceChannelCount: businessChannels.length,
     comparisonEvidenceChannelCount: comparisonChannels.length,
-    strengthsMode: positiveComparisonChannelNames.length > 0 ? 'evidence_only' : 'fallback_no_positive_comparison',
+    strengthsMode: positiveComparisonFacts.length > 0 ? 'evidence_only' : 'fallback_no_positive_comparison',
     recommendationMode: 'cross_channel_business_followup',
     summaryRequiredFacts,
   });
@@ -61,10 +69,11 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     qualityContext,
     writerContract: Object.freeze({
       overview: 'สรุป 2+ ช่องที่มี facts; ใช้ค่าจริง/comparison เท่านั้น',
-      strengths: 'ใช้ comparison/rank จริง; spend/budget เพิ่มไม่ใช่ strength',
-      weaknesses: 'ใช้ negative comparison จริง; missing data ไม่ใช่ weakness',
+      strengths: 'ใช้เฉพาะ metric ที่ signal=positive; signal=neutral เช่น ค่าใช้จ่าย/spend/budget ห้ามเป็น strength',
+      weaknesses: 'ใช้เฉพาะ metric ที่ signal=negative; missing data ไม่ใช่ weakness',
       recommendations: 'business action จาก facts; ห้าม Data Ops',
       language: 'ใช้ display_name เป็นชื่อ metric ที่แสดงต่อผู้บริหารเท่านั้น; ห้ามชื่อ field ภายในและคำว่า ความทบทวนหน้า',
+      comparison: 'ใช้คำว่า เทียบช่วงก่อน หรือ เมื่อเทียบกับช่วงก่อน; ห้ามคำว่า ค่าเปรียบเทียบ, พร้อมการเปรียบเทียบ หรือ ข้อมูลการเปรียบเทียบที่มี',
     }),
     channelBusinessEvidence: channels,
   });
@@ -95,6 +104,12 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     comparisonEvidenceChannelNames: comparisonChannels.map(({ displayName }) => displayName),
     positiveComparisonChannelNames,
     negativeComparisonChannelNames,
+    positiveComparisonMetricNames: unique(positiveComparisonFacts.map(({ metric }) => metric)),
+    negativeComparisonMetricNames: unique(negativeComparisonFacts.map(({ metric }) => metric)),
+    neutralComparisonMetricNames: unique(neutralComparisonFacts.map(({ metric }) => metric)),
+    positiveComparisonFacts,
+    negativeComparisonFacts,
+    neutralComparisonFacts,
     summaryRequiredFacts,
     derivedCtrFacts,
   });
@@ -118,6 +133,7 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
 
   if (INTERNAL_METRIC_LANGUAGE.test(allText)) violations.push('internal_metric_field_language');
   if (NON_BUSINESS_METRIC_LANGUAGE.test(allText)) violations.push('non_business_metric_language');
+  if (NON_EXECUTIVE_COMPARISON_LANGUAGE.test(allText)) violations.push('non_executive_comparison_language');
 
   const businessNames = Array.isArray(evidence.businessEvidenceChannelNames)
     ? evidence.businessEvidenceChannelNames
@@ -130,22 +146,44 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   const positiveNames = Array.isArray(evidence.positiveComparisonChannelNames)
     ? evidence.positiveComparisonChannelNames
     : [];
+  const positiveMetricNames = Array.isArray(evidence.positiveComparisonMetricNames)
+    ? evidence.positiveComparisonMetricNames
+    : [];
+  const neutralMetricNames = Array.isArray(evidence.neutralComparisonMetricNames)
+    ? evidence.neutralComparisonMetricNames
+    : [];
   if (positiveNames.length > 0) {
     if (strengths === LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK) {
       violations.push('strengths_ignored_positive_comparison');
-    } else if (!positiveNames.some((name) => strengths.includes(name))) {
-      violations.push('strengths_missing_positive_channel');
+    } else {
+      if (!positiveNames.some((name) => strengths.includes(name))) {
+        violations.push('strengths_missing_positive_channel');
+      }
+      if (positiveMetricNames.length > 0 && !positiveMetricNames.some((name) => strengths.includes(name))) {
+        violations.push('strengths_missing_positive_metric');
+      }
+      if (neutralMetricNames.some((name) => strengths.includes(name))) {
+        violations.push('strengths_contains_neutral_metric');
+      }
     }
   }
 
   const negativeNames = Array.isArray(evidence.negativeComparisonChannelNames)
     ? evidence.negativeComparisonChannelNames
     : [];
+  const negativeMetricNames = Array.isArray(evidence.negativeComparisonMetricNames)
+    ? evidence.negativeComparisonMetricNames
+    : [];
   if (negativeNames.length > 0) {
     if (weaknesses === LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK) {
       violations.push('weaknesses_ignored_negative_comparison');
-    } else if (!negativeNames.some((name) => weaknesses.includes(name))) {
-      violations.push('weaknesses_missing_negative_channel');
+    } else {
+      if (!negativeNames.some((name) => weaknesses.includes(name))) {
+        violations.push('weaknesses_missing_negative_channel');
+      }
+      if (negativeMetricNames.length > 0 && !negativeMetricNames.some((name) => weaknesses.includes(name))) {
+        violations.push('weaknesses_missing_negative_metric');
+      }
     }
   }
 
@@ -162,20 +200,7 @@ function toAiChannelEvidence(channel) {
       businessEvidencePresent: false,
     });
   }
-  const metrics = channel.metrics.slice(0, MAX_AI_METRICS_PER_CHANNEL).map((metric) => {
-    const currentValue = presentationValue(metric.currentValue, metric.metricKey, metric.unit);
-    const compareValue = metric.compareValue === null
-      ? null
-      : presentationValue(metric.compareValue, metric.metricKey, metric.unit);
-    return Object.freeze({
-      metric_key: metric.metricKey,
-      display_name: thaiBusinessMetricLabel(metric.metricKey, metric.displayName),
-      current_value: currentValue,
-      compare_value: compareValue,
-      change_percent: deriveChangePercent(metric.currentValue, metric.compareValue),
-      unit: metric.unit,
-    });
-  });
+  const metrics = selectAiMetrics(channel.metrics.map(toAiMetric));
   const topContent = channel.topContent ? [Object.freeze({
     caption: channel.topContent.caption,
     views: channel.topContent.periodViews ?? channel.topContent.latestTotalViews,
@@ -197,6 +222,45 @@ function toAiChannelEvidence(channel) {
     ...(topContent.length ? { topContent } : {}),
     ...(topAds.length ? { topAds } : {}),
   });
+}
+
+function toAiMetric(metric) {
+  const currentValue = presentationValue(metric.currentValue, metric.metricKey, metric.unit);
+  const compareValue = metric.compareValue === null
+    ? null
+    : presentationValue(metric.compareValue, metric.metricKey, metric.unit);
+  const base = {
+    metric_key: metric.metricKey,
+    display_name: thaiBusinessMetricLabel(metric.metricKey, metric.displayName),
+    current_value: currentValue,
+    compare_value: compareValue,
+    change_percent: deriveChangePercent(metric.currentValue, metric.compareValue),
+    unit: metric.unit,
+  };
+  return Object.freeze({ ...base, signal: metricSignal(base) });
+}
+
+function selectAiMetrics(metrics) {
+  if (metrics.length <= MAX_AI_METRICS_PER_CHANNEL) return Object.freeze(metrics);
+  const selected = [];
+  const seen = new Set();
+  const add = (metric) => {
+    if (!metric || selected.length >= MAX_AI_METRICS_PER_CHANNEL) return;
+    const key = metric.metric_key ?? metric.display_name;
+    if (seen.has(key)) return;
+    seen.add(key);
+    selected.push(metric);
+  };
+  const comparable = metrics.filter((metric) => Number.isFinite(metric.change_percent));
+  const strongest = (signal) => comparable
+    .filter((metric) => metric.signal === signal)
+    .sort((left, right) => Math.abs(right.change_percent) - Math.abs(left.change_percent))[0];
+
+  add(comparable.find((metric) => metric.signal === 'neutral'));
+  add(strongest('positive'));
+  add(strongest('negative'));
+  for (const metric of metrics) add(metric);
+  return Object.freeze(selected);
 }
 
 function collectCrossChannelRequiredFacts(channels) {
@@ -222,6 +286,7 @@ function collectCrossChannelRequiredFacts(channels) {
 }
 
 function metricSignal(metric) {
+  if (['positive', 'negative', 'neutral'].includes(metric?.signal)) return metric.signal;
   const change = metric?.change_percent;
   if (!Number.isFinite(change) || change === 0) return 'neutral';
   const key = `${metric.metric_key ?? ''} ${metric.display_name ?? ''}`;
@@ -234,6 +299,8 @@ function thaiBusinessMetricLabel(metricKey, fallback) {
   const key = String(metricKey ?? '').toLowerCase();
   if (/(?:^|:)account_followers$|followers?$/u.test(key)) return 'ผู้ติดตาม';
   if (/(?:^|:)account_views$|(?:^|:)views?$/u.test(key)) return 'ยอดดู';
+  if (/(?:^|:)accounts_engaged$|(?:^|:)engaged$/u.test(key)) return 'บัญชีที่มีส่วนร่วม';
+  if (/(?:^|:)account_interactions$|(?:^|:)interactions$/u.test(key)) return 'การมีส่วนร่วม';
   if (/(?:^|:)account_reach$|(?:^|:)reach$/u.test(key)) return 'การเข้าถึง';
   if (/(?:^|:)impressions?$/u.test(key)) return 'การแสดงผล';
   if (/(?:^|:)clicks?$/u.test(key)) return 'การคลิก';
@@ -270,6 +337,9 @@ function parseStatusVector(value) {
   }
 }
 
+function unique(values) {
+  return Object.freeze([...new Set(values.filter(Boolean))]);
+}
 function text(value) {
   return value === null || value === undefined ? '' : String(value).trim();
 }

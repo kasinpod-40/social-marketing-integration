@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
+} from '../../packages/application/src/reports/build-lark-weekly-executive-full-channel-ai-evidence.js';
+import {
   assertLarkWeekly7dFullChannelAiGenerated,
 } from '../../scripts/lib/lark-weekly-7d-full-channel-ai-synthesis.js';
 
@@ -22,7 +25,7 @@ test('quality failure preserves the exact generated outputs for poll-only diagno
     preview_mode: true,
     notification_eligible: false,
     sent_to_group: false,
-    metric_summary_json: JSON.stringify({ promptShape: 'lark_ai_full_channel_synthesis_v1' }),
+    metric_summary_json: JSON.stringify({ promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE }),
     ...outputs,
   };
   const expected = {
