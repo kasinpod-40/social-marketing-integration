@@ -12,7 +12,7 @@ export const LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE =
   'lark_ai_full_channel_synthesis_v1';
 
 const MAX_AI_METRICS_PER_CHANNEL = 2;
-const MAX_METRIC_SUMMARY_CHARS = 2_800;
+const MAX_METRIC_SUMMARY_CHARS = 3_200;
 const MAX_STATUS_VECTOR_CHARS = 700;
 const LOWER_IS_BETTER = /(?:cpc|cpm|cpa|cost_per|refund)/iu;
 const NEUTRAL_DIRECTION = /(?:spend|budget)/iu;
@@ -58,10 +58,10 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
     qualityContext,
     writerContract: Object.freeze({
-      overview: 'สรุปข้ามช่องทางจาก business facts จริง; เมื่อมีหลายช่องทางให้กล่าวอย่างน้อยสองช่องทาง; ใช้ค่าจริงและ comparison ที่ให้มาเท่านั้น',
-      strengths: 'ใช้เฉพาะ comparison/rank ที่รองรับจริง; spend/budget ที่เพิ่มขึ้นไม่ใช่ strength โดยตัวมันเอง',
-      weaknesses: 'ใช้เฉพาะสัญญาณเชิงลบจาก comparison จริง; ห้ามใช้การไม่มีข้อมูลเป็น weakness',
-      recommendations: 'ให้ action ทางการตลาดจาก facts จริง; ห้าม Data Ops และห้ามสรุปช่องทางที่ไม่มีข้อมูลเป็นปัญหา',
+      overview: 'สรุป 2+ ช่องที่มี facts; ใช้ค่าจริง/comparison เท่านั้น',
+      strengths: 'ใช้ comparison/rank จริง; spend/budget เพิ่มไม่ใช่ strength',
+      weaknesses: 'ใช้ negative comparison จริง; missing data ไม่ใช่ weakness',
+      recommendations: 'business action จาก facts; ห้าม Data Ops',
     }),
     channelBusinessEvidence: channels,
   });
@@ -152,9 +152,7 @@ function toAiChannelEvidence(channel) {
   if (!channel.hasBusinessFacts) {
     return deepFreeze({
       channelKey: channel.channelKey,
-      displayName: channel.displayName,
       businessEvidencePresent: false,
-      comparisonEvidencePresent: false,
     });
   }
   const metrics = channel.metrics.slice(0, MAX_AI_METRICS_PER_CHANNEL).map((metric) => {
