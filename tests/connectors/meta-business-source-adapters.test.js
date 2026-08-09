@@ -33,9 +33,30 @@ test('Facebook source adapter performs contract-bound GET reads and returns a cu
   assert.equal(calls[1].options.operationName, 'facebook.content.inventory');
   assert.equal(calls[1].options.after, 'prior/cursor');
   assert.equal(calls[1].query.since, '2026-07-01');
-  assert.equal(calls[1].query.until, '2026-07-27');
+  assert.equal(calls[1].query.until, '2026-07-28');
   assert.equal(page.nextCursor, 'opaque/cursor+value');
   assert.equal(adapter.createPost, undefined);
+});
+
+test('Facebook content inventory converts an inclusive one-day window to an exclusive provider until', async () => {
+  const calls = [];
+  const adapter = new FacebookOrganicSourceAdapter({
+    client: fakeReadClient({
+      calls,
+      pageResult: { rows: [], hasMore: false, nextCursor: null },
+    }),
+  });
+
+  await adapter.fetchContentPage({
+    pageId: 'page_fixture_001',
+    since: '2026-08-08',
+    until: '2026-08-08',
+  });
+
+  assert.equal(calls[0].path, 'page_fixture_001/posts');
+  assert.equal(calls[0].query.since, '2026-08-08');
+  assert.equal(calls[0].query.until, '2026-08-09');
+  assert.equal(calls[0].options.operationName, 'facebook.content.inventory');
 });
 
 test('Facebook source adapter sends only approved metric candidates and date filters', async () => {
