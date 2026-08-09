@@ -5,6 +5,9 @@ import {
   buildLarkWeeklyExecutiveFactualReport,
 } from '../../packages/application/src/notifications/build-lark-weekly-executive-factual-report.js';
 import {
+  buildLarkWeekly7dFullChannelAiSynthesis,
+} from '../../scripts/lib/lark-weekly-7d-full-channel-ai-synthesis.js';
+import {
   LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONFIRMATION,
   assertFullChannelMessage,
   assertLarkWeekly7dFullChannelNotificationConfirmation,
@@ -120,6 +123,34 @@ function factualReport(clicks = 4553) {
   });
 }
 
+function generatedSynthesis(source, factual) {
+  const expected = buildLarkWeekly7dFullChannelAiSynthesis({
+    sourceRecord: source,
+    factualReport: factual,
+  });
+  return {
+    recordId: 'rec-full-channel-synthesis',
+    fields: {
+      ...expected.fields,
+      generation_status: 'generated',
+      failure_code: null,
+      generated_at: Date.parse('2026-08-09T10:00:00+07:00'),
+      insight_summary: source.fields.insight_summary,
+      strengths: source.fields.strengths,
+      weaknesses: source.fields.weaknesses,
+      recommendations: source.fields.recommendations,
+    },
+  };
+}
+
+function correctedNotification(source = sourceRecord(), factual = factualReport()) {
+  return buildLarkWeekly7dFullChannelNotificationRow({
+    sourceRecord: source,
+    factualReport: factual,
+    synthesisRecord: generatedSynthesis(source, factual),
+  });
+}
+
 test('requires explicit corrected full-channel one-message confirmation', () => {
   assert.throws(
     () => assertLarkWeekly7dFullChannelNotificationConfirmation({}),
@@ -131,16 +162,19 @@ test('requires explicit corrected full-channel one-message confirmation', () => 
   }), true);
 });
 
-test('builds a new immutable full-channel identity without reopening the already-sent weekly identity', () => {
+test('requires generated full-channel synthesis and builds a new immutable notification identity', () => {
   const source = sourceRecord();
+  const factual = factualReport();
   const oldAdmission = buildLarkWeekly7dNotificationAdmissionRow(source);
-  const corrected = buildLarkWeekly7dFullChannelNotificationRow({
-    sourceRecord: source,
-    factualReport: factualReport(),
-  });
+  assert.throws(
+    () => buildLarkWeekly7dFullChannelNotificationRow({ sourceRecord: source, factualReport: factual }),
+    /synthesisRecord/u,
+  );
+  const corrected = correctedNotification(source, factual);
   assert.equal(isFullChannelWeeklyIdentity(corrected.aiRunKey), true);
   assert.notEqual(corrected.aiRunKey, oldAdmission.aiRunKey);
   assert.notEqual(corrected.dedupeKey, oldAdmission.dedupeKey);
+  assert.ok(corrected.synthesisAiRunKey.startsWith('weekly-7d-full-channel-ai:'));
   assert.equal(corrected.templateVersion, 'executive_weekly_7d_notification_v1');
   assert.equal(corrected.fields.notification_eligible, true);
   assert.equal(corrected.fields.preview_mode, false);
@@ -156,12 +190,16 @@ test('builds a new immutable full-channel identity without reopening the already
   assert.equal(corrected.fields.strengths, source.fields.strengths);
   assert.equal(corrected.fields.weaknesses, source.fields.weaknesses);
   assert.equal(corrected.fields.recommendations, source.fields.recommendations);
+  assert.equal(corrected.qualityGate.passed, true);
 });
 
-test('factual checksum changes the corrected identity', () => {
+test('factual checksum changes both synthesis and corrected notification identity', () => {
   const source = sourceRecord();
-  const first = buildLarkWeekly7dFullChannelNotificationRow({ sourceRecord: source, factualReport: factualReport(4553) });
-  const second = buildLarkWeekly7dFullChannelNotificationRow({ sourceRecord: source, factualReport: factualReport(4554) });
+  const factualA = factualReport(4553);
+  const factualB = factualReport(4554);
+  const first = correctedNotification(source, factualA);
+  const second = correctedNotification(source, factualB);
+  assert.notEqual(first.synthesisAiRunKey, second.synthesisAiRunKey);
   assert.notEqual(first.aiRunKey, second.aiRunKey);
   assert.notEqual(first.factualReportSha256, second.factualReportSha256);
 });
@@ -185,11 +223,8 @@ test('requires exact factual source Report and period alignment with accepted V9
   );
 });
 
-test('message acceptance requires all nine factual headings and retained AI synthesis', () => {
-  const corrected = buildLarkWeekly7dFullChannelNotificationRow({
-    sourceRecord: sourceRecord(),
-    factualReport: factualReport(),
-  });
+test('message acceptance requires all nine factual headings and generated synthesis outputs', () => {
+  const corrected = correctedNotification();
   const message = [
     '📊 Social MKT Weekly Executive Report — 7D',
     'ช่วง 2026-07-24 ถึง 2026-07-30',
