@@ -99,15 +99,18 @@ test('YouTube connector can be enabled after activation review', () => {
   assert.equal(config.connectors.youtube.enabled, true);
 });
 
-test('Meta connection foundations cannot be enabled before Live DEV UAT', () => {
-  assert.throws(
-    () => loadCustomerRuntimeConfig({
-      MKT_ENV: 'production',
-      MKT_CUSTOMER_PROFILE: 'chemistry_k',
-      MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
-    }),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
+test('reviewed Meta Organic can be enabled in Development while Meta Ads remains UAT pending', () => {
+  const organic = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
+    MKT_CONNECTOR_INSTAGRAM_ENABLED: 'true',
+  });
+  assert.equal(organic.connectors.facebook.implementationStatus, 'active');
+  assert.equal(organic.connectors.facebook.enabled, true);
+  assert.equal(organic.connectors.instagram.implementationStatus, 'active');
+  assert.equal(organic.connectors.instagram.enabled, true);
+
   assert.throws(
     () => loadCustomerRuntimeConfig({
       MKT_ENV: 'development',
