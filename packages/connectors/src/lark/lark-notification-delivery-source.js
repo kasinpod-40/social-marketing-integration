@@ -1,6 +1,12 @@
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const MAX_EXECUTIVE_SOURCE_REPORTS = 32;
+const BANGKOK_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 /** Loads one exact AI Run → source Snapshots → Settings chain without persisting raw destination identity. */
 export async function loadLarkNotificationDeliveryRequest(input = {}) {
@@ -313,11 +319,17 @@ function normalizeDateOnly(value, fieldName) {
   const scalar = readScalar(value);
   if (typeof scalar === 'number' || /^\d+$/u.test(String(scalar ?? ''))) {
     const date = new Date(Number(scalar));
-    if (Number.isFinite(date.getTime())) return date.toISOString().slice(0, 10);
+    if (Number.isFinite(date.getTime())) return formatBangkokDateOnly(date);
   }
   const text = requireText(String(scalar ?? ''), fieldName);
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) throw new TypeError(`${fieldName} must be date-only`);
   return text;
+}
+function formatBangkokDateOnly(date) {
+  const byType = Object.fromEntries(
+    BANGKOK_DATE_FORMATTER.formatToParts(date).map(({ type, value }) => [type, value]),
+  );
+  return `${byType.year}-${byType.month}-${byType.day}`;
 }
 async function sha256Hex(value) {
   if (!globalThis.crypto?.subtle) throw new Error('Web Crypto SHA-256 is required');
