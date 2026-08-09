@@ -7,6 +7,8 @@ import {
   requireJobText,
 } from './worker-runtime-support.js';
 
+const DEFAULT_FACEBOOK_SYNC_TIME = '07:30';
+const DEFAULT_INSTAGRAM_SYNC_TIME = '07:35';
 const DEFAULT_DAILY_REPORT_TIME = '08:10';
 const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
@@ -31,6 +33,12 @@ export function buildScheduledJobs(input = {}) {
 
   const tiktokEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_TIKTOK_ENABLED, false)
+    : false;
+  const facebookEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_FACEBOOK_ENABLED, false)
+    : false;
+  const instagramEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_INSTAGRAM_ENABLED, false)
     : false;
   const wooCommerceEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, false)
@@ -66,6 +74,8 @@ export function buildScheduledJobs(input = {}) {
     );
   }
   const needsLocalSchedule = tiktokEnabled
+    || facebookEnabled
+    || instagramEnabled
     || wooCommerceEnabled
     || dailyEnabled
     || weeklyEnabled
@@ -86,6 +96,36 @@ export function buildScheduledJobs(input = {}) {
       // Lark Native 07:00 เป็น Snapshot แรกหลังวันก่อนหน้าปิด จึงล็อกวันสมบูรณ์ล่าสุด.
       metricDate: completedPeriodEnd,
     }));
+  }
+
+  if (includePrimaryJobs && facebookEnabled) {
+    const syncTime = readScheduleTime(
+      env.MKT_FACEBOOK_SYNC_TIME ?? DEFAULT_FACEBOOK_SYNC_TIME,
+      'MKT_FACEBOOK_SYNC_TIME',
+    );
+    if (local.time === syncTime) {
+      jobs.push(createMetaOrganicScheduledJob({
+        platform: 'facebook',
+        type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
+        requestedAt,
+        periodEnd: completedPeriodEnd,
+      }));
+    }
+  }
+
+  if (includePrimaryJobs && instagramEnabled) {
+    const syncTime = readScheduleTime(
+      env.MKT_INSTAGRAM_SYNC_TIME ?? DEFAULT_INSTAGRAM_SYNC_TIME,
+      'MKT_INSTAGRAM_SYNC_TIME',
+    );
+    if (local.time === syncTime) {
+      jobs.push(createMetaOrganicScheduledJob({
+        platform: 'instagram',
+        type: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+        requestedAt,
+        periodEnd: completedPeriodEnd,
+      }));
+    }
   }
 
   if (includePrimaryJobs && wooCommerceEnabled) {
@@ -187,6 +227,22 @@ export function buildScheduledJobs(input = {}) {
   }
 
   return Object.freeze(jobs);
+}
+
+function createMetaOrganicScheduledJob({ platform, type, requestedAt, periodEnd }) {
+  const dateKey = requireJobText(periodEnd, 'periodEnd').replaceAll('-', '');
+  return createStableQueueOperationBody({
+    schemaVersion: 1,
+    type,
+    trigger: 'scheduled',
+    dryRun: false,
+    d1Only: false,
+    periodStart: periodEnd,
+    periodEnd,
+  }, {
+    operationId: `${platform}-scheduled-${dateKey}`,
+    originalRequestedAt: Date.parse(requestedAt),
+  });
 }
 
 /** อ่านเวลาและวันตาม Timezone จาก scheduledTime ของ Cloudflare โดยไม่พึ่ง Timezoneเครื่อง */
