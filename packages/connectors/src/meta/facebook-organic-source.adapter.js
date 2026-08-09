@@ -16,6 +16,7 @@ import {
 } from './meta-business-source.helpers.js';
 
 const CONNECTOR_KEY = META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC;
+const DAY_MS = 86_400_000;
 
 /** GET-only Facebook Page source adapter; ไม่มี Method สำหรับ Publish/Mutation */
 export class FacebookOrganicSourceAdapter {
@@ -43,7 +44,10 @@ export class FacebookOrganicSourceAdapter {
       buildMetaDatasetPath(dataset, { page_id: pageId }),
       {
         fields: fieldsQuery(dataset),
-        ...(range.since ? { since: range.since, until: range.until } : {}),
+        ...(range.since ? {
+          since: range.since,
+          until: facebookContentExclusiveUntil(range.until),
+        } : {}),
       },
       {
         ...normalizeMetaPageOptions(input),
@@ -112,6 +116,15 @@ export class FacebookOrganicSourceAdapter {
       page,
     });
   }
+}
+
+function facebookContentExclusiveUntil(inclusiveUntil) {
+  const epochMs = Date.parse(`${inclusiveUntil}T00:00:00.000Z`);
+  const nextDay = new Date(epochMs + DAY_MS).toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(nextDay)) {
+    throw new RangeError('Facebook content until could not be converted to an exclusive date');
+  }
+  return nextDay;
 }
 
 function singleResponsePage(payload) {
