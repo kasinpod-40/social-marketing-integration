@@ -1,6 +1,14 @@
 import { addDaysDateOnly } from '../../../packages/application/src/reports/report-period.js';
-import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
+import { buildDashboardPresetJob } from '../../../packages/application/src/reports/dashboard-report-request.js';
+import {
+  REPORT_SOURCE_STATUS,
+  listReportPlatformContracts,
+} from '../../../packages/application/src/reports/report-platform-adapter-registry.js';
+import { JOB_TRIGGERS, JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
 import { createStableQueueOperationBody } from '../../../packages/application/src/jobs/queue-operation.js';
+import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
+import { readMetaAdAccounts } from '../../../packages/config/src/meta-token-connection-config.js';
+import { createDashboardReportSettingKey } from '../../../packages/config/src/report-settings.seed.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import {
   readBoolean,
@@ -15,6 +23,12 @@ const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
 const DEFAULT_YOUTUBE_ANALYTICS_TIME = '07:50';
 const DEFAULT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS = 7;
 const DEFAULT_WOOCOMMERCE_SYNC_TIME = '01:30';
+const DEFAULT_META_ADS_SYNC_TIME = '07:40';
+const DEFAULT_CHATWOOT_SYNC_TIME = '07:45';
+const DASHBOARD_WINDOWS = Object.freeze([1, 3, 7, 30]);
+const SCHEDULED_REPORT_PLATFORM_SCOPES = Object.freeze(listReportPlatformContracts()
+  .filter((contract) => contract.sourceStatus === REPORT_SOURCE_STATUS.ACTIVE)
+  .map((contract) => contract.platformScope));
 const YOUTUBE_ANALYTICS_TIMEZONE = 'America/Los_Angeles';
 const SCHEDULE_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
 const YOUTUBE_SCHEDULE_MINUTE_UTC = 50;
@@ -42,6 +56,12 @@ export function buildScheduledJobs(input = {}) {
     : false;
   const wooCommerceEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, false)
+    : false;
+  const metaAdsEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_META_ADS_ENABLED, false)
+    : false;
+  const chatwootEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_CHATWOOT_ENABLED, false)
     : false;
   const dailyEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_DAILY_REPORT_ENABLED, false)
@@ -73,10 +93,42 @@ export function buildScheduledJobs(input = {}) {
       },
     );
   }
+  if (metaAdsEnabled) {
+    requireEnabledScheduleFlags(env, [
+      'MKT_CONNECTOR_META_ADS_ENABLED',
+      'MKT_META_SOURCE_READ_ENABLED',
+      'MKT_META_D1_WRITE_ENABLED',
+      'MKT_META_LARK_WRITE_ENABLED',
+    ]);
+  }
+  if (chatwootEnabled) {
+    requireEnabledScheduleFlags(env, [
+      'MKT_CONNECTOR_CHATWOOT_ENABLED',
+      'MKT_CHATWOOT_D1_WRITE_ENABLED',
+      'MKT_CHATWOOT_LARK_WRITE_ENABLED',
+      'MKT_CHATWOOT_REPORT_WRITE_ENABLED',
+    ]);
+    if (readBoolean(env.MKT_CHATWOOT_WEBHOOK_ENABLED, false)) {
+      throw permanentError('Chatwoot scheduled polling cannot run with Webhook admission enabled', {
+        code: 'MKT_SCHEDULE_CONFIG_INVALID',
+        details: { fieldName: 'MKT_CHATWOOT_WEBHOOK_ENABLED' },
+      });
+    }
+  }
+  if (dailyEnabled || weeklyEnabled) {
+    requireEnabledScheduleFlags(env, [
+      'MKT_REPORT_D1_READ_ENABLED',
+      'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
+      'MKT_META_REPORT_READ_ENABLED',
+      'MKT_WOOCOMMERCE_REPORT_READ_ENABLED',
+    ]);
+  }
   const needsLocalSchedule = tiktokEnabled
     || facebookEnabled
     || instagramEnabled
     || wooCommerceEnabled
+    || metaAdsEnabled
+    || chatwootEnabled
     || dailyEnabled
     || weeklyEnabled
     || youtubeEnabled;
@@ -148,17 +200,75 @@ export function buildScheduledJobs(input = {}) {
     }
   }
 
+  if (includePrimaryJobs && metaAdsEnabled) {
+    const syncTime = readScheduleTime(
+      env.MKT_META_ADS_SYNC_TIME ?? DEFAULT_META_ADS_SYNC_TIME,
+      'MKT_META_ADS_SYNC_TIME',
+    );
+    if (local.time === syncTime) {
+      const accounts = readMetaAdAccounts(
+        env.META_AD_ACCOUNT_MAPPINGS,
+        env.META_AD_ACCOUNT_ID,
+      );
+      if (accounts.length === 0) {
+        throw permanentError('Meta Ads schedule requires at least one reviewed account mapping', {
+          code: 'MKT_SCHEDULE_CONFIG_INVALID',
+          details: { fieldName: 'META_AD_ACCOUNT_MAPPINGS' },
+        });
+      }
+      for (const account of accounts) {
+        const operationId = `meta-ads-${account.key}-scheduled-${completedPeriodEnd.replaceAll('-', '')}`;
+        jobs.push(createStableQueueOperationBody({
+          schemaVersion: 1,
+          type: JOB_TYPES.META_ADS_SYNC,
+          trigger: JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
+          sourceAccountKey: account.key,
+          dryRun: false,
+          d1Only: false,
+          periodStart: completedPeriodEnd,
+          periodEnd: completedPeriodEnd,
+        }, {
+          operationId,
+          originalRequestedAt: Date.parse(requestedAt),
+        }));
+      }
+    }
+  }
+
+  if (includePrimaryJobs && chatwootEnabled) {
+    const syncTime = readScheduleTime(
+      env.MKT_CHATWOOT_SYNC_TIME ?? DEFAULT_CHATWOOT_SYNC_TIME,
+      'MKT_CHATWOOT_SYNC_TIME',
+    );
+    if (local.time === syncTime) {
+      const runtime = loadCustomerRuntimeConfig(env);
+      const accountKey = requireJobText(
+        runtime.connectors.chatwoot?.accountKey,
+        'connectors.chatwoot.accountKey',
+      );
+      const operationId = `chatwoot-daily-${completedPeriodEnd.replaceAll('-', '')}`;
+      jobs.push(createStableQueueOperationBody({
+        schemaVersion: 1,
+        type: JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC,
+        trigger: JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY,
+        accountKey,
+        dryRun: false,
+      }, {
+        operationId,
+        originalRequestedAt: Date.parse(requestedAt),
+      }));
+    }
+  }
+
   if (includePrimaryJobs && dailyEnabled) {
     const dailyTime = readScheduleTime(env.MKT_DAILY_REPORT_TIME ?? DEFAULT_DAILY_REPORT_TIME, 'MKT_DAILY_REPORT_TIME');
     if (local.time === dailyTime) {
-      jobs.push(Object.freeze({
-        schemaVersion: 1,
-        type: JOB_TYPES.DAILY_REPORT_GENERATE,
-        trigger: 'scheduled',
-        requestedAt,
-        // รายงานใช้วันสมบูรณ์ล่าสุด และล็อก Identity ตั้งแต่ Producer ไม่ให้ Queue delay เปลี่ยนช่วง
+      jobs.push(...buildScheduledDashboardJobs({
+        cadence: 'daily',
+        env,
         periodEnd: completedPeriodEnd,
-        reportSettingKey: requireJobText(env.MKT_DAILY_REPORT_SETTING_KEY, 'MKT_DAILY_REPORT_SETTING_KEY'),
+        requestedAt,
+        windowDays: DASHBOARD_WINDOWS,
       }));
     }
   }
@@ -170,13 +280,12 @@ export function buildScheduledJobs(input = {}) {
       'MKT_WEEKLY_REPORT_WEEKDAY',
     );
     if (local.time === weeklyTime && local.weekday === weeklyWeekday) {
-      jobs.push(Object.freeze({
-        schemaVersion: 1,
-        type: JOB_TYPES.WEEKLY_REPORT_GENERATE,
-        trigger: 'scheduled',
-        requestedAt,
+      jobs.push(...buildScheduledDashboardJobs({
+        cadence: 'weekly',
+        env,
         periodEnd: completedPeriodEnd,
-        reportSettingKey: requireJobText(env.MKT_WEEKLY_REPORT_SETTING_KEY, 'MKT_WEEKLY_REPORT_SETTING_KEY'),
+        requestedAt,
+        windowDays: [7],
       }));
     }
   }
@@ -227,6 +336,49 @@ export function buildScheduledJobs(input = {}) {
   }
 
   return Object.freeze(jobs);
+}
+
+function buildScheduledDashboardJobs(input) {
+  const requestedAt = Date.parse(input.requestedAt);
+  const profileKey = requireJobText(input.env.MKT_CUSTOMER_PROFILE, 'MKT_CUSTOMER_PROFILE');
+  return Object.freeze(SCHEDULED_REPORT_PLATFORM_SCOPES.flatMap((platformScope) => (
+    input.windowDays.map((windowDays) => {
+      const preset = buildDashboardPresetJob({
+        trigger: JOB_TRIGGERS.DASHBOARD_SCHEDULED,
+        requestedAt,
+        periodEnd: input.periodEnd,
+        timeZone: input.env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
+        windowDays,
+        platformScope,
+        reportSettingKey: createDashboardReportSettingKey({
+          profileKey,
+          platformScope,
+          windowDays,
+        }),
+      });
+      const operationId = [
+        'report', input.cadence, platformScope, `${windowDays}d`,
+        input.periodEnd.replaceAll('-', ''),
+      ].join('-');
+      return createStableQueueOperationBody({
+        ...preset,
+        scheduleCadence: input.cadence,
+      }, {
+        operationId,
+        originalRequestedAt: requestedAt,
+      });
+    })
+  )));
+}
+
+function requireEnabledScheduleFlags(env, fieldNames) {
+  const disabled = fieldNames.filter((fieldName) => !readBoolean(env[fieldName], false));
+  if (disabled.length > 0) {
+    throw permanentError('Scheduled producer and consumer runtime gates are inconsistent', {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName: disabled[0], disabled },
+    });
+  }
 }
 
 function createMetaOrganicScheduledJob({ platform, type, requestedAt, periodEnd }) {

@@ -40,12 +40,14 @@ test('every connector declares a frozen large-account activation contract', () =
   }
 });
 
-test('reviewed Organic connectors are active in Development while unfinished Meta Ads stays UAT pending', () => {
+test('every retained-UAT connector is active while production readiness stays separately gated', () => {
   const youtube = getConnectorCatalogEntry('youtube');
   const tiktok = getConnectorCatalogEntry('tiktok');
   const instagram = getConnectorCatalogEntry('instagram');
   const facebook = getConnectorCatalogEntry('facebook');
   const metaAds = getConnectorCatalogEntry('meta_ads');
+  const googleAds = getConnectorCatalogEntry('google_ads');
+  const chatwoot = getConnectorCatalogEntry('chatwoot');
 
   assert.equal(youtube.largeAccount.status, 'dev_ready');
   assert.equal(youtube.largeAccount.minimumFixtureItems, 1000);
@@ -58,7 +60,9 @@ test('reviewed Organic connectors are active in Development while unfinished Met
   assert.equal(instagram.largeAccount.status, 'planned');
   assert.equal(instagram.implementationStatus, 'active');
   assert.equal(facebook.implementationStatus, 'active');
-  assert.equal(metaAds.implementationStatus, 'uat_pending');
+  assert.equal(metaAds.implementationStatus, 'active');
+  assert.equal(googleAds.implementationStatus, 'active');
+  assert.equal(chatwoot.implementationStatus, 'active');
   assert.equal(metaAds.capability, 'paid_ads');
   assert.equal(instagram.largeAccount.minimumFixtureItems, 2000);
   assert.equal(instagram.largeAccount.productionReady, false);

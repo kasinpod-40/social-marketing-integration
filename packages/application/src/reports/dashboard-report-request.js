@@ -1,5 +1,5 @@
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
-import { JOB_TYPES } from '../jobs/job-catalog.js';
+import { JOB_TRIGGERS, JOB_TYPES } from '../jobs/job-catalog.js';
 import { resolveReportPeriod } from './report-period.js';
 
 /** Build one generic preset job; the caller decides whether and when to send it. */
@@ -13,10 +13,18 @@ export function buildDashboardPresetJob(input = {}) {
     timeZone: input.timeZone,
     now: new Date(requestedAt),
   });
+  const trigger = input.trigger ?? JOB_TRIGGERS.DASHBOARD_PRESET;
+  if (![JOB_TRIGGERS.DASHBOARD_PRESET, JOB_TRIGGERS.DASHBOARD_SCHEDULED].includes(trigger)) {
+    throw new TypeError('Dashboard preset trigger is unsupported');
+  }
+  const sourceWatermark = optionalText(input.sourceWatermark);
+  if (trigger === JOB_TRIGGERS.DASHBOARD_PRESET && !sourceWatermark) {
+    throw new TypeError('sourceWatermark is required');
+  }
   return Object.freeze({
     schemaVersion: 1,
     type: JOB_TYPES.REPORT_MATERIALIZATION_GENERATE,
-    trigger: 'dashboard_preset',
+    trigger,
     requestedAt: new Date(requestedAt).toISOString(),
     reportSettingKey: requireText(input.reportSettingKey, 'reportSettingKey'),
     platformScope: requireText(input.platformScope, 'platformScope'),
@@ -24,8 +32,12 @@ export function buildDashboardPresetJob(input = {}) {
     windowDays: period.windowDays,
     periodEnd: period.periodEnd,
     comparisonMode: period.comparisonMode,
-    sourceWatermark: requireText(input.sourceWatermark, 'sourceWatermark'),
+    ...(sourceWatermark ? { sourceWatermark } : {}),
   });
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 /** Claim then enqueue one CUSTOM_RANGE request with a watermark-bound idempotency key. */

@@ -58,20 +58,21 @@ test('signed-delivery path exposes only POST and stays hidden while disabled', a
 });
 
 
-test('health endpoint fails safely when an unfinished connector is enabled', async () => {
+test('health endpoint reports a production connector as not runnable until its large-account gate closes', async () => {
   const response = await apiWorker.fetch(
     new Request('https://example.test/health'),
     {
       MKT_ENV: 'production',
       MKT_CUSTOMER_PROFILE: 'chemistry_k',
-      MKT_CONNECTOR_META_ADS_ENABLED: 'true',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       LARK_APP_SECRET: 'must-never-appear',
     },
     {},
   );
   const body = await response.json();
 
-  assert.equal(response.status, 500);
-  assert.deepEqual(body, { ok: false, error: 'Unhandled API error' });
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.connectors.find((item) => item.key === 'tiktok').runnable, false);
   assert.equal(JSON.stringify(body).includes('must-never-appear'), false);
 });

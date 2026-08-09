@@ -32,7 +32,11 @@ test('history bootstrap and recovery are active manual-only and never emitted by
     MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
     MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
     MKT_DAILY_REPORT_TIME: '08:10',
-    MKT_DAILY_REPORT_SETTING_KEY: 'setting:daily',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_REPORT_D1_READ_ENABLED: 'true',
+    MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: 'true',
+    MKT_META_REPORT_READ_ENABLED: 'true',
+    MKT_WOOCOMMERCE_REPORT_READ_ENABLED: 'true',
     DEFAULT_TIMEZONE: 'Asia/Bangkok',
   }, {
     MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',

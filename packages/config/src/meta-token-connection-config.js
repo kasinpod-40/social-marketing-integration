@@ -176,7 +176,7 @@ function readOptionalIdentity(value, fieldName) {
   return text;
 }
 
-function readMetaAdAccounts(value, legacyValue) {
+export function readMetaAdAccounts(value, legacyValue) {
   const mappingText = readOptionalText(
     value,
     META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS,

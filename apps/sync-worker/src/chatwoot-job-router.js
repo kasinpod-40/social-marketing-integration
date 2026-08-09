@@ -33,8 +33,8 @@ import {
 } from './worker-runtime-support.js';
 
 /**
- * Protected Chatwoot route. Every delivery processes one bounded durable unit. No Cron or Webhook
- * producer is added; continuation messages preserve the original Stable Queue identity.
+ * Chatwoot route. Every delivery processes one bounded durable unit and continuation messages
+ * preserve the original Stable Queue identity for both manual and scheduled admission.
  */
 export async function processChatwootAnalyticsJob(input = {}) {
   if (input.job?.body?.type !== JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC) {
@@ -50,7 +50,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
   const chatwootConfig = readChatwootRuntimeConfig(input.env);
   assertLockedChatwootRuntimeConfig(chatwootConfig.contract);
   const runtimeConfig = input.getRuntimeConfig();
-  const connector = assertChatwootManualRuntime(runtimeConfig, chatwootConfig);
+  const connector = assertChatwootManualRuntime(runtimeConfig, chatwootConfig, normalizedTrigger);
   const operation = requireStableOperation(input.operation);
   if (input.job.body.accountKey !== connector.accountKey) {
     throw permanentError('Chatwoot Queue accountKey does not match the protected connector target', {
@@ -213,7 +213,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
   return result;
 }
 
-export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig) {
+export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig, trigger = null) {
   if (runtimeConfig?.environment !== 'development'
     || runtimeConfig?.profileKey !== 'integration_workspace'
     || runtimeConfig?.infrastructureOwner !== 'developer'
@@ -225,16 +225,17 @@ export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig) {
   const connector = runtimeConfig?.connectors?.chatwoot;
   if (!connector
     || connector.accountKey !== 'chemistry_k'
-    || connector.enabled !== true
-    || connector.protectedUatRuntime !== true) {
-    throw permanentError('Chatwoot connector is disabled or outside the protected UAT runtime', {
+    || connector.enabled !== true) {
+    throw permanentError('Chatwoot connector is disabled or outside the Integration runtime', {
       code: 'CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID',
     });
   }
+  const scheduled = trigger === JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY;
   const missingFlags = [];
   if (chatwootConfig?.flags?.connector !== true) missingFlags.push('MKT_CONNECTOR_CHATWOOT_ENABLED');
   if (chatwootConfig?.flags?.d1Write !== true) missingFlags.push('MKT_CHATWOOT_D1_WRITE_ENABLED');
-  if (chatwootConfig?.flags?.schedule === true) missingFlags.push('MKT_SCHEDULE_CHATWOOT_ENABLED=false');
+  if (scheduled && chatwootConfig?.flags?.schedule !== true) missingFlags.push('MKT_SCHEDULE_CHATWOOT_ENABLED');
+  if (!scheduled && chatwootConfig?.flags?.schedule === true) missingFlags.push('MKT_SCHEDULE_CHATWOOT_ENABLED=false');
   if (chatwootConfig?.flags?.webhook === true) missingFlags.push('MKT_CHATWOOT_WEBHOOK_ENABLED=false');
   if (missingFlags.length > 0) {
     throw permanentError('Chatwoot manual UAT gates are disabled or unsafe', {
@@ -248,9 +249,9 @@ export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig) {
 function assertChatwootJobDefinition(definition, job, trigger) {
   const body = job?.body;
   if (definition?.connectorKey !== 'chatwoot'
-    || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING
-    || definition?.manualOnly !== true) {
-    throw permanentError('Chatwoot Queue job is not registered as protected manual UAT', {
+    || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.ACTIVE
+    || definition?.manualOnly === true) {
+    throw permanentError('Chatwoot Queue job is not registered as active', {
       code: 'CHATWOOT_JOB_UNSUPPORTED',
     });
   }

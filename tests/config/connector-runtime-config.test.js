@@ -99,47 +99,32 @@ test('YouTube connector can be enabled after activation review', () => {
   assert.equal(config.connectors.youtube.enabled, true);
 });
 
-test('reviewed Meta Organic can be enabled in Development while Meta Ads remains UAT pending', () => {
+test('reviewed Meta Organic and Ads can be enabled after retained UAT promotion', () => {
   const organic = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
     MKT_CONNECTOR_INSTAGRAM_ENABLED: 'true',
+    MKT_CONNECTOR_META_ADS_ENABLED: 'true',
   });
   assert.equal(organic.connectors.facebook.implementationStatus, 'active');
   assert.equal(organic.connectors.facebook.enabled, true);
   assert.equal(organic.connectors.instagram.implementationStatus, 'active');
   assert.equal(organic.connectors.instagram.enabled, true);
-
-  assert.throws(
-    () => loadCustomerRuntimeConfig({
-      MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'integration_workspace',
-      MKT_CONNECTOR_META_ADS_ENABLED: 'true',
-    }),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
+  assert.equal(organic.connectors.meta_ads.implementationStatus, 'active');
+  assert.equal(organic.connectors.meta_ads.enabled, true);
 });
 
-test('Google Ads remains UAT-pending and requires every protected manual gate', () => {
+test('Google Ads is active while execution gates remain independently fail-closed', () => {
   const disabled = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
-  assert.equal(disabled.connectors.google_ads.implementationStatus, 'uat_pending');
+  assert.equal(disabled.connectors.google_ads.implementationStatus, 'active');
   assert.equal(disabled.connectors.google_ads.enabled, false);
   assert.equal(disabled.connectors.google_ads.accountKey, 'chemistry_k');
 
-  assert.throws(
-    () => loadCustomerRuntimeConfig({
-      MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'integration_workspace',
-      MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
-    }),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
-
-  const protectedUat = loadCustomerRuntimeConfig({
+  const active = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
@@ -148,9 +133,9 @@ test('Google Ads remains UAT-pending and requires every protected manual gate', 
     MKT_GOOGLE_ADS_LARK_WRITE_ENABLED: 'true',
     MKT_SCHEDULE_GOOGLE_ADS_ENABLED: 'false',
   });
-  assert.equal(protectedUat.connectors.google_ads.enabled, true);
-  assert.equal(protectedUat.connectors.google_ads.protectedUatRuntime, true);
-  assert.equal(protectedUat.connectors.google_ads.implementationStatus, 'uat_pending');
+  assert.equal(active.connectors.google_ads.enabled, true);
+  assert.equal(active.connectors.google_ads.protectedUatRuntime, false);
+  assert.equal(active.connectors.google_ads.implementationStatus, 'active');
 });
 
 test('connector feature flags accept only explicit true or false values', () => {

@@ -65,9 +65,14 @@ test('Chatwoot catalog centralizes triggers and schema version', () => {
   assert.deepEqual(definition.allowedTriggers, [
     JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
     JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
+    JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY,
   ]);
   assert.equal(
     resolveChatwootRuntimeMode(JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL),
+    CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+  );
+  assert.equal(
+    resolveChatwootRuntimeMode(JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY),
     CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
   );
 });

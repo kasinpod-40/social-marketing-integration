@@ -25,6 +25,10 @@ const STABLE_OPERATION_CONTRACTS = new Map([
 ]);
 
 function resolveStableOperationContract(type, body) {
+  if (type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
+    && body?.trigger === JOB_TRIGGERS.DASHBOARD_SCHEDULED) {
+    return Object.freeze({ prefix: 'report' });
+  }
   if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC
     && body?.trigger === JOB_TRIGGERS.TIKTOK_POST_LARK_WATERMARK) {
     return Object.freeze({ prefix: 'tiktok' });

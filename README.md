@@ -18,7 +18,20 @@ AGENTS.md
 - Credential, Live write, Remote migration, Deployment, Schedule, Retention และ Production ต้องผ่าน Gate แยก
 - ห้ามใช้แชทเป็นอำนาจเหนือ Repository `main`
 
-## Current TikTok implementation branch — Draft PR #65
+## Current closeout — Multichannel Report & Schedule v1
+
+Repository runtime รองรับ Shared Report schedule สำหรับ Facebook, Instagram, TikTok, YouTube,
+Meta Ads, Google Ads, WooCommerce และ Chatwoot ที่ `1D/3D/7D/30D`. Daily schedule เวลา 08:10
+Asia/Bangkok สร้าง 32 stable materialization jobs; Weekly วันจันทร์ 08:15 สร้าง 8 stable 7D
+refresh jobs. Queue fan-out ใช้ `sendBatch` เมื่อ binding รองรับ.
+
+Meta Ads และ Chatwoot ใช้ primary cron สำหรับ Source schedule. Google Ads ยังคงใช้ external
+Manager Script trigger และ signed ingress เพื่อไม่สร้าง producer ซ้ำ. ทุก execution/schedule flag
+ใน example config ยังเป็น `false`; TikTok Ads ยัง `planned`; Production blocked. ดู
+`docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
+`docs/current-task.md`.
+
+## Historical TikTok implementation branch — Draft PR #65
 
 ```text
 Branch                              agent/tiktok-organic-post-lark-d1-parity
@@ -52,9 +65,11 @@ Storage Foundation Phase 1B        merged
 Organic D1 bootstrap PR #27        merged
 Organic D1 bootstrap merge         d182bf9efc8c6ea51f275ea725cdb0eaeae3d5e0
 Customer OAuth remote rollout      complete
-TikTok Canonical Lark sync         repository implementation in Draft PR #65 / Live rollout pending
-Report D1 reader                   implemented in Draft PR #65 / cutover disabled
-Schedules                          disabled
+TikTok Canonical Lark sync         implemented / protected Lark Native source retained
+Shared Report runtime              8 reviewed channels / 1D 3D 7D 30D
+Meta Ads / Google Ads / Chatwoot   active catalogs / explicit gates default false
+Source schedules                   repository-ready / runtime activation separately gated
+Daily / Weekly Report schedules    repository-ready / runtime activation separately gated
 Production                         blocked
 Google Ads signed delivery         Remote transport UAT pass / safely closed
 Google Ads actual Script DRY_RUN   pass / six datasets / no changes

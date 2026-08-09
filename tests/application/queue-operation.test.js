@@ -141,6 +141,40 @@ test('Meta Ads operation identity is scoped by configured account alias', () => 
   assert.equal(continuation.workKey, account2.workKey);
 });
 
+test('scheduled Shared Report uses stable identity while manual presets keep their existing shape', () => {
+  const scheduledBody = {
+    schemaVersion: 1,
+    type: JOB_TYPES.REPORT_MATERIALIZATION_GENERATE,
+    trigger: JOB_TRIGGERS.DASHBOARD_SCHEDULED,
+    operationId: 'report-daily-facebook-1d-20260808',
+    workKey: 'report:report-daily-facebook-1d-20260808',
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+    requestedAt: new Date(REQUESTED_AT).toISOString(),
+  };
+  const scheduled = resolveQueueOperation({
+    job: normalizeQueueJobMessage({ id: 'report-delivery-a', body: scheduledBody }),
+    message: { id: 'report-delivery-a' },
+  });
+  assert.equal(scheduled.stable, true);
+  assert.equal(scheduled.workKey, 'report:report-daily-facebook-1d-20260808');
+
+  const manual = resolveQueueOperation({
+    job: normalizeQueueJobMessage({
+      id: 'manual-report',
+      body: {
+        schemaVersion: 1,
+        type: JOB_TYPES.REPORT_MATERIALIZATION_GENERATE,
+        trigger: JOB_TRIGGERS.DASHBOARD_PRESET,
+        requestedAt: new Date(REQUESTED_AT).toISOString(),
+      },
+    }),
+    message: { id: 'manual-report' },
+  });
+  assert.equal(manual.stable, false);
+  assert.equal(manual.workKey, 'tiktok:manual-report');
+});
+
 test('continuation serialization preserves exact operation generation', () => {
   const operation = resolveQueueOperation({
     job: normalizeQueueJobMessage({ id: 'main-message', body: BODY }),

@@ -381,7 +381,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('Scheduled handler enqueue Daily report หลัง TikTok probe เมื่อถึงเวลา Bangkok', async () => {
+  it('Scheduled handler enqueue multichannel Dashboard materializations หลัง TikTok probe', async () => {
     const send = vi.fn(async () => undefined);
     const worker = createSyncWorker();
     const controller = createScheduledController({
@@ -398,19 +398,52 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+      MKT_REPORT_D1_READ_ENABLED: 'true',
+      MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: 'true',
+      MKT_META_REPORT_READ_ENABLED: 'true',
+      MKT_WOOCOMMERCE_REPORT_READ_ENABLED: 'true',
       MKT_SYNC_QUEUE: { send },
     });
 
-    expect(send).toHaveBeenCalledTimes(3);
-    expect(send.mock.calls.map(([job]) => job.type)).toEqual([
-      'tiktok.creator.native.probe',
-      'report.daily.generate',
-      'system.reliability-mirror.deliver',
-    ]);
+    expect(send).toHaveBeenCalledTimes(34);
+    expect(send.mock.calls[0][0].type).toBe('tiktok.creator.native.probe');
+    expect(send.mock.calls.slice(1, -1).map(([job]) => job.type)).toEqual(
+      Array(32).fill('report.materialization.generate'),
+    );
+    expect(send.mock.calls.at(-1)[0].type).toBe('system.reliability-mirror.deliver');
     expect(send.mock.calls[0][0].metricDate).toBe('2026-07-12');
     expect(send.mock.calls[1][0].periodEnd).toBe('2026-07-12');
+    expect(send.mock.calls[1][0].reportSettingKey).toBe(
+      'integration_workspace:facebook:rolling:1d',
+    );
+  });
+
+  it('Scheduled handler batches a multichannel fan-out when Queue sendBatch is available', async () => {
+    const sendBatch = vi.fn(async () => undefined);
+    const worker = createSyncWorker();
+    const controller = createScheduledController({
+      scheduledTime: Date.parse('2026-07-13T01:10:00.000Z'),
+      cron: '*/5 * * * *',
+    });
+
+    await worker.scheduled(controller, {
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
+      MKT_DAILY_REPORT_TIME: '08:10',
+      MKT_REPORT_D1_READ_ENABLED: 'true',
+      MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: 'true',
+      MKT_META_REPORT_READ_ENABLED: 'true',
+      MKT_WOOCOMMERCE_REPORT_READ_ENABLED: 'true',
+      MKT_SYNC_QUEUE: { sendBatch },
+    });
+
+    expect(sendBatch).toHaveBeenCalledTimes(1);
+    expect(sendBatch.mock.calls[0][0]).toHaveLength(33);
+    expect(sendBatch.mock.calls[0][0][0].body.type).toBe('report.materialization.generate');
+    expect(sendBatch.mock.calls[0][0].at(-1).body.type).toBe('system.reliability-mirror.deliver');
   });
 
   it('YouTube cron enqueue เฉพาะ YouTube job พร้อมช่วง Analytics ที่ล็อกจาก Pacific day', async () => {

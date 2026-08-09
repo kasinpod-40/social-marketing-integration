@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## Multichannel Report & Schedule Final Closure — 2026-08-09
+
+Meta Ads, Google Ads และ Chatwoot ได้รับการ promote เป็น active จาก retained UAT evidence
+โดย execution flags ยัง default false. Daily/Weekly schedule ใช้ Shared
+`report.materialization.generate` ครบ 8 reviewed platforms ที่ `1D/3D/7D/30D`, มี Stable
+Queue identity และ batched fan-out. Meta Ads/Chatwoot ใช้ primary cron; Google Ads คง external
+Manager Script boundary เพื่อไม่สร้าง duplicate producer. TikTok Ads ยัง planned, Facebook R2
+ห้าม replay, Production blocked. รายละเอียดและ activation gate อยู่ที่
+`docs/project-brain/multichannel-report-schedule-final-closure-v1.md`.
+
 ## Chatwoot Initial terminal recovery — 2026-08-01
 
 The current retained Initial operation was terminalized after Final UAT polling mistakenly treated a `running`

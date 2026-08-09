@@ -34,8 +34,8 @@ const GOOGLE_ADS_TABLE_KEYS = Object.freeze([
 ]);
 
 /**
- * Protected exception for the Google Ads uat_pending job.
- * It is runnable only in the developer-owned Integration Workspace with every manual gate enabled.
+ * Google Ads signed-delivery consumer. The external Manager Script owns source scheduling;
+ * Cloudflare consumes only authenticated completed-run references.
  */
 export async function processGoogleAdsManualUatJob(input = {}) {
   const runtimeConfig = input.getRuntimeConfig();
@@ -177,11 +177,6 @@ export function assertGoogleAdsManualUatRuntime(runtimeConfig, env = {}) {
     throw permanentError('Google Ads manual UAT execution gates are disabled', {
       code: 'GOOGLE_ADS_MANUAL_UAT_GATES_DISABLED',
       details: { disabled },
-    });
-  }
-  if (readBoolean(env?.MKT_SCHEDULE_GOOGLE_ADS_ENABLED, false)) {
-    throw permanentError('Google Ads schedule must remain disabled during manual UAT', {
-      code: 'GOOGLE_ADS_MANUAL_UAT_SCHEDULE_ENABLED',
     });
   }
   return connector;

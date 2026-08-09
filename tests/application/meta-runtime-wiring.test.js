@@ -141,7 +141,7 @@ function baseInput(overrides = {}) {
   };
 }
 
-test('registers reviewed Meta Organic jobs as active while Meta Ads remains protected manual UAT', () => {
+test('registers reviewed Meta Organic and Ads jobs as active with stable operations', () => {
   for (const type of [JOB_TYPES.FACEBOOK_ORGANIC_SYNC, JOB_TYPES.INSTAGRAM_ORGANIC_SYNC]) {
     const definition = getJobDefinition(type);
     assert.equal(definition.implementationStatus, JOB_IMPLEMENTATION_STATUS.ACTIVE);
@@ -165,8 +165,12 @@ test('registers reviewed Meta Organic jobs as active while Meta Ads remains prot
   }
 
   const ads = getJobDefinition(JOB_TYPES.META_ADS_SYNC);
-  assert.equal(ads.implementationStatus, JOB_IMPLEMENTATION_STATUS.UAT_PENDING);
-  assert.equal(ads.manualOnly, true);
+  assert.equal(ads.implementationStatus, JOB_IMPLEMENTATION_STATUS.ACTIVE);
+  assert.notEqual(ads.manualOnly, true);
+  assert.deepEqual(ads.allowedTriggers, [
+    JOB_TRIGGERS.META_MANUAL_UAT,
+    JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
+  ]);
   const adsOperation = resolveQueueOperation({
     job: {
       body: {

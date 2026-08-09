@@ -113,6 +113,9 @@ test('report schedules stay disabled until D1 report parity is complete', async 
   assert.match(configText, /"MKT_SCHEDULE_WEEKLY_REPORT_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_DAILY_REPORT_TIME"\s*:\s*"08:10"/);
   assert.match(configText, /"MKT_WEEKLY_REPORT_TIME"\s*:\s*"08:15"/);
+  assert.match(configText, /"MKT_SCHEDULE_META_ADS_ENABLED"\s*:\s*"false"/);
+  assert.match(configText, /"MKT_META_ADS_SYNC_TIME"\s*:\s*"07:40"/);
+  assert.match(configText, /"MKT_CHATWOOT_SYNC_TIME"\s*:\s*"07:45"/);
   assert.match(configText, /"MKT_DAILY_REPORT_SETTING_KEY"\s*:\s*"integration_workspace:tiktok:daily"/);
   assert.match(configText, /"LARK_TABLE_MKT_REPORT_METRIC_VALUES"/);
   assert.match(configText, /"LARK_TABLE_MKT_REPORT_TOP_CONTENT"/);

@@ -43,7 +43,7 @@ const CONTINUATION_STATUSES = new Set([
   'lark_continuation',
 ]);
 
-/** Integration Workspace route for reviewed Meta Organic jobs plus protected manual Meta Ads UAT. */
+/** Integration Workspace route for reviewed Meta Organic and Meta Ads jobs. */
 export async function processJobWithMetaEndToEnd(input = {}) {
   const type = input.job?.body?.type;
   if (!META_JOB_TYPES.has(type)) return processJobWithTikTokD1AwareReport(input);
@@ -86,9 +86,10 @@ async function processMetaJob(input, connectorKey, metaConfig) {
   const reliability = infrastructure.getReliability();
   const operationScope = source.sourceAccountKey ?? connectorKey;
   const deterministicSyncRunId = `meta:${connectorKey}:${operationScope}:${operation.operationId}`;
+  const scheduled = input.job.body.trigger === JOB_TRIGGERS.META_ORGANIC_SCHEDULED;
   const reliabilitySyncType = connectorKey === 'meta_ads'
-    ? `manual_end_to_end_${operationScope}`
-    : input.job.body.trigger === JOB_TRIGGERS.META_ORGANIC_SCHEDULED
+    ? `${scheduled ? 'scheduled' : 'manual'}_end_to_end_${operationScope}`
+    : scheduled
       ? 'scheduled_end_to_end'
       : 'manual_end_to_end';
 
@@ -153,8 +154,7 @@ async function processMetaJob(input, connectorKey, metaConfig) {
 
 /**
  * Compatibility export retained for existing UAT callers.
- * Reviewed Facebook/Instagram may run scheduled in Integration Workspace after connector/job activation;
- * Meta Ads remains protected manual UAT only.
+ * ชื่อ export เดิมคงไว้เพื่อไม่ทำลาย Operator เก่า แต่ทั้งสาม Connector ใช้ Active contract เดียวกัน.
  */
 export function assertMetaManualUatRuntime(runtimeConfig, connectorKey, env = {}) {
   if (runtimeConfig?.environment !== 'development'
@@ -166,11 +166,9 @@ export function assertMetaManualUatRuntime(runtimeConfig, connectorKey, env = {}
     });
   }
   const connector = runtimeConfig?.connectors?.[connectorKey];
-  const requiresProtectedUat = connectorKey === 'meta_ads';
   if (!connector
     || connector.accountKey !== 'chemistry_k'
-    || connector.enabled !== true
-    || (requiresProtectedUat && connector.protectedUatRuntime !== true)) {
+    || connector.enabled !== true) {
     throw permanentError('Meta connector is disabled or outside the allowed Integration runtime', {
       code: 'META_MANUAL_UAT_CONNECTOR_INVALID',
       details: { connectorKey },
@@ -193,30 +191,20 @@ function assertMetaJobDefinition(definition, connectorKey, body) {
     });
   }
 
-  if (connectorKey === 'meta_ads') {
-    if (definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING
-      || definition?.manualOnly !== true
-      || body?.trigger !== JOB_TRIGGERS.META_MANUAL_UAT) {
-      throw permanentError('Meta Ads remains protected manual UAT only', {
-        code: 'META_END_TO_END_MANUAL_ONLY',
-      });
-    }
-  } else {
-    if (!META_ORGANIC_JOB_TYPES.has(definition?.type)
-      || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.ACTIVE
-      || definition?.manualOnly === true
-      || !definition?.allowedTriggers?.includes(body?.trigger)) {
-      throw permanentError('Meta Organic Queue job trigger is not activated', {
-        code: 'META_END_TO_END_JOB_UNSUPPORTED',
-        details: { type: definition?.type ?? null, connectorKey, trigger: body?.trigger ?? null },
-      });
-    }
-    if (body?.trigger === JOB_TRIGGERS.META_ORGANIC_SCHEDULED
-      && (body?.dryRun === true || body?.d1Only === true)) {
-      throw permanentError('Scheduled Meta Organic cannot reduce into dry-run or D1-only mode', {
-        code: 'META_END_TO_END_JOB_INVALID',
-      });
-    }
+  if (definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.ACTIVE
+    || definition?.manualOnly === true
+    || !definition?.allowedTriggers?.includes(body?.trigger)
+    || (connectorKey !== 'meta_ads' && !META_ORGANIC_JOB_TYPES.has(definition?.type))) {
+    throw permanentError('Meta Queue job trigger is not activated', {
+      code: 'META_END_TO_END_JOB_UNSUPPORTED',
+      details: { type: definition?.type ?? null, connectorKey, trigger: body?.trigger ?? null },
+    });
+  }
+  if (body?.trigger === JOB_TRIGGERS.META_ORGANIC_SCHEDULED
+    && (body?.dryRun === true || body?.d1Only === true)) {
+    throw permanentError('Scheduled Meta job cannot reduce into dry-run or D1-only mode', {
+      code: 'META_END_TO_END_JOB_INVALID',
+    });
   }
 
   if (body?.dryRun === true && body?.d1Only === true) {
