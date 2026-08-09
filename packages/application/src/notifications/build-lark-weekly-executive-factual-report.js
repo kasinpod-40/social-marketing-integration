@@ -2,10 +2,11 @@ import { LARK_NATIVE_AI_CHANNELS } from '../../../config/src/lark-native-ai-all-
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 
 export const LARK_WEEKLY_EXECUTIVE_FACTUAL_REPORT_SHAPE =
-  'executive_notification_full_channel_v1';
+  'executive_notification_full_channel_v2';
 export const LARK_WEEKLY_EXECUTIVE_FACTUAL_CHANNEL_COUNT = 9;
 
 const MAX_METRICS_PER_CHANNEL = 4;
+const EXECUTIVE_METRIC_SCOPES = new Set(['period_delta', 'summary', 'current_total']);
 const PLACEHOLDER = /^(?:ไม่มีข้อมูล|no[_ -]?data|not[_ -]?available|unavailable|placeholder)$/iu;
 const INVALID_URL = /invalid\.example/iu;
 const CHANNEL_ICONS = Object.freeze({
@@ -36,7 +37,7 @@ export function buildLarkWeeklyExecutiveFactualReport(input = {}) {
     const bundle = byChannel.get(channel.channelKey) ?? null;
     if (!bundle) return emptyChannel(channel);
     const metrics = bundle.metricValues
-      .filter(isUsableSummaryMetric)
+      .filter(isUsableExecutiveMetric)
       .sort(compareMetric)
       .slice(0, MAX_METRICS_PER_CHANNEL)
       .map(normalizeFactualMetric);
@@ -172,17 +173,31 @@ function emptyChannel(channel) {
   });
 }
 
-function isUsableSummaryMetric(metric) {
-  return metric && typeof metric === 'object'
-    && (metric.metric_scope ?? metric.metricScope ?? 'summary') === 'summary'
-    && (metric.dimension_type ?? metric.dimensionType ?? 'summary') === 'summary'
-    && (metric.availability_status ?? metric.availabilityStatus ?? 'not_available') === 'available'
+function isUsableExecutiveMetric(metric) {
+  if (!metric || typeof metric !== 'object') return false;
+  const scope = metric.metric_scope ?? metric.metricScope ?? 'summary';
+  const dimension = metric.dimension_type ?? metric.dimensionType ?? 'summary';
+  const availability = metric.availability_status ?? metric.availabilityStatus ?? 'not_available';
+  const metricKey = String(metric.metric_key ?? metric.metricKey ?? '');
+  return EXECUTIVE_METRIC_SCOPES.has(scope)
+    && dimension === 'summary'
+    && !metricKey.includes(':dimension:')
+    && availability === 'available'
     && finiteOrNull(metric.current_value ?? metric.currentValue) !== null;
 }
 
 function compareMetric(left, right) {
-  return normalizeRank(left.rank) - normalizeRank(right.rank)
+  return metricScopePriority(left) - metricScopePriority(right)
+    || normalizeRank(left.rank) - normalizeRank(right.rank)
     || String(left.metric_key ?? left.metricKey ?? '').localeCompare(String(right.metric_key ?? right.metricKey ?? ''));
+}
+
+function metricScopePriority(metric) {
+  const scope = metric?.metric_scope ?? metric?.metricScope ?? 'summary';
+  if (scope === 'period_delta') return 0;
+  if (scope === 'summary') return 1;
+  if (scope === 'current_total') return 2;
+  return 99;
 }
 
 function normalizeFactualMetric(raw) {
