@@ -103,14 +103,24 @@ test('Meta D1 and Lark launchers materialize purpose-specific private reviewed r
     readFile(larkLauncher, 'utf8'),
   ]);
   for (const source of [d1, lark]) {
-    assert.match(source, /applyMetaHistoryCustomerRuntimeEnvironment\(process\.env\)/u);
     assert.match(source, /join\(dirname\(originalConfig\), 'wrangler\.meta-history\.runtime\.jsonc'\)/u);
     assert.match(source, /chmod\(runtimeConfig, 0o600\)/u);
     assert.match(source, /MKT_META_D1_ONLY_COMPAT_ORIGINAL_CONFIG: runtimeConfig/u);
     assert.doesNotMatch(source, /join\(tempDirectory, 'wrangler\.meta-history\.runtime/u);
   }
+  assert.match(d1, /applyMetaHistoryCustomerRuntimeEnvironment\(process\.env\)/u);
   assert.match(d1, /materializeMetaHistoryCustomerRuntimeConfig/u);
   assert.match(d1, /materializeMetaHistoryCustomerRuntimeConfig\(sourceText\)/u);
+  assert.match(lark, /import \{ readDevVars \} from '\.\/lib\/dev-vars\.js'/u);
+  assert.match(
+    lark,
+    /const fileEnvironment = await readDevVars\([\s\S]+process\.env\.DEV_VARS_FILE \?\? '\.dev\.vars'[\s\S]+\);/u,
+  );
+  assert.match(
+    lark,
+    /applyMetaHistoryCustomerRuntimeEnvironment\(\{[\s\S]+\.\.\.fileEnvironment,[\s\S]+\.\.\.process\.env,[\s\S]+\}\)/u,
+  );
+  assert.match(lark, /applyMetaHistoryLarkRuntimeEnvironment\([\s\S]+sourceText,[\s\S]+runtimeEnvironment,[\s\S]+\)/u);
   assert.match(lark, /materializeMetaHistoryLarkRuntimeConfig/u);
   assert.match(
     lark,
