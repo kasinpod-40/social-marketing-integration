@@ -31,21 +31,30 @@ test('rejects the active TikTok implementation when the feature flag remains dis
   );
 });
 
-test('Meta UAT-pending connector is never reported as runnable', () => {
-  const runtimeConfig = loadCustomerRuntimeConfig({
-    MKT_ENV: 'production',
-    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+test('reviewed Meta Organic connector is runnable only after explicit Integration Workspace enablement', () => {
+  const disabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
-
   assert.throws(
-    () => assertConnectorRunnable(runtimeConfig, 'facebook'),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
+    () => assertConnectorRunnable(disabled, 'facebook'),
+    (error) => error?.code === 'MKT_CONNECTOR_DISABLED',
+  );
+  assert.equal(
+    listConnectorReadiness(disabled).find((item) => item.key === 'facebook').runnable,
+    false,
   );
 
-  const readiness = listConnectorReadiness(runtimeConfig);
-  const facebook = readiness.find((item) => item.key === 'facebook');
-  assert.equal(facebook.enabled, false);
-  assert.equal(facebook.runnable, false);
+  const enabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
+  });
+  assert.equal(assertConnectorRunnable(enabled, 'facebook').enabled, true);
+  assert.equal(
+    listConnectorReadiness(enabled).find((item) => item.key === 'facebook').runnable,
+    true,
+  );
 });
 
 test('Google Ads UAT-pending connector cannot enter generic runtime routing', () => {
