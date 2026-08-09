@@ -31,6 +31,8 @@ export const JOB_TYPES = Object.freeze({
 /** Trigger กลางที่เปลี่ยน Queue identity หรือสิทธิ์ Runtime ห้ามกระจาย String literal */
 export const JOB_TRIGGERS = Object.freeze({
   TIKTOK_POST_LARK_WATERMARK: 'post_lark_watermark',
+  META_MANUAL_UAT: 'manual_uat',
+  META_ORGANIC_SCHEDULED: 'scheduled',
   YOUTUBE_WORKER_DRY_RUN: 'youtube_worker_dry_run',
   YOUTUBE_LARK_FULL_SYNC_UAT: 'youtube_lark_full_sync_uat',
   WOOCOMMERCE_MANUAL_UAT: 'manual_uat',
@@ -97,15 +99,21 @@ const JOB_CATALOG = Object.freeze({
 
   [JOB_TYPES.FACEBOOK_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.FACEBOOK,
-    manualOnly: true,
+    allowedTriggers: [
+      JOB_TRIGGERS.META_MANUAL_UAT,
+      JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
+    ],
   }),
   [JOB_TYPES.INSTAGRAM_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.INSTAGRAM,
-    manualOnly: true,
+    allowedTriggers: [
+      JOB_TRIGGERS.META_MANUAL_UAT,
+      JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
+    ],
   }),
   [JOB_TYPES.META_ADS_SYNC]: freezeJob({
     type: JOB_TYPES.META_ADS_SYNC,
