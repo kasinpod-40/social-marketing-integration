@@ -44,6 +44,66 @@ export function applyMetaHistoryCustomerRuntimeEnvironment(env = {}) {
   });
 }
 
+/**
+ * Hydrate the reviewed Meta/Lark table mappings from the existing safe Wrangler config when the
+ * shell/.dev.vars environment does not duplicate those non-secret IDs. If both authorities provide
+ * a value they must match exactly; drift is rejected instead of choosing one side implicitly.
+ */
+export function applyMetaHistoryLarkRuntimeEnvironment(configText, env = {}) {
+  if (typeof configText !== 'string' || configText.trim() === '') {
+    throw runtimeAuthorityError(
+      'Meta history Lark runtime config text is required',
+      'META_HISTORY_LARK_RUNTIME_CONFIG_REQUIRED',
+    );
+  }
+
+  const runtime = applyMetaHistoryCustomerRuntimeEnvironment(env);
+  const tableConfigEnv = {};
+
+  for (const tableKey of META_END_TO_END_REQUIRED_LARK_TABLE_KEYS) {
+    const envName = LARK_TABLE_ENV[tableKey];
+    const environmentValue = optionalText(runtime[envName]);
+    const configValues = [...new Set(readStringValues(configText, envName).map((value) => value.trim()))]
+      .filter(Boolean);
+
+    if (configValues.length > 1) {
+      throw runtimeAuthorityError(
+        'Meta history Lark safe config contains conflicting table mappings',
+        'META_HISTORY_LARK_TABLE_MAPPING_CONFLICT',
+        { envName, tableKey },
+      );
+    }
+
+    const configValue = configValues[0] ?? null;
+    if (environmentValue && configValue && environmentValue !== configValue) {
+      throw runtimeAuthorityError(
+        'Meta history Lark environment mapping disagrees with the safe config',
+        'META_HISTORY_LARK_TABLE_MAPPING_MISMATCH',
+        { envName, tableKey },
+      );
+    }
+
+    const resolved = environmentValue ?? configValue;
+    if (!resolved) {
+      throw runtimeAuthorityError(
+        `Missing required Lark table mapping ${envName}`,
+        'META_HISTORY_LARK_TABLE_MAPPING_MISSING',
+        { envName, tableKey },
+      );
+    }
+    tableConfigEnv[envName] = resolved;
+  }
+
+  const hydrated = Object.freeze({
+    ...runtime,
+    ...tableConfigEnv,
+  });
+
+  // Reuse the central Lark mapping validator for required-key and duplicate-ID protection.
+  readLarkTableIdsFromEnv(hydrated, META_END_TO_END_REQUIRED_LARK_TABLE_KEYS);
+  return hydrated;
+}
+
 export function materializeMetaHistoryCustomerRuntimeConfig(configText) {
   if (typeof configText !== 'string' || configText.trim() === '') {
     throw runtimeAuthorityError(
@@ -146,6 +206,10 @@ function readStringValues(configText, key) {
     `(?:["']${escaped}["']|${escaped})\\s*:\\s*["']([^"']*)["']`,
     'gu',
   ))].map((match) => match[1]);
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
 function escapeRegex(value) {
