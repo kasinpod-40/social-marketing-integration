@@ -2,10 +2,14 @@ import { LARK_NATIVE_AI_CHANNELS } from '../../../config/src/lark-native-ai-all-
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 
 export const LARK_WEEKLY_EXECUTIVE_FACTUAL_REPORT_SHAPE =
-  'executive_notification_full_channel_v3';
+  'executive_notification_full_channel_v4';
 export const LARK_WEEKLY_EXECUTIVE_FACTUAL_CHANNEL_COUNT = 9;
 
+const LEGACY_FACTUAL_REPORT_SHAPES = new Set(['executive_notification_full_channel_v3']);
 const MAX_METRICS_PER_CHANNEL = 4;
+const MAX_CONTENT_CANDIDATES_PER_CHANNEL = 5;
+const MAX_AD_CANDIDATES_PER_CHANNEL = 5;
+const MAX_RENDERED_CANDIDATES_PER_CHANNEL = 3;
 const EXECUTIVE_METRIC_SCOPES = new Set(['period_delta', 'summary', 'current_total']);
 const PLACEHOLDER = /^(?:ไม่มีข้อมูล|no[_ -]?data|not[_ -]?available|unavailable|placeholder)$/iu;
 const INVALID_URL = /invalid\.example/iu;
@@ -41,8 +45,10 @@ export function buildLarkWeeklyExecutiveFactualReport(input = {}) {
       .sort(compareMetric)
       .slice(0, MAX_METRICS_PER_CHANNEL)
       .map(normalizeFactualMetric);
-    const topContent = firstRealTopContent(bundle.topContent);
-    const topAd = firstRealTopAd(bundle.topAds);
+    const contentCandidates = realTopContentCandidates(bundle.topContent);
+    const adCandidates = realTopAdCandidates(bundle.topAds);
+    const topContent = contentCandidates[0] ?? null;
+    const topAd = adCandidates[0] ?? null;
     return deepFreeze({
       channelKey: channel.channelKey,
       displayName: channel.displayName,
@@ -51,9 +57,11 @@ export function buildLarkWeeklyExecutiveFactualReport(input = {}) {
       sourceReportId: bundle.reportId,
       dataStatus: bundle.dataStatus,
       metrics,
+      contentCandidates,
+      adCandidates,
       topContent,
       topAd,
-      hasBusinessFacts: metrics.length > 0 || topContent !== null || topAd !== null,
+      hasBusinessFacts: metrics.length > 0 || contentCandidates.length > 0 || adCandidates.length > 0,
     });
   });
 
@@ -98,7 +106,8 @@ export function renderLarkWeeklyExecutiveChannelSections(value) {
 
 function normalizeFactualReport(value) {
   const report = requireObject(value, 'factualReport');
-  if (report.evidenceShape !== LARK_WEEKLY_EXECUTIVE_FACTUAL_REPORT_SHAPE) {
+  if (report.evidenceShape !== LARK_WEEKLY_EXECUTIVE_FACTUAL_REPORT_SHAPE
+      && !LEGACY_FACTUAL_REPORT_SHAPES.has(report.evidenceShape)) {
     throw new TypeError('Unsupported Weekly Executive factual report shape');
   }
   const period = normalizePeriod(report.period);
@@ -111,8 +120,22 @@ function normalizeFactualReport(value) {
     const metrics = requireArray(item.metrics ?? [], 'factualReport.channel.metrics')
       .slice(0, MAX_METRICS_PER_CHANNEL)
       .map(normalizeFactualMetric);
-    const topContent = item.topContent ? normalizeTopContent(item.topContent) : null;
-    const topAd = item.topAd ? normalizeTopAd(item.topAd) : null;
+    const contentCandidates = normalizeCandidateCollection(
+      item.contentCandidates,
+      item.topContent,
+      MAX_CONTENT_CANDIDATES_PER_CHANNEL,
+      normalizeTopContent,
+      'factualReport.channel.contentCandidates',
+    );
+    const adCandidates = normalizeCandidateCollection(
+      item.adCandidates,
+      item.topAd,
+      MAX_AD_CANDIDATES_PER_CHANNEL,
+      normalizeTopAd,
+      'factualReport.channel.adCandidates',
+    );
+    const topContent = contentCandidates[0] ?? null;
+    const topAd = adCandidates[0] ?? null;
     return deepFreeze({
       channelKey: contract.channelKey,
       displayName: contract.displayName,
@@ -121,9 +144,11 @@ function normalizeFactualReport(value) {
       sourceReportId: optionalText(item.sourceReportId),
       dataStatus: optionalText(item.dataStatus),
       metrics,
+      contentCandidates,
+      adCandidates,
       topContent,
       topAd,
-      hasBusinessFacts: metrics.length > 0 || topContent !== null || topAd !== null,
+      hasBusinessFacts: metrics.length > 0 || contentCandidates.length > 0 || adCandidates.length > 0,
     });
   });
   const orderedKeys = channels.map(({ channelKey }) => channelKey);
@@ -141,6 +166,16 @@ function normalizeFactualReport(value) {
     businessFactChannelCount: channels.filter(({ hasBusinessFacts }) => hasBusinessFacts).length,
     channels,
   });
+}
+
+function normalizeCandidateCollection(collection, fallback, maximum, normalizer, label) {
+  const rows = collection === undefined
+    ? (fallback ? [fallback] : [])
+    : requireArray(collection, label);
+  return Object.freeze(rows
+    .slice(0, maximum)
+    .map(normalizer)
+    .sort((left, right) => left.rank - right.rank));
 }
 
 function normalizeBundle(raw) {
@@ -167,6 +202,8 @@ function emptyChannel(channel) {
     sourceReportId: null,
     dataStatus: null,
     metrics: [],
+    contentCandidates: [],
+    adCandidates: [],
     topContent: null,
     topAd: null,
     hasBusinessFacts: false,
@@ -221,32 +258,43 @@ function normalizeFactualMetric(raw) {
   });
 }
 
-function firstRealTopContent(rows) {
-  const candidate = [...rows].sort((a, b) => normalizeRank(a?.rank) - normalizeRank(b?.rank))
-    .find((row) => isRealText(row?.caption)
+function realTopContentCandidates(rows) {
+  return Object.freeze([...rows]
+    .sort((a, b) => normalizeRank(a?.rank) - normalizeRank(b?.rank))
+    .filter((row) => isRealText(row?.caption)
       && !PLACEHOLDER.test(String(row?.data_status ?? ''))
-      && !INVALID_URL.test(String(row?.content_url ?? '')));
-  return candidate ? normalizeTopContent(candidate) : null;
+      && !INVALID_URL.test(String(row?.content_url ?? '')))
+    .slice(0, MAX_CONTENT_CANDIDATES_PER_CHANNEL)
+    .map(normalizeTopContent));
 }
 
 function normalizeTopContent(raw) {
   const row = requireObject(raw, 'topContent');
   return deepFreeze({
     rank: normalizeRank(row.rank),
+    externalContentId: optionalText(row.externalContentId ?? row.external_content_id),
     caption: requireText(row.caption, 'topContent.caption'),
+    contentUrl: optionalText(row.contentUrl ?? row.content_url),
+    publishedAt: finiteOrNull(row.publishedAt ?? row.published_at),
     periodViews: finiteOrNull(row.periodViews ?? row.period_views),
+    periodLikes: finiteOrNull(row.periodLikes ?? row.period_likes),
+    periodComments: finiteOrNull(row.periodComments ?? row.period_comments),
+    periodShares: finiteOrNull(row.periodShares ?? row.period_shares),
     periodEngagement: finiteOrNull(row.periodEngagement ?? row.period_engagement),
     periodEngagementRate: finiteOrNull(row.periodEngagementRate ?? row.period_engagement_rate),
     latestTotalViews: finiteOrNull(row.latestTotalViews ?? row.latest_total_views),
+    performanceStatus: optionalText(row.performanceStatus ?? row.performance_status),
   });
 }
 
-function firstRealTopAd(rows) {
-  const candidate = [...rows].sort((a, b) => normalizeRank(a?.rank) - normalizeRank(b?.rank))
-    .find((row) => isRealText(row?.ad_name ?? row?.adName)
+function realTopAdCandidates(rows) {
+  return Object.freeze([...rows]
+    .sort((a, b) => normalizeRank(a?.rank) - normalizeRank(b?.rank))
+    .filter((row) => isRealText(row?.ad_name ?? row?.adName)
       && !PLACEHOLDER.test(String(row?.data_status ?? ''))
-      && !/^no_data_/iu.test(String(row?.external_ad_id ?? row?.externalAdId ?? '')));
-  return candidate ? normalizeTopAd(candidate) : null;
+      && !/^no_data_/iu.test(String(row?.external_ad_id ?? row?.externalAdId ?? '')))
+    .slice(0, MAX_AD_CANDIDATES_PER_CHANNEL)
+    .map(normalizeTopAd));
 }
 
 function normalizeTopAd(raw) {
@@ -258,21 +306,31 @@ function normalizeTopAd(raw) {
     : null;
   return deepFreeze({
     rank: normalizeRank(row.rank),
+    externalAdId: optionalText(row.externalAdId ?? row.external_ad_id),
     adName: requireText(row.adName ?? row.ad_name, 'topAd.adName'),
-    clicks,
+    currency: optionalText(row.currency),
+    spendMicros: finiteOrNull(row.spendMicros ?? row.spend_micros),
     impressions,
     reach: finiteOrNull(row.reach),
+    clicks,
     conversions: finiteOrNull(row.conversions),
-    spendMicros: finiteOrNull(row.spendMicros ?? row.spend_micros),
+    conversionValueMicros: finiteOrNull(row.conversionValueMicros ?? row.conversion_value_micros),
     derivedCtrPercent,
+    cpcMicros: finiteOrNull(row.cpcMicros ?? row.cpc_micros),
+    cpaMicros: finiteOrNull(row.cpaMicros ?? row.cpa_micros),
+    roas: finiteOrNull(row.roas),
   });
 }
 
 function renderChannelLines(channel) {
   if (!channel.hasBusinessFacts) return ['ยังไม่พบข้อมูลสำหรับช่วงนี้'];
   const lines = channel.metrics.map((metric) => `• ${metric.displayName}: ${formatMetric(metric)}${formatComparison(metric)}`);
-  if (channel.topContent) lines.push(`• Top Content: ${channel.topContent.caption}${formatTopContentFacts(channel.topContent)}`);
-  if (channel.topAd) lines.push(`• Top Ad: ${channel.topAd.adName}${formatTopAdFacts(channel.topAd)}`);
+  for (const item of channel.contentCandidates.slice(0, MAX_RENDERED_CANDIDATES_PER_CHANNEL)) {
+    lines.push(`• Content #${item.rank}: ${item.caption}${formatTopContentFacts(item)}`);
+  }
+  for (const item of channel.adCandidates.slice(0, MAX_RENDERED_CANDIDATES_PER_CHANNEL)) {
+    lines.push(`• Ad #${item.rank}: ${item.adName}${formatTopAdFacts(item)}`);
+  }
   return lines.length > 0 ? lines : ['ยังไม่พบข้อมูลสำหรับช่วงนี้'];
 }
 
@@ -313,15 +371,20 @@ function formatTopContentFacts(item) {
   if (views !== null) facts.push(`Views ${formatNumber(views, Number.isInteger(views) ? 0 : 2)}`);
   if (item.periodEngagement !== null) facts.push(`Engagement ${formatNumber(item.periodEngagement, Number.isInteger(item.periodEngagement) ? 0 : 2)}`);
   if (item.periodEngagementRate !== null) facts.push(`ER ${formatNumber(item.periodEngagementRate, 2)}%`);
+  if (item.periodShares !== null) facts.push(`Shares ${formatNumber(item.periodShares, 0)}`);
   return facts.length ? ` — ${facts.join(' | ')}` : '';
 }
 
 function formatTopAdFacts(item) {
   const facts = [];
+  if (item.spendMicros !== null) facts.push(`Spend ${formatNumber(item.spendMicros / 1_000_000, 2)}`);
   if (item.clicks !== null) facts.push(`Clicks ${formatNumber(item.clicks, 0)}`);
   if (item.impressions !== null) facts.push(`Impressions ${formatNumber(item.impressions, 0)}`);
   if (item.derivedCtrPercent !== null) facts.push(`CTR ${formatNumber(item.derivedCtrPercent, 2)}%`);
+  if (item.cpcMicros !== null) facts.push(`CPC ${formatNumber(item.cpcMicros / 1_000_000, 2)}`);
   if (item.conversions !== null) facts.push(`Conversions ${formatNumber(item.conversions, Number.isInteger(item.conversions) ? 0 : 2)}`);
+  if (item.cpaMicros !== null) facts.push(`CPA ${formatNumber(item.cpaMicros / 1_000_000, 2)}`);
+  if (item.roas !== null) facts.push(`ROAS ${formatNumber(item.roas, 2)}`);
   return facts.length ? ` — ${facts.join(' | ')}` : '';
 }
 
