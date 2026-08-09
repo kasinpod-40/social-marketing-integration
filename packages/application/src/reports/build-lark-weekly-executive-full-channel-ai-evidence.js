@@ -23,7 +23,7 @@ const NON_BUSINESS_METRIC_LANGUAGE = /ความทบทวนหน้า/u;
 const NON_EXECUTIVE_COMPARISON_LANGUAGE = /ค่าเปรียบเทียบ|พร้อมการเปรียบเทียบ|ข้อมูลการเปรียบเทียบที่มี/u;
 const AWARENESS_METRIC = /การแสดงผล|การเข้าถึง|ยอดดู|impressions?|reach|views?/iu;
 const ACTION_OR_COMMERCE_METRIC = /การคลิก|คลิก|conversions?|conversion|ยอดขายสุทธิ|ยอดขายรวม|รายได้|clicks?/iu;
-const SCALE_LANGUAGE = /\[SCALE\]|\bscale\b|เพิ่มงบ|ขยายงบ|เร่งงบ/iu;
+const SCALE_LANGUAGE = /\[SCALE\]/iu;
 const DECISION_LABEL = /\[(?:CONTENT|SCALE|TEST|KEEP|REDUCE|STOP|NO-SCALE)\]/giu;
 const DIRECT_LINKAGE_CLAIM = /(?:คอนเทนต์|โพสต์|organic).{0,50}(?:เดียวกัน|ตัวเดียวกัน|ชิ้นเดียวกัน).{0,50}(?:ad|ads|โฆษณา|creative)/iu;
 
