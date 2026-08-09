@@ -122,6 +122,45 @@ test('resolves an executive AI identity through its exact source Report set', as
   assert.equal(request.settings.destinationKeyHash, DESTINATION_HASH);
 });
 
+test('normalizes numeric Lark Date epochs as Asia/Bangkok business dates', async () => {
+  const repository = repositoryFixture({
+    [TABLES.reportSnapshots]: [
+      {
+        recordId: 'snapshot-a',
+        fields: {
+          report_id: 'source-report-a',
+          report_setting_key: 'setting-a',
+          customer_profile: 'integration_workspace',
+          period_start: 1785517200000,
+          period_end: 1785690000000,
+        },
+      },
+      {
+        recordId: 'snapshot-b',
+        fields: {
+          report_id: 'source-report-b',
+          report_setting_key: 'setting-b',
+          customer_profile: 'integration_workspace',
+          period_start: 1785517200000,
+          period_end: 1785690000000,
+        },
+      },
+    ],
+  });
+
+  const request = await loadLarkNotificationDeliveryRequest({
+    repository,
+    tables: TABLES,
+    aiRunKey: 'uat:executive:3d',
+    expectedDestinationKeyHash: DESTINATION_HASH,
+  });
+
+  assert.equal(new Date(1785517200000).toISOString().slice(0, 10), '2026-07-31');
+  assert.equal(new Date(1785690000000).toISOString().slice(0, 10), '2026-08-02');
+  assert.equal(request.snapshot.periodStart, '2026-08-01');
+  assert.equal(request.snapshot.periodEnd, '2026-08-03');
+});
+
 test('keeps the legacy direct Report identity path when source_report_ids_json is absent', async () => {
   const records = repositoryFixture({
     [TABLES.aiRuns]: [{
