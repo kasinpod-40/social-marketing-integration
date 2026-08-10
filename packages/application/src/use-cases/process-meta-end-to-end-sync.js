@@ -154,6 +154,7 @@ export async function processMetaEndToEndSync(input = {}) {
     workKey: operation.workKey,
     expectedUnits: state.unitCount,
     maximum: limits.sourceMaxUnits,
+    requiredStartSequence: requiredStagedSequenceStart({ connectorKey, state }),
   });
   const sourceSnapshot = assembleSourceSnapshot({
     connectorKey,
@@ -246,6 +247,10 @@ async function advanceState(input) {
         workKey: input.workKey,
         expectedUnits: input.state.unitCount,
         maximum: input.limits.sourceMaxUnits,
+        requiredStartSequence: requiredStagedSequenceStart({
+          connectorKey: input.connectorKey,
+          state: input.state,
+        }),
       });
       const currentPayload = stagedPayloadWithSequence(input.payload, input.state.unitCount);
       const contentIds = uniqueText(
@@ -425,6 +430,23 @@ function scopedOrganicEntries({ staged, connectorKey, state, datasetKey }) {
   return matching.filter((entry) => entry.sequence >= startSequence);
 }
 
+function requiredStagedSequenceStart({ connectorKey, state }) {
+  if (connectorKey !== 'facebook'
+    || state.contentInventoryScope !== FACEBOOK_DAILY_CONTENT_SCOPE) {
+    return 0;
+  }
+  const startSequence = state.contentInventoryStartSequence;
+  if (!Number.isSafeInteger(startSequence)
+    || startSequence < 0
+    || startSequence > state.unitCount) {
+    throw permanentError('Facebook daily content scope has an invalid required sequence marker', {
+      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
+      details: { connectorKey, startSequence, unitCount: state.unitCount },
+    });
+  }
+  return startSequence;
+}
+
 async function buildWriteSet(input) {
   const common = {
     accountId: input.sourceAccountId,
@@ -549,11 +571,25 @@ function activityRowSortKey(row) {
   ].join(':');
 }
 
-async function readAllStagedUnits({ workStore, workKey, expectedUnits, maximum }) {
+async function readAllStagedUnits({
+  workStore,
+  workKey,
+  expectedUnits,
+  maximum,
+  requiredStartSequence = 0,
+}) {
   if (expectedUnits === 0) return Object.freeze([]);
   if (expectedUnits > maximum) {
     throw limitError('Meta staged unit count exceeds the read limit', 'META_END_TO_END_SOURCE_UNIT_LIMIT', {
       maximum,
+    });
+  }
+  if (!Number.isSafeInteger(requiredStartSequence)
+    || requiredStartSequence < 0
+    || requiredStartSequence > expectedUnits) {
+    throw permanentError('Meta durable source staging required sequence range is invalid', {
+      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
+      details: { expectedUnits, requiredStartSequence },
     });
   }
   const units = [];
@@ -570,15 +606,39 @@ async function readAllStagedUnits({ workStore, workKey, expectedUnits, maximum }
     if (!Number.isSafeInteger(result.nextSequence) || result.nextSequence <= afterSequence) {
       throw permanentError('Meta durable source staging pagination did not advance', {
         code: 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE',
-        details: { expectedUnits, observedUnits: units.length },
+        details: { expectedUnits, observedUnits: units.length, requiredStartSequence },
       });
     }
     afterSequence = result.nextSequence;
   }
-  if (units.length !== expectedUnits) {
+
+  const observedSequences = new Set();
+  for (const unit of units) {
+    const sequence = nonNegativeInteger(unit.sequence, 'staged unit sequence');
+    if (sequence >= expectedUnits || observedSequences.has(sequence)) {
+      throw permanentError('Meta durable source staging sequence set is invalid', {
+        code: 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE',
+        details: { expectedUnits, observedUnits: units.length, requiredStartSequence, sequence },
+      });
+    }
+    observedSequences.add(sequence);
+  }
+
+  const missingRequiredSequences = [];
+  for (let sequence = requiredStartSequence; sequence < expectedUnits; sequence += 1) {
+    if (!observedSequences.has(sequence)) missingRequiredSequences.push(sequence);
+  }
+
+  if (missingRequiredSequences.length > 0
+    || (requiredStartSequence === 0 && units.length !== expectedUnits)) {
     throw permanentError('Meta durable source staging is incomplete', {
       code: 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE',
-      details: { expectedUnits, observedUnits: units.length },
+      details: {
+        expectedUnits,
+        observedUnits: units.length,
+        requiredStartSequence,
+        missingRequiredSequences: missingRequiredSequences.slice(0, 20),
+      },
     });
   }
   return Object.freeze(units.map((unit) => normalizeStagedPayload(unit.payload, unit.sequence)));
