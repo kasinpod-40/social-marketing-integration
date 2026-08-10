@@ -8,12 +8,13 @@ const SOURCE_PROFILE = 'integration_workspace';
 const HASH = /^[a-f0-9]{64}$/u;
 
 /**
- * Resolve the exact active Report Settings authority for one accepted Fresh Weekly 7D source.
+ * Resolve the exact safe-off Report Settings authority for one accepted Fresh Weekly 7D source.
  *
- * This deliberately does not depend on historical Executive Preview rows from other windows.
- * The accepted Fresh source already binds the exact Report identities used by its decision,
- * so every one of those Reports must still resolve to one retained Snapshot and one active
- * Setting at the reviewed Executive destination.
+ * The current Multichannel baseline intentionally keeps Notification Runtime and automatic
+ * notification admission blocked. Every exact Fresh source Report must therefore resolve to one
+ * retained Snapshot and one enabled Setting whose AI/notification flags are initially false.
+ * A one-time controlled admission may activate those exact Settings only inside its bounded
+ * runtime window and must restore this baseline before closeout.
  */
 export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const sourceReportIds = normalizeSourceReportIds(input.sourceReportIds);
@@ -66,9 +67,9 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
       fields.notification_enabled,
       'notification_enabled',
     );
-    if (!enabled || !aiEnabled || !notificationEnabled) {
+    if (!enabled || aiEnabled || notificationEnabled) {
       throw sourceError(
-        'Fresh Weekly 7D source Report Settings must remain active',
+        'Fresh Weekly 7D source Settings must begin from the safe-off Notification baseline',
         'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
         { enabled, aiEnabled, notificationEnabled },
       );
@@ -94,6 +95,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   }
 
   return deepFreeze({
+    state: 'inactive',
     sourceReportIds,
     settingKeys,
     customerProfile: SOURCE_PROFILE,
