@@ -23,9 +23,11 @@ const INTERNAL_METRIC_LANGUAGE = /\b(?:metric_key|change_percent|compare_value|c
 const NON_BUSINESS_METRIC_LANGUAGE = /ความทบทวนหน้า/u;
 const NON_EXECUTIVE_COMPARISON_LANGUAGE = /ค่าเปรียบเทียบ|พร้อมการเปรียบเทียบ|ข้อมูลการเปรียบเทียบที่มี/u;
 const AWARENESS_METRIC = /การแสดงผล|การเข้าถึง|ยอดดู|impressions?|reach|views?/iu;
-const ACTION_OR_COMMERCE_METRIC = /การคลิก|คลิก|conversions?|conversion|ยอดขายสุทธิ|ยอดขายรวม|รายได้|clicks?/iu;
+const ACTION_OR_COMMERCE_METRIC = /การคลิก|คลิก|คอนเวอร์ชัน|conversions?|conversion|ยอดขายสุทธิ|ยอดขายรวม|รายได้|clicks?/iu;
 const SCALE_LANGUAGE = /\[SCALE\]/iu;
-const DECISION_LABEL = /\[(?:CONTENT|SCALE|TEST|KEEP|REDUCE|STOP|NO-SCALE)\]/giu;
+const NO_SCALE_LANGUAGE = /\[NO-SCALE\]/iu;
+const DECISION_LINE_START = /^\[(?:CONTENT|SCALE|TEST|KEEP|REDUCE|STOP|NO-SCALE)\]\s+/iu;
+const DECISION_ACTION_VERB = /(?:ทดลอง|ทดสอบ|ต่อยอด|คงไว้|รักษา|หยุด|พัก|ปรับ|จำกัด|ย้าย|ขยาย|ไม่เพิ่ม(?:งบ|budget)|ไม่ขยาย|คำนวณ|เปรียบเทียบ|ติดตาม|ใช้(?:งบ|เป็น|เพื่อ)|ทำ(?:ต่อ|คอนเทนต์|แคมเปญ)|วัด|เก็บ(?:ข้อมูล|ผล)|เพิ่มงบ|ลดงบ)/iu;
 const DIRECT_LINKAGE_CLAIM = /(?:คอนเทนต์|โพสต์|organic).{0,50}(?:เดียวกัน|ตัวเดียวกัน|ชิ้นเดียวกัน).{0,50}(?:ad|ads|โฆษณา|creative)/iu;
 
 export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
@@ -211,9 +213,16 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
     }
   }
 
-  const decisionLabels = recommendations.match(DECISION_LABEL) ?? [];
-  if (Number(evidence.businessEvidenceChannelCount ?? 0) > 0 && decisionLabels.length < 2) {
-    violations.push('recommendations_missing_decision_actions');
+  const recommendationLines = recommendations.split(/\r?\n/u).map(text).filter(Boolean);
+  const decisionLines = recommendationLines.filter((line) => DECISION_LINE_START.test(line));
+  if (Number(evidence.businessEvidenceChannelCount ?? 0) > 0 && (decisionLines.length < 2 || decisionLines.length > 4)) {
+    violations.push('recommendations_decision_action_count_invalid');
+  }
+  if (recommendationLines.some((line) => !DECISION_LINE_START.test(line))) {
+    violations.push('recommendations_unlabeled_action');
+  }
+  if (decisionLines.some((line) => !DECISION_ACTION_VERB.test(line))) {
+    violations.push('recommendations_missing_action_detail');
   }
 
   const contentCandidateNames = Array.isArray(evidence.contentCandidateNames)
@@ -252,12 +261,33 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   }
 
   const divergences = Array.isArray(evidence.funnelDivergences) ? evidence.funnelDivergences : [];
+  const positiveDivergenceMetrics = unique(divergences
+    .flatMap(({ positiveFacts }) => positiveFacts?.map(({ metric }) => metric) ?? []));
+  const negativeDivergenceMetrics = unique(divergences
+    .flatMap(({ negativeFacts }) => negativeFacts?.map(({ metric }) => metric) ?? []));
+  if (NO_SCALE_LANGUAGE.test(recommendations) && divergences.length === 0) {
+    violations.push('recommendations_unsupported_no_scale');
+  }
   if (divergences.length > 0) {
-    const positiveMetrics = unique(divergences.flatMap(({ positiveFacts }) => positiveFacts?.map(({ metric }) => metric) ?? []));
-    const negativeMetrics = unique(divergences.flatMap(({ negativeFacts }) => negativeFacts?.map(({ metric }) => metric) ?? []));
-    if (!positiveMetrics.some((metric) => recommendations.includes(metric))
-        || !negativeMetrics.some((metric) => recommendations.includes(metric))) {
+    if (!positiveDivergenceMetrics.some((metric) => recommendations.includes(metric))
+        || !negativeDivergenceMetrics.some((metric) => recommendations.includes(metric))) {
       violations.push('recommendations_missing_funnel_divergence');
+    }
+  }
+
+  const comparedMetricNames = unique([...positiveMetricNames, ...negativeMetricNames]);
+  const allCandidateNames = [...contentCandidateNames, ...adCandidateNames];
+  for (const line of decisionLines) {
+    const candidateAnchored = allCandidateNames.some((name) => mentionsCandidate(line, name));
+    const funnelAnchored = NO_SCALE_LANGUAGE.test(line)
+      && divergences.length > 0
+      && positiveDivergenceMetrics.some((metric) => line.includes(metric))
+      && negativeDivergenceMetrics.some((metric) => line.includes(metric));
+    const channelMetricAnchored = businessNames.some((name) => line.includes(name))
+      && comparedMetricNames.some((metric) => line.includes(metric));
+    if (!candidateAnchored && !funnelAnchored && !channelMetricAnchored) {
+      violations.push('recommendations_missing_evidence_anchor');
+      break;
     }
   }
 
@@ -319,17 +349,18 @@ function buildCompactDecisionSummary(input, labelLimit) {
     .flatMap(({ positiveFacts }) => positiveFacts?.map(({ metric }) => metric) ?? []));
   const funnelDown = unique((input.funnelDivergences ?? [])
     .flatMap(({ negativeFacts }) => negativeFacts?.map(({ metric }) => metric) ?? []));
+  const hasFunnelDivergence = funnelUp.length > 0 && funnelDown.length > 0;
   return Object.freeze({
     evidenceShape: 'executive_decision_compact_v1',
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
     legend: 'ch=[name,m,c,a]; m=[name,value,changePct,+/-/0]; c=[name,rank,views,eng,ER]; a=[name,rank,spend,clicks,CTR,conv,value,ROAS,scale]',
     writerContract: Object.freeze({
-      recommendations: '2-5 [CONTENT]/[TEST]/[SCALE]/[KEEP]/[REDUCE]/[STOP]/[NO-SCALE]; [SCALE] only scale=1, never CTR-only; Organic without Paid proof => [TEST]; mapping=false: no same-creative claim',
-      funnelDecision: 'awareness + with outcome - => [NO-SCALE] broad budget',
+      recommendations: '2-4 lines: label+verb+evidence(candidate OR channel+compared metric); bare label/name invalid; SCALE iff scale=1; NO-SCALE iff funnel; Organic no Paid=>TEST; no same-creative',
+      ...(hasFunnelDivergence ? { funnelDecision: 'funnel => NO-SCALE broad budget; cite one up + one down metric' } : {}),
       strengths: '+ only; spend/budget neutral',
       weaknesses: '- only; missing data is not weakness',
     }),
-    funnelMetrics: Object.freeze({ up: funnelUp, down: funnelDown }),
+    ...(hasFunnelDivergence ? { funnelMetrics: Object.freeze({ up: funnelUp, down: funnelDown }) } : {}),
     organicPaidMappingAvailable: false,
     channels: Object.freeze(channels),
   });
