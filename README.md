@@ -28,9 +28,10 @@ refresh jobs. Queue fan-out ใช้ `sendBatch` เมื่อ binding รอ
 Meta Ads และ Chatwoot ใช้ primary cron สำหรับ Source schedule. Google Ads ยังคงใช้ external
 Manager Script trigger และ signed ingress เพื่อไม่สร้าง producer ซ้ำ. ทุก execution/schedule flag
 ใน example config ยังเป็น `false`; Integration Workspace เปิด Source/Daily/Weekly schedules แล้ว
-และ materialize `2026-08-09` ครบ 32 D1/Lark snapshots. Google Ads Provider frequency/fresh LIVE,
-YouTube Analytics OAuth และ Chatwoot mutable pagination ยังเป็น external blockers; TikTok Ads ยัง
-`planned`; Notification/DLQ redrive ปิดและ Production blocked. ดู
+และ materialize `2026-08-09` ครบ 32 D1/Lark snapshots. Google Ads fresh LIVE ผ่าน 6 datasets,
+7 chunks, 1,335 rows พร้อม D1/Lark parity และ Provider frequency `Daily between 6:00 AM and
+7:00 AM`; PREVIEW ไม่มี schedule. External blockers เหลือ YouTube Analytics OAuth และ Chatwoot
+mutable pagination; TikTok Ads ยัง `planned`; Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
 `docs/current-task.md`.
 
@@ -71,11 +72,12 @@ Customer OAuth remote rollout      complete
 TikTok Canonical Lark sync         implemented / protected Lark Native source retained
 Shared Report runtime              8 reviewed channels / 1D 3D 7D 30D
 Meta Ads / Google Ads / Chatwoot   active catalogs / Integration runtime explicit gates
-Source schedules                   Integration Workspace active / Provider blockers documented
+Source schedules                   Integration Workspace active / Google Ads Provider daily confirmed
 Daily / Weekly Report schedules    Integration Workspace active / 32-window readback pass
 Production                         blocked
-Google Ads signed delivery         Remote transport UAT pass / safely closed
-Google Ads actual Script DRY_RUN   pass / six datasets / no changes
+Google Ads signed delivery         Fresh LIVE pass / 7 chunks / 1,335 rows
+Google Ads actual Script LIVE      pass / six datasets / failed rows 0
+Google Ads Provider schedule       daily 06:00–07:00 / PREVIEW unscheduled
 Google Ads Secret provisioning     completed / route safely closed
 ```
 

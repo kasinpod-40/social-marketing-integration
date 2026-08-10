@@ -8,12 +8,16 @@
 - Bounded Instagram previous-day inventory by the reviewed date range and paginated Meta staged-unit reads at the D1 store cap of 500.
 - Added the existing Lark `MKT_Report_Top_Ads` table binding to the ignored active Sync config without applying schema changes.
 - Materialized and read back 32 D1/Lark report snapshots for 8 platforms × `1D/3D/7D/30D`, with 1,236 metric rows, 80 Top Content rows, 40 Top Ads rows and zero duplicate stable keys.
+- Completed fresh Google Ads LIVE run `609cc147-809b-404a-a484-dcbb82c12a6f`: 7/7 signed chunks, 1,335/1,335 rows, six complete datasets, zero failed rows and one successful Queue admission.
+- Reconciled Google Ads D1/Lark parity at 1,105 entity rows and 390 daily facts, then refreshed all four Google Ads report windows with the fresh run watermark.
+- Confirmed the enabled Google Ads Manager Script Provider frequency as daily between 06:00 and 07:00; the PREVIEW script remains unscheduled.
 
 ### Safety
 
 - Retained the original 8 Paid Ads configuration-failure DLQ entries as evidence; recovery used new `-r2` operation IDs and no DLQ redrive.
 - Preserved null/N/A, `partial`, `revisable` and `no_data_confirmed` semantics without fabricating zero values.
-- Notification runtime, automatic weekly notification, DLQ redrive and Production remain off. Google Ads Provider UI, YouTube Analytics OAuth identity and Chatwoot mutable pagination remain documented external blockers.
+- Notification runtime, automatic weekly notification, DLQ redrive and Production remain off. The remaining external blockers are YouTube Analytics OAuth identity and Chatwoot mutable pagination.
+- Preserved historical Google Ads run `88351cb4-714d-49ef-91db-d95550a93ebf` without replay and observed zero new Google Ads DLQ entries, alerts or active locks.
 
 ## Unreleased — Weekly Executive Decision Report v1 — 2026-08-10
 

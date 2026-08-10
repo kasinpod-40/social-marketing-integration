@@ -12,9 +12,11 @@ Manager Script boundary เพื่อไม่สร้าง duplicate produc
 
 Integration Workspace activation เมื่อ 2026-08-10 เปิด Source และ Daily/Weekly Report schedules
 พร้อม D1/Lark readback 32 snapshots สำหรับ period end `2026-08-09`. Notification runtime,
-automatic weekly notification, DLQ redrive และ Production ยังปิด. Google Ads Provider UI,
-YouTube Analytics OAuth identity และ Chatwoot mutable pagination เป็น external blockers ที่ยัง
-ห้ามประกาศ full LIVE pass; รายละเอียด live evidence อยู่ในเอกสารเดียวกัน.
+automatic weekly notification, DLQ redrive และ Production ยังปิด. Google Ads fresh LIVE ผ่าน
+6 datasets, 7 chunks, 1,335 rows, D1/Lark parity และ Provider schedule readback `Daily between
+6:00 AM and 7:00 AM`; PREVIEW ไม่มี schedule. External blockers ที่ยังห้ามประกาศ full LIVE pass
+เหลือ YouTube Analytics OAuth identity และ Chatwoot mutable pagination; รายละเอียด live evidence
+อยู่ในเอกสารเดียวกัน.
 
 ## Chatwoot Initial terminal recovery — 2026-08-01
 

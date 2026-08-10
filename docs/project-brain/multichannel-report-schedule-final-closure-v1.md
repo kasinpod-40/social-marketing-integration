@@ -100,18 +100,25 @@ active version คือ `04dc61e2-1f6a-4c79-9226-6dedbbec9593`; primary cron �
 Production ยังคงปิด.
 
 Previous-day source catch-up สำเร็จสำหรับ TikTok, Facebook, Instagram, YouTube public,
-Meta Ads และ WooCommerce. Instagram ต้องแก้ period propagation และ staged-unit pagination ก่อน
-R3 จะจบด้วย D1/Lark reconciliation `failed=0`. Chatwoot ยังติด mutable Provider pagination;
-YouTube Analytics ยังติด OAuth owner/channel identity mismatch; Google Ads Manager UI ยังถูก
-ad-blocker modal บัง จึงยังไม่ยืนยัน Provider Daily Frequency หรือ fresh six-dataset LIVE run.
+Meta Ads, Google Ads และ WooCommerce. Instagram ต้องแก้ period propagation และ staged-unit
+pagination ก่อน R3 จะจบด้วย D1/Lark reconciliation `failed=0`. Google Ads fresh LIVE run
+`609cc147-809b-404a-a484-dcbb82c12a6f` รับครบ 7/7 chunks และ 1,335/1,335 rows; admission
+`completed` ด้วย send attempt เดียว, reconciliation ครบ 6 datasets โดย `failed_rows=0` และ
+ไม่มี DLQ/Alert ใหม่. D1/Lark parity คือ Ads entities 1,105 และ Daily facts 390. Manager Script
+หลัก Enabled และ Provider UI readback ยืนยัน `Daily between 6:00 AM and 7:00 AM`; PREVIEW script
+ไม่มี frequency จึงไม่มี duplicate producer. Chatwoot ยังติด mutable Provider pagination และ
+YouTube Analytics ยังติด OAuth owner/channel identity mismatch.
 
 Daily materialization วันที่สิ้นสุด `2026-08-09` สำเร็จครบ 32 D1/Lark snapshot identities:
 8 platforms × `1D/3D/7D/30D`. Lark readback พบ 32 snapshots, 1,236 metric rows,
-80 Top Content rows และ 40 Top Ads rows โดย stable-key duplicate เป็นศูนย์. Data status คงตาม
-Source contract: `complete=17`, `no_data_confirmed=3`, `partial=3`, `revisable=9`; ไม่มีการแทน
+80 Top Content rows และ 40 Top Ads rows โดย stable-key duplicate เป็นศูนย์. Google Ads R3
+`1D/3D/7D/30D` ทั้งสี่รายการมี coverage 1 และ source watermark เป็น fresh LIVE run ข้างต้น.
+Data status คงตาม Source contract: `complete=17`, `partial=3`, `revisable=12`; ไม่มีการแทน
 missing metric ด้วยศูนย์. Paid Ads รอบแรก 8 jobs ที่ขาด Top Ads binding ถูกเก็บเป็น DLQ evidence;
 รอบแก้ใช้ operation IDs ใหม่และไม่ redrive.
 
-Readback หลัง primary cron อย่างน้อยสองรอบ ณ `2026-08-10 12:55 Asia/Bangkok` พบ mirror outbox
-เฉพาะ `delivered=336`, pending 0, mirror DLQ ใหม่ 0 และ active non-expired lock 0. Active work
+Final readback ณ `2026-08-10 15:35 Asia/Bangkok` พบ mirror outbox เฉพาะ `delivered=360`,
+pending 0, Google Ads DLQ/Alert ใหม่ 0 และ active non-expired lock 0. API active version คือ
+`4166852d-c8bb-438a-9ab4-ffeec9520a7f`; Sync active version ยังคง
+`04dc61e2-1f6a-4c79-9226-6dedbbec9593`. Active work
 ที่เหลือมีเพียง protected Meta Ads forensic history ซึ่งอยู่นอก activation scope และไม่ได้ถูกแก้ไข.
