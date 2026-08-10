@@ -1,6 +1,7 @@
 import {
   getMetaBusinessDatasetContract,
   META_BUSINESS_CONNECTOR_KEYS,
+  META_BUSINESS_INGESTION_CONTRACT,
 } from '../../../config/src/meta-business-ingestion-contract.js';
 import {
   assertMetaIdentity,
@@ -17,6 +18,7 @@ import {
 
 const CONNECTOR_KEY = META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC;
 const DAY_MS = 86_400_000;
+const DAILY_CONTENT_LOOKBACK_DAYS = META_BUSINESS_INGESTION_CONTRACT.history.dashboardLookbackDays;
 
 /** GET-only Facebook Page source adapter; ไม่มี Method สำหรับ Publish/Mutation */
 export class FacebookOrganicSourceAdapter {
@@ -117,14 +119,18 @@ export class FacebookOrganicSourceAdapter {
 }
 
 /**
- * A one-day Facebook run is a daily observation boundary, not a publication-discovery boundary.
- * It must observe the current metrics of the Page's tracked content even when no post was published
- * on that day. Provider pagination/sourceMaxUnits still bound the full inventory read. Multi-day
- * history runs retain publication-range filtering so historical discovery remains bounded.
+ * A one-day Facebook run is a daily observation boundary, not a one-day publication boundary.
+ * Discover the bounded Dashboard lookback so existing recent Content is observed even when nothing
+ * was published on the target day. Multi-day history retains the explicit caller publication range.
  */
 function facebookContentInventoryRange(range) {
   if (!range.since) return Object.freeze({});
-  if (range.since === range.until) return Object.freeze({});
+  if (range.since === range.until) {
+    return Object.freeze({
+      since: shiftDateOnly(range.until, -(DAILY_CONTENT_LOOKBACK_DAYS - 1)),
+      until: facebookContentExclusiveUntil(range.until),
+    });
+  }
   return Object.freeze({
     since: range.since,
     until: facebookContentExclusiveUntil(range.until),
@@ -132,12 +138,16 @@ function facebookContentInventoryRange(range) {
 }
 
 function facebookContentExclusiveUntil(inclusiveUntil) {
-  const epochMs = Date.parse(`${inclusiveUntil}T00:00:00.000Z`);
-  const nextDay = new Date(epochMs + DAY_MS).toISOString().slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(nextDay)) {
-    throw new RangeError('Facebook content until could not be converted to an exclusive date');
+  return shiftDateOnly(inclusiveUntil, 1);
+}
+
+function shiftDateOnly(value, days) {
+  const epochMs = Date.parse(`${value}T00:00:00.000Z`);
+  const shifted = new Date(epochMs + days * DAY_MS).toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(shifted)) {
+    throw new RangeError('Facebook content date could not be shifted');
   }
-  return nextDay;
+  return shifted;
 }
 
 function singleResponsePage(payload) {
