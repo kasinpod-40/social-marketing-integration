@@ -111,6 +111,11 @@ export function createInitialChatwootDurableState(input = {}) {
     conversationPage: 1,
     conversationRowOffset: 0,
     conversationPageFingerprint: null,
+    conversationSeenIds: [],
+    conversationPendingIds: [],
+    conversationDiscoveryPass: 1,
+    conversationNewIdsInPass: 0,
+    conversationLegacyDriftRecovered: false,
     conversationPagesProcessed: 0,
     conversationRowsScanned: 0,
     conversationsSelected: 0,
@@ -158,10 +163,47 @@ export function assertChatwootDurableState(value, expected = {}) {
       code: 'CHATWOOT_DURABLE_STATE_INVALID',
     });
   }
+  const hasIdentityDiscoveryState = Array.isArray(value.conversationSeenIds)
+    && Array.isArray(value.conversationPendingIds);
+  const conversationSeenIds = hasIdentityDiscoveryState
+    ? positiveUniqueIds(value.conversationSeenIds, 'conversationSeenIds')
+    : [];
+  const conversationPendingIds = hasIdentityDiscoveryState
+    ? positiveUniqueIds(value.conversationPendingIds, 'conversationPendingIds')
+    : [];
+  if (conversationPendingIds.some((id) => !conversationSeenIds.includes(id))) {
+    throw permanentError('Chatwoot pending Conversation identity was not discovered', {
+      code: 'CHATWOOT_DURABLE_STATE_INVALID',
+    });
+  }
+  const legacyPartialPage = !hasIdentityDiscoveryState
+    && (conversationRowOffset > 0 || conversationPageFingerprint !== null);
   return Object.freeze({
     ...value,
-    conversationRowOffset,
-    conversationPageFingerprint,
+    // Legacy fingerprint/offset state cannot safely resume after mutable provider pagination.
+    // Restart identity discovery while Stable-key Business writes make prior rows idempotent.
+    conversationPage: legacyPartialPage ? 1 : value.conversationPage,
+    conversationRowOffset: legacyPartialPage ? 0 : conversationRowOffset,
+    conversationPageFingerprint: null,
+    conversationSeenIds,
+    conversationPendingIds,
+    conversationDiscoveryPass: nonNegativeInteger(
+      hasIdentityDiscoveryState ? value.conversationDiscoveryPass ?? 1 : 1,
+      'conversationDiscoveryPass',
+    ),
+    conversationNewIdsInPass: nonNegativeInteger(
+      hasIdentityDiscoveryState ? value.conversationNewIdsInPass ?? 0 : 0,
+      'conversationNewIdsInPass',
+    ),
+    conversationLegacyDriftRecovered: value.conversationLegacyDriftRecovered === true
+      || legacyPartialPage,
+    ...(legacyPartialPage ? {
+      conversationPagesProcessed: 0,
+      conversationRowsScanned: 0,
+      conversationsSelected: 0,
+      messagesSelected: 0,
+      conversationReportingEventsSelected: 0,
+    } : {}),
   });
 }
 
@@ -279,4 +321,19 @@ function nonNegativeInteger(value, fieldName) {
     throw new TypeError(`${fieldName} must be a non-negative integer`);
   }
   return number;
+}
+
+function positiveUniqueIds(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`${fieldName} must be an array`);
+  const ids = value.map((item) => {
+    const id = Number(item);
+    if (!Number.isSafeInteger(id) || id <= 0) throw new TypeError(`${fieldName} contains an invalid id`);
+    return id;
+  });
+  if (new Set(ids).size !== ids.length) {
+    throw permanentError(`Chatwoot ${fieldName} contains duplicate identities`, {
+      code: 'CHATWOOT_DURABLE_STATE_INVALID',
+    });
+  }
+  return Object.freeze(ids);
 }

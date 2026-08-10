@@ -246,6 +246,7 @@ test('stale continuation resumes from durable sequence without Provider or Busin
     },
     client: methodObject([
       'listInboxes', 'listAgents', 'listTeams', 'listLabels', 'listConversationsPage',
+      'getConversation',
       'listConversationReportingEvents', 'listConversationLabels', 'listMessagesPage',
       'listAccountReportingEventsPage',
     ]),

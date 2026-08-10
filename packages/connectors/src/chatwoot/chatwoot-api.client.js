@@ -78,6 +78,16 @@ export class ChatwootApiClient {
     return freezePage({ page, rows, totalCount, hasMore: rows.length > 0 });
   }
 
+  async getConversation(conversationId) {
+    const id = requirePositiveId(conversationId, 'conversationId');
+    const payload = await this.get(
+      this.#accountPath(`conversations/${id}`),
+      {},
+      { operationName: 'get_conversation' },
+    );
+    return Object.freeze({ ...requireObject(payload, 'get_conversation response') });
+  }
+
   async listContactsPage(input = {}) {
     const page = boundedInteger(input.page ?? 1, 'page', 1, this.maxPages);
     const payload = await this.get(this.#accountPath('contacts'), {

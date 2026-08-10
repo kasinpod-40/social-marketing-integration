@@ -23,7 +23,6 @@ import {
   normalizeChatwootReportingEvent,
 } from '../../../connectors/src/chatwoot/chatwoot-analytics-normalizers.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
-import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 
 const ROLLUP_PAGE_SIZE = 500;
 const REPORTING_DATASET_KEY = 'chatwoot.reporting_events';
@@ -120,39 +119,78 @@ async function processMastersUnit(context, state) {
 
 async function processConversationUnit(context, state) {
   const next = { ...state };
-  for (let index = 0; index < context.limits.conversationPagesPerInvocation; index += 1) {
-    const pageNumber = next.conversationPage;
-    await context.assertCurrent();
-    const page = await context.client.listConversationsPage({
-      page: pageNumber,
-      status: 'all',
-      assigneeType: 'all',
-    });
-    const selected = page.rows.filter((row) => isConversationInChatwootWindow(row, context.window));
-    const pageFingerprint = await createStableFingerprint(selected.map((row) => row?.id));
-    if (next.conversationPageFingerprint !== null
-        && next.conversationPageFingerprint !== pageFingerprint) {
-      throw permanentError('Chatwoot Conversation page changed during durable processing', {
-        code: 'CHATWOOT_CONVERSATION_PAGE_DRIFT',
-        details: { page: pageNumber },
+  let pagesFetched = 0;
+  let rowsProcessed = 0;
+  while (pagesFetched < context.limits.conversationPagesPerInvocation
+      && rowsProcessed < context.limits.conversationRowsPerInvocation
+      && next.stage === 'conversations') {
+    if (next.conversationPendingIds.length === 0) {
+      const pageNumber = next.conversationPage;
+      await context.assertCurrent();
+      const page = await context.client.listConversationsPage({
+        page: pageNumber,
+        status: 'all',
+        assigneeType: 'all',
       });
+      pagesFetched += 1;
+      const seen = new Set(next.conversationSeenIds);
+      const newRows = [];
+      for (const row of page.rows) {
+        const id = requirePositiveId(row?.id, 'conversation.id');
+        if (seen.has(id)) continue;
+        seen.add(id);
+        newRows.push(row);
+      }
+      if (seen.size > context.limits.maxConversations) {
+        throw permanentError('Chatwoot Conversation identity discovery exceeded configured row limit', {
+          code: 'CHATWOOT_ROW_LIMIT_EXCEEDED',
+          details: { maxRows: context.limits.maxConversations },
+        });
+      }
+      const pending = newRows
+        .filter((row) => isConversationInChatwootWindow(row, context.window))
+        .map((row) => requirePositiveId(row?.id, 'conversation.id'));
+      next.conversationSeenIds = [...seen];
+      next.conversationPendingIds = pending;
+      next.conversationNewIdsInPass += newRows.length;
+      next.conversationRowsScanned += newRows.length;
+      next.conversationPagesProcessed += 1;
+      next.conversationPage += 1;
+
+      const exhausted = page.rows.length === 0 || page.hasMore === false;
+      if (exhausted) {
+        if (next.conversationNewIdsInPass === 0) {
+          next.conversationsComplete = true;
+          next.stage = 'reporting';
+          break;
+        }
+        next.conversationDiscoveryPass += 1;
+        next.conversationPage = 1;
+        next.conversationNewIdsInPass = 0;
+      }
+      if (next.conversationPendingIds.length === 0) continue;
     }
-    next.conversationPageFingerprint = pageFingerprint;
-    if (next.conversationRowOffset > selected.length) {
-      throw permanentError('Chatwoot durable Conversation row offset is invalid', {
-        code: 'CHATWOOT_DURABLE_STATE_INVALID',
-        details: { page: pageNumber, offset: next.conversationRowOffset },
-      });
-    }
-    const rows = selected.slice(
-      next.conversationRowOffset,
-      next.conversationRowOffset + context.limits.conversationRowsPerInvocation,
+
+    const ids = next.conversationPendingIds.slice(
+      0,
+      context.limits.conversationRowsPerInvocation - rowsProcessed,
     );
+    await context.assertCurrent();
+    const rows = [];
+    for (const id of ids) {
+      const row = await context.client.getConversation(id);
+      if (requirePositiveId(row?.id, 'conversation.id') !== id) {
+        throw permanentError('Chatwoot Conversation detail returned a different identity', {
+          code: 'CHATWOOT_CONVERSATION_IDENTITY_MISMATCH',
+        });
+      }
+      if (isConversationInChatwootWindow(row, context.window)) rows.push(row);
+    }
     if (rows.length > 0) {
       const unitSyncRunId = unitRunId(
         context,
         next.nextSequence,
-        `conversations:${pageNumber}:${next.conversationRowOffset}`,
+        `conversations:${next.conversationDiscoveryPass}:${ids[0]}`,
       );
       const client = createConversationPageClient({
         client: context.client,
@@ -171,18 +209,8 @@ async function processConversationUnit(context, state) {
       next.conversationReportingEventsSelected += result.source.reportingEventsSelected;
       next.conversationRowOffset += rows.length;
     }
-    if (next.conversationRowOffset < selected.length) break;
-    next.conversationRowsScanned += page.rows.length;
-    next.conversationPagesProcessed += 1;
-    next.conversationPage += 1;
-    next.conversationRowOffset = 0;
-    next.conversationPageFingerprint = null;
-    const complete = page.rows.length === 0 || page.hasMore === false;
-    if (complete) {
-      next.conversationsComplete = true;
-      next.stage = 'reporting';
-      break;
-    }
+    next.conversationPendingIds = next.conversationPendingIds.slice(ids.length);
+    rowsProcessed += ids.length;
   }
   next.nextSequence += 1;
   return Object.freeze(next);
@@ -451,6 +479,7 @@ function createMasterClient(client) {
     listTeams: () => client.listTeams(),
     listLabels: () => client.listLabels(),
     listConversationsPage: async () => emptyPage(),
+    getConversation: (id) => client.getConversation(id),
     listContactsPage: async () => emptyPage(),
     listConversationReportingEvents: async () => Object.freeze([]),
     listConversationLabels: async () => Object.freeze([]),
@@ -573,6 +602,7 @@ function readContext(input) {
   const workStore = requireMethods(input.workStore, ['loadPhase', 'savePhase'], 'workStore');
   const client = requireMethods(input.client, [
     'listInboxes', 'listAgents', 'listTeams', 'listLabels', 'listConversationsPage',
+    'getConversation',
     'listConversationReportingEvents', 'listConversationLabels', 'listMessagesPage',
     'listAccountReportingEventsPage',
   ], 'client');
@@ -812,6 +842,11 @@ function requireText(value, fieldName) {
   return value.trim();
 }
 function positiveInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
+  return number;
+}
+function requirePositiveId(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
   return number;

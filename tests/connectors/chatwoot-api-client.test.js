@@ -16,6 +16,19 @@ test('Chatwoot client keeps token in header and parses bounded conversation page
   assert.equal(new URL(request.url).pathname, '/api/v1/accounts/42/conversations');
 });
 
+test('Chatwoot client reads one stable conversation identity without query credentials', async () => {
+  let request = null;
+  const client = makeClient(async (url, options) => {
+    request = { url: String(url), options };
+    return jsonResponse({ id: 7001, status: 'open' });
+  });
+  const conversation = await client.getConversation(7001);
+  assert.equal(conversation.id, 7001);
+  assert.equal(new URL(request.url).pathname, '/api/v1/accounts/42/conversations/7001');
+  assert.equal(new Headers(request.options.headers).get('api_access_token'), 'secret-token');
+  assert.equal(request.url.includes('secret-token'), false);
+});
+
 test('Chatwoot client retries non-JSON 429 and 503 responses', async () => {
   let attempts = 0;
   const delays = [];

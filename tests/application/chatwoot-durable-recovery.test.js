@@ -32,6 +32,7 @@ function requiredClient(overrides = {}) {
     listTeams: async () => [],
     listLabels: async () => [],
     listConversationsPage: async () => ({ page: 1, rows: [], totalCount: 0, hasMore: false }),
+    getConversation: async (id) => ({ id }),
     listConversationReportingEvents: async () => [],
     listConversationLabels: async () => [],
     listMessagesPage: async () => ({
@@ -116,6 +117,7 @@ test('Conversation page resumes one stable row per Queue delivery', async () => 
       listConversationsPage: async () => ({
         page: 1, rows, totalCount: 2, hasMore: false,
       }),
+      getConversation: async (id) => rows.find((row) => row.id === id),
     }),
     chatwootStore: store,
     coverageStore: {
@@ -130,46 +132,65 @@ test('Conversation page resumes one stable row per Queue delivery', async () => 
   assert.equal(first.stage, 'conversations');
   assert.equal(durableState.conversationPage, 1);
   assert.equal(durableState.conversationRowOffset, 1);
-  assert.match(durableState.conversationPageFingerprint, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(durableState.conversationSeenIds, [91, 92]);
+  assert.deepEqual(durableState.conversationPendingIds, [92]);
+  assert.equal(durableState.conversationDiscoveryPass, 2);
   assert.equal(first.nextSequence, 3);
 
   const second = await syncChatwootDurableRuntime({ ...input, continuationSequence: 3 });
   assert.deepEqual(written, ['91', '92']);
-  assert.equal(second.stage, 'reporting');
-  assert.equal(durableState.conversationPage, 2);
-  assert.equal(durableState.conversationRowOffset, 0);
+  assert.equal(second.stage, 'conversations');
+  assert.equal(durableState.conversationRowOffset, 2);
   assert.equal(durableState.conversationPageFingerprint, null);
   assert.equal(second.nextSequence, 4);
+
+  const third = await syncChatwootDurableRuntime({ ...input, continuationSequence: 4 });
+  assert.deepEqual(written, ['91', '92']);
+  assert.equal(third.stage, 'reporting');
+  assert.equal(durableState.conversationsSelected, 2);
+  assert.equal(third.nextSequence, 5);
 });
 
-test('Conversation page resume fails closed when the selected identity order drifts', async () => {
+test('legacy page fingerprint resume migrates to stable identity discovery', async () => {
+  const initial = createInitialChatwootDurableState({
+    mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+    requestedAt: REQUESTED_AT,
+  });
+  const {
+    conversationSeenIds: _seen,
+    conversationPendingIds: _pending,
+    conversationDiscoveryPass: _pass,
+    conversationNewIdsInPass: _newIds,
+    conversationLegacyDriftRecovered: _recovered,
+    ...legacyInitial
+  } = initial;
   const state = {
-    ...createInitialChatwootDurableState({
-      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
-      requestedAt: REQUESTED_AT,
-    }),
+    ...legacyInitial,
     stage: 'conversations',
     mastersComplete: true,
     nextSequence: 3,
     conversationRowOffset: 1,
     conversationPageFingerprint: '0'.repeat(64),
   };
+  let durableState = state;
+  const row = {
+    id: 92,
+    account_id: 1,
+    inbox_id: 3,
+    status: 'open',
+    created_at: REQUESTED_AT - DAY_MS,
+    updated_at: REQUESTED_AT - DAY_MS,
+  };
   const input = runtimeInput({
     continuationSequence: 3,
     client: requiredClient({
       listConversationsPage: async () => ({
         page: 1,
-        rows: [{
-          id: 92,
-          account_id: 1,
-          inbox_id: 3,
-          status: 'open',
-          created_at: REQUESTED_AT - DAY_MS,
-          updated_at: REQUESTED_AT - DAY_MS,
-        }],
+        rows: [row],
         totalCount: 1,
         hasMore: false,
       }),
+      getConversation: async () => row,
     }),
     chatwootStore: noOpStore(),
     coverageStore: {
@@ -177,14 +198,65 @@ test('Conversation page resume fails closed when the selected identity order dri
       saveCoverageEntities: async (values) => values,
     },
     workStore: {
-      loadPhase: async () => ({ state }),
-      savePhase: async () => assert.fail('drift must not be persisted'),
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (value) => {
+        durableState = value.state;
+        return { state: value.state };
+      },
+    },
+  });
+  const result = await syncChatwootDurableRuntime(input);
+  assert.equal(result.stage, 'conversations');
+  assert.equal(durableState.conversationLegacyDriftRecovered, true);
+  assert.deepEqual(durableState.conversationSeenIds, [92]);
+  assert.equal(durableState.conversationsSelected, 1);
+  assert.equal(durableState.conversationPageFingerprint, null);
+});
+
+test('identity discovery deduplicates mutable pages and fails closed on detail identity mismatch', async () => {
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'conversations',
+    mastersComplete: true,
+    nextSequence: 1,
+  };
+  const row = {
+    id: 92,
+    account_id: 1,
+    inbox_id: 3,
+    status: 'open',
+    created_at: REQUESTED_AT - DAY_MS,
+    updated_at: REQUESTED_AT - DAY_MS,
+  };
+  const input = runtimeInput({
+    continuationSequence: 1,
+    client: requiredClient({
+      listConversationsPage: async () => ({
+        page: 1, rows: [row, row], totalCount: 1, hasMore: false,
+      }),
+      getConversation: async () => ({ ...row, id: 93 }),
+    }),
+    chatwootStore: noOpStore(),
+    coverageStore: {
+      saveCoverageRun: async (value) => value,
+      saveCoverageEntities: async (values) => values,
+    },
+    workStore: {
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (value) => {
+        durableState = value.state;
+        return { state: value.state };
+      },
     },
   });
   await assert.rejects(
     syncChatwootDurableRuntime(input),
-    (error) => error?.code === 'CHATWOOT_CONVERSATION_PAGE_DRIFT',
+    (error) => error?.code === 'CHATWOOT_CONVERSATION_IDENTITY_MISMATCH',
   );
+  assert.deepEqual(durableState.conversationSeenIds, []);
 });
 
 test('daily overlap includes a late-arriving update on an older-created Conversation', () => {
