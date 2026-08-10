@@ -13,8 +13,8 @@ const HASH = /^[a-f0-9]{64}$/u;
  * The current Multichannel baseline intentionally keeps Notification Runtime and automatic
  * notification admission blocked. Every exact Fresh source Report must therefore resolve to one
  * retained Snapshot and one enabled Setting whose AI/notification flags are initially false.
- * A safe-off Setting may retain the reviewed destination or may have group_id unset; when unset,
- * the live reviewed destination is resolved independently through Lark IM before delivery.
+ * A safe-off Setting set must have group_id either unset on every row or set to the reviewed
+ * destination on every row. Mixed destination state is rejected before any controlled activation.
  */
 export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const sourceReportIds = normalizeSourceReportIds(input.sourceReportIds);
@@ -88,13 +88,21 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   });
 
   const uniqueConfiguredGroups = [...new Set(configuredGroupIds)];
-  if (uniqueConfiguredGroups.length > 1
+  const mixedDestinationState = configuredGroupIds.length > 0
+    && configuredGroupIds.length !== baseline.length;
+  if (mixedDestinationState
+      || uniqueConfiguredGroups.length > 1
       || (uniqueConfiguredGroups.length === 1
         && sha256(uniqueConfiguredGroups[0]) !== expectedDestinationKeyHash)) {
     throw sourceError(
-      'Fresh Weekly 7D source Settings contain a non-reviewed destination',
+      'Fresh Weekly 7D source Settings contain an ambiguous or non-reviewed destination',
       'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID',
-      { destinationRedacted: true, destinationCount: uniqueConfiguredGroups.length },
+      {
+        destinationRedacted: true,
+        destinationCount: uniqueConfiguredGroups.length,
+        configuredDestinationRows: configuredGroupIds.length,
+        sourceSettingCount: baseline.length,
+      },
     );
   }
 
