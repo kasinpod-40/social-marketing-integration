@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION,
   LARK_DASHBOARD_DISPLAY_V2_FIELD,
   ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY,
   ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX,
@@ -15,6 +16,7 @@ import {
 } from '../../packages/config/src/lark-dashboard-display-v2-compatibility.js';
 
 test('display v2 compatibility locks one 17 x 4 x 4 Organic Dashboard matrix', () => {
+  assert.equal(LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION, 'lark_dashboard_display_v2_compatibility_v3');
   assert.deepEqual(LARK_DASHBOARD_DISPLAY_V2_FIELD, {
     fieldId: 'fldHNUhCfl',
     fieldName: '__mkt_legacy_display_name_single_select_v2',
@@ -61,11 +63,11 @@ test('all four Organic platforms resolve the same reviewed KPI labels from platf
   );
 });
 
-test('permanent writer compatibility is restricted to exact Integration Workspace Organic dashboard scope', () => {
+test('permanent writer compatibility follows Integration Workspace Organic dashboard scope, not provider account id', () => {
   for (const platform of ORGANIC_DASHBOARD_PLATFORMS) {
     const target = {
       customerProfile: 'integration_workspace',
-      accountId: 'chemistry_k',
+      accountId: `${platform}-provider-native-id`,
       platform,
       capability: 'organic',
       reportType: 'dashboard_performance_report',
@@ -83,8 +85,8 @@ test('permanent writer compatibility is restricted to exact Integration Workspac
     metricKey: 'tiktok:period_views',
   };
   assert.equal(resolveTikTokOrganicDashboardDisplayV2(target), 'Views');
+  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, accountId: 'other_account' }), 'Views');
   assert.equal(resolveOrganicDashboardDisplayV2({ ...target, customerProfile: 'chemistry_k' }), null);
-  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, accountId: 'other_account' }), null);
   assert.equal(resolveOrganicDashboardDisplayV2({ ...target, platform: 'meta_ads' }), null);
   assert.equal(resolveOrganicDashboardDisplayV2({ ...target, capability: 'paid_ads' }), null);
   assert.equal(resolveOrganicDashboardDisplayV2({ ...target, reportType: 'daily_organic_report' }), null);

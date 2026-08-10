@@ -49,6 +49,33 @@ test('Metric writer persists the exact 17 display v2 labels for every reviewed O
   }
 });
 
+test('Metric writer keeps display v2 when Organic connector exposes a provider-native account id', () => {
+  const metrics = {
+    'facebook:latest_total_views': {
+      metricKey: 'facebook:latest_total_views',
+      displayName: 'Latest total views',
+      current: 12345,
+      compare: null,
+      change: null,
+      changePercent: null,
+      unit: 'count',
+      metricScope: 'current_total',
+      availabilityStatus: 'available',
+      clientVisible: true,
+      sortOrder: 1,
+      formulaVersion: 'facebook-organic-v1',
+    },
+  };
+  const [row] = buildReportMetricValueRows(metricInput({
+    metrics,
+    platform: 'facebook',
+    accountId: '1144655862068079',
+  }));
+  assert.equal(row.account_id, '1144655862068079');
+  assert.equal(row[LARK_DASHBOARD_DISPLAY_V2_FIELD.fieldName], 'Latest total views');
+  assert.equal(row.current_value, 12345);
+});
+
 test('Metric writer omits compatibility output for non-dashboard Organic metrics and outside exact scope', () => {
   const metrics = {
     'facebook:account_followers': {
@@ -87,7 +114,6 @@ test('Metric writer omits compatibility output for non-dashboard Organic metrics
   };
   for (const input of [
     metricInput({ metrics: periodMetrics, customerProfile: 'chemistry_k' }),
-    metricInput({ metrics: periodMetrics, accountId: 'other_account' }),
     metricInput({ metrics: periodMetrics, platform: 'meta_ads', capability: 'paid_ads' }),
     metricInput({ metrics: periodMetrics, reportType: 'daily_organic_report' }),
     metricInput({ metrics: periodMetrics, capability: 'paid_ads' }),
