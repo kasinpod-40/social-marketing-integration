@@ -308,8 +308,8 @@ function toAiChannelEvidence(channel) {
     businessEvidencePresent: true,
     comparisonEvidencePresent,
     availableMetrics: metrics,
-    ...(contentCandidates.length ? { contentCandidates, topContent: [contentCandidates[0]] } : {}),
-    ...(adCandidates.length ? { adCandidates, topAds: [adCandidates[0]] } : {}),
+    ...(contentCandidates.length ? { contentCandidates } : {}),
+    ...(adCandidates.length ? { adCandidates } : {}),
   });
 }
 
