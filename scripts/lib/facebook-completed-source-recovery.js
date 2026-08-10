@@ -25,6 +25,7 @@ export const FACEBOOK_COMPLETED_SOURCE_INCIDENT = Object.freeze({
   customerKey: 'chemistry_k',
 });
 
+const MIN_RECOVERY_TIMESTAMP = Date.UTC(2000, 0, 1);
 const REQUIRED_TRUE_FLAGS = Object.freeze([
   'MKT_CONNECTOR_FACEBOOK_ENABLED',
   'MKT_META_SOURCE_READ_ENABLED',
@@ -136,7 +137,7 @@ export function evaluateFacebookCompletedSourcePreflight(input = {}) {
   expect(errors, work.lifecycle_status, 'terminal', 'work.lifecycle_status');
   expect(errors, work.completed_at ?? null, null, 'work.completed_at');
   expect(errors, work.terminal_reason, 'QUEUE_PERMANENT_FAILURE', 'work.terminal_reason');
-  expectSameSafeInteger(errors, work.generation, work.requested_at, 'work generation/requested_at');
+  expectSameTimestamp(errors, work.generation, work.requested_at, 'work generation/requested_at');
 
   expect(errors, Number(source.complete), 1, 'source.complete');
   expect(errors, source.stage, 'complete', 'source.stage');
@@ -155,8 +156,8 @@ export function evaluateFacebookCompletedSourcePreflight(input = {}) {
 
   expect(errors, queueOperation.operation_id, incident.operationId, 'queue operation id');
   expect(errors, queueOperation.work_key, incident.workKey, 'queue operation work_key');
-  expectSameSafeInteger(errors, queueOperation.generation, work.generation, 'queue operation generation');
-  expectSameSafeInteger(
+  expectSameTimestamp(errors, queueOperation.generation, work.generation, 'queue operation generation');
+  expectSameTimestamp(
     errors,
     queueOperation.original_requested_at,
     work.requested_at,
@@ -186,8 +187,8 @@ export function evaluateFacebookCompletedSourcePreflight(input = {}) {
   expect(errors, deadLetter.error_code, incident.expectedFailureCode, 'dead letter error_code');
   expect(errors, deadLetter.metadata_operation_id, incident.operationId, 'dead letter metadata operation_id');
   expect(errors, deadLetter.metadata_work_key, incident.workKey, 'dead letter metadata work_key');
-  expectSameSafeInteger(errors, deadLetter.metadata_generation, work.generation, 'dead letter metadata generation');
-  expectSameSafeInteger(
+  expectSameTimestamp(errors, deadLetter.metadata_generation, work.generation, 'dead letter metadata generation');
+  expectSameTimestamp(
     errors,
     deadLetter.metadata_original_requested_at,
     work.requested_at,
@@ -196,8 +197,8 @@ export function evaluateFacebookCompletedSourcePreflight(input = {}) {
   expect(errors, deadLetter.replay_type, incident.jobType, 'dead letter replay type');
   expect(errors, deadLetter.replay_operation_id, incident.operationId, 'dead letter replay operationId');
   expect(errors, deadLetter.replay_work_key, incident.workKey, 'dead letter replay workKey');
-  expectSameSafeInteger(errors, deadLetter.replay_generation, work.generation, 'dead letter replay generation');
-  expectSameSafeInteger(
+  expectSameTimestamp(errors, deadLetter.replay_generation, work.generation, 'dead letter replay generation');
+  expectSameTimestamp(
     errors,
     deadLetter.replay_original_requested_at,
     work.requested_at,
@@ -214,7 +215,7 @@ export function evaluateFacebookCompletedSourcePreflight(input = {}) {
       : 'FACEBOOK_COMPLETED_SOURCE_REDRIVE_PREFLIGHT_BLOCKED',
     errors: Object.freeze(errors.map((row) => Object.freeze(row))),
     deadLetterId: deadLetter.dlq_id ?? null,
-    generation: Number.isSafeInteger(generation) ? generation : null,
+    generation: Number.isSafeInteger(generation) && generation >= MIN_RECOVERY_TIMESTAMP ? generation : null,
     scopedRows: sequenceSet.size,
     missingScopedSequences: Object.freeze(missing),
   });
@@ -299,16 +300,22 @@ function expect(errors, actual, expected, field) {
   if (!Object.is(actual, expected)) errors.push({ field, expected, actual: actual ?? null });
 }
 
-function expectSameSafeInteger(errors, left, right, field) {
+function expectSameTimestamp(errors, left, right, field) {
   const leftNumber = Number(left);
   const rightNumber = Number(right);
   if (!Number.isSafeInteger(leftNumber)
     || !Number.isSafeInteger(rightNumber)
+    || leftNumber < MIN_RECOVERY_TIMESTAMP
+    || rightNumber < MIN_RECOVERY_TIMESTAMP
     || leftNumber !== rightNumber) {
     errors.push({
       field,
-      expected: Number.isSafeInteger(rightNumber) ? rightNumber : 'safe integer identity',
-      actual: Number.isSafeInteger(leftNumber) ? leftNumber : left ?? null,
+      expected: Number.isSafeInteger(rightNumber) && rightNumber >= MIN_RECOVERY_TIMESTAMP
+        ? rightNumber
+        : 'valid timestamp identity',
+      actual: Number.isSafeInteger(leftNumber) && leftNumber >= MIN_RECOVERY_TIMESTAMP
+        ? leftNumber
+        : left ?? null,
     });
   }
 }
