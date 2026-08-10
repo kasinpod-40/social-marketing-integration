@@ -114,21 +114,18 @@ try {
 
 async function previewAdmission() {
   const context = await prepare('preview');
-
   stage = 'verify-automation-state-read-only';
   const automation = await verifyAutomationState(context.client);
-
   stage = 'remote-read-only-preflight';
   const beforeD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
   const beforeLark = await readLarkBaseline(context);
   await assertSettingsInactive(context);
   await assertSourceUnchanged(context);
-
   stage = 'validate-reviewed-fresh-decision-message';
   assertBusinessFirstMessage(context, context.admission.reviewedMessage);
   assertReviewedMessageParity(context, context.admission.reviewedMessage);
 
-  const summary = Object.freeze({
+  process.stdout.write(`${JSON.stringify(Object.freeze({
     ok: true,
     contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION,
     action: 'preview',
@@ -163,8 +160,7 @@ async function previewAdmission() {
     scheduleActivationCount: 0,
     production: 'BLOCKED',
     nextGate: 'execute_requires_exact_confirmation',
-  });
-  process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+  }), null, 2)}\n`);
 }
 
 async function executeAdmission() {
@@ -173,7 +169,7 @@ async function executeAdmission() {
   let runtimeRestoreError = null;
   let settingsRestoreError = null;
   let activeRuntimeAttempted = false;
-  let settingsActivated = false;
+  let settingsActivationAttempted = false;
   let activeVersion = null;
   let restoredVersion = null;
   let beforeD1 = null;
@@ -187,10 +183,8 @@ async function executeAdmission() {
     stage = 'assert-fresh-admission-attempt';
     await assertNoFile(join(context.evidenceDir, '03-queue-send.attempt.json'), true);
     await assertNoFile(join(context.evidenceDir, 'notification-admission-summary.json'), true);
-
     stage = 'verify-automation-state-before-window';
     automationBefore = await verifyAutomationState(context.client);
-
     stage = 'remote-read-only-preflight';
     beforeD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
     beforeLark = await readLarkBaseline(context);
@@ -229,8 +223,8 @@ async function executeAdmission() {
     });
 
     stage = 'activate-exact-source-report-settings';
+    settingsActivationAttempted = true;
     reportSettingWriteCount += await writeSettingsState(context, true);
-    settingsActivated = true;
     await assertSettingsActive(context);
 
     stage = 'deploy-bounded-notification-runtime-window';
@@ -255,16 +249,12 @@ async function executeAdmission() {
     await verifyAutomationState(context.client);
     const postDeployD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
     if (JSON.stringify(beforeD1) !== JSON.stringify(postDeployD1)) {
-      fail(
-        'Bounded Notification Runtime window changed delivery evidence before admission',
-        'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_WINDOW_DRIFT',
-      );
+      fail('Bounded Notification Runtime window changed delivery evidence before admission', 'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_WINDOW_DRIFT');
     }
     await assertSourceUnchanged(context);
 
     stage = 'reconcile-dedicated-notification-ai-run';
     await reconcileAdmissionRow(context);
-
     stage = 'validate-exact-delivery-request-and-message';
     const request = await loadLarkNotificationDeliveryRequest({
       repository: context.larkRepository,
@@ -295,7 +285,6 @@ async function executeAdmission() {
       requestedAt: Date.now(),
     });
     const jobHash = sha256(JSON.stringify(job));
-
     stage = 'record-one-queue-attempt';
     await privateJson(join(context.evidenceDir, '03-queue-send.attempt.json'), {
       contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION,
@@ -313,28 +302,21 @@ async function executeAdmission() {
       blindRerunAllowedAfterThisFile: false,
     });
     queueAttemptRecorded = true;
-
     stage = 'send-one-weekly-runtime-queue-job';
     await sendQueueOnce(context, job);
     queueAdmissionConfirmed = true;
-
     stage = 'poll-sent-and-mirrored';
     delivered = await pollDelivered(context, beforeD1);
-
     stage = 'verify-lark-mirror-and-source-immutability';
     afterLark = await verifyLarkDelivery(context, beforeLark);
     await assertSourceUnchanged(context);
-
     stage = 'bounded-no-additional-admission-observation';
     await sleep(readObservationMs(context.env));
     const observed = readD1State(context);
     stability = assertLarkWeekly7dNotificationAdmissionStable(delivered, observed);
     const observedLark = await verifyLarkDelivery(context, beforeLark);
     if (JSON.stringify(afterLark) !== JSON.stringify(observedLark)) {
-      fail(
-        'Weekly 7D Lark mirror changed during the no-admission observation window',
-        'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_STABILITY_FAILED',
-      );
+      fail('Weekly 7D Lark mirror changed during the no-admission observation window', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_STABILITY_FAILED');
     }
     await assertSourceUnchanged(context);
   } catch (error) {
@@ -354,7 +336,7 @@ async function executeAdmission() {
     runtimeRestoreVerified = true;
   }
 
-  if (settingsActivated) {
+  if (settingsActivationAttempted) {
     try {
       stage = 'restore-exact-source-report-settings';
       reportSettingWriteCount += await writeSettingsState(context, false);
@@ -368,16 +350,19 @@ async function executeAdmission() {
   }
 
   if (primaryError || runtimeRestoreError || settingsRestoreError) {
-    const error = primaryError ?? runtimeRestoreError ?? settingsRestoreError;
-    error.details = Object.freeze({
-      ...(error.details ?? {}),
+    const selected = primaryError ?? runtimeRestoreError ?? settingsRestoreError;
+    const wrapped = new Error(selected?.message ?? 'Weekly Notification bounded execution failed');
+    wrapped.name = selected?.name ?? 'LarkWeekly7dNotificationAdmissionTerminalError';
+    wrapped.code = selected?.code ?? 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_FAILED';
+    wrapped.details = Object.freeze({
+      ...(selected?.details ?? {}),
       primaryFailureCode: primaryError?.code ?? null,
       runtimeRestoreFailureCode: runtimeRestoreError?.code ?? null,
       settingsRestoreFailureCode: settingsRestoreError?.code ?? null,
       runtimeRestoreVerified,
       settingsRestoreVerified,
     });
-    throw error;
+    throw wrapped;
   }
 
   stage = 'verify-restored-safe-boundary';
@@ -447,36 +432,25 @@ async function recoverAdmission() {
   if (attempt.aiRunKey !== context.admission.aiRunKey
       || attempt.sourceStateSha256 !== context.sourceStateSha256
       || attempt.reviewedMessageSha256 !== context.admission.reviewedMessageSha256) {
-    fail(
-      'Recovery evidence does not match the retained Fresh Weekly Executive Decision source',
-      'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_INVALID',
-    );
+    fail('Recovery evidence does not match the retained Fresh Weekly Executive Decision source', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_INVALID');
   }
   queueAttemptRecorded = true;
   queueAdmissionConfirmed = true;
-
   stage = 'verify-recovery-safe-boundary';
   const beforeLark = await readLarkBaseline(context, { allowAdmissionRow: true });
   await assertSettingsInactive(context);
   const automationBefore = await verifyAutomationState(context.client);
-
   stage = 'poll-existing-admission-without-resend';
   const delivered = await pollExistingDelivered(context);
-
   stage = 'verify-recovered-lark-mirror';
   const afterLark = await verifyRecoveredLarkDelivery(context, beforeLark);
   await assertSourceUnchanged(context);
-
   stage = 'recovery-no-admission-observation';
   await sleep(readObservationMs(context.env));
-  const observed = readD1State(context);
-  const stability = assertLarkWeekly7dNotificationAdmissionStable(delivered, observed);
+  const stability = assertLarkWeekly7dNotificationAdmissionStable(delivered, readD1State(context));
   const observedLark = await verifyRecoveredLarkDelivery(context, beforeLark);
   if (JSON.stringify(afterLark) !== JSON.stringify(observedLark)) {
-    fail(
-      'Recovered weekly Notification state changed without a new admission',
-      'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_STABILITY_FAILED',
-    );
+    fail('Recovered weekly Notification state changed without a new admission', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_STABILITY_FAILED');
   }
   const automationAfter = await verifyAutomationState(context.client);
   assertSameAutomationState(automationBefore, automationAfter);
@@ -522,7 +496,6 @@ async function prepare(mode) {
   exact(env.MKT_ENV, 'development', 'MKT_ENV');
   exact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   exact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
-
   stage = 'repository-preflight';
   const repositoryHead = exactMainHead();
 
@@ -544,10 +517,7 @@ async function prepare(mode) {
   stage = 'assert-no-automatic-notification-producer';
   const scheduledJobsSource = await readFile(resolve('apps/sync-worker/src/scheduled-jobs.js'), 'utf8');
   if (/LARK_NOTIFICATION_SEND/u.test(scheduledJobsSource)) {
-    fail(
-      'Weekly Notification Admission requires automatic schedule admission to remain absent',
-      'LARK_WEEKLY_7D_NOTIFICATION_SCHEDULE_PRESENT',
-    );
+    fail('Weekly Notification Admission requires automatic schedule admission to remain absent', 'LARK_WEEKLY_7D_NOTIFICATION_SCHEDULE_PRESENT');
   }
 
   stage = 'resolve-lark-authority';
@@ -581,17 +551,13 @@ async function prepare(mode) {
     admission.sourceReportIds,
   );
   const sourceSettingKeys = [...new Set(admission.sourceReportIds.map((reportId) => {
-    const matches = snapshotRows.filter((record) => (
+    const matchesForReport = snapshotRows.filter((record) => (
       String(scalar(record?.fields?.report_id) ?? '') === reportId
     ));
-    if (matches.length !== 1) {
-      fail(
-        'Could not resolve exact Fresh Weekly Executive Decision source Report Snapshot',
-        'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
-        { matchCount: matches.length },
-      );
+    if (matchesForReport.length !== 1) {
+      fail('Could not resolve exact Fresh Weekly Executive Decision source Report Snapshot', 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID', { matchCount: matchesForReport.length });
     }
-    return requireText(scalar(matchesForReportField(matchesForReport(recordMatches(snapshotRows, reportId)), 'report_setting_key')), 'report_setting_key');
+    return requireText(scalar(matchesForReport[0].fields.report_setting_key), 'report_setting_key');
   }))].sort();
   const settingRows = await larkRepository.listByFieldValues(
     tableIds.reportSettings,
@@ -629,22 +595,11 @@ async function prepare(mode) {
 
   if (mode === 'execute') {
     stage = 'dry-run-bounded-runtime-window';
-    run('npx', ['wrangler', 'deploy', '--dry-run', '--config', activeConfigPath], {
-      env: cloudflare.wranglerEnv,
-      stdio: 'inherit',
-    });
-    run('npx', ['wrangler', 'deploy', '--dry-run', '--config', restoreConfigPath], {
-      env: cloudflare.wranglerEnv,
-      stdio: 'inherit',
-    });
+    run('npx', ['wrangler', 'deploy', '--dry-run', '--config', activeConfigPath], { env: cloudflare.wranglerEnv, stdio: 'inherit' });
+    run('npx', ['wrangler', 'deploy', '--dry-run', '--config', restoreConfigPath], { env: cloudflare.wranglerEnv, stdio: 'inherit' });
   }
 
-  repository = Object.freeze({
-    branch: 'main',
-    head: repositoryHead,
-    originMain: repositoryHead,
-    clean: true,
-  });
+  repository = Object.freeze({ branch: 'main', head: repositoryHead, originMain: repositoryHead, clean: true });
   return Object.freeze({
     env, mode, repositoryHead, evidenceDir, sourceText, sourceConfig,
     activeConfigPath, restoreConfigPath, runtimeWindow,
@@ -652,20 +607,6 @@ async function prepare(mode) {
     client, tableIds, larkRepository, syncEngine,
     sourceRecord, sourceStateSha256, admission, snapshotRows, settingsAuthority,
   });
-}
-
-function recordMatches(snapshotRows, reportId) {
-  return snapshotRows.filter((record) => String(scalar(record?.fields?.report_id) ?? '') === reportId);
-}
-function matchesForReportField(matches, fieldName) {
-  if (matches.length !== 1) {
-    fail(
-      'Could not resolve exact Fresh Weekly Executive Decision source Report Snapshot',
-      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
-      { matchCount: matches.length },
-    );
-  }
-  return scalar(matches[0].fields[fieldName]);
 }
 
 async function writeSettingsState(context, active) {
@@ -680,19 +621,12 @@ async function writeSettingsState(context, active) {
     keyField: 'report_setting_key',
     rows,
   });
-  if (plan.createRows.length !== 0 || plan.updateRows.length + plan.skipRows.length !== rows.length) {
-    fail(
-      'Weekly Notification bounded Settings transition is not exact',
-      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_WRITE_FAILED',
-      { createRows: plan.createRows.length, updateRows: plan.updateRows.length, skipRows: plan.skipRows.length },
-    );
+  if (plan.createRows.length !== 0 || plan.updateRows.length + plan.skipped !== rows.length) {
+    fail('Weekly Notification bounded Settings transition is not exact', 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_WRITE_FAILED', { createRows: plan.createRows.length, updateRows: plan.updateRows.length, skipped: plan.skipped });
   }
   const result = await context.syncEngine.executePlan(plan);
   if (result.created !== 0 || result.updated + result.skipped !== rows.length) {
-    fail(
-      'Weekly Notification bounded Settings transition did not reconcile every row',
-      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_WRITE_FAILED',
-    );
+    fail('Weekly Notification bounded Settings transition did not reconcile every row', 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_WRITE_FAILED');
   }
   return result.updated;
 }
@@ -704,20 +638,9 @@ async function reconcileAdmissionRow(context) {
     keyField: 'ai_run_key',
     rows: [context.admission.fields],
   });
-  if (plan.updateRows.length !== 0) {
-    fail(
-      'Existing weekly Notification Admission row differs from accepted source identity',
-      'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ROW_DRIFT',
-      { updateRows: plan.updateRows.length },
-    );
-  }
+  if (plan.updateRows.length !== 0) fail('Existing weekly Notification Admission row differs from accepted source identity', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ROW_DRIFT', { updateRows: plan.updateRows.length });
   const result = await context.syncEngine.executePlan(plan);
-  if (result.created + result.skipped !== 1 || result.updated !== 0) {
-    fail(
-      'Weekly Notification Admission row did not reconcile exactly once',
-      'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ROW_WRITE_FAILED',
-    );
-  }
+  if (result.created + result.skipped !== 1 || result.updated !== 0) fail('Weekly Notification Admission row did not reconcile exactly once', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ROW_WRITE_FAILED');
 }
 
 function assertDeliveryChain(context, request) {
@@ -728,15 +651,10 @@ function assertDeliveryChain(context, request) {
       || request.aiRun.notificationEligible !== true
       || request.aiRun.previewMode !== false
       || request.aiRun.sentToGroup !== false
-      || JSON.stringify([...request.snapshot.sourceReportIds].sort())
-        !== JSON.stringify([...context.admission.sourceReportIds].sort())) {
-    fail(
-      'Weekly Notification Admission delivery chain is not exact or active',
-      'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_DELIVERY_CHAIN_INVALID',
-    );
+      || JSON.stringify([...request.snapshot.sourceReportIds].sort()) !== JSON.stringify([...context.admission.sourceReportIds].sort())) {
+    fail('Weekly Notification Admission delivery chain is not exact or active', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_DELIVERY_CHAIN_INVALID');
   }
 }
-
 function assertBusinessFirstMessage(context, message) {
   const invalid = [];
   if (message.title !== '📊 Social MKT Weekly Executive Report — 7D') invalid.push('title');
@@ -745,65 +663,32 @@ function assertBusinessFirstMessage(context, message) {
   if (!message.text.includes('⚠️ สิ่งที่ต้องจับตา')) invalid.push('weaknessesHeading');
   if (!message.text.includes('🎯 สิ่งที่ควรทำสัปดาห์หน้า')) invalid.push('recommendationsHeading');
   if (hasInternalReadiness(message.text)) invalid.push('internalReadinessLeak');
-  for (const output of [
-    context.admission.fields.insight_summary,
-    context.admission.fields.strengths,
-    context.admission.fields.weaknesses,
-    context.admission.fields.recommendations,
-  ]) {
-    if (!message.text.includes(String(scalar(output) ?? '').trim())) {
-      invalid.push('acceptedOutputMissing');
-      break;
-    }
+  for (const output of [context.admission.fields.insight_summary, context.admission.fields.strengths, context.admission.fields.weaknesses, context.admission.fields.recommendations]) {
+    if (!message.text.includes(String(scalar(output) ?? '').trim())) { invalid.push('acceptedOutputMissing'); break; }
   }
-  if (invalid.length > 0) {
-    fail(
-      'Business-first weekly Notification message preview failed',
-      'LARK_WEEKLY_7D_NOTIFICATION_MESSAGE_INVALID',
-      { invalid },
-    );
-  }
+  if (invalid.length > 0) fail('Business-first weekly Notification message preview failed', 'LARK_WEEKLY_7D_NOTIFICATION_MESSAGE_INVALID', { invalid });
 }
 function assertReviewedMessageParity(context, message) {
   const observedSha256 = sha256(message.text);
-  if (message.text !== context.admission.reviewedMessage.text
-      || observedSha256 !== context.admission.reviewedMessageSha256) {
-    fail(
-      'Weekly Notification runtime message differs from the reviewed Fresh Executive Decision Preview',
-      'LARK_WEEKLY_7D_NOTIFICATION_MESSAGE_PARITY_FAILED',
-      { expectedMessageSha256: context.admission.reviewedMessageSha256, observedMessageSha256: observedSha256 },
-    );
+  if (message.text !== context.admission.reviewedMessage.text || observedSha256 !== context.admission.reviewedMessageSha256) {
+    fail('Weekly Notification runtime message differs from the reviewed Fresh Executive Decision Preview', 'LARK_WEEKLY_7D_NOTIFICATION_MESSAGE_PARITY_FAILED', { expectedMessageSha256: context.admission.reviewedMessageSha256, observedMessageSha256 });
   }
   return true;
 }
 function hasInternalReadiness(textValue) {
-  return /report_partial|report_available|readiness_status|data_status|สถานะข้อมูล|ระดับ:\s*(?:info|warning|critical)/iu
-    .test(String(textValue ?? ''));
+  return /report_partial|report_available|readiness_status|data_status|สถานะข้อมูล|ระดับ:\s*(?:info|warning|critical)/iu.test(String(textValue ?? ''));
 }
 
 async function assertSourceUnchanged(context) {
-  const rows = await context.larkRepository.listByFieldValues(
-    context.tableIds.aiRuns,
-    'ai_run_key',
-    [context.admission.sourceAiRunKey],
-  );
+  const rows = await context.larkRepository.listByFieldValues(context.tableIds.aiRuns, 'ai_run_key', [context.admission.sourceAiRunKey]);
   const exact = rows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '') === context.admission.sourceAiRunKey);
   if (exact.length !== 1 || hashSourceState(exact[0].fields) !== context.sourceStateSha256) {
-    fail(
-      'Fresh Weekly Executive Decision source row changed during Notification Admission',
-      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_MUTATED',
-      { matchCount: exact.length },
-    );
+    fail('Fresh Weekly Executive Decision source row changed during Notification Admission', 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_MUTATED', { matchCount: exact.length });
   }
   return true;
 }
 function hashSourceState(fields) {
-  const normalized = Object.fromEntries(SOURCE_HASH_FIELDS.map((name) => [
-    name,
-    name === 'preview_mode' || name === 'notification_eligible' || name === 'sent_to_group'
-      ? booleanValue(fields?.[name])
-      : optionalText(fields?.[name]),
-  ]));
+  const normalized = Object.fromEntries(SOURCE_HASH_FIELDS.map((name) => [name, name === 'preview_mode' || name === 'notification_eligible' || name === 'sent_to_group' ? booleanValue(fields?.[name]) : optionalText(fields?.[name])]));
   return sha256(JSON.stringify(normalized));
 }
 
@@ -819,37 +704,18 @@ async function readLarkBaseline(context, options = {}) {
   const controlledLogs = sentLogRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '').startsWith('notification-uat:'));
   const smokeLogs = sentLogRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '').startsWith('notification-runtime-smoke:'));
   if (controlledAi.length !== 1 || controlledLogs.length !== 1 || smokeAi.length !== 1 || smokeLogs.length !== 1
-      || booleanValue(controlledAi[0].fields.sent_to_group) !== true
-      || booleanValue(smokeAi[0].fields.sent_to_group) !== true) {
-    fail(
-      'Weekly Notification Admission requires retained Controlled UAT and Runtime Smoke Lark closeout',
-      'LARK_WEEKLY_7D_NOTIFICATION_LARK_BASELINE_INVALID',
-      { controlledAiRows: controlledAi.length, controlledLogRows: controlledLogs.length, runtimeSmokeAiRows: smokeAi.length, runtimeSmokeLogRows: smokeLogs.length },
-    );
+      || booleanValue(controlledAi[0].fields.sent_to_group) !== true || booleanValue(smokeAi[0].fields.sent_to_group) !== true) {
+    fail('Weekly Notification Admission requires retained Controlled UAT and Runtime Smoke Lark closeout', 'LARK_WEEKLY_7D_NOTIFICATION_LARK_BASELINE_INVALID', { controlledAiRows: controlledAi.length, controlledLogRows: controlledLogs.length, runtimeSmokeAiRows: smokeAi.length, runtimeSmokeLogRows: smokeLogs.length });
   }
   const exactAdmissionAi = admissionAiRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '') === context.admission.aiRunKey);
   const exactAdmissionLog = admissionLogRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '') === context.admission.aiRunKey);
   if (options.allowAdmissionRow === true) {
-    if (exactAdmissionAi.length !== 1 || exactAdmissionLog.length > 1) {
-      fail('Recovery requires one exact retained admission AI row and at most one mirror row', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_LARK_STATE_INVALID', { aiRows: exactAdmissionAi.length, logRows: exactAdmissionLog.length });
-    }
-  } else if (exactAdmissionLog.length !== 0 || exactAdmissionAi.length > 1
-      || (exactAdmissionAi.length === 1 && booleanValue(exactAdmissionAi[0].fields.sent_to_group) !== false)) {
+    if (exactAdmissionAi.length !== 1 || exactAdmissionLog.length > 1) fail('Recovery requires one exact retained admission AI row and at most one mirror row', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_LARK_STATE_INVALID', { aiRows: exactAdmissionAi.length, logRows: exactAdmissionLog.length });
+  } else if (exactAdmissionLog.length !== 0 || exactAdmissionAi.length > 1 || (exactAdmissionAi.length === 1 && booleanValue(exactAdmissionAi[0].fields.sent_to_group) !== false)) {
     fail('Weekly Notification Admission identity already has sent/mirror evidence', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ALREADY_ATTEMPTED', { aiRows: exactAdmissionAi.length, logRows: exactAdmissionLog.length });
   }
-  return Object.freeze({
-    totalSentNotificationLogRows: sentLogRows.length,
-    controlledUatAiRows: 1,
-    controlledUatNotificationLogRows: 1,
-    runtimeSmokeAiRows: 1,
-    runtimeSmokeNotificationLogRows: 1,
-    controlledUatStable: true,
-    runtimeSmokeStable: true,
-    admissionAiRowsBefore: exactAdmissionAi.length,
-    admissionLogRowsBefore: exactAdmissionLog.length,
-  });
+  return Object.freeze({ totalSentNotificationLogRows: sentLogRows.length, controlledUatAiRows: 1, controlledUatNotificationLogRows: 1, runtimeSmokeAiRows: 1, runtimeSmokeNotificationLogRows: 1, controlledUatStable: true, runtimeSmokeStable: true, admissionAiRowsBefore: exactAdmissionAi.length, admissionLogRowsBefore: exactAdmissionLog.length });
 }
-
 async function verifyLarkDelivery(context, baseline) {
   const [sentLogRows, admissionAiRows, admissionLogRows] = await Promise.all([
     context.larkRepository.listByFieldValues(context.tableIds.notificationLog, 'attempt_status', ['sent']),
@@ -860,11 +726,7 @@ async function verifyLarkDelivery(context, baseline) {
   const exactLog = admissionLogRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '') === context.admission.aiRunKey);
   const controlledLogs = sentLogRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '').startsWith('notification-uat:'));
   const smokeLogs = sentLogRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '').startsWith('notification-runtime-smoke:'));
-  if (exactAi.length !== 1 || exactLog.length !== 1
-      || sentLogRows.length !== baseline.totalSentNotificationLogRows + 1
-      || controlledLogs.length !== 1 || smokeLogs.length !== 1
-      || booleanValue(exactAi[0].fields.sent_to_group) !== true
-      || String(scalar(exactLog[0].fields.attempt_status) ?? '') !== 'sent') {
+  if (exactAi.length !== 1 || exactLog.length !== 1 || sentLogRows.length !== baseline.totalSentNotificationLogRows + 1 || controlledLogs.length !== 1 || smokeLogs.length !== 1 || booleanValue(exactAi[0].fields.sent_to_group) !== true || String(scalar(exactLog[0].fields.attempt_status) ?? '') !== 'sent') {
     fail('Weekly Notification Admission Lark mirror parity failed', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_PARITY_FAILED', { admissionAiRows: exactAi.length, admissionNotificationLogRows: exactLog.length, totalSentNotificationLogRows: sentLogRows.length });
   }
   return Object.freeze({ totalSentNotificationLogRows: sentLogRows.length, admissionNotificationLogRows: 1, admissionAiRunMarkedSent: true });
@@ -877,25 +739,16 @@ async function verifyRecoveredLarkDelivery(context, baseline) {
   ]);
   const exactAi = admissionAiRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '') === context.admission.aiRunKey);
   const exactLog = admissionLogRows.filter((record) => String(scalar(record?.fields?.ai_run_key) ?? '') === context.admission.aiRunKey);
-  if (exactAi.length !== 1 || exactLog.length !== 1
-      || booleanValue(exactAi[0].fields.sent_to_group) !== true
-      || String(scalar(exactLog[0].fields.attempt_status) ?? '') !== 'sent') {
+  if (exactAi.length !== 1 || exactLog.length !== 1 || booleanValue(exactAi[0].fields.sent_to_group) !== true || String(scalar(exactLog[0].fields.attempt_status) ?? '') !== 'sent') {
     fail('Recovery has not reached exact Lark sent/mirror parity', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_PARITY_FAILED', { aiRows: exactAi.length, logRows: exactLog.length });
   }
-  if (sentLogRows.length < baseline.totalSentNotificationLogRows) {
-    fail('Recovery observed Notification Log loss', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_PARITY_FAILED');
-  }
+  if (sentLogRows.length < baseline.totalSentNotificationLogRows) fail('Recovery observed Notification Log loss', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_PARITY_FAILED');
   return Object.freeze({ totalSentNotificationLogRows: sentLogRows.length, admissionNotificationLogRows: 1, admissionAiRunMarkedSent: true });
 }
 
 function readD1State(context) {
-  const output = text('npx', [
-    'wrangler', 'd1', 'execute', context.databaseName,
-    '--remote', '--config', context.restoreConfigPath,
-    '--command', buildLarkWeekly7dNotificationAdmissionReadbackSql(context.admission.aiRunKey), '--json',
-  ], { env: context.cloudflare.wranglerEnv });
-  const row = extractLarkNotificationWranglerD1Rows(output)[0];
-  return normalizeLarkWeekly7dNotificationAdmissionReadback(row);
+  const output = text('npx', ['wrangler', 'd1', 'execute', context.databaseName, '--remote', '--config', context.restoreConfigPath, '--command', buildLarkWeekly7dNotificationAdmissionReadbackSql(context.admission.aiRunKey), '--json'], { env: context.cloudflare.wranglerEnv });
+  return normalizeLarkWeekly7dNotificationAdmissionReadback(extractLarkNotificationWranglerD1Rows(output)[0]);
 }
 async function pollDelivered(context, before) {
   const maxPolls = positiveInteger(context.env.MKT_LARK_WEEKLY_7D_NOTIFICATION_MAX_POLLS ?? MAX_POLLS, 'maxPolls');
@@ -904,91 +757,43 @@ async function pollDelivered(context, before) {
   for (let index = 1; index <= maxPolls; index += 1) {
     last = readD1State(context);
     process.stdout.write(`${JSON.stringify({ event: 'lark_weekly_7d_notification_progress', poll: index, totalDeliveryRows: last.totalDeliveryRows, admissionDeliveryRows: last.admissionDeliveryRows, admissionDeliveryStatus: last.admissionDeliveryStatus, admissionMirrorStatus: last.admissionMirrorStatus, unrelatedUnsafeDeliveryRows: last.unrelatedUnsafeDeliveryRows })}\n`);
-    try { return assertLarkWeekly7dNotificationAdmissionDelivered(before, last); } catch (error) {
-      if (error?.code !== 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_NOT_CONFIRMED') throw error;
-    }
+    try { return assertLarkWeekly7dNotificationAdmissionDelivered(before, last); } catch (error) { if (error?.code !== 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_NOT_CONFIRMED') throw error; }
     if (index < maxPolls) await sleep(interval);
   }
   fail('Weekly Notification Admission delivery verification timed out', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_VERIFY_TIMEOUT', { admissionDeliveryRows: last?.admissionDeliveryRows ?? null, admissionDeliveryStatus: last?.admissionDeliveryStatus ?? null, admissionMirrorStatus: last?.admissionMirrorStatus ?? null });
 }
 async function pollExistingDelivered(context) {
   const first = readD1State(context);
-  if (first.admissionDeliveryRows === 0) {
-    fail('Recovery found no retained admitted D1 delivery; automatic resend is forbidden', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_DELIVERY_MISSING');
-  }
-  const syntheticBefore = Object.freeze({
-    ...first,
-    totalDeliveryRows: first.totalDeliveryRows - 1,
-    sentMirroredRows: Math.max(0, first.sentMirroredRows - (first.admissionDeliveryStatus === 'sent' && first.admissionMirrorStatus === 'mirrored' ? 1 : 0)),
-    unsafeDeliveryRows: 0,
-    admissionDeliveryRows: 0,
-    admissionDeliveryStatus: null,
-    admissionMirrorStatus: null,
-    admissionClaimCount: 0,
-    admissionSentAt: null,
-    admissionMessageIdHash: null,
-  });
+  if (first.admissionDeliveryRows === 0) fail('Recovery found no retained admitted D1 delivery; automatic resend is forbidden', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_DELIVERY_MISSING');
+  const syntheticBefore = Object.freeze({ ...first, totalDeliveryRows: first.totalDeliveryRows - 1, sentMirroredRows: Math.max(0, first.sentMirroredRows - (first.admissionDeliveryStatus === 'sent' && first.admissionMirrorStatus === 'mirrored' ? 1 : 0)), unsafeDeliveryRows: 0, admissionDeliveryRows: 0, admissionDeliveryStatus: null, admissionMirrorStatus: null, admissionClaimCount: 0, admissionSentAt: null, admissionMessageIdHash: null });
   return pollDelivered(context, syntheticBefore);
 }
 async function sendQueueOnce(context, job) {
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(context.cloudflare.accountId)}/queues/${encodeURIComponent(context.queueId)}/messages`,
-    {
-      method: 'POST',
-      headers: { authorization: `Bearer ${freshQueueBearer(context.cloudflare)}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ body: job, content_type: 'json' }),
-      signal: AbortSignal.timeout(30_000),
-    },
-  );
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(context.cloudflare.accountId)}/queues/${encodeURIComponent(context.queueId)}/messages`, { method: 'POST', headers: { authorization: `Bearer ${freshQueueBearer(context.cloudflare)}`, 'content-type': 'application/json' }, body: JSON.stringify({ body: job, content_type: 'json' }), signal: AbortSignal.timeout(30_000) });
   const body = await response.json().catch(() => null);
-  if (!response.ok || body?.success !== true) {
-    fail('Cloudflare Queue did not confirm weekly Notification admission', 'LARK_WEEKLY_7D_NOTIFICATION_QUEUE_SEND_FAILED', { status: response.status });
-  }
+  if (!response.ok || body?.success !== true) fail('Cloudflare Queue did not confirm weekly Notification admission', 'LARK_WEEKLY_7D_NOTIFICATION_QUEUE_SEND_FAILED', { status: response.status });
 }
-
 async function deployAndVerifyRuntimeConfig(context, configPath, label) {
   const outputPath = resolve(context.evidenceDir, `.wrangler-weekly-${label}-${randomUUID()}.ndjson`);
   try {
-    run('npx', ['wrangler', 'deploy', '--config', configPath], {
-      env: { ...context.cloudflare.wranglerEnv, WRANGLER_OUTPUT_FILE_PATH: outputPath },
-      stdio: 'inherit',
-    });
-    const output = await readFile(outputPath, 'utf8');
-    const versionId = parseWranglerDeploymentOutput(output, { workerName: WORKER_NAME }).deploymentVersionId;
+    run('npx', ['wrangler', 'deploy', '--config', configPath], { env: { ...context.cloudflare.wranglerEnv, WRANGLER_OUTPUT_FILE_PATH: outputPath }, stdio: 'inherit' });
+    const versionId = parseWranglerDeploymentOutput(await readFile(outputPath, 'utf8'), { workerName: WORKER_NAME }).deploymentVersionId;
     verifyDeployedVersion(context, versionId, configPath);
     return versionId;
-  } finally {
-    await rm(outputPath, { force: true });
-  }
+  } finally { await rm(outputPath, { force: true }); }
 }
 function verifyDeployedVersion(context, versionId, configPath) {
-  const status = text('npx', ['wrangler', 'deployments', 'status', '--config', configPath, '--json'], { env: context.cloudflare.wranglerEnv });
-  const verified = parseLarkNotificationDeploymentStatus(status, versionId);
-  if (verified.trafficPercentage !== 100) {
-    fail('Weekly Notification Runtime version is not serving 100 percent of traffic', 'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_DEPLOYMENT_INVALID');
-  }
+  const verified = parseLarkNotificationDeploymentStatus(text('npx', ['wrangler', 'deployments', 'status', '--config', configPath, '--json'], { env: context.cloudflare.wranglerEnv }), versionId);
+  if (verified.trafficPercentage !== 100) fail('Weekly Notification Runtime version is not serving 100 percent of traffic', 'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_DEPLOYMENT_INVALID');
   return verified;
 }
 
-async function settingsRows(context) {
-  return context.larkRepository.listByFieldValues(
-    context.tableIds.reportSettings,
-    'report_setting_key',
-    context.settingsAuthority.settingKeys,
-  );
-}
-async function assertSettingsActive(context) {
-  return assertLarkNotificationRuntimeSettingsState(await settingsRows(context), context.settingsAuthority, true);
-}
-async function assertSettingsInactive(context) {
-  return assertLarkNotificationRuntimeSettingsState(await settingsRows(context), context.settingsAuthority, false);
-}
+async function settingsRows(context) { return context.larkRepository.listByFieldValues(context.tableIds.reportSettings, 'report_setting_key', context.settingsAuthority.settingKeys); }
+async function assertSettingsActive(context) { return assertLarkNotificationRuntimeSettingsState(await settingsRows(context), context.settingsAuthority, true); }
+async function assertSettingsInactive(context) { return assertLarkNotificationRuntimeSettingsState(await settingsRows(context), context.settingsAuthority, false); }
 
 async function verifyAutomationState(client) {
-  const workflowResponse = await client.requestBitableJson(
-    `/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}/workflows`,
-    { method: 'GET' },
-  );
+  const workflowResponse = await client.requestBitableJson(`/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}/workflows`, { method: 'GET' });
   const workflows = workflowResponse?.data?.workflows ?? workflowResponse?.data?.items ?? workflowResponse?.workflows ?? [];
   const ai = exactWorkflow(workflows, AI_TITLE);
   const notification = exactWorkflow(workflows, NOTIFICATION_TITLE);
@@ -998,219 +803,46 @@ async function verifyAutomationState(client) {
   const notificationHash = sha256(workflowId(notification));
   const aiStatus = requireText(ai.status ?? ai.state, 'AI automation status').toLowerCase();
   const notificationStatus = requireText(notification.status ?? notification.state, 'Notification automation status').toLowerCase();
-  if (aiHash !== expectedAi?.workflowIdSha256 || !ACTIVE.has(aiStatus)) {
-    fail('Exact AI Materialization Automation must remain active', 'LARK_WEEKLY_7D_NOTIFICATION_AI_AUTOMATION_INVALID', { identityMatches: aiHash === expectedAi?.workflowIdSha256, status: aiStatus });
-  }
-  if (notificationHash !== expectedNotification?.workflowIdSha256 || !INACTIVE.has(notificationStatus)) {
-    fail('Exact Base Notification Automation must remain inactive', 'LARK_WEEKLY_7D_NOTIFICATION_BASE_AUTOMATION_UNSAFE', { identityMatches: notificationHash === expectedNotification?.workflowIdSha256, status: notificationStatus });
-  }
-  return Object.freeze({
-    aiMaterialization: Object.freeze({ status: aiStatus, identitySha256: aiHash }),
-    notification: Object.freeze({ status: notificationStatus, identitySha256: notificationHash }),
-  });
+  if (aiHash !== expectedAi?.workflowIdSha256 || !ACTIVE.has(aiStatus)) fail('Exact AI Materialization Automation must remain active', 'LARK_WEEKLY_7D_NOTIFICATION_AI_AUTOMATION_INVALID', { identityMatches: aiHash === expectedAi?.workflowIdSha256, status: aiStatus });
+  if (notificationHash !== expectedNotification?.workflowIdSha256 || !INACTIVE.has(notificationStatus)) fail('Exact Base Notification Automation must remain inactive', 'LARK_WEEKLY_7D_NOTIFICATION_BASE_AUTOMATION_UNSAFE', { identityMatches: notificationHash === expectedNotification?.workflowIdSha256, status: notificationStatus });
+  return Object.freeze({ aiMaterialization: Object.freeze({ status: aiStatus, identitySha256: aiHash }), notification: Object.freeze({ status: notificationStatus, identitySha256: notificationHash }) });
 }
-function assertSameAutomationState(before, after) {
-  if (JSON.stringify(before) !== JSON.stringify(after)) fail('Automation identity/status changed during weekly Notification Admission', 'LARK_WEEKLY_7D_NOTIFICATION_AUTOMATION_DRIFT');
-}
-function exactWorkflow(workflows, title) {
-  const matches = workflows.filter((item) => optionalText(item?.title ?? item?.name) === title);
-  if (matches.length !== 1) fail(`Expected one exact Automation: ${title}`, 'LARK_WEEKLY_7D_NOTIFICATION_AUTOMATION_IDENTITY_INVALID', { title, count: matches.length });
-  return matches[0];
-}
+function assertSameAutomationState(before, after) { if (JSON.stringify(before) !== JSON.stringify(after)) fail('Automation identity/status changed during weekly Notification Admission', 'LARK_WEEKLY_7D_NOTIFICATION_AUTOMATION_DRIFT'); }
+function exactWorkflow(workflows, title) { const matches = workflows.filter((item) => optionalText(item?.title ?? item?.name) === title); if (matches.length !== 1) fail(`Expected one exact Automation: ${title}`, 'LARK_WEEKLY_7D_NOTIFICATION_AUTOMATION_IDENTITY_INVALID', { title, count: matches.length }); return matches[0]; }
 function workflowId(workflow) { return requireText(workflow.workflow_id ?? workflow.workflowId ?? workflow.id, 'workflow_id'); }
 
 function resolveCloudflareTarget(env, configText) {
   const wranglerEnv = buildWranglerOAuthEnvironment(env);
   const whoami = text('npx', ['wrangler', 'whoami', '--json'], { env: wranglerEnv });
-  const accountId = resolveCloudflareAccountId({
-    explicitAccountId: env.CLOUDFLARE_ACCOUNT_ID,
-    preferredAccount: env.MKT_LARK_WEEKLY_7D_NOTIFICATION_ACCOUNT ?? env.MKT_LARK_NOTIFICATION_RUNTIME_ACCOUNT,
-    configText,
-    whoamiOutput: whoami,
-  });
+  const accountId = resolveCloudflareAccountId({ explicitAccountId: env.CLOUDFLARE_ACCOUNT_ID, preferredAccount: env.MKT_LARK_WEEKLY_7D_NOTIFICATION_ACCOUNT ?? env.MKT_LARK_NOTIFICATION_RUNTIME_ACCOUNT, configText, whoamiOutput: whoami });
   const selected = Object.freeze({ ...wranglerEnv, CLOUDFLARE_ACCOUNT_ID: accountId });
   const auth = resolveCloudflareBearerAuth({ authOutput: text('npx', ['wrangler', 'auth', 'token', '--json'], { env: selected }) });
   return Object.freeze({ accountId, wranglerEnv: selected, authType: auth.type });
 }
-function freshQueueBearer(cloudflare) {
-  const auth = resolveCloudflareBearerAuth({ authOutput: text('npx', ['wrangler', 'auth', 'token', '--json'], { env: cloudflare.wranglerEnv }) });
-  if (auth.type !== cloudflare.authType) fail('Cloudflare authentication type changed during weekly Notification Admission', 'LARK_WEEKLY_7D_NOTIFICATION_AUTH_DRIFT');
-  return auth.token;
-}
-function resolveDatabaseName(config) {
-  const matches = Array.isArray(config?.d1_databases) ? config.d1_databases.filter((item) => item?.binding === 'MKT_STATE_DB') : [];
-  if (matches.length !== 1) fail('Weekly Notification Admission requires one MKT_STATE_DB binding', 'LARK_WEEKLY_7D_NOTIFICATION_CONFIG_INVALID', { bindingCount: matches.length });
-  return requireText(matches[0].database_name, 'database_name');
-}
-function resolveQueueName(config) {
-  const matches = Array.isArray(config?.queues?.producers) ? config.queues.producers.filter((item) => item?.binding === 'MKT_SYNC_QUEUE') : [];
-  if (matches.length !== 1) fail('Weekly Notification Admission requires one MKT_SYNC_QUEUE producer', 'LARK_WEEKLY_7D_NOTIFICATION_CONFIG_INVALID', { producerCount: matches.length });
-  return requireText(matches[0].queue, 'queue');
-}
+function freshQueueBearer(cloudflare) { const auth = resolveCloudflareBearerAuth({ authOutput: text('npx', ['wrangler', 'auth', 'token', '--json'], { env: cloudflare.wranglerEnv }) }); if (auth.type !== cloudflare.authType) fail('Cloudflare authentication type changed during weekly Notification Admission', 'LARK_WEEKLY_7D_NOTIFICATION_AUTH_DRIFT'); return auth.token; }
+function resolveDatabaseName(config) { const matches = Array.isArray(config?.d1_databases) ? config.d1_databases.filter((item) => item?.binding === 'MKT_STATE_DB') : []; if (matches.length !== 1) fail('Weekly Notification Admission requires one MKT_STATE_DB binding', 'LARK_WEEKLY_7D_NOTIFICATION_CONFIG_INVALID', { bindingCount: matches.length }); return requireText(matches[0].database_name, 'database_name'); }
+function resolveQueueName(config) { const matches = Array.isArray(config?.queues?.producers) ? config.queues.producers.filter((item) => item?.binding === 'MKT_SYNC_QUEUE') : []; if (matches.length !== 1) fail('Weekly Notification Admission requires one MKT_SYNC_QUEUE producer', 'LARK_WEEKLY_7D_NOTIFICATION_CONFIG_INVALID', { producerCount: matches.length }); return requireText(matches[0].queue, 'queue'); }
 
-async function writeGeneratedConfig(path, configText) {
-  const rebased = rebaseGeneratedWranglerConfigPaths(configText, {
-    sourceDirectory: dirname(SOURCE_CONFIG),
-    outputDirectory: dirname(path),
-  });
-  await writeFile(path, rebased.text, { encoding: 'utf8', mode: 0o600 });
-  await chmod(path, 0o600);
-}
-function exactMainHead() {
-  run('git', ['fetch', '--quiet', 'origin', 'main']);
-  const branch = text('git', ['branch', '--show-current'], { raw: true }).trim();
-  const head = text('git', ['rev-parse', 'HEAD']);
-  const originMain = text('git', ['rev-parse', 'origin/main']);
-  const dirty = text('git', ['status', '--porcelain', '--untracked-files=all'], { raw: true }).trim();
-  if (branch !== 'main' || head !== originMain || dirty) {
-    fail('Weekly Notification Admission requires clean exact current main', 'LARK_WEEKLY_7D_NOTIFICATION_REPOSITORY_INVALID', { branch, head, originMain, dirtyPathCount: dirty ? dirty.split(/\r?\n/u).length : 0 });
-  }
-  return head;
-}
+async function writeGeneratedConfig(path, configText) { const rebased = rebaseGeneratedWranglerConfigPaths(configText, { sourceDirectory: dirname(SOURCE_CONFIG), outputDirectory: dirname(path) }); await writeFile(path, rebased.text, { encoding: 'utf8', mode: 0o600 }); await chmod(path, 0o600); }
+function exactMainHead() { run('git', ['fetch', '--quiet', 'origin', 'main']); const branch = text('git', ['branch', '--show-current'], { raw: true }).trim(); const head = text('git', ['rev-parse', 'HEAD']); const originMain = text('git', ['rev-parse', 'origin/main']); const dirty = text('git', ['status', '--porcelain', '--untracked-files=all'], { raw: true }).trim(); if (branch !== 'main' || head !== originMain || dirty) fail('Weekly Notification Admission requires clean exact current main', 'LARK_WEEKLY_7D_NOTIFICATION_REPOSITORY_INVALID', { branch, head, originMain, dirtyPathCount: dirty ? dirty.split(/\r?\n/u).length : 0 }); return head; }
+function parseArgs(args) { const modes = ['--preview', '--execute', '--recover'].filter((mode) => args.includes(mode)); const unknown = args.filter((arg) => !['--preview', '--execute', '--recover'].includes(arg)); if (unknown.length > 0 || modes.length > 1) fail('Weekly Notification terminal accepts one of --preview, --execute, or --recover', 'LARK_WEEKLY_7D_NOTIFICATION_ARGUMENT_INVALID', { unknown }); if (modes[0] === '--preview') return 'preview'; if (modes[0] === '--execute') return 'execute'; if (modes[0] === '--recover') return 'recover'; return 'plan'; }
+function printPlan() { process.stdout.write(`${JSON.stringify({ ok: true, executed: false, contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION, admissionConfirmation: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION, recoveryConfirmation: RECOVERY_CONFIRMATION, sequence: ['revalidate exact generated Fresh Weekly Executive Decision v4 and unchanged Decision Quality Gate', 'require exact Fresh source Report Settings in the safe-off Notification baseline', 'build a bounded active Worker window that preserves all current source/report execution flags and triggers', 'temporarily activate only the exact Fresh source Report Settings', 'rebuild the exact reviewed full-channel message and require SHA-256 parity before admission', 'record immutable Queue-attempt evidence before exactly one Runtime Queue admission', 'verify one sent/mirrored D1 delivery, one Notification Log row and sent_to_group=true', 'restore the exact current Worker baseline and exact source Report Settings false', 'observe without another admission and prove duplicate delivery zero'], readOnlyPreviewAvailable: true, afterQueueAttemptFailure: 'use --recover only; never rerun --execute', maximumWorkerDeploymentCount: 2, maximumQueueAdmissionCount: 1, maximumMessageSendCount: 1, reportSettingWriteMode: 'bounded_exact_source_activation_then_restore', sourceDecisionMutationCount: 0, baseNotificationAutomationActivationCount: 0, automaticNotificationProducerEnabled: false, scheduleActivationCount: 0, production: 'BLOCKED' }, null, 2)}\n`); }
+function assertRecoveryConfirmation(env) { if (env?.[RECOVERY_CONFIRMATION.envName] !== RECOVERY_CONFIRMATION.value) fail(`Weekly Notification recovery requires ${RECOVERY_CONFIRMATION.envName}=${RECOVERY_CONFIRMATION.value}`, 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_CONFIRMATION_REQUIRED', { envName: RECOVERY_CONFIRMATION.envName }); }
 
-function parseArgs(args) {
-  const modes = ['--preview', '--execute', '--recover'].filter((mode) => args.includes(mode));
-  const unknown = args.filter((arg) => !['--preview', '--execute', '--recover'].includes(arg));
-  if (unknown.length > 0 || modes.length > 1) fail('Weekly Notification terminal accepts one of --preview, --execute, or --recover', 'LARK_WEEKLY_7D_NOTIFICATION_ARGUMENT_INVALID', { unknown });
-  if (modes[0] === '--preview') return 'preview';
-  if (modes[0] === '--execute') return 'execute';
-  if (modes[0] === '--recover') return 'recover';
-  return 'plan';
-}
-function printPlan() {
-  process.stdout.write(`${JSON.stringify({
-    ok: true,
-    executed: false,
-    contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION,
-    admissionConfirmation: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION,
-    recoveryConfirmation: RECOVERY_CONFIRMATION,
-    sequence: [
-      'revalidate exact generated Fresh Weekly Executive Decision v4 and unchanged Decision Quality Gate',
-      'require exact Fresh source Report Settings in the safe-off Notification baseline',
-      'build a bounded active Worker window that preserves all current source/report execution flags and triggers',
-      'temporarily activate only the exact Fresh source Report Settings',
-      'rebuild the exact reviewed full-channel message and require SHA-256 parity before admission',
-      'record immutable Queue-attempt evidence before exactly one Runtime Queue admission',
-      'verify one sent/mirrored D1 delivery, one Notification Log row and sent_to_group=true',
-      'restore the exact current Worker baseline and exact source Report Settings false',
-      'observe without another admission and prove duplicate delivery zero',
-    ],
-    readOnlyPreviewAvailable: true,
-    afterQueueAttemptFailure: 'use --recover only; never rerun --execute',
-    maximumWorkerDeploymentCount: 2,
-    maximumQueueAdmissionCount: 1,
-    maximumMessageSendCount: 1,
-    reportSettingWriteMode: 'bounded_exact_source_activation_then_restore',
-    sourceDecisionMutationCount: 0,
-    baseNotificationAutomationActivationCount: 0,
-    automaticNotificationProducerEnabled: false,
-    scheduleActivationCount: 0,
-    production: 'BLOCKED',
-  }, null, 2)}\n`);
-}
-function assertRecoveryConfirmation(env) {
-  if (env?.[RECOVERY_CONFIRMATION.envName] !== RECOVERY_CONFIRMATION.value) {
-    fail(`Weekly Notification recovery requires ${RECOVERY_CONFIRMATION.envName}=${RECOVERY_CONFIRMATION.value}`, 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_CONFIRMATION_REQUIRED', { envName: RECOVERY_CONFIRMATION.envName });
-  }
-}
-
-async function assertNoFile(path, failIfExists) {
-  try {
-    await stat(path);
-    if (failIfExists) fail('Weekly Notification Admission retained evidence already exists; blind rerun is forbidden', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ALREADY_ATTEMPTED', { evidenceName: path.split('/').pop() });
-    return false;
-  } catch (error) {
-    if (error?.code === 'ENOENT') return true;
-    throw error;
-  }
-}
-async function requireFile(path) {
-  try { await stat(path); } catch (error) {
-    if (error?.code === 'ENOENT') fail('Weekly Notification recovery requires retained Queue-attempt evidence', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_MISSING');
-    throw error;
-  }
-}
-async function privateJson(path, value) {
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  await chmod(path, 0o600);
-}
-
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    env: { ...process.env, ...(options.env ?? {}) },
-    stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 512 * 1024 * 1024,
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    fail(`Command failed: ${command}`, 'LARK_WEEKLY_7D_NOTIFICATION_COMMAND_FAILED', {
-      command,
-      args: args.map((arg, index) => args[index - 1] === '--command' ? '[READ_ONLY_SQL_REDACTED]' : arg),
-      status: result.status,
-    });
-  }
-  return Object.freeze({ stdout: result.stdout?.trim() ?? '', stderr: result.stderr?.trim() ?? '' });
-}
+async function assertNoFile(path, failIfExists) { try { await stat(path); if (failIfExists) fail('Weekly Notification Admission retained evidence already exists; blind rerun is forbidden', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ALREADY_ATTEMPTED', { evidenceName: path.split('/').pop() }); return false; } catch (error) { if (error?.code === 'ENOENT') return true; throw error; } }
+async function requireFile(path) { try { await stat(path); } catch (error) { if (error?.code === 'ENOENT') fail('Weekly Notification recovery requires retained Queue-attempt evidence', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_MISSING'); throw error; } }
+async function privateJson(path, value) { await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 }); await chmod(path, 0o600); }
+function run(command, args, options = {}) { const result = spawnSync(command, args, { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...(options.env ?? {}) }, stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'], maxBuffer: 512 * 1024 * 1024 }); if (result.error) throw result.error; if (result.status !== 0) fail(`Command failed: ${command}`, 'LARK_WEEKLY_7D_NOTIFICATION_COMMAND_FAILED', { command, args: args.map((arg, index) => args[index - 1] === '--command' ? '[READ_ONLY_SQL_REDACTED]' : arg), status: result.status }); return Object.freeze({ stdout: result.stdout?.trim() ?? '', stderr: result.stderr?.trim() ?? '' }); }
 function text(command, args, options = {}) { return run(command, args, options).stdout; }
-function readObservationMs(env) {
-  const value = Number(env.MKT_LARK_WEEKLY_7D_NOTIFICATION_OBSERVATION_MS ?? OBSERVATION_MS);
-  if (!Number.isSafeInteger(value) || value < 10_000 || value > 120_000) fail('Weekly Notification observation must be 10-120 seconds', 'LARK_WEEKLY_7D_NOTIFICATION_INPUT_REQUIRED', { fieldName: 'MKT_LARK_WEEKLY_7D_NOTIFICATION_OBSERVATION_MS' });
-  return value;
-}
-function positiveInteger(value, fieldName) {
-  const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) fail(`${fieldName} must be a positive integer`, 'LARK_WEEKLY_7D_NOTIFICATION_INPUT_REQUIRED', { fieldName });
-  return number;
-}
-function exact(value, expected, fieldName) {
-  if (value !== expected) fail(`Weekly Notification Admission requires ${fieldName}=${expected}`, 'LARK_WEEKLY_7D_NOTIFICATION_ENVIRONMENT_INVALID', { fieldName });
-}
-function requireText(value, fieldName) {
-  const textValue = optionalText(value);
-  if (!textValue) fail(`${fieldName} is required`, 'LARK_WEEKLY_7D_NOTIFICATION_INPUT_REQUIRED', { fieldName });
-  return textValue;
-}
-function optionalText(value) {
-  if (value === null || value === undefined) return null;
-  const textValue = String(scalar(value) ?? '').trim();
-  return textValue || null;
-}
-function scalar(value) {
-  if (value === null || value === undefined) return null;
-  if (Array.isArray(value)) {
-    if (value.length === 0) return null;
-    if (value.length === 1) return scalar(value[0]);
-    return value.map(scalar).join(',');
-  }
-  if (typeof value === 'object') {
-    for (const key of ['text', 'name', 'value']) if (value[key] !== undefined) return scalar(value[key]);
-  }
-  return value;
-}
-function booleanValue(value) {
-  const item = scalar(value);
-  if (item === true || item === false) return item;
-  if (item === 1 || item === '1' || String(item).toLowerCase() === 'true') return true;
-  if (item === 0 || item === '0' || String(item).toLowerCase() === 'false') return false;
-  return null;
-}
+function readObservationMs(env) { const value = Number(env.MKT_LARK_WEEKLY_7D_NOTIFICATION_OBSERVATION_MS ?? OBSERVATION_MS); if (!Number.isSafeInteger(value) || value < 10_000 || value > 120_000) fail('Weekly Notification observation must be 10-120 seconds', 'LARK_WEEKLY_7D_NOTIFICATION_INPUT_REQUIRED', { fieldName: 'MKT_LARK_WEEKLY_7D_NOTIFICATION_OBSERVATION_MS' }); return value; }
+function positiveInteger(value, fieldName) { const number = Number(value); if (!Number.isSafeInteger(number) || number <= 0) fail(`${fieldName} must be a positive integer`, 'LARK_WEEKLY_7D_NOTIFICATION_INPUT_REQUIRED', { fieldName }); return number; }
+function exact(value, expected, fieldName) { if (value !== expected) fail(`Weekly Notification Admission requires ${fieldName}=${expected}`, 'LARK_WEEKLY_7D_NOTIFICATION_ENVIRONMENT_INVALID', { fieldName }); }
+function requireText(value, fieldName) { const textValue = optionalText(value); if (!textValue) fail(`${fieldName} is required`, 'LARK_WEEKLY_7D_NOTIFICATION_INPUT_REQUIRED', { fieldName }); return textValue; }
+function optionalText(value) { if (value === null || value === undefined) return null; const textValue = String(scalar(value) ?? '').trim(); return textValue || null; }
+function scalar(value) { if (value === null || value === undefined) return null; if (Array.isArray(value)) { if (value.length === 0) return null; if (value.length === 1) return scalar(value[0]); return value.map(scalar).join(','); } if (typeof value === 'object') { for (const key of ['text', 'name', 'value']) if (value[key] !== undefined) return scalar(value[key]); } return value; }
+function booleanValue(value) { const item = scalar(value); if (item === true || item === false) return item; if (item === 1 || item === '1' || String(item).toLowerCase() === 'true') return true; if (item === 0 || item === '0' || String(item).toLowerCase() === 'false') return false; return null; }
 function sanitize(value) { return String(value).replace(/[\r\n\t]+/gu, ' ').slice(0, 500); }
-function scrub(value) {
-  if (Array.isArray(value)) return value.map(scrub);
-  if (!value || typeof value !== 'object') return typeof value === 'string' ? sanitize(value) : value;
-  return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
-    /(?:token|secret|password|authorization|tableId|queueId|accountId|groupId)/iu.test(key) ? `${key}Redacted` : key,
-    /(?:token|secret|password|authorization|tableId|queueId|accountId|groupId)/iu.test(key) ? true : scrub(nested),
-  ]));
-}
+function scrub(value) { if (Array.isArray(value)) return value.map(scrub); if (!value || typeof value !== 'object') return typeof value === 'string' ? sanitize(value) : value; return Object.fromEntries(Object.entries(value).map(([key, nested]) => [/(?:token|secret|password|authorization|tableId|queueId|accountId|groupId)/iu.test(key) ? `${key}Redacted` : key, /(?:token|secret|password|authorization|tableId|queueId|accountId|groupId)/iu.test(key) ? true : scrub(nested)])); }
 function sha256(value) { return createHash('sha256').update(String(value)).digest('hex'); }
-function fail(message, code, details = {}) {
-  const error = new Error(message);
-  error.name = 'LarkWeekly7dNotificationAdmissionTerminalError';
-  error.code = code;
-  error.details = Object.freeze({ ...details });
-  throw error;
-}
+function fail(message, code, details = {}) { const error = new Error(message); error.name = 'LarkWeekly7dNotificationAdmissionTerminalError'; error.code = code; error.details = Object.freeze({ ...details }); throw error; }
 function sleep(milliseconds) { return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)); }
