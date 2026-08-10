@@ -1,12 +1,33 @@
 # Changelog
 
+## Unreleased — Chatwoot Stable-identity Pagination Live Closeout — 2026-08-10
+
+### Changed
+
+- Replaced mutable conversation-page fingerprint continuation with PII-free stable numeric ID discovery,
+  exact per-ID detail reads and repeated page-1 scans until one complete pass finds no new identity.
+- Kept bounded per-invocation processing, stable Queue generation, idempotent D1/Lark keys and retained
+  historical terminal evidence; no DLQ bulk redrive was used.
+- Raised only the ignored active Chatwoot conversation/API row bounds from 5,000 to 10,000 after a
+  read-only Provider count proved 7,720 rows, then deployed and read back the config at 100% traffic.
+- Excluded Conversations created after the immutable operation cutoff from convergence progress and detail
+  reads while retaining their numeric IDs for page-drift dedupe; this prevents active accounts from keeping
+  a verification pass alive solely because new Conversations arrive during the scan.
+
+### Validation
+
+- PR #597 merged after focused Chatwoot `23/23`, full unit `2919/2919`, Workers runtime `18/18`, report
+  reliability, architecture/hygiene, zero-vulnerability audit and deploy dry-run gates passed.
+- Controlled live operation `r6` completed its first 7,720-ID pass and exposed the post-boundary convergence
+  defect on pass 2. It remains evidence, not PASS; reviewed cutoff deployment, completion and D1/Lark
+  reconciliation must be recorded before Chatwoot is closed.
+
 ## Unreleased — YouTube Customer OAuth Runtime Credential-path Correction — 2026-08-10
 
 ### Changed
 
-- Corrected the earlier owner/channel diagnosis: the retained customer connection is connected/validated
-  with a matching active encrypted Refresh Token reference; the ingestion runtime had bypassed it in favor
-  of the legacy static YouTube OAuth environment path.
+- Corrected the credential-path defect: the retained connection was connected/validated with a matching
+  encrypted Refresh Token reference, while ingestion had bypassed it for legacy static YouTube OAuth.
 - Added a read-only D1 authorization gate for exact customer, connector, state, scopes, active credential
   reference and configured Channel identity.
 - Routed Analytics-enabled Owner clients through the existing encrypted customer credential repository and
@@ -16,12 +37,14 @@
 
 ### Safety
 
-- No new invitation, customer consent, Secret rotation/deletion, remote data mutation or Worker deployment
-  occurred; the customer does not need to reconnect.
+- Reviewed deploy and Live refresh later proved the retained Google grant invalid (`invalid_grant`). OAuth
+  app publishing cannot revive it; customer Channel owner consent is required once to issue a new token.
+- Two developer-account consent attempts returned no Channel identity and were rejected fail-closed with
+  zero Queue/Lark writes; no further developer-account attempts are allowed.
 - Repository gates passed, including Workers runtime `18/18`, report reliability `105/105`, architecture and
   hygiene checks, zero dependency vulnerabilities, deploy dry-run and diff check.
-- Repository implementation is fixed, but Live remains unvalidated until a reviewed deployment, read-only
-  Owner preflight and controlled Analytics catch-up/reconciliation pass.
+- Repository implementation is fixed/deployed, but Live remains unvalidated until the one-time owner consent,
+  read-only Owner preflight and controlled Analytics catch-up/reconciliation pass.
 
 ## Unreleased — Multichannel Runtime & Schedule LIVE Activation — 2026-08-10
 

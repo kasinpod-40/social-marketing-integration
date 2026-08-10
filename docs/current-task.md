@@ -48,6 +48,16 @@ DLQ_REDRIVE                         = BLOCKED_OFF
 3. Instagram previous-day catch-up ไม่ส่งช่วงวันที่ผ่าน orchestration/source collector ไปยัง adapter จึงขยายเป็น full-account inventory 1,857 รายการแทน 1 วัน.
 4. Meta staged-unit reader ส่ง total ceiling 2,500 เป็น D1 page limit ครั้งเดียว ทั้งที่ store รับได้สูงสุด 500; แก้เป็น bounded pagination 500 + remainder.
 5. Paid Ads Report 8 jobs แรกขาด ignored runtime binding `LARK_TABLE_MKT_REPORT_TOP_ADS`; live schema preview ยืนยัน table เดิมโดยไม่มี schema action แล้วเพิ่มเฉพาะ binding ก่อนส่ง operation IDs ใหม่.
+6. Chatwoot Conversations list เป็น mutable offset pagination ไม่มี snapshot cursor; durable continuation
+   เดิมยึด page-order fingerprint จึง fail เมื่อรายการเลื่อนระหว่าง invocation.
+7. Controlled Chatwoot `r5` ใช้ manual daily trigger ขณะที่ steady-state schedule flag เปิดอยู่ จึงถูก
+   fail-closed ก่อนสร้าง Work/Provider/D1/Lark business mutation; `r6` ใช้ scheduled trigger ที่ตรง config.
+8. Live Provider metadata มี 7,720 conversations สูงกว่า ignored active bound 5,000; ขยายเฉพาะ
+   `CHATWOOT_API_MAX_ROWS` และ `CHATWOOT_MAX_CONVERSATIONS` เป็น bounded 10,000 ก่อนชน limit.
+9. Live `r6` จบ discovery pass แรกที่ 7,720 IDs แล้วพบ ID ใหม่หลัง immutable cutoff ทันทีใน pass 2;
+   stable-ID fix เดิมนับ post-boundary creation เป็น convergence progress แม้ไม่เลือกเขียน จึงอาจวน
+   verification ไม่จบในบัญชีที่มีแชทใหม่ต่อเนื่อง. แก้ให้เก็บ ID เพื่อ dedupe ต่อ แต่เพิ่ม counter/อ่าน
+   detail เฉพาะ Conversation ที่ `created_at <= windowEndAt`.
 
 ## Contract
 
@@ -155,13 +165,13 @@ Hotfix PR #587 ลบเฉพาะ duplicate candidate collections จาก `
 
 ## YouTube Customer OAuth runtime credential-path incident — 2026-08-10
 
-### Incident status before correction
+### Incident status before correction (superseded diagnosis)
 
 ```text
 INCIDENT                            = YOUTUBE_CUSTOMER_OAUTH_RUNTIME_CREDENTIAL_PATH_REGRESSION
 CUSTOMER_CONNECTION                = CONNECTED_VALIDATED
 ACTIVE_ENCRYPTED_REFRESH_REFERENCE = PRESENT_AND_MATCHED
-CUSTOMER_RECONNECT_REQUIRED        = NO
+CUSTOMER_RECONNECT_REQUIRED        = NO_ASSUMED_BEFORE_LIVE_REFRESH
 PUBLIC_YOUTUBE_SYNC                = PASS
 OWNER_ANALYTICS                    = BLOCKED
 REPOSITORY_FIX                     = IN_PROGRESS
@@ -171,12 +181,11 @@ LIVE_ANALYTICS_REVALIDATION        = PENDING_AFTER_REVIEWED_DEPLOYMENT
 
 ### Diagnostic correction record
 
-คำอธิบายก่อนหน้าที่สรุปว่า OAuth owner ของลูกค้าไม่ตรง Channel และเสนอให้ลูกค้า Connect ใหม่
-เป็นการวินิจฉัยที่ไม่ครบและทำให้โยนภาระไปที่ลูกค้าผิดจุด. Read-only D1 audit ยืนยันว่า Customer
-Connection ยังเป็น `connected/validated`, `credential_reference` ตรงกับ active encrypted
-Refresh Token และไม่มี recorded refresh failure. Source inspection ยืนยันว่า YouTube ingestion
-สร้าง Owner client จาก legacy `YOUTUBE_OAUTH_*` environment path โดยไม่อ่าน Customer
-Connection/credential reference ที่ callback บันทึกไว้.
+Read-only D1 audit เดิมยืนยันเพียงว่า Customer Connection ยังเป็น `connected/validated` และ
+`credential_reference` ตรงกับ active encrypted Refresh Token; หลักฐานนั้นยังไม่พิสูจน์ว่า Google
+refresh grant ใช้งานได้จริง. Source inspection พบเพิ่มว่า YouTube ingestion สร้าง Owner client จาก
+legacy `YOUTUBE_OAUTH_*` environment path โดยไม่อ่าน Customer Connection/credential reference
+ที่ callback บันทึกไว้ จึงต้องแก้ Repository bridge ก่อนทำ Live refresh preflight.
 
 ผลรัน `organic_end_to_end` ที่สำเร็จหลัง identity mismatch มี
 `analyticsCompletenessStatus=not_enabled`, tracked/queried/rows เป็นศูนย์ จึงพิสูจน์เฉพาะ Public
@@ -205,11 +214,11 @@ YouTube path ไม่ใช่ Owner Analytics success. ห้ามใช้ s
 ### Implementation result
 
 ```text
-STATUS                            = REPOSITORY_FIXED_LIVE_VALIDATION_PENDING
+STATUS                            = REPOSITORY_FIXED_DEPLOYED_OWNER_RECONSENT_REQUIRED
 REPOSITORY_FIXED                  = YES
 LIVE_VALIDATED                    = NO
-CUSTOMER_ACTION                   = NONE
-CUSTOMER_RECONNECT_REQUIRED       = NO
+CUSTOMER_ACTION                   = ONE_TIME_GOOGLE_CONSENT_BY_ACTUAL_CHANNEL_OWNER
+CUSTOMER_RECONNECT_REQUIRED       = YES_ONCE_BECAUSE_RETAINED_REFRESH_GRANT_IS_INVALID
 OWNER_CREDENTIAL_SOURCE           = ENCRYPTED_CUSTOMER_CONNECTION_D1
 LEGACY_OWNER_OAUTH_FALLBACK       = PROHIBITED_WHEN_ANALYTICS_ENABLED
 FOCUSED_REGRESSION                = PASS
@@ -220,8 +229,8 @@ ARCHITECTURE_HYGIENE              = PASS_749_FILES_0_CYCLES
 DEPENDENCY_AUDIT                  = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                    = PASS
 DIFF_CHECK                        = PASS
-REMOTE_DEPLOYMENT                 = NOT_RUN_NOT_AUTHORIZED_BY_THIS_TASK
-LIVE_OWNER_PREFLIGHT              = NOT_RUN
+REMOTE_DEPLOYMENT                 = PASS_REVIEWED_WORKER_DEPLOYED
+LIVE_OWNER_PREFLIGHT              = BLOCKED_GOOGLE_INVALID_GRANT
 LIVE_ANALYTICS_CATCH_UP           = NOT_RUN
 ```
 
@@ -229,5 +238,48 @@ Runtime routes ทั้ง dedicated และ compatibility path ใช้ `cr
 เมื่อ Analytics เปิด Factory จะอ่าน exact YouTube Customer Connection จาก D1, ตรวจ
 `connected/validated`, approved scopes, active encrypted credential reference และ configured Channel
 ก่อนสร้าง Owner client ผ่าน shared Google refresh provider. Access Token อยู่ใน memory เท่านั้น;
-Public/API-key และ operator dry-run paths คงเดิม. การแก้ครั้งนี้ไม่ได้สร้าง invitation, ไม่ขอ consent
-ซ้ำ, ไม่ rotate/delete Secret, ไม่ deploy Worker และไม่ mutate remote data.
+Public/API-key และ operator dry-run paths คงเดิม. หลัง reviewed deploy, Live refresh ของ retained
+credential ถูก Google ปฏิเสธด้วย `invalid_grant`; การ publish OAuth app ไม่สามารถชุบ refresh grant
+เดิมที่ถูกเพิกถอน/หมดอายุได้. การทดลอง consent ด้วยบัญชีนักพัฒนาสองบัญชีแลก code/scopes สำเร็จ
+แต่คืน `channelId=null` และถูก callback ปิดเป็น `identity_mismatch` โดยไม่มี Queue/Lark write จึงยืนยันว่า
+บัญชีเหล่านั้นไม่ใช่ owner ของ configured customer Channel.
+
+ข้อสรุปสุดท้ายคือ ลูกค้าต้องเปิด Connect link ใหม่และ consent **ครั้งเดียว** ด้วย Google account/Brand
+Account ที่เป็น owner ของ Channel จริงเพื่อออก Refresh Token ใหม่. หลังได้ grant ใหม่ ระบบใช้ Refresh
+Token ต่อได้โดยไม่ให้ลูกค้ากดทุกวัน; จะขอใหม่เฉพาะเมื่อ Google/ผู้ใช้ revoke, token หมดอายุจาก policy
+หรือ credential ถูกลบ. ห้ามทดลองบัญชีนักพัฒนาเพิ่มและห้ามประกาศ Owner Analytics ผ่านก่อน preflight,
+catch-up และ D1/Lark reconciliation สำเร็จ.
+
+## Chatwoot stable-identity pagination live closeout — 2026-08-10
+
+```text
+REPOSITORY_FIX                     = MERGED_PR_597
+FOCUSED_CHATWOOT_TESTS             = PASS_25_OF_25
+FULL_UNIT_TESTS                    = PASS_2933_OF_2933
+WORKERS_RUNTIME_TESTS              = PASS_18_OF_18
+ACTIVE_WORKER_VERSION              = 367a5c03-650b-44ce-9efa-b0da3cce3d7b_100_PERCENT
+CONTROLLED_OPERATION               = chatwoot-daily-20260809-r6
+PROVIDER_TOTAL_CONVERSATIONS       = 7720_READ_ONLY_METADATA
+MAX_CONVERSATIONS                  = 10000_REMOTE_READBACK
+PAGINATION_DRIFT_ALERTS            = 0_DURING_R6
+LIVE_COMPLETION                    = R6_RETAINED_LIVENESS_EVIDENCE_CUTOFF_FIX_GATED
+D1_LARK_RECONCILIATION             = PENDING_COMPLETION
+DLQ_BULK_REDRIVE                   = NOT_RUN
+PRODUCTION                         = BLOCKED
+```
+
+PR #597 เลิกใช้ mutable page fingerprint และ persist เฉพาะ PII-free stable numeric Conversation IDs,
+ใช้ page list เพื่อ discovery, fetch exact detail ต่อ ID และวนจาก page 1 จน pass เต็มไม่พบ ID ใหม่.
+Controlled `r5` ถูก gate ปฏิเสธก่อน business mutation เพราะ manual trigger ไม่ตรง steady-state schedule;
+`r6` ใช้ scheduled trigger, เดินข้ามหลาย provider pages โดย seen IDs เพิ่มและ drift alert เป็นศูนย์.
+
+ระหว่าง Live scan พบ Provider total 7,720 สูงกว่า active bound 5,000 จึงขยายเฉพาะ ignored runtime
+limits เป็น 10,000, ผ่าน Wrangler dry-run, deploy reviewed `origin/main` ล่าสุด และ read back active
+version 100%. ห้ามประกาศ Chatwoot PASS จน `r6` completed, checkpoint generation ตรง, exact alerts
+เป็นศูนย์ และ 15 D1/Lark table identities reconcile. รายละเอียดอยู่ที่
+`docs/project-brain/chatwoot-stable-identity-pagination-live-closeout-2026-08-10.md`.
+
+Live pass แรกของ `r6` จบที่ 7,720 IDs แล้ว pass 2 พบ post-boundary ID ใหม่ทันที จึงยืนยัน liveness
+defect เพิ่มเติม. Cutoff correction ผ่าน focused `25/25`, full unit `2933/2933`, Workers runtime
+`18/18`, report reliability `105/105`, architecture/hygiene, audit และ deploy dry-run แล้ว; ยังต้อง
+review/deploy และรอ exact operation convergence ก่อน reconciliation.

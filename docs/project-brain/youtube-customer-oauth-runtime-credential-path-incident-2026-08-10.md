@@ -7,8 +7,8 @@ encrypted Refresh Token reference. The ingestion runtime nevertheless constructe
 client from the legacy `YOUTUBE_OAUTH_*` Worker Secret path. Consequently an identity mismatch from that
 legacy credential was incorrectly described as a customer OAuth owner/channel problem.
 
-The earlier operational recommendation to reconnect the customer was incorrect. No new consent link,
-customer password, OTP or account action is required by the evidence currently available.
+The earlier operational conclusion that no customer action would ever be required was also premature.
+Stored D1 consistency did not prove that Google would still accept the retained Refresh Token.
 
 ## Sanitized evidence
 
@@ -22,8 +22,12 @@ failed owner run                   YOUTUBE_CHANNEL_IDENTITY_MISMATCH
 later successful public runs      analytics not_enabled / zero Analytics rows
 ```
 
-The connection record proves stored credential consistency, not a fresh Provider refresh. Live token and
-Owner Analytics validation remains a separate post-deployment gate.
+The connection record proves stored credential consistency, not a fresh Provider refresh. The reviewed
+post-deployment refresh later returned `invalid_grant`, so the retained grant cannot be reused.
+
+Two developer accounts completed code exchange and approved scopes, but the callback received no Channel
+identity and closed each attempt fail-closed as `identity_mismatch`, with zero Queue/Lark writes. They are
+not substitutes for the customer Channel owner and must not be tried again.
 
 ## Confirmed repository cause
 
@@ -53,10 +57,10 @@ repository while environment credentials remain legacy DEV compatibility only.
 
 ```text
 REPOSITORY_IMPLEMENTATION = FIXED_AND_GATED
-REMOTE_DEPLOYMENT         = NOT_RUN
-LIVE_OWNER_PREFLIGHT      = NOT_RUN
+REMOTE_DEPLOYMENT         = PASS
+LIVE_OWNER_PREFLIGHT      = BLOCKED_INVALID_GRANT
 LIVE_ANALYTICS_CATCH_UP   = NOT_RUN
-CUSTOMER_RECONNECT        = NOT_REQUIRED
+CUSTOMER_RECONNECT        = REQUIRED_ONCE_BY_ACTUAL_CHANNEL_OWNER
 ```
 
 ## Implemented correction
@@ -71,6 +75,8 @@ CUSTOMER_RECONNECT        = NOT_REQUIRED
 - Focused regression, full unit, Workers runtime `18/18`, report reliability `105/105`, architecture and
   repository hygiene, dependency audit with zero vulnerabilities, deploy dry-run and diff check passed.
 
-This closes the repository defect and records the earlier incorrect reconnect recommendation as corrected.
-It does not claim a Live fix: reviewed deployment, read-only Owner preflight and a controlled Analytics
-catch-up with D1/Lark reconciliation are still required. No customer action is currently required.
+This closes the repository defect but does not claim a Live Analytics fix. OAuth app publishing does not
+revive an invalid/revoked Refresh Token. The customer must use a fresh Connect link and consent once with
+the Google account or Brand Account that actually owns the configured Channel. The resulting Refresh Token
+can then be reused without daily customer action until Google or the user revokes/expires it. Read-only Owner
+preflight, controlled Analytics catch-up and D1/Lark reconciliation remain required after that one-time consent.

@@ -67,6 +67,16 @@ export function isConversationInChatwootWindow(row, window) {
   return timestamps.some((value) => value >= startAt && value <= endAt);
 }
 
+/**
+ * Freeze identity discovery at the immutable operation boundary. Conversations created after the
+ * boundary belong to the next incremental run and must not keep a mutable-page verification pass alive.
+ */
+export function isConversationAtOrBeforeChatwootBoundary(row, window) {
+  const endAt = requireTimestamp(window?.endAt, 'window.endAt');
+  const createdAt = requireTimestamp(row?.created_at, 'conversation.created_at');
+  return createdAt <= endAt;
+}
+
 /** Event time, creation or later correction can independently make the row relevant. */
 export function isChatwootEventInWindow(row, window) {
   const startAt = requireTimestamp(window?.startAt, 'window.startAt');

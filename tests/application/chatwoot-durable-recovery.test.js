@@ -259,6 +259,65 @@ test('identity discovery deduplicates mutable pages and fails closed on detail i
   assert.deepEqual(durableState.conversationSeenIds, []);
 });
 
+test('post-boundary Conversation discovered during verification does not keep the run alive', async () => {
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'conversations',
+    mastersComplete: true,
+    nextSequence: 5,
+    conversationPage: 1,
+    conversationSeenIds: [91],
+    conversationDiscoveryPass: 2,
+    conversationNewIdsInPass: 0,
+  };
+  let detailReads = 0;
+  const futureRow = {
+    id: 92,
+    account_id: 1,
+    inbox_id: 3,
+    status: 'open',
+    created_at: REQUESTED_AT + 1_000,
+    updated_at: REQUESTED_AT + 1_000,
+    last_activity_at: REQUESTED_AT + 1_000,
+  };
+  const input = runtimeInput({
+    continuationSequence: 5,
+    client: requiredClient({
+      listConversationsPage: async () => ({
+        page: 1, rows: [futureRow], totalCount: 2, hasMore: false,
+      }),
+      getConversation: async () => {
+        detailReads += 1;
+        return futureRow;
+      },
+    }),
+    chatwootStore: noOpStore(),
+    coverageStore: {
+      saveCoverageRun: async (value) => value,
+      saveCoverageEntities: async (values) => values,
+    },
+    workStore: {
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (value) => {
+        durableState = value.state;
+        return { state: value.state };
+      },
+    },
+  });
+
+  const result = await syncChatwootDurableRuntime(input);
+
+  assert.equal(result.stage, 'reporting');
+  assert.equal(durableState.conversationsComplete, true);
+  assert.equal(durableState.conversationNewIdsInPass, 0);
+  assert.deepEqual(durableState.conversationSeenIds, [91, 92]);
+  assert.deepEqual(durableState.conversationPendingIds, []);
+  assert.equal(detailReads, 0);
+});
+
 test('daily overlap includes a late-arriving update on an older-created Conversation', () => {
   const window = resolveChatwootRuntimeWindow({
     mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
