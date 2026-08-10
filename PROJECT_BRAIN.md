@@ -16,8 +16,9 @@ automatic weekly notification, DLQ redrive และ Production ยังปิ�
 6 datasets, 7 chunks, 1,335 rows, D1/Lark parity และ Provider schedule readback `Daily between
 6:00 AM and 7:00 AM`; PREVIEW ไม่มี schedule. Blockers ที่ยังห้ามประกาศ full LIVE pass คือ
 YouTube Analytics repository bridge merge/deploy แล้ว แต่ reviewed Owner preflight พบ Google OAuth
-`invalid_grant` ก่อน Provider read/write; catch-up ไม่ถูกส่ง. ต้องเปิด 2-Step Verification, ตรวจ OAuth
-app readiness แล้ว reconnect exact owner/channel หนึ่งครั้งก่อน preflight/catch-up ใหม่. Chatwoot
+`invalid_grant` ก่อน Provider read/write; catch-up ไม่ถูกส่ง. Owner 2-Step Verification ผ่านและ exact
+OAuth client ถูกยืนยันว่าเป็น `External / Testing`; ต้องอนุมัติ Publish app แล้ว reconnect exact
+owner/channel หนึ่งครั้งก่อน preflight/catch-up ใหม่. Chatwoot
 mutable pagination ยังเป็น blocker ที่เหลือร่วมกัน; รายละเอียด live evidence อยู่ในเอกสารเดียวกัน.
 
 ## YouTube Customer OAuth runtime credential-path correction — 2026-08-10
@@ -39,7 +40,8 @@ Reviewed deploy ภายหลัง merge PR `#593` เปิด version
 `25f835d9-81e3-4acb-b62e-a678fd4c90fc` ที่ 100%. Owner preflight R2 ใช้ Customer Connection path
 จริงและไปถึง Google token endpoint แต่ถูกปฏิเสธด้วย sanitized `invalid_grant`; Provider reads และ
 Business writes เป็นศูนย์ จึงไม่ส่ง Analytics catch-up. ข้อความเดิมที่ว่า “ลูกค้าไม่ต้องทำอะไร”
-ถูกแทนที่: ต้อง reconnect หนึ่งครั้งหลัง owner เปิด 2-Step Verification และตรวจ OAuth app readiness แล้ว.
+ถูกแทนที่: owner 2-Step Verification ผ่านแล้วและ exact app ถูกยืนยัน `External / Testing`; ต้องอนุมัติ
+Publish app แล้ว reconnect หนึ่งครั้ง.
 
 ## Chatwoot Initial terminal recovery — 2026-08-01
 

@@ -23,9 +23,10 @@
 - Owner preflight R1 stopped safely at the generation fence with zero Provider/Business writes. A new R2
   reached Google token refresh and failed with sanitized HTTP 400 / OAuth `invalid_grant`, also with zero
   Provider reads and Business writes.
-- The controlled Analytics catch-up was not sent and no automatic retry/redrive occurred. Live remains
-  unvalidated until owner 2-Step Verification, OAuth app readiness review, one exact customer reconnect,
-  a passing Owner preflight and controlled catch-up/reconciliation all complete.
+- The controlled Analytics catch-up was not sent and no automatic retry/redrive occurred. Owner 2-Step
+  Verification subsequently passed and exact-client readback confirmed `External / Testing`. Live remains
+  unvalidated until the publishing change is explicitly approved, one exact customer reconnect, a passing
+  Owner preflight and controlled catch-up/reconciliation all complete.
 
 ## Unreleased — Multichannel Runtime & Schedule LIVE Activation — 2026-08-10
 

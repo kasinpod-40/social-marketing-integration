@@ -93,16 +93,17 @@ Two uniquely identified Owner preflight attempts were recorded:
 The Analytics catch-up for `2026-08-03..2026-08-09` was intentionally not sent. No automatic retry, Queue
 resend, DLQ redrive, Production, Notification or schedule mutation followed the rejection.
 
-Google Cloud console inspection also remains fail-closed: the owner session is blocked until 2-Step
-Verification is enabled, while the secondary signed-in session lacks project permissions. OAuth app publishing
-status is therefore not yet verified. The observed 15-day interval between consent and `invalid_grant` is
-consistent with, but does not by itself prove, an External app left in Testing. Do not issue the replacement
-consent until the app readiness/publishing state is inspected.
+After 2-Step Verification was enabled, the Google Cloud owner session passed. Readback confirmed project
+`Social MKT Data Hub`, the exact OAuth client used by the prior customer consent, User type `External` and
+Publishing status `Testing`. The requested `youtube.readonly` and `yt-analytics.readonly` scopes are present.
+This confirms the 7-day Testing-token lifecycle as the cause consistent with the live `invalid_grant`; the
+secondary signed-in session remains irrelevant because it lacks project permissions. Do not issue replacement
+consent until the explicitly approved publishing change completes.
 
 ## Remaining closure sequence
 
-1. Enable 2-Step Verification for the Google Cloud project owner and inspect the exact OAuth app.
-2. Confirm an appropriate non-expiring production posture for the requested YouTube scopes.
+1. ~~Enable 2-Step Verification for the Google Cloud project owner and inspect the exact OAuth app.~~ PASS.
+2. Obtain action-time approval and publish the External OAuth app out of Testing.
 3. Reconnect the exact customer/channel once and verify the new active encrypted credential reference.
 4. Run one new Owner preflight identity; only after it passes, send one controlled Analytics catch-up.
 5. Reconcile exact D1/Lark Analytics rows and then record `LIVE_FIXED=YES` in this incident.

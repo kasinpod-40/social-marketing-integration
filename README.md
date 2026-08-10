@@ -32,8 +32,9 @@ Manager Script trigger และ signed ingress เพื่อไม่สร�
 7 chunks, 1,335 rows พร้อม D1/Lark parity และ Provider frequency `Daily between 6:00 AM and
 7:00 AM`; PREVIEW ไม่มี schedule. YouTube Analytics customer-credential bridge แก้, merge และ reviewed
 deploy แล้ว; Owner preflight ใช้ Customer Connection path จริงแต่ Google ปฏิเสธ refresh token ด้วย
-`invalid_grant` ก่อน Provider read/write จึงยังไม่ส่ง catch-up. ต้องตรวจ OAuth app readiness แล้วให้
-exact owner/channel reconnect หนึ่งครั้ง; Chatwoot mutable pagination ยังเป็น blocker. TikTok Ads ยัง `planned`;
+`invalid_grant` ก่อน Provider read/write จึงยังไม่ส่ง catch-up. Exact OAuth client ถูกยืนยันว่าเป็น
+`External / Testing`; ต้องอนุมัติ Publish app แล้วให้ exact owner/channel reconnect หนึ่งครั้ง. Chatwoot
+mutable pagination ยังเป็น blocker. TikTok Ads ยัง `planned`;
 Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
 `docs/current-task.md`.

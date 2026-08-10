@@ -209,7 +209,7 @@ YouTube path ไม่ใช่ Owner Analytics success. ห้ามใช้ s
 STATUS                            = REPOSITORY_FIXED_DEPLOYED_LIVE_TOKEN_REJECTED
 REPOSITORY_FIXED                  = YES
 LIVE_VALIDATED                    = NO
-CUSTOMER_ACTION                   = ENABLE_OWNER_2SV_VERIFY_OAUTH_APP_READINESS_THEN_RECONNECT_ONCE
+CUSTOMER_ACTION                   = CONFIRM_PUBLISH_APP_THEN_RECONNECT_ONCE
 CUSTOMER_RECONNECT_REQUIRED       = YES_AFTER_APP_READINESS
 OWNER_CREDENTIAL_SOURCE           = ENCRYPTED_CUSTOMER_CONNECTION_D1
 LEGACY_OWNER_OAUTH_FALLBACK       = PROHIBITED_WHEN_ANALYTICS_ENABLED
@@ -227,7 +227,7 @@ REMOTE_DEPLOYMENT                 = PASS_VERSION_25f835d9_81e3_4acb_b62e_a678fd4
 LIVE_OWNER_PREFLIGHT_R1           = SAFE_REJECT_METRIC_DATE_GENERATION_MISMATCH_WRITES_0
 LIVE_OWNER_PREFLIGHT_R2           = FAILED_GOOGLE_OAUTH_INVALID_GRANT_READS_0_WRITES_0
 LIVE_ANALYTICS_CATCH_UP           = NOT_SENT_FAIL_CLOSED
-GOOGLE_CLOUD_OWNER_CONSOLE        = BLOCKED_UNTIL_2_STEP_VERIFICATION
+GOOGLE_CLOUD_OWNER_CONSOLE        = PASS_2SV_EXTERNAL_TESTING_CONFIRMED
 SECONDARY_CONSOLE_SESSION         = INSUFFICIENT_PROJECT_PERMISSION
 PRODUCTION_NOTIFICATION_DLQ       = UNCHANGED_BLOCKED_OFF
 ```
@@ -246,7 +246,8 @@ Google token endpoint แต่ refresh ถูกปฏิเสธด้วย 
 จึงไม่ส่ง catch-up และไม่ redrive/retry อัตโนมัติ.
 
 สถานะ D1 `connected/validated` พิสูจน์เฉพาะ metadata/reference consistency ไม่ได้พิสูจน์ว่า token ยัง
-ใช้กับ Provider ได้. ต้องเปิด 2-Step Verification ให้ owner session, ตรวจ OAuth app publishing/readiness
-ก่อน แล้วค่อยให้ owner reconnect หนึ่งครั้งเพื่อออก refresh token ใหม่. ห้ามส่งลิงก์ consent ใหม่ก่อน
-ปิด app-readiness gate และยังคง `LIVE_VALIDATED=NO` จน Owner preflight กับ controlled Analytics
+ใช้กับ Provider ได้. หลังเปิด 2-Step Verification แล้ว Google Cloud readback ยืนยัน exact OAuth client
+ตรงกับ client ที่ callback ใช้ และ app เป็น `External / Testing`. ต้องเปลี่ยน publishing posture ที่ได้รับ
+อนุมัติก่อน แล้วค่อยให้ owner reconnect หนึ่งครั้งเพื่อออก refresh token ใหม่. ห้ามส่งลิงก์ consent ใหม่
+ก่อนปิด app-readiness gate และยังคง `LIVE_VALIDATED=NO` จน Owner preflight กับ controlled Analytics
 catch-up/reconciliation ผ่านจริง.
