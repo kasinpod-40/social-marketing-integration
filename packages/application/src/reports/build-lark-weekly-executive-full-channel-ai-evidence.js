@@ -37,6 +37,7 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
       { observed: statusVector.length },
     );
   }
+  const compactStatusVector = compactStatusVectorRows(statusVector);
 
   const channels = factual.channels.map(toAiChannelEvidence);
   const businessChannels = channels.filter(({ businessEvidencePresent }) => businessEvidencePresent);
@@ -110,7 +111,7 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     channelBusinessEvidence: channels,
   });
   const metricSummaryJson = stableStringify(metricSummary);
-  const normalizedStatusVectorJson = stableStringify(statusVector);
+  const normalizedStatusVectorJson = stableStringify(compactStatusVector);
   if (metricSummaryJson.length > MAX_METRIC_SUMMARY_CHARS) {
     throw evidenceError(
       'Full-channel Weekly AI evidence exceeds the bounded metric-summary budget',
@@ -476,6 +477,38 @@ function presentationValue(value, metricKey, unit) {
 
 function microsToUnit(value) {
   return Number.isFinite(value) ? round(value / 1_000_000, 4) : null;
+}
+
+function compactStatusVectorRows(rows) {
+  const output = rows.map((raw, index) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw evidenceError(
+        'Full-channel Weekly AI status row must be an object',
+        'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_STATUS_INVALID',
+        { index },
+      );
+    }
+    const channelKey = text(raw.channelKey ?? raw.channel_key);
+    if (!channelKey) {
+      throw evidenceError(
+        'Full-channel Weekly AI status row requires channel identity',
+        'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_STATUS_INVALID',
+        { index },
+      );
+    }
+    const readinessStatus = text(raw.readinessStatus ?? raw.readiness_status);
+    return Object.freeze({
+      channelKey,
+      ...(readinessStatus ? { readinessStatus } : {}),
+    });
+  });
+  if (new Set(output.map(({ channelKey }) => channelKey)).size !== output.length) {
+    throw evidenceError(
+      'Full-channel Weekly AI status vector contains duplicate channel identities',
+      'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_STATUS_INVALID',
+    );
+  }
+  return Object.freeze(output);
 }
 
 function parseStatusVector(value) {
