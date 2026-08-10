@@ -302,6 +302,47 @@ test('forwards the reviewed period to Facebook content inventory staging', async
   assert.equal(contentCalls[0].until, '2026-07-27');
 });
 
+test('forwards the reviewed period to Instagram content inventory staging', async () => {
+  const workStore = createWorkStore();
+  const contentCalls = [];
+  const operation = Object.freeze({
+    operationId: 'instagram-period-001',
+    workKey: 'instagram:instagram-period-001',
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+    stable: true,
+  });
+  const input = baseInput({
+    connectorKey: 'instagram',
+    jobType: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+    operation,
+    syncRunId: 'meta:instagram:instagram-period-001',
+    cursorKey: 'integration_workspace:instagram:chemistry_k:period',
+    adapter: {
+      async fetchAccount() {
+        return { resource: { id: 'instagram_1', name: 'Fixture Instagram' } };
+      },
+      async fetchContentPage(value) {
+        contentCalls.push(value);
+        return { rows: [], hasMore: false, nextCursor: null };
+      },
+    },
+    sourceAccountId: 'instagram_1',
+    resumableWorkStore: workStore,
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+    dateRange: { since: '2026-07-26', until: '2026-07-26' },
+  });
+
+  await processMetaEndToEndSync(input);
+  await processMetaEndToEndSync(input);
+
+  assert.equal(contentCalls.length, 1);
+  assert.equal(contentCalls[0].since, '2026-07-26');
+  assert.equal(contentCalls[0].until, '2026-07-26');
+});
+
 
 test('fails before another Provider call when the durable source-unit limit is reached', async () => {
   const workStore = createWorkStore();

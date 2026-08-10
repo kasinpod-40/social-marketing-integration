@@ -144,7 +144,11 @@ async function invokeDataset(input) {
     case 'instagram.account.latest':
       return node(await input.adapter.fetchAccount({ accountId }));
     case 'instagram.content.inventory':
-      return page(await input.adapter.fetchContentPage({ accountId, ...commonPage }));
+      return page(await input.adapter.fetchContentPage({
+        accountId,
+        ...commonPage,
+        ...input.dateRange,
+      }));
     case 'instagram.content.insights':
       return page(await input.adapter.fetchContentInsightsPage({
         accountId,
