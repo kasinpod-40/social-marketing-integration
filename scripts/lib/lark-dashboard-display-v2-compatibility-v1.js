@@ -18,6 +18,7 @@ export const LARK_DASHBOARD_DISPLAY_V2_BACKFILL_VERSION =
 export const LARK_DASHBOARD_DISPLAY_V2_BACKFILL_CONFIRMATION =
   'BACKFILL_DISPLAY_V2_WITHOUT_DASHBOARD_FIELD_OR_VALUE_MUTATION';
 
+// Historical first-apply constants retained for the old compatibility operator/tests.
 export const EXPECTED_DASHBOARD_RECORD_COUNT = 272;
 export const EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT = 140;
 export const EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT = 204;
@@ -30,7 +31,6 @@ const TARGET_CAPABILITY = 'organic';
 const TARGET_PERIOD_KIND = 'rolling_days';
 const TARGET_CUSTOMER_PROFILE = 'integration_workspace';
 const TARGET_CUSTOMER_KEY = 'chemistry_k';
-const TARGET_ACCOUNT_ID = 'chemistry_k';
 const WINDOW_SET = new Set(ORGANIC_DASHBOARD_WINDOWS);
 const PLATFORM_SET = new Set(ORGANIC_DASHBOARD_PLATFORMS);
 const METRIC_SUFFIX_SET = new Set(ORGANIC_DASHBOARD_METRIC_SUFFIXES);
@@ -242,8 +242,7 @@ function isOrganicReportScope(fields, fieldNames) {
     && readText(fields[fieldNames.capability]) === TARGET_CAPABILITY
     && readText(fields[fieldNames.periodKind]) === TARGET_PERIOD_KIND
     && readText(fields[fieldNames.customerProfile]) === TARGET_CUSTOMER_PROFILE
-    && readText(fields[fieldNames.customerKey]) === TARGET_CUSTOMER_KEY
-    && readText(fields[fieldNames.accountId]) === TARGET_ACCOUNT_ID;
+    && readText(fields[fieldNames.customerKey]) === TARGET_CUSTOMER_KEY;
 }
 
 function metricSuffixForPlatform(metricKey, platform) {
