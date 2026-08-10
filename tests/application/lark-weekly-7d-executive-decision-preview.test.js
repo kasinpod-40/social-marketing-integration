@@ -5,12 +5,17 @@ import {
   buildLarkWeeklyExecutiveFactualReport,
 } from '../../packages/application/src/notifications/build-lark-weekly-executive-factual-report.js';
 import {
+  LARK_WEEKLY_7D_EXECUTIVE_DECISION_LEGACY_TRIGGER_MARKER,
+  LARK_WEEKLY_7D_EXECUTIVE_DECISION_TRIGGER_MARKER,
   assertFreshWeekly7dDecisionPeriod,
   assertLarkWeekly7dExecutiveDecisionGenerated,
   assertLarkWeekly7dExecutiveDecisionPrepared,
   buildLarkWeekly7dExecutiveDecisionSynthesis,
   isLarkWeekly7dExecutiveDecisionIdentity,
 } from '../../scripts/lib/lark-weekly-7d-executive-decision-preview.js';
+import {
+  LARK_WEEKLY_7D_FULL_CHANNEL_AI_TRIGGER_MARKER,
+} from '../../scripts/lib/lark-weekly-7d-full-channel-ai-synthesis.js';
 
 const NOW = Date.parse('2026-08-10T08:06:00+07:00');
 
@@ -151,6 +156,33 @@ test('builds a stable fresh synthesis identity and keeps persisted delivery flag
   assert.equal(first.evidence.evidence.organicPaidMappingAvailable, false);
   assert.deepEqual(source.fields, before);
   assert.equal(assertLarkWeekly7dExecutiveDecisionPrepared(first.fields, first), true);
+});
+
+test('reuses the proven full-channel Native AI trigger marker and accepts only the retained legacy fresh marker for one-time compatibility', () => {
+  const synthesis = buildLarkWeekly7dExecutiveDecisionSynthesis({
+    sourceRecord: sourceRecord(),
+    factualReport: factualReport(),
+  });
+  assert.equal(
+    LARK_WEEKLY_7D_EXECUTIVE_DECISION_TRIGGER_MARKER,
+    LARK_WEEKLY_7D_FULL_CHANNEL_AI_TRIGGER_MARKER,
+  );
+  assert.equal(
+    LARK_WEEKLY_7D_EXECUTIVE_DECISION_LEGACY_TRIGGER_MARKER,
+    'CONTROLLED_WEEKLY_EXECUTIVE_DECISION_PREVIEW_V1',
+  );
+  assert.equal(assertLarkWeekly7dExecutiveDecisionPrepared({
+    ...synthesis.fields,
+    failure_code: LARK_WEEKLY_7D_EXECUTIVE_DECISION_LEGACY_TRIGGER_MARKER,
+  }, synthesis), true);
+  assert.throws(
+    () => assertLarkWeekly7dExecutiveDecisionPrepared({
+      ...synthesis.fields,
+      failure_code: 'UNRELATED_FAILURE_CODE',
+    }, synthesis),
+    (error) => error?.code === 'LARK_WEEKLY_7D_FULL_CHANNEL_AI_PREPARED_INVALID'
+      && error?.details?.invalid?.includes('failureCode'),
+  );
 });
 
 test('generated fresh decision passes only with explicit decision-ready actions', () => {
