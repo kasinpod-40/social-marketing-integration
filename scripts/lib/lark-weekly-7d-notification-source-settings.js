@@ -8,13 +8,16 @@ const SOURCE_PROFILE = 'integration_workspace';
 const HASH = /^[a-f0-9]{64}$/u;
 
 /**
- * Resolve the exact safe-off Report Settings authority for one accepted Fresh Weekly 7D source.
+ * Resolve the exact Report Settings authority for one accepted Fresh Weekly 7D source.
  *
- * The current Multichannel baseline intentionally keeps Notification Runtime and automatic
- * notification admission blocked. Every exact Fresh source Report must therefore resolve to one
- * retained Snapshot and one enabled Setting whose AI/notification flags are initially false.
- * A safe-off Setting set must have group_id either unset on every row or set to the reviewed
- * destination on every row. Mixed destination state is rejected before any controlled activation.
+ * Notification Runtime and automatic notification admission remain blocked independently from
+ * Report Settings. The exact Fresh source Settings may therefore be uniformly inactive or retain
+ * a previously reviewed active state. Mixed AI/notification flags or mixed active/inactive rows
+ * are rejected before any controlled admission. The caller must restore the exact observed
+ * baseline rather than assuming all-false.
+ *
+ * The Setting set must have group_id either unset on every row or set to the reviewed destination
+ * on every row. Mixed destination state is rejected before any controlled activation.
  */
 export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const sourceReportIds = normalizeSourceReportIds(input.sourceReportIds);
@@ -67,9 +70,9 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
       fields.notification_enabled,
       'notification_enabled',
     );
-    if (!enabled || aiEnabled || notificationEnabled) {
+    if (!enabled || aiEnabled !== notificationEnabled) {
       throw sourceError(
-        'Fresh Weekly 7D source Settings must begin from the safe-off Notification baseline',
+        'Fresh Weekly 7D source Settings must be enabled with matching AI/notification flags',
         'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
         { enabled, aiEnabled, notificationEnabled },
       );
@@ -86,6 +89,18 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
       groupId,
     });
   });
+
+  const activeStates = [...new Set(baseline.map((row) => row.aiEnabled))];
+  if (activeStates.length !== 1) {
+    throw sourceError(
+      'Fresh Weekly 7D source Settings must share one exact active/inactive state',
+      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
+      {
+        activeStateCount: activeStates.length,
+        sourceSettingCount: baseline.length,
+      },
+    );
+  }
 
   const uniqueConfiguredGroups = [...new Set(configuredGroupIds)];
   const mixedDestinationState = configuredGroupIds.length > 0
@@ -107,7 +122,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   }
 
   return deepFreeze({
-    state: 'inactive',
+    state: activeStates[0] ? 'active' : 'inactive',
     sourceReportIds,
     settingKeys,
     customerProfile: SOURCE_PROFILE,
