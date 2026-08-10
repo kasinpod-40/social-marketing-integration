@@ -16,15 +16,32 @@ test('weekly Notification exact terminal keeps one Queue POST behind immutable a
   assert.match(source, /blindRerunAllowedAfterThisFile:\s*false/u);
 });
 
-test('weekly Notification exact terminal deploys current-main Runtime once before Queue admission', () => {
-  const deployStage = source.indexOf("stage = 'deploy-current-main-notification-runtime'");
+test('weekly Notification exact terminal uses a bounded runtime window and restores the current baseline', () => {
+  const activeStage = source.indexOf("stage = 'deploy-bounded-notification-runtime-window'");
   const queueAttemptStage = source.indexOf("stage = 'record-one-queue-attempt'");
-  assert.ok(deployStage >= 0);
-  assert.ok(queueAttemptStage > deployStage);
-  assert.match(source, /buildLarkNotificationRuntimeActivationWranglerConfig/u);
-  assert.match(source, /parseLarkNotificationDeploymentStatus/u);
-  assert.doesNotMatch(source, /writeSettingsState\s*\(/u);
-  assert.match(source, /reportSettingWriteCount:\s*0/u);
+  const restoreStage = source.indexOf("stage = 'restore-current-worker-runtime-baseline'");
+  assert.ok(activeStage >= 0);
+  assert.ok(queueAttemptStage > activeStage);
+  assert.ok(restoreStage > queueAttemptStage);
+  assert.match(source, /buildLarkWeekly7dNotificationRuntimeWindow/u);
+  assert.match(source, /currentExecutionFlagsPreserved:\s*true/u);
+  assert.match(source, /runtimeRestoredBlockedOff:\s*true/u);
+  assert.match(source, /maximumWorkerDeploymentCount:\s*2/u);
+  assert.doesNotMatch(source, /buildLarkNotificationRuntimeActivationWranglerConfig/u);
+});
+
+test('weekly Notification exact terminal activates only exact source Settings and restores them false', () => {
+  const activateStage = source.indexOf("stage = 'activate-exact-source-report-settings'");
+  const queueAttemptStage = source.indexOf("stage = 'record-one-queue-attempt'");
+  const restoreStage = source.indexOf("stage = 'restore-exact-source-report-settings'");
+  assert.ok(activateStage >= 0);
+  assert.ok(queueAttemptStage > activateStage);
+  assert.ok(restoreStage > queueAttemptStage);
+  assert.match(source, /writeSettingsState\(context, true\)/u);
+  assert.match(source, /writeSettingsState\(context, false\)/u);
+  assert.match(source, /assertSettingsInactive\(context\)/u);
+  assert.match(source, /reportSettingWriteCount/u);
+  assert.match(source, /reportSettingsRestoredInactive:\s*true/u);
 });
 
 test('weekly Notification exact terminal binds to the exact generated Fresh v4 source and never edits it', () => {
@@ -35,21 +52,23 @@ test('weekly Notification exact terminal binds to the exact generated Fresh v4 s
   assert.match(source, /reconcile-dedicated-notification-ai-run/u);
   assert.doesNotMatch(source, /isExactAcceptedWeekly7dSource/u);
   assert.doesNotMatch(source, /load-exact-accepted-v9-source/u);
-  assert.doesNotMatch(source, /keyField:\s*'ai_run_key'[\s\S]{0,200}sourceAiRunKey/u);
 });
 
-test('read-only Notification admission preview cannot deploy, enqueue or send', () => {
+test('read-only Notification admission preview cannot deploy enqueue or mutate Settings', () => {
   const start = source.indexOf('async function previewAdmission()');
   const end = source.indexOf('async function executeAdmission()', start);
   assert.ok(start >= 0 && end > start);
   const preview = source.slice(start, end);
   assert.doesNotMatch(preview, /sendQueueOnce\s*\(/u);
-  assert.doesNotMatch(preview, /deployAndVerifyCurrentRuntime\s*\(/u);
+  assert.doesNotMatch(preview, /deployAndVerifyRuntimeConfig\s*\(/u);
+  assert.doesNotMatch(preview, /writeSettingsState\s*\(/u);
   assert.doesNotMatch(preview, /reconcileAdmissionRow\s*\(/u);
+  assert.match(preview, /assertSettingsInactive\(context\)/u);
   assert.match(preview, /mode:\s*'READ_ONLY'/u);
   assert.match(preview, /queueAdmissionCount:\s*0/u);
   assert.match(preview, /messageSendCount:\s*0/u);
   assert.match(preview, /workerDeploymentCount:\s*0/u);
+  assert.match(preview, /reportSettingWriteCount:\s*0/u);
 });
 
 test('exact reviewed full-channel message hash is required before Queue admission', () => {
@@ -64,14 +83,16 @@ test('exact reviewed full-channel message hash is required before Queue admissio
   assert.match(source, /Social MKT Weekly Executive Report — 7D/u);
 });
 
-test('recovery is poll-only with no Queue send or Worker deploy call', () => {
+test('recovery is poll-only from the restored safe-off boundary', () => {
   const start = source.indexOf('async function recoverAdmission()');
   const end = source.indexOf('async function prepare(mode)', start);
   assert.ok(start >= 0 && end > start);
   const recovery = source.slice(start, end);
   assert.doesNotMatch(recovery, /sendQueueOnce\s*\(/u);
-  assert.doesNotMatch(recovery, /deployAndVerifyCurrentRuntime\s*\(/u);
+  assert.doesNotMatch(recovery, /deployAndVerifyRuntimeConfig\s*\(/u);
+  assert.doesNotMatch(recovery, /writeSettingsState\s*\(/u);
   assert.match(recovery, /poll-existing-admission-without-resend/u);
+  assert.match(recovery, /assertSettingsInactive\(context\)/u);
   assert.match(recovery, /queueAdmissionCountByRecovery:\s*0/u);
   assert.match(recovery, /messageSendCountByRecovery:\s*0/u);
 });
