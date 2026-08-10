@@ -322,12 +322,12 @@ function buildCompactDecisionSummary(input, labelLimit) {
   return Object.freeze({
     evidenceShape: 'executive_decision_compact_v1',
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
-    legend: 'channel=[name,metrics,content,ads]; metric=[name,current,changePct,signal(+/-/0)]; content=[name,rank,views,engagement,ER]; ad=[name,rank,spend,clicks,CTR,conv,value,ROAS,scale(1/0)]',
+    legend: 'ch=[name,m,c,a]; m=[name,value,changePct,+/-/0]; c=[name,rank,views,eng,ER]; a=[name,rank,spend,clicks,CTR,conv,value,ROAS,scale]',
     writerContract: Object.freeze({
-      recommendations: '2-5 decisions use [CONTENT]/[SCALE]/[TEST]/[KEEP]/[REDUCE]/[STOP]/[NO-SCALE]; [SCALE] only scale=1; Organic without Paid proof => [TEST]; mapping=false: never claim same creative',
-      funnelDecision: 'awareness up + outcome down => [NO-SCALE]; no broad budget increase until outcome recovers',
-      strengths: 'signal + only; spend/budget neutral',
-      weaknesses: 'signal - only; missing data is not weakness',
+      recommendations: '2-5 [CONTENT]/[TEST]/[SCALE]/[KEEP]/[REDUCE]/[STOP]/[NO-SCALE]; [SCALE] only scale=1, never CTR-only; Organic without Paid proof => [TEST]; mapping=false: no same-creative claim',
+      funnelDecision: 'awareness + with outcome - => [NO-SCALE] broad budget',
+      strengths: '+ only; spend/budget neutral',
+      weaknesses: '- only; missing data is not weakness',
     }),
     funnelMetrics: Object.freeze({ up: funnelUp, down: funnelDown }),
     organicPaidMappingAvailable: false,
