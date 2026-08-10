@@ -14,6 +14,9 @@ import {
   LARK_EXECUTIVE_DESTINATION_KEY_HASH,
 } from '../../packages/config/src/lark-notification-runtime-config.js';
 import {
+  resolveLarkNotificationReviewedDestination,
+} from '../../packages/connectors/src/lark/lark-notification-reviewed-destination.js';
+import {
   collectLarkNativeAiWeekly7dControlledUatSource,
 } from './lark-native-ai-weekly-7d-controlled-uat.js';
 import {
@@ -76,9 +79,21 @@ export async function loadFreshWeekly7dExecutiveDecisionNotificationSource(input
     );
   }
 
-  return buildFreshWeekly7dExecutiveDecisionNotificationAdmission({
+  const destination = await resolveLarkNotificationReviewedDestination({
+    client,
+    expectedDestinationKeyHash: LARK_EXECUTIVE_DESTINATION_KEY_HASH,
+  });
+  const admission = buildFreshWeekly7dExecutiveDecisionNotificationAdmission({
     sourceRecord: matches[0],
     synthesis,
+  });
+  return deepFreeze({
+    ...admission,
+    reviewedDestination: {
+      name: destination.name,
+      destinationKeyHash: destination.destinationKeyHash,
+      resolved: true,
+    },
   });
 }
 
@@ -230,7 +245,8 @@ function normalizeRecord(record) {
   return Object.freeze({ recordId: record.recordId ?? record.record_id ?? null, fields });
 }
 function requireClient(client) {
-  if (typeof client?.listTables !== 'function') {
+  if (typeof client?.listTables !== 'function'
+      || typeof client?.requestBitableJson !== 'function') {
     throw new TypeError('client is required');
   }
   return client;

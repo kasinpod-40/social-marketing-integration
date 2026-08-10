@@ -29,13 +29,13 @@ function setting(settingKey, overrides = {}) {
       enabled: true,
       ai_enabled: false,
       notification_enabled: false,
-      group_id: GROUP_ID,
+      group_id: null,
       ...overrides,
     },
   };
 }
 
-test('resolves safe-off Settings from only the exact Fresh 7D source Reports', () => {
+test('resolves safe-off Settings with null destination from only the exact Fresh 7D source Reports', () => {
   const authority = resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds: ['report-google-7d', 'report-meta-7d'],
     snapshots: [
@@ -47,12 +47,35 @@ test('resolves safe-off Settings from only the exact Fresh 7D source Reports', (
   });
 
   assert.equal(authority.state, 'inactive');
+  assert.equal(authority.destinationBaseline, 'unset');
   assert.deepEqual(authority.sourceReportIds, ['report-google-7d', 'report-meta-7d']);
   assert.deepEqual(authority.settingKeys, ['setting-google-7d', 'setting-meta-7d']);
   assert.equal(authority.baseline.length, 2);
   assert.equal(authority.baseline.every((row) => row.enabled), true);
   assert.equal(authority.baseline.every((row) => !row.aiEnabled), true);
   assert.equal(authority.baseline.every((row) => !row.notificationEnabled), true);
+  assert.equal(authority.baseline.every((row) => row.groupId === null), true);
+});
+
+test('accepts a retained reviewed destination but rejects any non-reviewed destination', () => {
+  const authority = resolveLarkWeekly7dNotificationSourceSettings({
+    sourceReportIds: ['report-current-7d'],
+    snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
+    settings: [setting('setting-current-7d', { group_id: GROUP_ID })],
+    expectedDestinationKeyHash: DESTINATION_HASH,
+  });
+  assert.equal(authority.destinationBaseline, 'reviewed');
+  assert.equal(authority.baseline[0].groupId, GROUP_ID);
+
+  assert.throws(
+    () => resolveLarkWeekly7dNotificationSourceSettings({
+      sourceReportIds: ['report-current-7d'],
+      snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
+      settings: [setting('setting-current-7d', { group_id: 'other-destination' })],
+      expectedDestinationKeyHash: DESTINATION_HASH,
+    }),
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID',
+  );
 });
 
 test('does not require historical 1D 3D or 30D Preview Snapshot identities', () => {
@@ -79,7 +102,7 @@ test('fails closed when an exact Fresh source Snapshot is missing', () => {
   );
 });
 
-test('fails closed on pre-activated Settings or destination drift', () => {
+test('fails closed on pre-activated Settings', () => {
   assert.throws(
     () => resolveLarkWeekly7dNotificationSourceSettings({
       sourceReportIds: ['report-current-7d'],
@@ -98,15 +121,5 @@ test('fails closed on pre-activated Settings or destination drift', () => {
       expectedDestinationKeyHash: DESTINATION_HASH,
     }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
-  );
-
-  assert.throws(
-    () => resolveLarkWeekly7dNotificationSourceSettings({
-      sourceReportIds: ['report-current-7d'],
-      snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
-      settings: [setting('setting-current-7d', { group_id: 'other-destination' })],
-      expectedDestinationKeyHash: DESTINATION_HASH,
-    }),
-    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID',
   );
 });
