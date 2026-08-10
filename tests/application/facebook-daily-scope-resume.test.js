@@ -223,3 +223,134 @@ test('same-operation resume excludes pre-marker unbounded Content rows from IDs 
     (unit) => unit.payload.rows?.some?.((row) => row.id === 'legacy_post_1'),
   ));
 });
+
+test('completed scoped Facebook daily staging tolerates only missing legacy prefix sequences', async () => {
+  const workStore = createWorkStore({
+    state: {
+      stage: 'complete',
+      pageState: null,
+      contentIds: ['scoped_post_1'],
+      contentIndex: 1,
+      unitCount: 5,
+      rowCount: 3,
+      sourceWatermark: '2026-08-10T00:20:00+0000',
+      contentInventoryScope: 'facebook_daily_dashboard_lookback_v1',
+      contentInventoryStartSequence: 2,
+    },
+    units: [
+      {
+        sequence: 0,
+        unitKey: 'facebook:facebook.account.latest:page_1:account:page_1:start',
+        payload: stagedPayload('facebook.account.latest', [{ id: 'page_1', name: 'Fixture Page' }]),
+      },
+      {
+        sequence: 2,
+        unitKey: 'facebook:facebook.content.inventory:page_1:account:page_1:scoped',
+        payload: stagedPayload('facebook.content.inventory', [
+          { id: 'scoped_post_1', created_time: '2026-08-09T12:00:00+0000' },
+        ]),
+      },
+      {
+        sequence: 3,
+        unitKey: 'facebook:facebook.account.insights:page_1:account:page_1:scoped',
+        payload: stagedPayload('facebook.account.insights', []),
+      },
+      {
+        sequence: 4,
+        unitKey: 'facebook:facebook.content.insights:page_1:content:scoped_post_1:scoped',
+        payload: stagedPayload('facebook.content.insights', [{
+          name: 'post_media_view',
+          period: 'lifetime',
+          values: [{ value: 11, end_time: '2026-08-10T00:00:00+0000' }],
+        }], { sourceEntityId: 'scoped_post_1' }),
+      },
+    ],
+  });
+
+  const result = await processMetaEndToEndSync(baseInput({
+    workStore,
+    adapter: {},
+  }));
+
+  assert.equal(result.status, 'source_validated');
+  assert.equal(result.sourceSummary.contentRows, 1);
+  assert.equal(result.sourceSummary.contentInsightEntities, 1);
+  assert.equal(result.sourceSummary.contentInsightRows, 1);
+  assert.equal(result.sourceSummary.accountInsightRows, 0);
+});
+
+test('completed scoped Facebook daily staging still fails closed on a missing scoped sequence', async () => {
+  const workStore = createWorkStore({
+    state: {
+      stage: 'complete',
+      pageState: null,
+      contentIds: ['scoped_post_1'],
+      contentIndex: 1,
+      unitCount: 5,
+      rowCount: 3,
+      sourceWatermark: '2026-08-10T00:20:00+0000',
+      contentInventoryScope: 'facebook_daily_dashboard_lookback_v1',
+      contentInventoryStartSequence: 2,
+    },
+    units: [
+      {
+        sequence: 0,
+        unitKey: 'facebook:facebook.account.latest:page_1:account:page_1:start',
+        payload: stagedPayload('facebook.account.latest', [{ id: 'page_1', name: 'Fixture Page' }]),
+      },
+      {
+        sequence: 2,
+        unitKey: 'facebook:facebook.content.inventory:page_1:account:page_1:scoped',
+        payload: stagedPayload('facebook.content.inventory', [
+          { id: 'scoped_post_1', created_time: '2026-08-09T12:00:00+0000' },
+        ]),
+      },
+      {
+        sequence: 4,
+        unitKey: 'facebook:facebook.content.insights:page_1:content:scoped_post_1:scoped',
+        payload: stagedPayload('facebook.content.insights', [], {
+          sourceEntityId: 'scoped_post_1',
+        }),
+      },
+    ],
+  });
+
+  await assert.rejects(
+    processMetaEndToEndSync(baseInput({ workStore, adapter: {} })),
+    (error) => {
+      assert.equal(error.code, 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE');
+      assert.deepEqual(error.details?.missingRequiredSequences, [3]);
+      return true;
+    },
+  );
+});
+
+test('Facebook staging without a durable scope marker retains strict full-sequence completeness', async () => {
+  const workStore = createWorkStore({
+    state: {
+      stage: 'complete',
+      pageState: null,
+      contentIds: [],
+      contentIndex: 0,
+      unitCount: 2,
+      rowCount: 1,
+      sourceWatermark: '2026-08-10T00:20:00+0000',
+    },
+    units: [
+      {
+        sequence: 0,
+        unitKey: 'facebook:facebook.account.latest:page_1:account:page_1:start',
+        payload: stagedPayload('facebook.account.latest', [{ id: 'page_1', name: 'Fixture Page' }]),
+      },
+    ],
+  });
+
+  await assert.rejects(
+    processMetaEndToEndSync(baseInput({ workStore, adapter: {} })),
+    (error) => {
+      assert.equal(error.code, 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE');
+      assert.deepEqual(error.details?.missingRequiredSequences, [1]);
+      return true;
+    },
+  );
+});
