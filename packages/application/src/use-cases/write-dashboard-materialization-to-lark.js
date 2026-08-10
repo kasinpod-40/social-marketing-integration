@@ -5,6 +5,13 @@ import {
   buildReportTopAdsRows,
   buildReportTopContentRows,
 } from '../reports/build-report-output-rows.js';
+import {
+  buildLarkMetricSlotKey,
+  buildLarkReportSlotBase,
+  buildLarkTopAdsSlotKey,
+  buildLarkTopContentSlotKey,
+  LARK_REPORT_SLOT_KEY_FIELD,
+} from '../reports/lark-report-slot-key.js';
 import { stableStringify } from './build-report-snapshot.js';
 
 const REPORT_METRIC_NULLABLE_FIELDS = Object.freeze([
@@ -38,7 +45,19 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     customerProfile,
     utcOffset,
   });
+  const larkSlotBase = buildLarkReportSlotBase({
+    reportId: row.report_id,
+    customerProfile,
+    customerKey: row.customer_key,
+    capability: payload.capability,
+    platform: payload.platformScope,
+    accountId: row.account_key,
+    reportType: row.report_type,
+    periodKind: row.period_kind,
+    windowDays: row.window_days,
+  });
   const snapshotRow = Object.freeze({
+    [LARK_REPORT_SLOT_KEY_FIELD]: larkSlotBase,
     report_id: row.report_id,
     ...sharedDimensions,
     compare_start: row.compare_start ? dateOnlyToEpochMilliseconds(row.compare_start, { utcOffset }) : null,
@@ -79,10 +98,20 @@ export async function writeDashboardMaterializationToLark(input = {}) {
   });
   const metricRows = Object.freeze(
     [...summaryMetricRows, ...dimensionMetricRows].map((metricRow) => {
-      return attachDashboardCompatibilityWindow(metricRow, metricInput.sharedDimensions);
+      const compatibleRow = attachDashboardCompatibilityWindow(
+        metricRow,
+        metricInput.sharedDimensions,
+      );
+      return Object.freeze({
+        ...compatibleRow,
+        [LARK_REPORT_SLOT_KEY_FIELD]: buildLarkMetricSlotKey(
+          larkSlotBase,
+          compatibleRow.report_metric_key,
+        ),
+      });
     }),
   );
-  const topContentRows = payload.capability === 'organic' ? buildReportTopContentRows({
+  const topContentRows = payload.capability === 'organic' ? Object.freeze(buildReportTopContentRows({
     reportId: row.report_id,
     reportSettingKey: row.report_setting_key,
     customerProfile,
@@ -95,8 +124,11 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     generatedAt: row.generated_at,
     utcOffset,
     sharedDimensions,
-  }) : Object.freeze([]);
-  const topAdsRows = payload.capability === 'paid_ads' ? buildReportTopAdsRows({
+  }).map((contentRow) => Object.freeze({
+    ...contentRow,
+    [LARK_REPORT_SLOT_KEY_FIELD]: buildLarkTopContentSlotKey(larkSlotBase, contentRow.rank),
+  }))) : Object.freeze([]);
+  const topAdsRows = payload.capability === 'paid_ads' ? Object.freeze(buildReportTopAdsRows({
     reportId: row.report_id,
     reportSettingKey: row.report_setting_key,
     customerProfile,
@@ -109,32 +141,41 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     generatedAt: row.generated_at,
     utcOffset,
     sharedDimensions,
-  }) : Object.freeze([]);
+  }).map((adRow) => Object.freeze({
+    ...adRow,
+    [LARK_REPORT_SLOT_KEY_FIELD]: buildLarkTopAdsSlotKey(larkSlotBase, adRow.rank),
+  }))) : Object.freeze([]);
   const metricRepository = createExplicitNullUpdateRepository({
     repository,
     fieldNames: REPORT_METRIC_NULLABLE_FIELDS,
   });
   const planEntries = [
-    { name: 'reportSnapshot', repository, tableId: tables.mktReportSnapshots, keyField: 'report_id', rows: [snapshotRow] },
+    {
+      name: 'reportSnapshot',
+      repository,
+      tableId: tables.mktReportSnapshots,
+      keyField: LARK_REPORT_SLOT_KEY_FIELD,
+      rows: [snapshotRow],
+    },
     {
       name: 'reportMetricValues',
       repository: metricRepository,
       tableId: tables.mktReportMetricValues,
-      keyField: 'report_metric_key',
+      keyField: LARK_REPORT_SLOT_KEY_FIELD,
       rows: metricRows,
     },
     ...(topContentRows.length > 0 ? [{
       name: 'reportTopContent',
       repository,
       tableId: tables.mktReportTopContent,
-      keyField: 'report_content_key',
+      keyField: LARK_REPORT_SLOT_KEY_FIELD,
       rows: topContentRows,
     }] : []),
     ...(topAdsRows.length > 0 ? [{
       name: 'reportTopAds',
       repository,
       tableId: tables.mktReportTopAds,
-      keyField: 'report_ad_key',
+      keyField: LARK_REPORT_SLOT_KEY_FIELD,
       rows: topAdsRows,
     }] : []),
   ];
