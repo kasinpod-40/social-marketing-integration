@@ -81,7 +81,7 @@ function decisionReadyOutputs(source) {
     insight_summary: source.fields.insight_summary,
     strengths: source.fields.strengths,
     weaknesses: source.fields.weaknesses,
-    recommendations: '[TEST] Campaign X มี CTR 0.78223% แต่ยังไม่มี Conversion/ROAS จึงทดลองครีเอทีฟต่อด้วยงบจำกัด\n[NO-SCALE] Campaign X ยังไม่มีหลักฐานปลาย Funnel จึงไม่เพิ่มงบในรอบนี้',
+    recommendations: '[TEST] Campaign X ทดลองครีเอทีฟต่อแบบจำกัดงบเพื่อวัดผลจากข้อมูลโฆษณาที่มี\n[KEEP] Campaign X คงไว้เป็นตัวทดสอบจนมีหลักฐาน Conversion/ROAS เพิ่มเติม',
   };
 }
 
