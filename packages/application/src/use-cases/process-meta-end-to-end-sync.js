@@ -11,6 +11,7 @@ const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
 const ORGANIC_CONNECTORS = new Set(['facebook', 'instagram']);
 const ADS_CONNECTOR = 'meta_ads';
 const META_ADS_MAX_REPORT_RANGE_DAYS = 31;
+const SOURCE_UNIT_READ_PAGE_SIZE = 500;
 const ORGANIC_STAGES = Object.freeze([
   'account',
   'content',
@@ -490,19 +491,32 @@ async function readAllStagedUnits({ workStore, workKey, expectedUnits, maximum }
       maximum,
     });
   }
-  const result = await workStore.listPhaseUnits({
-    workKey,
-    phase: SOURCE_PHASE,
-    afterSequence: 0,
-    limit: maximum,
-  });
-  if (result.units.length !== expectedUnits) {
+  const units = [];
+  let afterSequence = 0;
+  while (units.length < expectedUnits) {
+    const result = await workStore.listPhaseUnits({
+      workKey,
+      phase: SOURCE_PHASE,
+      afterSequence,
+      limit: Math.min(SOURCE_UNIT_READ_PAGE_SIZE, expectedUnits - units.length),
+    });
+    units.push(...result.units);
+    if (units.length >= expectedUnits || result.nextSequence === null) break;
+    if (!Number.isSafeInteger(result.nextSequence) || result.nextSequence <= afterSequence) {
+      throw permanentError('Meta durable source staging pagination did not advance', {
+        code: 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE',
+        details: { expectedUnits, observedUnits: units.length },
+      });
+    }
+    afterSequence = result.nextSequence;
+  }
+  if (units.length !== expectedUnits) {
     throw permanentError('Meta durable source staging is incomplete', {
       code: 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE',
-      details: { expectedUnits, observedUnits: result.units.length },
+      details: { expectedUnits, observedUnits: units.length },
     });
   }
-  return Object.freeze(result.units.map((unit) => normalizeStagedPayload(unit.payload)));
+  return Object.freeze(units.map((unit) => normalizeStagedPayload(unit.payload)));
 }
 
 function createStagedPayload(unit) {
