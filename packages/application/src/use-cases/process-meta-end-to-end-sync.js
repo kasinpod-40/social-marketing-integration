@@ -275,7 +275,7 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
       return {
         datasetKey: `${connectorKey}.content.inventory`,
         state: pageState,
-        ...(connectorKey === 'facebook' ? { dateRange } : {}),
+        dateRange,
       };
     }
     if (state.stage === 'account_insights') {

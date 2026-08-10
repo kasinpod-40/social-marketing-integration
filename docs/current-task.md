@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
 CURRENT_PROGRAM                     = MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_ACTIVATION_V1
-BRANCH                              = codex/meta-source-unit-capacity-hotfix
-EXACT_BASE                          = 221935e25f7c84b0ba2a3f3fb0cedf2b106e0e9c
+BRANCH                              = codex/instagram-period-bounded-inventory
+EXACT_BASE                          = 20099eba69bb45aaa9e9aef9d269f4ef154b435e
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
@@ -91,8 +91,9 @@ LARK_PLATFORM_OPTIONS               = ADDITIVE_FIX_APPLIED_AND_READ_BACK
 RELIABILITY_OUTBOX_PENDING          = 0
 QUEUE_TERMINALIZATION_FIX           = MERGED_PR_580_AND_DEPLOYED
 META_SOURCE_UNIT_CAPACITY_HOTFIX    = IMPLEMENTED_BOUNDED_2500_DEFAULT_UNCHANGED
-FOCUSED_REGRESSION                  = PASS_13_OF_13
-FULL_UNIT_TESTS                     = PASS_2895
+INSTAGRAM_INVENTORY_PERIOD_HOTFIX   = IMPLEMENTED_EXISTING_DATE_RANGE_CONTRACT
+FOCUSED_REGRESSION                  = PASS_20_OF_20
+FULL_UNIT_TESTS                     = PASS_2896
 WORKERS_RUNTIME_TESTS               = PASS_18
 REPORT_RELIABILITY_TESTS            = PASS_105
 ARCHITECTURE_HYGIENE                = PASS
@@ -102,7 +103,7 @@ SAFE_CONFIG_RECONCILIATION          = COMPLETE_LOCAL_IGNORED_CONFIG
 REMOTE_ACTIVATION                   = PARTIAL_SOURCE_CATCH_UP_IN_PROGRESS
 SOURCE_CATCH_UP_COMPLETE            = TIKTOK_FACEBOOK_YOUTUBE_PUBLIC_META_ADS_WOOCOMMERCE
 SOURCE_CATCH_UP_BLOCKED             = YOUTUBE_ANALYTICS_CHATWOOT
-INSTAGRAM_CATCH_UP                  = ACTIVE_REQUIRES_DEPLOYED_UNIT_CAPACITY_HOTFIX
+INSTAGRAM_CATCH_UP                  = ACTIVE_REQUIRES_FRESH_PERIOD_BOUNDED_GENERATION
 DAILY_REPORT_MATERIALIZATION        = WAITING_FOR_SOURCE_QUEUE_STABILITY
 GOOGLE_ADS_PROVIDER_SCHEDULE        = BLOCKED_BY_VISIBLE_AD_BLOCKER_MODAL
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
@@ -112,3 +113,5 @@ PRODUCTION                          = BLOCKED
 ```
 
 Hotfix นี้ขยายเฉพาะ hard maximum ของ `MKT_META_SOURCE_MAX_UNITS` จาก 500 เป็น 2,500 โดยคง default ที่ 500 และคงขอบเขต rows/bytes เดิม เพื่อให้ Instagram inventory 1,857 รายการเดินต่อแบบ resumable ได้โดยไม่เปลี่ยน retry, idempotency หรือ write semantics.
+
+Live progress หลัง deploy ยืนยันว่าช่วงวันที่ของ Instagram หลุดหายสองชั้นก่อนถึง adapter ทำให้ previous-day catch-up กลายเป็น full-account inventory 1,857 รายการ ทั้งที่ adapter มี newest-first bounded date-range contract อยู่แล้ว; hotfix จึงส่ง `periodStart`/`periodEnd` ผ่าน orchestration และ source collector เดิม โดยไม่เปลี่ยน Provider query schema หรือ write semantics.
