@@ -132,3 +132,9 @@ Instagram R2 ยืนยันว่า period-bound contract ถูกใช�
 Instagram R3 สำเร็จด้วย 1 content, 7 insight rows, D1 3/3 operations, Lark 7/7 tables, warning 0 และ reconciliation `failed=0`. Daily materialization มี D1/Lark snapshots ครบ 32 identities สำหรับ 8 platforms × `1D/3D/7D/30D`; Lark stable-key duplicate เป็นศูนย์ทุก Report table. Paid Ads predecessor DLQ 8 รายการถูกเก็บเป็นหลักฐานและ recovery ใช้ operation IDs `-r2` ใหม่โดยไม่ redrive.
 
 External blockers ที่ยังทำให้ห้ามประกาศ `MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_PASS`: Google Ads UI แสดง ad-blocker modal จึงยังตั้ง Provider Daily Frequency/ทำ fresh LIVE ไม่ได้, YouTube Analytics OAuth owner ไม่ตรง configured channel และ Chatwoot pagination เปลี่ยนระหว่าง continuation. Public YouTube, existing report coverage และ Dashboard materialization ยังคงพร้อมตรวจ; Production/Notification/DLQ redrive ยังปิด.
+
+## Downstream Weekly Executive Decision Preview blocker — 2026-08-10
+
+Fresh period `2026-08-03..2026-08-09` ถูกเลือกได้หลัง Daily materialization 32/32 แล้ว แต่ Fresh Executive Decision Preview หยุดก่อน mutation ด้วย `LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_METRIC_LIMIT_EXCEEDED`: AI metric-summary มี 8,435 characters เทียบเพดานที่ review แล้ว 8,000. รอบนี้มี `recordWriteCount=0`, `triggerWriteCount=0`, Queue/Notification/Schedule action = 0 และ Production ยัง BLOCKED.
+
+Root cause อยู่ที่ AI evidence serializer ซึ่ง serialize rank-1 candidate ซ้ำ: candidate เดียวกันอยู่ใน `contentCandidates`/`adCandidates` แล้วแต่ถูกใส่ซ้ำเป็น `topContent`/`topAds` ใน payload เดียวกัน. Hotfix PR #586 ลบเฉพาะ AI-side duplicate aliases โดยคง 3 Content + 3 Ads candidates, business facts, Decision Quality Gate และเพดาน 8,000 ไว้เหมือนเดิม. Historical factual aliases และ Historical Weekly delivery ไม่ถูกแก้หรือ rerun.
