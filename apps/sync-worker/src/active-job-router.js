@@ -24,7 +24,6 @@ import {
   readYouTubeChannelIdFromEnv,
   readYouTubeLarkTableIdsFromEnv,
 } from '../../../packages/config/src/youtube-organic-runtime-config.js';
-import { createYouTubeClientsFromEnv } from '../../../packages/connectors/src/youtube/youtube-runtime-factory.js';
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
 import {
   drainPendingSyncWarnings,
@@ -32,6 +31,7 @@ import {
 } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { resolveYouTubeAnalyticsEnabled } from './scheduled-jobs.js';
+import { createYouTubeRuntimeClients } from './youtube-runtime-clients.js';
 import {
   DEFAULT_LOCK_LEASE_MS,
   DEFAULT_LOCK_RENEW_INTERVAL_MS,
@@ -89,12 +89,18 @@ export async function processJob(input) {
     const operationalTableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
     const tableIds = Object.freeze({ ...youtubeTableIds, ...operationalTableIds });
     const reliability = infrastructure.getReliability(tableIds);
-    const clients = createYouTubeClientsFromEnv(input.env);
     const analyticsEnabled = resolveYouTubeAnalyticsEnabled({
       configured: input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED,
       requested: input.job.body?.analyticsEnabled,
     });
     const channelId = readYouTubeChannelIdFromEnv(input.env);
+    const clients = await (input.dependencies?.createYouTubeRuntimeClients
+      ?? createYouTubeRuntimeClients)(input.env, {
+      publicApiKeyOnly: false,
+      analyticsEnabled,
+      customerKey: runtimeConfig.customerKey,
+      channelId,
+    });
     const requestedAt = readSyncJobGeneration(input.job, 'YouTube');
     const resumableWorkStore = infrastructure.getResumableWorkStore();
 

@@ -12,7 +12,6 @@ import {
   readYouTubeEndToEndRuntimeConfig,
   readYouTubeLarkTableIdsFromEnv,
 } from '../../../packages/config/src/youtube-organic-runtime-config.js';
-import { createYouTubeClientsFromEnv } from '../../../packages/connectors/src/youtube/youtube-runtime-factory.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import {
   drainPendingSyncWarnings,
@@ -20,6 +19,7 @@ import {
 } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { resolveYouTubeAnalyticsEnabled } from './scheduled-jobs.js';
+import { createYouTubeRuntimeClients } from './youtube-runtime-clients.js';
 import {
   DEFAULT_LOCK_LEASE_MS,
   DEFAULT_LOCK_RENEW_INTERVAL_MS,
@@ -106,8 +106,6 @@ export async function processYouTubeOrganicEndToEndJob(input) {
   const resumableWorkStore = infrastructure.getResumableWorkStore();
   const dependencies = input.dependencies ?? {};
   const publicApiKeyOnly = operatorDryRun || operatorLarkUat;
-  const clients = (dependencies.createYouTubeClientsFromEnv
-    ?? createYouTubeClientsFromEnv)(input.env, { publicApiKeyOnly });
   const analyticsEnabled = publicApiKeyOnly
     ? false
     : resolveYouTubeAnalyticsEnabled({
@@ -115,6 +113,13 @@ export async function processYouTubeOrganicEndToEndJob(input) {
       requested: input.job.body?.analyticsEnabled,
     });
   const channelId = readYouTubeChannelIdFromEnv(input.env);
+  const clients = await (dependencies.createYouTubeRuntimeClients
+    ?? createYouTubeRuntimeClients)(input.env, {
+    publicApiKeyOnly,
+    analyticsEnabled,
+    customerKey: runtimeConfig.customerKey,
+    channelId,
+  });
   const requestedAt = operatorIdentity?.originalRequestedAt
     ?? readSyncJobGeneration(input.job, 'YouTube');
 

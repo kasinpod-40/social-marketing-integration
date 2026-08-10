@@ -81,7 +81,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
         const result = await processYouTubeOrganicEndToEndJob({
           ...input,
           dependencies: {
-            createYouTubeClientsFromEnv: () => createPublicYouTubeFixture(observations),
+            createYouTubeRuntimeClients: () => createPublicYouTubeFixture(observations),
           },
         });
         observations.results.push(result);

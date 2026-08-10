@@ -14,9 +14,25 @@ Integration Workspace activation เมื่อ 2026-08-10 เปิด Source 
 พร้อม D1/Lark readback 32 snapshots สำหรับ period end `2026-08-09`. Notification runtime,
 automatic weekly notification, DLQ redrive และ Production ยังปิด. Google Ads fresh LIVE ผ่าน
 6 datasets, 7 chunks, 1,335 rows, D1/Lark parity และ Provider schedule readback `Daily between
-6:00 AM and 7:00 AM`; PREVIEW ไม่มี schedule. External blockers ที่ยังห้ามประกาศ full LIVE pass
-เหลือ YouTube Analytics OAuth identity และ Chatwoot mutable pagination; รายละเอียด live evidence
-อยู่ในเอกสารเดียวกัน.
+6:00 AM and 7:00 AM`; PREVIEW ไม่มี schedule. Blockers ที่ยังห้ามประกาศ full LIVE pass คือ
+YouTube Analytics repository bridge แก้แล้วแต่ยังรอ reviewed deploy/live validation และ Chatwoot
+mutable pagination; รายละเอียด live evidence อยู่ในเอกสารเดียวกัน.
+
+## YouTube Customer OAuth runtime credential-path correction — 2026-08-10
+
+Read-only evidence ยืนยันว่า Customer Connection เดิมยัง `connected/validated` และ active encrypted
+Refresh Token reference ตรงกัน. คำแนะนำก่อนหน้าที่ให้ลูกค้า Connect ใหม่จากข้อสรุป owner/channel
+mismatch จึงไม่ถูกต้อง: repository cause จริงคือ ingestion สร้าง Owner client จาก legacy
+`YOUTUBE_OAUTH_*` path แทน Customer Connection ที่ callback บันทึกไว้.
+
+Repository แก้แล้วโดยให้ Analytics-enabled routes อ่าน exact D1 Customer Connection, ตรวจ customer,
+state, scopes, active credential reference และ configured Channel แบบ fail-closed แล้ว reuse shared
+Google refresh provider; ไม่มี legacy Owner fallback. Full unit, Workers runtime `18/18`, report
+reliability `105/105`, architecture/hygiene, audit, deploy dry-run และ diff check ผ่าน. ไม่มีการสร้าง
+invitation, consent ซ้ำ, remote mutation หรือ deployment. `REPOSITORY_FIXED=YES` แต่
+`LIVE_VALIDATED=NO`; ลูกค้าไม่ต้องทำอะไร และต้องรอ reviewed deployment + controlled Analytics
+validation ก่อนปิด Live blocker. รายละเอียดอยู่ที่
+`docs/project-brain/youtube-customer-oauth-runtime-credential-path-incident-2026-08-10.md`.
 
 ## Chatwoot Initial terminal recovery — 2026-08-01
 

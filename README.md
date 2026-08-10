@@ -30,8 +30,10 @@ Manager Script trigger และ signed ingress เพื่อไม่สร�
 ใน example config ยังเป็น `false`; Integration Workspace เปิด Source/Daily/Weekly schedules แล้ว
 และ materialize `2026-08-09` ครบ 32 D1/Lark snapshots. Google Ads fresh LIVE ผ่าน 6 datasets,
 7 chunks, 1,335 rows พร้อม D1/Lark parity และ Provider frequency `Daily between 6:00 AM and
-7:00 AM`; PREVIEW ไม่มี schedule. External blockers เหลือ YouTube Analytics OAuth และ Chatwoot
-mutable pagination; TikTok Ads ยัง `planned`; Notification/DLQ redrive ปิดและ Production blocked. ดู
+7:00 AM`; PREVIEW ไม่มี schedule. YouTube Analytics customer-credential bridge แก้และผ่าน
+Repository gates แล้วโดยใช้ Customer Connection เดิม—ไม่ต้องขอ consent ลูกค้าซ้ำ—แต่ยังรอ reviewed
+deployment/live validation; Chatwoot mutable pagination ยังเป็น blocker. TikTok Ads ยัง `planned`;
+Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
 `docs/current-task.md`.
 

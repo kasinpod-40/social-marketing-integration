@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                         = DASHBOARD_READY_YOUTUBE_ANALYTICS_CHATWOOT_BLOCKERS
+TASK_STATUS                         = DASHBOARD_READY_YOUTUBE_ANALYTICS_LIVE_VALIDATION_CHATWOOT_BLOCKERS
 CURRENT_PROGRAM                     = MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_ACTIVATION_V1
 BRANCH                              = codex/google-ads-live-schedule-closeout
 EXACT_BASE                          = 99c88691db1237c9a08dff6922d1836486f3772d
@@ -109,7 +109,7 @@ API_ACTIVE_VERSION                  = 4166852d-c8bb-438a-9ab4-ffeec9520a7f
 SYNC_ACTIVE_VERSION                 = 04dc61e2-1f6a-4c79-9226-6dedbbec9593
 REMOTE_ACTIVATION                   = SOURCE_AND_REPORT_SCHEDULES_ON
 SOURCE_CATCH_UP_COMPLETE            = TIKTOK_FACEBOOK_INSTAGRAM_YOUTUBE_PUBLIC_META_ADS_GOOGLE_ADS_WOOCOMMERCE
-SOURCE_CATCH_UP_BLOCKED             = YOUTUBE_ANALYTICS_CHATWOOT
+SOURCE_CATCH_UP_BLOCKED             = YOUTUBE_ANALYTICS_LIVE_VALIDATION_CHATWOOT
 INSTAGRAM_CATCH_UP                  = R3_PASS_D1_LARK_RECONCILIATION_FAILED_0
 DAILY_REPORT_MATERIALIZATION        = PASS_32_OF_32_D1_AND_LARK
 LARK_REPORT_READBACK                = SNAPSHOTS_32_METRICS_1236_TOP_CONTENT_80_TOP_ADS_40
@@ -137,7 +137,11 @@ Instagram R3 สำเร็จด้วย 1 content, 7 insight rows, D1 3/3 op
 
 Google Ads fresh LIVE ใช้ run ใหม่ `609cc147-809b-404a-a484-dcbb82c12a6f` โดยไม่ replay historical run ที่ถูกป้องกันไว้: signed delivery รับ 7/7 chunks และ 1,335/1,335 rows, admission `completed` ด้วย send attempt เดียว, reconciliation ครบ 6 datasets และ `failed_rows=0`. D1/Lark readback ตรงกันที่ Ads entities 1,105 และ Daily facts 390; Google Ads report R3 ทั้ง `1D/3D/7D/30D` มี coverage 1 และ fresh source watermark เดียวกัน. Google Ads Manager Script UI ยืนยัน script หลัก Enabled และ Provider frequency `Daily between 6:00 AM and 7:00 AM`; PREVIEW script ไม่มี schedule จึงไม่เกิด duplicate provider producer.
 
-External blockers ที่ยังทำให้ห้ามประกาศ `MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_PASS` เหลือสองรายการ: YouTube Analytics OAuth owner ไม่ตรง configured channel และ Chatwoot pagination เปลี่ยนระหว่าง continuation. Public YouTube, Google Ads fresh LIVE, existing report coverage และ Dashboard materialization พร้อมตรวจ; Production/Notification/DLQ redrive ยังปิด.
+Blockers ที่ยังทำให้ห้ามประกาศ `MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_PASS` เหลือสองรายการ:
+YouTube Analytics customer-credential runtime bridge แก้ใน Repository และผ่าน gates แล้ว แต่ยังรอ
+reviewed deployment กับ controlled live validation; Chatwoot pagination ยังเปลี่ยนระหว่าง continuation.
+Public YouTube, Google Ads fresh LIVE, existing report coverage และ Dashboard materialization พร้อมตรวจ;
+Production/Notification/DLQ redrive ยังปิด.
 
 ## Downstream Weekly Executive Decision Preview blocker — 2026-08-10
 
@@ -148,3 +152,82 @@ Root cause แรกอยู่ที่ AI evidence serializer ซึ่ง se
 หลัง PR #586 merge การ rerun เดิมลด payload จาก 8,435 เป็น 8,220 characters แต่ยังเกินเพดาน 8,000 และยังหยุดก่อน mutation (`recordWriteCount=0`, `triggerWriteCount=0`). Root cause ชั้นที่สองคือ ranked `contentCandidates`/`adCandidates` ถูก serialize ครบอยู่แล้วใน `channelBusinessEvidence` แต่ยังถูก flatten ซ้ำทั้ง collection ภายใต้ `decisionEvidence`.
 
 Hotfix PR #587 ลบเฉพาะ duplicate candidate collections จาก `decisionEvidence`; candidate facts สูงสุด 3 Content + 3 Ads ต่อ channel ยังคงอยู่ใน `channelBusinessEvidence`, ส่วน `scaleEvidenceAdNames`, `funnelDivergences`, `organicPaidMappingAvailable`, candidate-name validation, Decision Quality Gate และ `MAX_METRIC_SUMMARY_CHARS=8000` คงเดิม. ไม่มี Remote action ใน implementation นี้ และ Fresh Preview จะรันใหม่ได้หนึ่งครั้งหลัง #587 merge เพราะ live attempt ล่าสุดไม่มี record/trigger mutation.
+
+## YouTube Customer OAuth runtime credential-path incident — 2026-08-10
+
+### Incident status before correction
+
+```text
+INCIDENT                            = YOUTUBE_CUSTOMER_OAUTH_RUNTIME_CREDENTIAL_PATH_REGRESSION
+CUSTOMER_CONNECTION                = CONNECTED_VALIDATED
+ACTIVE_ENCRYPTED_REFRESH_REFERENCE = PRESENT_AND_MATCHED
+CUSTOMER_RECONNECT_REQUIRED        = NO
+PUBLIC_YOUTUBE_SYNC                = PASS
+OWNER_ANALYTICS                    = BLOCKED
+REPOSITORY_FIX                     = IN_PROGRESS
+REMOTE_DEPLOYMENT                  = NOT_AUTHORIZED_BY_THIS_TASK
+LIVE_ANALYTICS_REVALIDATION        = PENDING_AFTER_REVIEWED_DEPLOYMENT
+```
+
+### Diagnostic correction record
+
+คำอธิบายก่อนหน้าที่สรุปว่า OAuth owner ของลูกค้าไม่ตรง Channel และเสนอให้ลูกค้า Connect ใหม่
+เป็นการวินิจฉัยที่ไม่ครบและทำให้โยนภาระไปที่ลูกค้าผิดจุด. Read-only D1 audit ยืนยันว่า Customer
+Connection ยังเป็น `connected/validated`, `credential_reference` ตรงกับ active encrypted
+Refresh Token และไม่มี recorded refresh failure. Source inspection ยืนยันว่า YouTube ingestion
+สร้าง Owner client จาก legacy `YOUTUBE_OAUTH_*` environment path โดยไม่อ่าน Customer
+Connection/credential reference ที่ callback บันทึกไว้.
+
+ผลรัน `organic_end_to_end` ที่สำเร็จหลัง identity mismatch มี
+`analyticsCompletenessStatus=not_enabled`, tracked/queried/rows เป็นศูนย์ จึงพิสูจน์เฉพาะ Public
+YouTube path ไม่ใช่ Owner Analytics success. ห้ามใช้ success เหล่านั้นประกาศปิด Analytics blocker.
+
+### Objective and scope
+
+- ใช้ active encrypted YouTube Customer Connection จาก D1 เป็น Owner Analytics credential source;
+- reuse Shared Google OAuth refresh provider, encrypted credential repository และ YouTube API client;
+- ตรวจ customer, connector, scopes, connection/access status, active credential reference และ configured Channel แบบ fail-closed ก่อน Provider request;
+- เมื่อ Analytics เปิด ห้าม fallback ไป legacy static access/refresh token;
+- Public Data API, dry-run/Lark-UAT public-only paths, D1-first writes, pagination, retry, stable keys และ Lark reconciliation ต้องคง contract เดิม;
+- ไม่สร้าง invitation ใหม่ ไม่ขอ customer consent ใหม่ ไม่ rotate/delete Secret และไม่ Deploy จาก implementation scope นี้.
+
+### Acceptance criteria
+
+- Analytics-enabled runtime สร้าง Owner client จาก encrypted Customer Connection เท่านั้น;
+- missing/invalid connection, scope, active credential หรือ Channel mapping หยุดก่อน Analytics request ด้วย sanitized permanent error;
+- legacy `YOUTUBE_OAUTH_*` values ไม่ถูกอ่านเป็น fallback เมื่อ Analytics เปิด;
+- Analytics-disabled และ operator public-only behavior ไม่เปลี่ยน;
+- focused customer-connection/runtime/routing tests, `npm run check`, full tests, report reliability,
+  audit, deploy dry-run และ `git diff --check` ผ่าน;
+- หลัง implementation ต้องอัปเดตหัวข้อนี้และ Project Brain แยก `REPOSITORY_FIXED` ออกจาก
+  `LIVE_VALIDATED`; ห้ามบันทึกว่า Live แก้แล้วก่อน reviewed deploy และ controlled Analytics run ผ่าน.
+
+### Implementation result
+
+```text
+STATUS                            = REPOSITORY_FIXED_LIVE_VALIDATION_PENDING
+REPOSITORY_FIXED                  = YES
+LIVE_VALIDATED                    = NO
+CUSTOMER_ACTION                   = NONE
+CUSTOMER_RECONNECT_REQUIRED       = NO
+OWNER_CREDENTIAL_SOURCE           = ENCRYPTED_CUSTOMER_CONNECTION_D1
+LEGACY_OWNER_OAUTH_FALLBACK       = PROHIBITED_WHEN_ANALYTICS_ENABLED
+FOCUSED_REGRESSION                = PASS
+FULL_UNIT_TESTS                   = PASS
+WORKERS_RUNTIME_TESTS             = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS          = PASS_105_OF_105
+ARCHITECTURE_HYGIENE              = PASS_749_FILES_0_CYCLES
+DEPENDENCY_AUDIT                  = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                    = PASS
+DIFF_CHECK                        = PASS
+REMOTE_DEPLOYMENT                 = NOT_RUN_NOT_AUTHORIZED_BY_THIS_TASK
+LIVE_OWNER_PREFLIGHT              = NOT_RUN
+LIVE_ANALYTICS_CATCH_UP           = NOT_RUN
+```
+
+Runtime routes ทั้ง dedicated และ compatibility path ใช้ `createYouTubeRuntimeClients` ร่วมกัน.
+เมื่อ Analytics เปิด Factory จะอ่าน exact YouTube Customer Connection จาก D1, ตรวจ
+`connected/validated`, approved scopes, active encrypted credential reference และ configured Channel
+ก่อนสร้าง Owner client ผ่าน shared Google refresh provider. Access Token อยู่ใน memory เท่านั้น;
+Public/API-key และ operator dry-run paths คงเดิม. การแก้ครั้งนี้ไม่ได้สร้าง invitation, ไม่ขอ consent
+ซ้ำ, ไม่ rotate/delete Secret, ไม่ deploy Worker และไม่ mutate remote data.
