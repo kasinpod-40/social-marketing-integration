@@ -215,7 +215,10 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
 
   const recommendationLines = recommendations.split(/\r?\n/u).map(text).filter(Boolean);
   const decisionLines = recommendationLines.filter((line) => DECISION_LINE_START.test(line));
-  if (Number(evidence.businessEvidenceChannelCount ?? 0) > 0 && (decisionLines.length < 2 || decisionLines.length > 4)) {
+  if (Number(evidence.businessEvidenceChannelCount ?? 0) > 0 && decisionLines.length < 2) {
+    violations.push('recommendations_missing_decision_actions');
+  }
+  if (decisionLines.length > 4) {
     violations.push('recommendations_decision_action_count_invalid');
   }
   if (recommendationLines.some((line) => !DECISION_LINE_START.test(line))) {
