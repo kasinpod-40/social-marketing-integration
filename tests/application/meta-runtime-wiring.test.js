@@ -381,9 +381,36 @@ test('fails before another Provider call when the durable source-unit limit is r
   assert.equal(calls, 1);
 });
 
-test('accepts the reviewed large-inventory durable source-unit ceiling', async () => {
-  const result = await processMetaEndToEndSync(baseInput({
-    resumableWorkStore: createWorkStore(),
+test('accepts the reviewed large-inventory ceiling while respecting the D1 unit-page cap', async () => {
+  const workStore = createWorkStore();
+  const listPhaseUnits = workStore.listPhaseUnits.bind(workStore);
+  const observedLimits = [];
+  workStore.listPhaseUnits = async (input) => {
+    observedLimits.push(input.limit);
+    if (input.limit > 500) throw new RangeError('D1ResumableWorkStore limit must be from 1 to 500');
+    return listPhaseUnits(input);
+  };
+  const emptyPage = async () => ({ rows: [], hasMore: false, nextCursor: null });
+  const input = baseInput({
+    connectorKey: 'instagram',
+    jobType: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+    operation: Object.freeze({
+      operationId: 'instagram-large-ceiling-001',
+      workKey: 'instagram:instagram-large-ceiling-001',
+      generation: REQUESTED_AT,
+      originalRequestedAt: REQUESTED_AT,
+      stable: true,
+    }),
+    syncRunId: 'meta:instagram:instagram-large-ceiling-001',
+    adapter: {
+      async fetchAccount() {
+        return { resource: { id: 'instagram_1', name: 'Fixture Instagram' } };
+      },
+      fetchContentPage: emptyPage,
+      fetchAccountInsightsPage: emptyPage,
+    },
+    sourceAccountId: 'instagram_1',
+    resumableWorkStore: workStore,
     sourceReadOnly: true,
     d1WriteEnabled: false,
     larkWriteEnabled: false,
@@ -395,9 +422,84 @@ test('accepts the reviewed large-inventory durable source-unit ceiling', async (
       d1RowsPerInvocation: 2,
       larkTablesPerInvocation: 2,
     },
-  }));
+  });
 
-  assert.equal(result.status, 'source_continuation');
+  let result;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    result = await processMetaEndToEndSync(input);
+    if (result.status === 'source_validated') break;
+  }
+
+  assert.equal(result.status, 'source_validated');
+  assert.ok(observedLimits.length > 0);
+  assert.equal(Math.max(...observedLimits), 3);
+});
+
+test('reads more than 500 staged Meta units through bounded D1 pages', async () => {
+  const workStore = createWorkStore();
+  const listPhaseUnits = workStore.listPhaseUnits.bind(workStore);
+  const reads = [];
+  workStore.listPhaseUnits = async (input) => {
+    reads.push({ afterSequence: input.afterSequence, limit: input.limit });
+    if (input.limit > 500) throw new RangeError('D1ResumableWorkStore limit must be from 1 to 500');
+    return listPhaseUnits(input);
+  };
+  const input = baseInput({
+    resumableWorkStore: workStore,
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+    limits: {
+      sourceMaxPages: 10,
+      sourceMaxUnits: 2_500,
+      sourceMaxRows: 50_000,
+      sourceMaxUnitBytes: 100_000,
+      d1RowsPerInvocation: 2,
+      larkTablesPerInvocation: 2,
+    },
+  });
+
+  assert.equal((await processMetaEndToEndSync(input)).status, 'source_continuation');
+  for (let sequence = 1; sequence <= 500; sequence += 1) {
+    await workStore.savePhase({
+      workKey: OPERATION.workKey,
+      phase: 'meta_end_to_end_source_staging_v1',
+      state: {
+        stage: 'complete',
+        pageState: null,
+        contentIds: [],
+        contentIndex: 0,
+        unitCount: 501,
+        rowCount: 1,
+        sourceWatermark: null,
+      },
+      expectedItems: 501,
+      processedItems: 501,
+      pagesProcessed: 501,
+      chunksProcessed: 501,
+      complete: true,
+      unit: {
+        unitKey: `daily:${sequence}`,
+        sequence,
+        payload: {
+          schemaVersion: 'meta_end_to_end_staged_source_unit_v1',
+          datasetKey: 'meta_ads.performance.daily',
+          sourceEntityId: null,
+          sourceStatus: 'no_data_confirmed',
+          sourceWatermark: null,
+          pageNumber: sequence,
+          rows: [],
+        },
+      },
+    });
+  }
+
+  const result = await processMetaEndToEndSync(input);
+  assert.equal(result.status, 'source_validated');
+  assert.deepEqual(reads, [
+    { afterSequence: 0, limit: 500 },
+    { afterSequence: 500, limit: 1 },
+  ]);
 });
 
 test('Meta Ads stages account then July insights and derives only activity entities', async () => {
