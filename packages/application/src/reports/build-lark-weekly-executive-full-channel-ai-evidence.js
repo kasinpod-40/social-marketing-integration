@@ -358,8 +358,8 @@ function buildCompactDecisionSummary(input, labelLimit) {
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
     legend: 'ch=[name,m,c,a]; m=[name,value,changePct,+/-/0]; c=[name,rank,views,eng,ER]; a=[name,rank,spend,clicks,CTR,conv,value,ROAS,scale]',
     writerContract: Object.freeze({
-      recommendations: '2-4 lines: label+verb+evidence(candidate OR channel+compared metric); bare label/name invalid; SCALE iff scale=1; NO-SCALE iff funnel; Organic no Paid=>TEST; no same-creative',
-      ...(hasFunnelDivergence ? { funnelDecision: 'funnel => NO-SCALE broad budget; cite one up + one down metric' } : {}),
+      recommendations: '2-4 lines; 1 label/line; real verb+anchor; ตรวจสอบ-only invalid; c=[]=>no CONTENT/Organic filler; a=>name Paid candidate, never CONTENT; c=[]+a+funnel=>paid action + NO-SCALE only; SCALE iff scale=1; no same-creative',
+      ...(hasFunnelDivergence ? { funnelDecision: 'NO-SCALE: one line with 1 up + 1 down metric; concrete action only' } : {}),
       strengths: '+ only; spend/budget neutral',
       weaknesses: '- only; missing data is not weakness',
     }),

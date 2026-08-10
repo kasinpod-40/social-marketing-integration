@@ -259,7 +259,8 @@ test('full-channel AI keeps rich decision evidence while Native AI prompt stays 
   assert.equal(woo.availableMetrics[0].display_name, 'ยอดขายสุทธิ');
   assert.ok(Math.abs(woo.availableMetrics[0].change_percent + 33) < 0.01);
   assert.match(summary.writerContract.recommendations, /SCALE iff scale=1/u);
-  assert.match(summary.writerContract.recommendations, /bare label\/name invalid/u);
+  assert.match(summary.writerContract.recommendations, /1 label\/line/u);
+  assert.match(summary.writerContract.recommendations, /ตรวจสอบ-only invalid/u);
   assert.match(summary.writerContract.funnelDecision, /NO-SCALE/u);
 });
 
