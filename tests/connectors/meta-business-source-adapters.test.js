@@ -38,7 +38,7 @@ test('Facebook source adapter performs contract-bound GET reads and returns a cu
   assert.equal(adapter.createPost, undefined);
 });
 
-test('Facebook one-day observation inventories current content while keeping metric reads date-bound', async () => {
+test('Facebook one-day observation inventories the bounded Dashboard lookback while metric reads stay date-bound', async () => {
   const calls = [];
   const adapter = new FacebookOrganicSourceAdapter({
     client: fakeReadClient({
@@ -62,8 +62,8 @@ test('Facebook one-day observation inventories current content while keeping met
   });
 
   assert.equal(calls[0].path, 'page_fixture_001/posts');
-  assert.equal(calls[0].query.since, undefined);
-  assert.equal(calls[0].query.until, undefined);
+  assert.equal(calls[0].query.since, '2026-05-11');
+  assert.equal(calls[0].query.until, '2026-08-09');
   assert.equal(calls[0].options.operationName, 'facebook.content.inventory');
   assert.equal(calls[1].path, 'post_fixture_001/insights');
   assert.equal(calls[1].query.since, '2026-08-08');

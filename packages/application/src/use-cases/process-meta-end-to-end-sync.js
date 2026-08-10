@@ -12,6 +12,7 @@ const ORGANIC_CONNECTORS = new Set(['facebook', 'instagram']);
 const ADS_CONNECTOR = 'meta_ads';
 const META_ADS_MAX_REPORT_RANGE_DAYS = 31;
 const SOURCE_UNIT_READ_PAGE_SIZE = 500;
+const FACEBOOK_DAILY_CONTENT_SCOPE = 'facebook_daily_dashboard_lookback_v1';
 const ORGANIC_STAGES = Object.freeze([
   'account',
   'content',
@@ -93,6 +94,7 @@ export async function processMetaEndToEndSync(input = {}) {
     phase: SOURCE_PHASE,
   });
   let state = normalizeSourceState(existing?.state, connectorKey);
+  state = prepareFacebookDailyContentResume({ connectorKey, dateRange, state });
 
   if (state.stage !== 'complete') {
     if (state.unitCount >= limits.sourceMaxUnits) {
@@ -123,6 +125,7 @@ export async function processMetaEndToEndSync(input = {}) {
       workStore,
       workKey: operation.workKey,
       limits,
+      dateRange,
     });
     await assertLockActive();
     await workStore.savePhase({
@@ -231,18 +234,30 @@ async function advanceState(input) {
 
   next.pageState = null;
   if (ORGANIC_CONNECTORS.has(input.connectorKey)) {
-    if (next.stage === 'account') next.stage = 'content';
-    else if (next.stage === 'content') {
+    if (next.stage === 'account') {
+      next.stage = 'content';
+      if (isFacebookDailyRange(input.connectorKey, input.dateRange)) {
+        next.contentInventoryScope = FACEBOOK_DAILY_CONTENT_SCOPE;
+        next.contentInventoryStartSequence = next.unitCount;
+      }
+    } else if (next.stage === 'content') {
       const staged = await readAllStagedUnits({
         workStore: input.workStore,
         workKey: input.workKey,
         expectedUnits: input.state.unitCount,
         maximum: input.limits.sourceMaxUnits,
       });
-      const contentIds = uniqueText([...staged, input.payload]
-        .filter((entry) => entry.datasetKey === `${input.connectorKey}.content.inventory`)
-        .flatMap((entry) => entry.rows)
-        .map((row) => row?.id));
+      const currentPayload = stagedPayloadWithSequence(input.payload, input.state.unitCount);
+      const contentIds = uniqueText(
+        scopedOrganicEntries({
+          staged: [...staged, currentPayload],
+          connectorKey: input.connectorKey,
+          state: input.state,
+          datasetKey: `${input.connectorKey}.content.inventory`,
+        })
+          .flatMap((entry) => entry.rows)
+          .map((row) => row?.id),
+      );
       next.contentIds = contentIds;
       next.contentIndex = 0;
       next.stage = 'account_insights';
@@ -264,6 +279,28 @@ async function advanceState(input) {
     next.stage = ADS_STAGES[index + 1] ?? 'complete';
   }
   return freezeState(next);
+}
+
+function prepareFacebookDailyContentResume({ connectorKey, dateRange, state }) {
+  if (!isFacebookDailyRange(connectorKey, dateRange)) return state;
+  if (state.contentInventoryScope === FACEBOOK_DAILY_CONTENT_SCOPE) return state;
+  if (!['content', 'account_insights', 'content_insights'].includes(state.stage)) return state;
+  return freezeState({
+    ...cloneState(state),
+    stage: 'content',
+    pageState: null,
+    contentIds: [],
+    contentIndex: 0,
+    sourceWatermark: null,
+    contentInventoryScope: FACEBOOK_DAILY_CONTENT_SCOPE,
+    contentInventoryStartSequence: state.unitCount,
+  });
+}
+
+function isFacebookDailyRange(connectorKey, dateRange) {
+  return connectorKey === 'facebook'
+    && dateRange?.since
+    && dateRange.since === dateRange.until;
 }
 
 function resolveSourceRequest({ connectorKey, state, dateRange }) {
@@ -309,9 +346,12 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
 }
 
 function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }) {
-  const rowsFor = (datasetKey) => staged
-    .filter((entry) => entry.datasetKey === datasetKey)
-    .flatMap((entry) => entry.rows);
+  const rowsFor = (datasetKey) => scopedOrganicEntries({
+    staged,
+    connectorKey,
+    state,
+    datasetKey,
+  }).flatMap((entry) => entry.rows);
   if (ORGANIC_CONNECTORS.has(connectorKey)) {
     const account = rowsFor(`${connectorKey}.account.latest`);
     if (account.length !== 1) {
@@ -320,7 +360,12 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
       });
     }
     const insightMap = new Map();
-    for (const entry of staged.filter((item) => item.datasetKey === `${connectorKey}.content.insights`)) {
+    for (const entry of scopedOrganicEntries({
+      staged,
+      connectorKey,
+      state,
+      datasetKey: `${connectorKey}.content.insights`,
+    })) {
       const id = requireText(entry.sourceEntityId, 'sourceEntityId');
       insightMap.set(id, [...(insightMap.get(id) ?? []), ...entry.rows]);
     }
@@ -337,13 +382,17 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
       sourceWatermark: state.sourceWatermark,
     });
   }
-  const account = rowsFor('meta_ads.account.latest');
+  const account = staged
+    .filter((entry) => entry.datasetKey === 'meta_ads.account.latest')
+    .flatMap((entry) => entry.rows);
   if (account.length !== 1) {
     throw permanentError('Meta Ads account source must contain exactly one resource', {
       code: 'META_END_TO_END_SOURCE_ACCOUNT_INVALID',
     });
   }
-  const dailyInsights = rowsFor('meta_ads.performance.daily');
+  const dailyInsights = staged
+    .filter((entry) => entry.datasetKey === 'meta_ads.performance.daily')
+    .flatMap((entry) => entry.rows);
   const activity = deriveMetaAdsActivityEntities(dailyInsights);
   return deepFreeze({
     connectorKey,
@@ -358,6 +407,22 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
     larkProjectionMode: 'curated_reports',
     sourceWatermark: state.sourceWatermark,
   });
+}
+
+function scopedOrganicEntries({ staged, connectorKey, state, datasetKey }) {
+  const matching = staged.filter((entry) => entry.datasetKey === datasetKey);
+  if (connectorKey !== 'facebook'
+    || state.contentInventoryScope !== FACEBOOK_DAILY_CONTENT_SCOPE
+    || datasetKey === 'facebook.account.latest') {
+    return matching;
+  }
+  const startSequence = state.contentInventoryStartSequence;
+  if (!Number.isSafeInteger(startSequence) || startSequence < 0) {
+    throw permanentError('Facebook daily content scope is missing its durable sequence marker', {
+      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
+    });
+  }
+  return matching.filter((entry) => entry.sequence >= startSequence);
 }
 
 async function buildWriteSet(input) {
@@ -516,7 +581,7 @@ async function readAllStagedUnits({ workStore, workKey, expectedUnits, maximum }
       details: { expectedUnits, observedUnits: units.length },
     });
   }
-  return Object.freeze(units.map((unit) => normalizeStagedPayload(unit.payload)));
+  return Object.freeze(units.map((unit) => normalizeStagedPayload(unit.payload, unit.sequence)));
 }
 
 function createStagedPayload(unit) {
@@ -531,7 +596,14 @@ function createStagedPayload(unit) {
   });
 }
 
-function normalizeStagedPayload(value) {
+function stagedPayloadWithSequence(payload, sequence) {
+  return deepFreeze({
+    ...payload,
+    sequence: nonNegativeInteger(sequence, 'staged payload sequence'),
+  });
+}
+
+function normalizeStagedPayload(value, sequence) {
   const payload = requireObject(value, 'staged payload');
   return deepFreeze({
     schemaVersion: requireText(payload.schemaVersion, 'staged payload schemaVersion'),
@@ -540,6 +612,7 @@ function normalizeStagedPayload(value) {
     sourceStatus: requireText(payload.sourceStatus, 'staged payload sourceStatus'),
     sourceWatermark: optionalText(payload.sourceWatermark),
     pageNumber: nonNegativeInteger(payload.pageNumber, 'staged payload pageNumber'),
+    sequence: nonNegativeInteger(sequence, 'staged payload sequence'),
     rows: requireArray(payload.rows, 'staged payload rows'),
   });
 }
@@ -588,6 +661,25 @@ function normalizeSourceState(value, connectorKey) {
       details: { connectorKey, stage },
     });
   }
+  const contentInventoryScope = optionalText(source.contentInventoryScope);
+  const contentInventoryStartSequence = optionalNonNegativeInteger(
+    source.contentInventoryStartSequence,
+    'contentInventoryStartSequence',
+  );
+  if (contentInventoryScope !== null
+    && contentInventoryScope !== FACEBOOK_DAILY_CONTENT_SCOPE) {
+    throw permanentError('Meta durable Content inventory scope is invalid', {
+      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
+      details: { connectorKey, contentInventoryScope },
+    });
+  }
+  if ((contentInventoryScope === FACEBOOK_DAILY_CONTENT_SCOPE)
+    !== (contentInventoryStartSequence !== null)) {
+    throw permanentError('Meta durable Content inventory scope marker is incomplete', {
+      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
+      details: { connectorKey },
+    });
+  }
   return freezeState({
     stage,
     pageState: normalizePageState(source.pageState),
@@ -596,6 +688,8 @@ function normalizeSourceState(value, connectorKey) {
     unitCount: nonNegativeInteger(source.unitCount ?? 0, 'unitCount'),
     rowCount: nonNegativeInteger(source.rowCount ?? 0, 'rowCount'),
     sourceWatermark: optionalText(source.sourceWatermark),
+    contentInventoryScope,
+    contentInventoryStartSequence,
   });
 }
 
@@ -724,6 +818,8 @@ function cloneState(value) {
     unitCount: value.unitCount,
     rowCount: value.rowCount,
     sourceWatermark: value.sourceWatermark,
+    contentInventoryScope: value.contentInventoryScope,
+    contentInventoryStartSequence: value.contentInventoryStartSequence,
   };
 }
 
@@ -794,6 +890,11 @@ function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be non-negative`);
   return number;
+}
+
+function optionalNonNegativeInteger(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  return nonNegativeInteger(value, fieldName);
 }
 
 function boundedInteger(value, fieldName, minimum, maximum) {
