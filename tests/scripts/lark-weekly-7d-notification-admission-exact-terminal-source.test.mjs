@@ -27,22 +27,41 @@ test('weekly Notification exact terminal deploys current-main Runtime once befor
   assert.match(source, /reportSettingWriteCount:\s*0/u);
 });
 
-test('weekly Notification exact terminal validates the accepted V9 source and never edits it', () => {
-  assert.match(source, /isExactAcceptedWeekly7dSource/u);
+test('weekly Notification exact terminal binds to the exact generated Fresh v4 source and never edits it', () => {
+  assert.match(source, /loadFreshWeekly7dExecutiveDecisionNotificationSource/u);
+  assert.match(source, /load-exact-fresh-executive-decision-source/u);
   assert.match(source, /assertSourceUnchanged/u);
-  assert.match(source, /sourceV9MutationCount:\s*0/u);
+  assert.match(source, /sourceDecisionMutationCount:\s*0/u);
   assert.match(source, /reconcile-dedicated-notification-ai-run/u);
+  assert.doesNotMatch(source, /isExactAcceptedWeekly7dSource/u);
+  assert.doesNotMatch(source, /load-exact-accepted-v9-source/u);
   assert.doesNotMatch(source, /keyField:\s*'ai_run_key'[\s\S]{0,200}sourceAiRunKey/u);
 });
 
-test('message preview blocks internal readiness labels before Queue admission', () => {
+test('read-only Notification admission preview cannot deploy, enqueue or send', () => {
+  const start = source.indexOf('async function previewAdmission()');
+  const end = source.indexOf('async function executeAdmission()', start);
+  assert.ok(start >= 0 && end > start);
+  const preview = source.slice(start, end);
+  assert.doesNotMatch(preview, /sendQueueOnce\s*\(/u);
+  assert.doesNotMatch(preview, /deployAndVerifyCurrentRuntime\s*\(/u);
+  assert.doesNotMatch(preview, /reconcileAdmissionRow\s*\(/u);
+  assert.match(preview, /mode:\s*'READ_ONLY'/u);
+  assert.match(preview, /queueAdmissionCount:\s*0/u);
+  assert.match(preview, /messageSendCount:\s*0/u);
+  assert.match(preview, /workerDeploymentCount:\s*0/u);
+});
+
+test('exact reviewed full-channel message hash is required before Queue admission', () => {
   const previewIndex = source.indexOf("stage = 'validate-exact-delivery-request-and-message'");
+  const parityIndex = source.indexOf('assertReviewedMessageParity(context, message)', previewIndex);
   const attemptIndex = source.indexOf("stage = 'record-one-queue-attempt'");
   assert.ok(previewIndex >= 0);
-  assert.ok(attemptIndex > previewIndex);
+  assert.ok(parityIndex > previewIndex);
+  assert.ok(attemptIndex > parityIndex);
+  assert.match(source, /LARK_WEEKLY_7D_NOTIFICATION_MESSAGE_PARITY_FAILED/u);
+  assert.match(source, /reviewedMessageSha256/u);
   assert.match(source, /Social MKT Weekly Executive Report — 7D/u);
-  assert.match(source, /report_partial\|report_available/u);
-  assert.match(source, /requiredBusinessFacts/u);
 });
 
 test('recovery is poll-only with no Queue send or Worker deploy call', () => {
