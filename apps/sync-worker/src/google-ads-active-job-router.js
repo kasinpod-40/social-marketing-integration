@@ -3,6 +3,7 @@ import { redriveDeadLetterJob } from '../../../packages/application/src/use-case
 import { D1GoogleAdsLiveRedriveStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-live-redrive-store.js';
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
+import { D1ResumableWorkStore } from '../../../packages/sync-engine/src/queue-terminal-safe-d1-resumable-work-store.js';
 import { processGoogleAdsManualUatJob } from './google-ads-job-router.js';
 import { processJobWithMetaEndToEnd } from './meta-active-job-router.js';
 import { readBoolean, requireJobText } from './worker-runtime-support.js';
@@ -22,6 +23,9 @@ export async function processJobWithGoogleAdsUat(input) {
     return redriveDeadLetterJob({
       store: new D1ReliabilityStore({ db: input.env?.MKT_STATE_DB }),
       createGoogleAdsRedriveStore: () => new D1GoogleAdsLiveRedriveStore({
+        db: input.env?.MKT_STATE_DB,
+      }),
+      createStableOperationRedriveStore: () => new D1ResumableWorkStore({
         db: input.env?.MKT_STATE_DB,
       }),
       queue: requireQueue(input.env),
