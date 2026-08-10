@@ -159,6 +159,25 @@ test('completed-source incident preflight fails closed after any Business mutati
   assert.ok(result.errors.some((row) => row.field === 'operation observations before recovery'));
 });
 
+test('completed-source incident preflight rejects missing stable generation timestamps', () => {
+  const input = passingPreflight();
+  input.work.generation = null;
+  input.work.requested_at = null;
+  input.queueOperation.generation = null;
+  input.queueOperation.original_requested_at = null;
+  input.deadLetters[0].metadata_generation = null;
+  input.deadLetters[0].metadata_original_requested_at = null;
+  input.deadLetters[0].replay_generation = null;
+  input.deadLetters[0].replay_original_requested_at = null;
+
+  const result = evaluateFacebookCompletedSourcePreflight(input);
+  assert.equal(result.ok, false);
+  assert.equal(result.generation, null);
+  assert.ok(result.errors.some((row) => row.field === 'work generation/requested_at'));
+  assert.ok(result.errors.some((row) => row.field === 'queue operation generation'));
+  assert.ok(result.errors.some((row) => row.field === 'dead letter replay generation'));
+});
+
 test('completion contract requires D1, Lark, Work completion and target-day observations', () => {
   const pass = evaluateFacebookCompletedSourceCompletion({
     latest: {
