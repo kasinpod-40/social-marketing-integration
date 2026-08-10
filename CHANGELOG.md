@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — Multichannel Runtime & Schedule LIVE Activation — 2026-08-10
+
+### Changed
+
+- Activated Integration Workspace source and Daily/Weekly Shared Report schedules while retaining the existing Cloudflare cron/Queue topology and external Google Ads producer boundary.
+- Bounded Instagram previous-day inventory by the reviewed date range and paginated Meta staged-unit reads at the D1 store cap of 500.
+- Added the existing Lark `MKT_Report_Top_Ads` table binding to the ignored active Sync config without applying schema changes.
+- Materialized and read back 32 D1/Lark report snapshots for 8 platforms × `1D/3D/7D/30D`, with 1,236 metric rows, 80 Top Content rows, 40 Top Ads rows and zero duplicate stable keys.
+
+### Safety
+
+- Retained the original 8 Paid Ads configuration-failure DLQ entries as evidence; recovery used new `-r2` operation IDs and no DLQ redrive.
+- Preserved null/N/A, `partial`, `revisable` and `no_data_confirmed` semantics without fabricating zero values.
+- Notification runtime, automatic weekly notification, DLQ redrive and Production remain off. Google Ads Provider UI, YouTube Analytics OAuth identity and Chatwoot mutable pagination remain documented external blockers.
+
 ## Unreleased — Weekly Executive Decision Report v1 — 2026-08-10
 
 ### Changed
