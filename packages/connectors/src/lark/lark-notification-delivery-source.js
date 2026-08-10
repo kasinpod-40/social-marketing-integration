@@ -1,4 +1,7 @@
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import {
+  resolveLarkNotificationReviewedDestination,
+} from './lark-notification-reviewed-destination.js';
 
 const MAX_EXECUTIVE_SOURCE_REPORTS = 32;
 const BANGKOK_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
@@ -55,22 +58,36 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
     return matches[0].fields;
   });
 
-  const groupIds = [...new Set(settings.map((row) => requireText(
-    String(readScalar(row.group_id) ?? ''),
-    'group_id',
-  )))];
-  if (groupIds.length !== 1) {
-    throw permanentError('Executive source Settings must resolve to one exact destination', {
-      code: 'LARK_NOTIFICATION_DESTINATION_MISMATCH',
-      details: { destinationRedacted: true, destinationCount: groupIds.length },
+  const configuredGroupIds = settings.map((row) => optionalText(readScalar(row.group_id)));
+  const nonNullGroupIds = [...new Set(configuredGroupIds.filter(Boolean))];
+  const nullGroupCount = configuredGroupIds.filter((value) => value === null).length;
+
+  let groupId;
+  let observedDestinationKeyHash;
+  if (nonNullGroupIds.length === 1 && nullGroupCount === 0) {
+    groupId = nonNullGroupIds[0];
+    observedDestinationKeyHash = await sha256Hex(groupId);
+    if (observedDestinationKeyHash !== expectedDestinationKeyHash) {
+      throw permanentError('Notification destination does not match the reviewed executive group', {
+        code: 'LARK_NOTIFICATION_DESTINATION_MISMATCH',
+        details: { destinationRedacted: true },
+      });
+    }
+  } else if (nonNullGroupIds.length === 0 && nullGroupCount === settings.length) {
+    const resolved = await resolveLarkNotificationReviewedDestination({
+      repository,
+      expectedDestinationKeyHash,
     });
-  }
-  const groupId = groupIds[0];
-  const observedDestinationKeyHash = await sha256Hex(groupId);
-  if (observedDestinationKeyHash !== expectedDestinationKeyHash) {
-    throw permanentError('Notification destination does not match the reviewed executive group', {
+    groupId = resolved.chatId;
+    observedDestinationKeyHash = resolved.destinationKeyHash;
+  } else {
+    throw permanentError('Executive source Settings must resolve to one exact destination state', {
       code: 'LARK_NOTIFICATION_DESTINATION_MISMATCH',
-      details: { destinationRedacted: true },
+      details: {
+        destinationRedacted: true,
+        configuredDestinationCount: nonNullGroupIds.length,
+        nullDestinationCount: nullGroupCount,
+      },
     });
   }
 
@@ -340,6 +357,11 @@ function requireHash(value, fieldName) {
   const text = requireText(value, fieldName);
   if (!/^[a-f0-9]{64}$/u.test(text)) throw new TypeError(`${fieldName} must be SHA-256 hex`);
   return text;
+}
+function optionalText(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
 }
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
