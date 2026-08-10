@@ -353,20 +353,62 @@ function buildCompactDecisionSummary(input, labelLimit) {
   const funnelDown = unique((input.funnelDivergences ?? [])
     .flatMap(({ negativeFacts }) => negativeFacts?.map(({ metric }) => metric) ?? []));
   const hasFunnelDivergence = funnelUp.length > 0 && funnelDown.length > 0;
+  const recommendationBlueprints = buildCompactRecommendationBlueprints({
+    businessChannels: input.businessChannels,
+    funnelDivergences: input.funnelDivergences,
+    labelLimit,
+  });
   return Object.freeze({
     evidenceShape: 'executive_decision_compact_v1',
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
     legend: 'ch=[name,m,c,a]; m=[name,value,changePct,+/-/0]; c=[name,rank,views,eng,ER]; a=[name,rank,spend,clicks,CTR,conv,value,ROAS,scale]',
     writerContract: Object.freeze({
-      recommendations: '2-4 lines; 1 label/line; real verb+anchor; ตรวจสอบ-only invalid; c=[]=>no CONTENT/Organic filler; a=>name Paid candidate, never CONTENT; c=[]+a+funnel=>paid action + NO-SCALE only; SCALE iff scale=1; no same-creative',
+      recommendations: recommendationBlueprints.length > 0
+        ? 'COPY rb exactly as separate lines; no rewrite; no extra labels/text'
+        : '2-4 lines; 1 label/line; real verb+anchor; ตรวจสอบ-only invalid; c=[]=>no CONTENT/Organic filler; a=>name Paid candidate, never CONTENT; c=[]+a+funnel=>paid action + NO-SCALE only; SCALE iff scale=1; no same-creative',
       ...(hasFunnelDivergence ? { funnelDecision: 'NO-SCALE: one line with 1 up + 1 down metric; concrete action only' } : {}),
       strengths: '+ only; spend/budget neutral',
       weaknesses: '- only; missing data is not weakness',
     }),
+    ...(recommendationBlueprints.length > 0 ? { rb: Object.freeze(recommendationBlueprints) } : {}),
     ...(hasFunnelDivergence ? { funnelMetrics: Object.freeze({ up: funnelUp, down: funnelDown }) } : {}),
     organicPaidMappingAvailable: false,
     channels: Object.freeze(channels),
   });
+}
+
+function buildCompactRecommendationBlueprints(input) {
+  const hasContentCandidates = input.businessChannels
+    .some((channel) => (channel.contentCandidates ?? []).length > 0);
+  const paidCandidates = input.businessChannels.flatMap((channel) => (channel.adCandidates ?? [])
+    .map((ad) => Object.freeze({ channel: channel.displayName, ...ad })));
+  const divergence = input.funnelDivergences?.[0];
+  const positive = divergence?.positiveFacts?.[0];
+  const negative = divergence?.negativeFacts?.[0];
+  if (hasContentCandidates || paidCandidates.length === 0 || !positive || !negative) return Object.freeze([]);
+
+  const paid = paidCandidates[0];
+  const candidate = compactCandidateLabel(paid.ad_name, input.labelLimit);
+  const paidAnchor = compactPaidDecisionAnchor(paid);
+  return Object.freeze([
+    `[TEST] ${candidate} ทดสอบต่อแบบจำกัดงบ โดยวัด ${paidAnchor}`,
+    `[NO-SCALE] ${positive.channel} ไม่เพิ่มงบรวม เพราะ ${positive.metric} ${signedPercent(positive.changePercent)} แต่ ${negative.metric} ${signedPercent(negative.changePercent)}`,
+  ]);
+}
+
+function compactPaidDecisionAnchor(ad) {
+  if (Number.isFinite(ad.conversions) && Number.isFinite(ad.roas)) {
+    return `คอนเวอร์ชัน ${ad.conversions} และ ROAS ${ad.roas}`;
+  }
+  if (Number.isFinite(ad.derived_ctr_percent)) return `CTR ${ad.derived_ctr_percent}%`;
+  if (Number.isFinite(ad.clicks)) return `การคลิก ${ad.clicks}`;
+  return 'ผลเทียบสัปดาห์ถัดไป';
+}
+
+function signedPercent(value) {
+  if (!Number.isFinite(value)) return 'เปลี่ยนแปลง';
+  const normalized = round(value, 4);
+  return `${normalized > 0 ? '+' : ''}${normalized}%`;
 }
 
 function compactTuple(values) {
