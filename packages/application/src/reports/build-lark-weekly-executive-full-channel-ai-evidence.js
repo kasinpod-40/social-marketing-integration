@@ -103,8 +103,6 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
       comparison: 'ใช้คำว่า เทียบช่วงก่อน หรือ เมื่อเทียบกับช่วงก่อน; ห้ามคำว่า ค่าเปรียบเทียบ, พร้อมการเปรียบเทียบ หรือ ข้อมูลการเปรียบเทียบที่มี',
     }),
     decisionEvidence: Object.freeze({
-      contentCandidates,
-      adCandidates,
       scaleEvidenceAdNames,
       funnelDivergences,
       organicPaidMappingAvailable: false,
