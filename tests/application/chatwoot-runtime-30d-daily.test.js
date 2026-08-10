@@ -13,6 +13,7 @@ import {
   CHATWOOT_RUNTIME_MODES,
   buildChatwootRuntimePlan,
   createInitialChatwootDurableState,
+  isConversationAtOrBeforeChatwootBoundary,
   isConversationInChatwootWindow,
   resolveChatwootRuntimeMode,
   resolveChatwootRuntimeWindow,
@@ -112,6 +113,23 @@ test('old-created Conversation is included when updated inside the sync window',
     created_at: REQUESTED_AT - 400 * DAY_MS,
     updated_at: REQUESTED_AT - 100 * DAY_MS,
   }, window), false);
+});
+
+test('Conversation identity discovery excludes post-boundary creations from convergence', () => {
+  const window = resolveChatwootRuntimeWindow({
+    mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+    requestedAt: REQUESTED_AT,
+  });
+  assert.equal(isConversationAtOrBeforeChatwootBoundary({
+    created_at: REQUESTED_AT,
+  }, window), true);
+  assert.equal(isConversationAtOrBeforeChatwootBoundary({
+    created_at: REQUESTED_AT + 1,
+  }, window), false);
+  assert.throws(
+    () => isConversationAtOrBeforeChatwootBoundary({}, window),
+    (error) => error?.code === 'CHATWOOT_RUNTIME_TIMESTAMP_INVALID',
+  );
 });
 
 test('plan supports at least 1,125 Reporting pages with bounded resumable units and no actions', () => {

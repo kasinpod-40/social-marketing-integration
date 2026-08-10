@@ -8,6 +8,7 @@ import {
   CHATWOOT_RUNTIME_MODES,
   CHATWOOT_RUNTIME_PHASE,
   createInitialChatwootDurableState,
+  isConversationAtOrBeforeChatwootBoundary,
   isChatwootEventInWindow,
   isConversationInChatwootWindow,
   readChatwootContinuationSequence,
@@ -147,12 +148,15 @@ async function processConversationUnit(context, state) {
           details: { maxRows: context.limits.maxConversations },
         });
       }
-      const pending = newRows
+      const boundaryRows = newRows.filter(
+        (row) => isConversationAtOrBeforeChatwootBoundary(row, context.window),
+      );
+      const pending = boundaryRows
         .filter((row) => isConversationInChatwootWindow(row, context.window))
         .map((row) => requirePositiveId(row?.id, 'conversation.id'));
       next.conversationSeenIds = [...seen];
       next.conversationPendingIds = pending;
-      next.conversationNewIdsInPass += newRows.length;
+      next.conversationNewIdsInPass += boundaryRows.length;
       next.conversationRowsScanned += newRows.length;
       next.conversationPagesProcessed += 1;
       next.conversationPage += 1;

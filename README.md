@@ -30,11 +30,13 @@ Manager Script trigger และ signed ingress เพื่อไม่สร�
 ใน example config ยังเป็น `false`; Integration Workspace เปิด Source/Daily/Weekly schedules แล้ว
 และ materialize `2026-08-09` ครบ 32 D1/Lark snapshots. Google Ads fresh LIVE ผ่าน 6 datasets,
 7 chunks, 1,335 rows พร้อม D1/Lark parity และ Provider frequency `Daily between 6:00 AM and
-7:00 AM`; PREVIEW ไม่มี schedule. YouTube Analytics customer-credential bridge แก้และผ่าน
-Repository gates แล้วโดยใช้ Customer Connection เดิม—ไม่ต้องขอ consent ลูกค้าซ้ำ—แต่ยังรอ reviewed
-deployment/live validation; Chatwoot mutable pagination ยังเป็น blocker. TikTok Ads ยัง `planned`;
+7:00 AM`; PREVIEW ไม่มี schedule. YouTube Analytics customer-credential bridge แก้และ deploy แล้ว
+แต่ retained Refresh Token ถูก Google ปฏิเสธด้วย `invalid_grant`; ต้อง consent ครั้งเดียวด้วย customer
+Channel owner จริงก่อน Owner preflight/catch-up. Chatwoot stable-identity pagination fix merge/deploy แล้ว
+และอยู่ระหว่าง controlled catch-up/reconciliation. TikTok Ads ยัง `planned`;
 Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
+`docs/project-brain/chatwoot-stable-identity-pagination-live-closeout-2026-08-10.md` และ
 `docs/current-task.md`.
 
 ## Historical TikTok implementation branch — Draft PR #65
@@ -81,6 +83,8 @@ Google Ads signed delivery         Fresh LIVE pass / 7 chunks / 1,335 rows
 Google Ads actual Script LIVE      pass / six datasets / failed rows 0
 Google Ads Provider schedule       daily 06:00–07:00 / PREVIEW unscheduled
 Google Ads Secret provisioning     completed / route safely closed
+YouTube Owner Analytics            repository fixed/deployed / one-time customer-owner consent required
+Chatwoot pagination                stable-ID cutoff fix gated / live reconciliation pending
 ```
 
 ## WooCommerce 2026-only history

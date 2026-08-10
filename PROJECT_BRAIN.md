@@ -14,25 +14,43 @@ Integration Workspace activation เมื่อ 2026-08-10 เปิด Source 
 พร้อม D1/Lark readback 32 snapshots สำหรับ period end `2026-08-09`. Notification runtime,
 automatic weekly notification, DLQ redrive และ Production ยังปิด. Google Ads fresh LIVE ผ่าน
 6 datasets, 7 chunks, 1,335 rows, D1/Lark parity และ Provider schedule readback `Daily between
-6:00 AM and 7:00 AM`; PREVIEW ไม่มี schedule. Blockers ที่ยังห้ามประกาศ full LIVE pass คือ
-YouTube Analytics repository bridge แก้แล้วแต่ยังรอ reviewed deploy/live validation และ Chatwoot
-mutable pagination; รายละเอียด live evidence อยู่ในเอกสารเดียวกัน.
+6:00 AM and 7:00 AM`; PREVIEW ไม่มี schedule. Blocker ที่ยังห้ามประกาศ full LIVE pass คือ
+YouTube Analytics ต้องออก Refresh Token ใหม่ด้วย one-time consent จาก customer Channel owner จริง;
+Chatwoot stable-ID pagination fix merge/deploy แล้ว; Live `r6` พบ post-boundary convergence liveness defect
+และ cutoff correction ผ่าน gates แล้ว อยู่ระหว่าง reviewed release/catch-up/reconciliation.
 
 ## YouTube Customer OAuth runtime credential-path correction — 2026-08-10
 
 Read-only evidence ยืนยันว่า Customer Connection เดิมยัง `connected/validated` และ active encrypted
-Refresh Token reference ตรงกัน. คำแนะนำก่อนหน้าที่ให้ลูกค้า Connect ใหม่จากข้อสรุป owner/channel
-mismatch จึงไม่ถูกต้อง: repository cause จริงคือ ingestion สร้าง Owner client จาก legacy
-`YOUTUBE_OAUTH_*` path แทน Customer Connection ที่ callback บันทึกไว้.
+Refresh Token reference ตรงกัน แต่สถานะ D1 นี้ไม่ใช่หลักฐานว่า Google refresh grant ยังใช้ได้.
+Repository cause ชั้นแรกคือ ingestion สร้าง Owner client จาก legacy `YOUTUBE_OAUTH_*` path แทน
+Customer Connection ที่ callback บันทึกไว้.
 
 Repository แก้แล้วโดยให้ Analytics-enabled routes อ่าน exact D1 Customer Connection, ตรวจ customer,
 state, scopes, active credential reference และ configured Channel แบบ fail-closed แล้ว reuse shared
 Google refresh provider; ไม่มี legacy Owner fallback. Full unit, Workers runtime `18/18`, report
-reliability `105/105`, architecture/hygiene, audit, deploy dry-run และ diff check ผ่าน. ไม่มีการสร้าง
-invitation, consent ซ้ำ, remote mutation หรือ deployment. `REPOSITORY_FIXED=YES` แต่
-`LIVE_VALIDATED=NO`; ลูกค้าไม่ต้องทำอะไร และต้องรอ reviewed deployment + controlled Analytics
-validation ก่อนปิด Live blocker. รายละเอียดอยู่ที่
+reliability `105/105`, architecture/hygiene, audit, deploy dry-run และ diff check ผ่าน. Reviewed Worker
+deploy แล้ว แต่ Live refresh ของ retained credential คืน `invalid_grant`. OAuth app publish ไม่สามารถ
+ชุบ grant เดิม; บัญชีนักพัฒนาสองบัญชี consent สำเร็จแต่ไม่มี Channel และ callback ปิด fail-closed เป็น
+`identity_mismatch` โดยไม่มี Queue/Lark write. `REPOSITORY_FIXED=YES`, `LIVE_VALIDATED=NO` และลูกค้า
+ต้อง consent ครั้งเดียวด้วย Google/Brand Account owner ของ Channel จริงเพื่อออก Refresh Token ใหม่.
+หลังจากนั้นระบบ refresh ต่อได้จนกว่าจะถูก revoke/หมดอายุตาม Google policy. รายละเอียดอยู่ที่
 `docs/project-brain/youtube-customer-oauth-runtime-credential-path-incident-2026-08-10.md`.
+
+## Chatwoot stable-identity pagination correction — 2026-08-10
+
+Provider Conversations API ใช้ mutable offset page และไม่มี snapshot cursor. Fingerprint ของ page เดิม
+จึง fail เมื่อลำดับรายการเปลี่ยนระหว่าง durable continuation. PR #597 เปลี่ยน durable state ให้เก็บเฉพาะ
+stable numeric Conversation IDs, ใช้ page list เพื่อ discovery, fetch exact detail ต่อ ID และวนจาก page 1
+จน pass เต็มไม่พบ ID ใหม่ โดยไม่ persist Provider payload/PII.
+
+Focused tests `23/23`, full unit `2919/2919`, Workers runtime `18/18`, report reliability, architecture,
+audit และ deploy dry-run ผ่าน. Live catch-up พบ Provider total 7,720 สูงกว่า active bound 5,000 จึงขยาย
+เฉพาะ ignored runtime limits `CHATWOOT_API_MAX_ROWS`/`CHATWOOT_MAX_CONVERSATIONS` เป็น 10,000,
+deploy config-only และ read back 100% traffic โดยคง schedule/webhook/Notification/DLQ/Production gates
+เดิม. Controlled operation `r6` ต้อง complete + D1/Lark reconciliation ก่อนเปลี่ยนสถานะเป็น PASS.
+รายละเอียดอยู่ที่
+`docs/project-brain/chatwoot-stable-identity-pagination-live-closeout-2026-08-10.md`.
 
 ## Chatwoot Initial terminal recovery — 2026-08-01
 
