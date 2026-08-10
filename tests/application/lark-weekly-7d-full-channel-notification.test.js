@@ -124,7 +124,7 @@ function factualReport(clicks = 4553) {
 }
 
 function decisionRecommendations() {
-  return '[TEST] Campaign X มี CTR 0.78223% แต่ยังไม่มี Conversion/ROAS จึงทดลองครีเอทีฟต่อด้วยงบจำกัด\n[NO-SCALE] Campaign X ยังไม่มีหลักฐานปลาย Funnel จึงไม่เพิ่มงบในรอบนี้';
+  return '[TEST] Campaign X ทดลองครีเอทีฟต่อแบบจำกัดงบเพื่อวัดผลจากข้อมูลโฆษณาที่มี\n[KEEP] Campaign X คงไว้เป็นตัวทดสอบจนมีหลักฐาน Conversion/ROAS เพิ่มเติม';
 }
 
 function generatedSynthesis(source, factual) {
@@ -248,7 +248,7 @@ test('message acceptance requires all nine factual headings and generated decisi
   const accepted = assertFullChannelMessage({ admission: corrected, messageText: message });
   assert.equal(accepted.channelSectionCount, 9);
   assert.match(message, /\[TEST\] Campaign X/u);
-  assert.match(message, /\[NO-SCALE\] Campaign X/u);
+  assert.match(message, /\[KEEP\] Campaign X/u);
   const broken = message.replace('💬 Chatwoot', 'Chatwoot omitted');
   assert.throws(
     () => assertFullChannelMessage({ admission: corrected, messageText: broken }),
