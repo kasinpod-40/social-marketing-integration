@@ -97,10 +97,10 @@ function factualReport() {
 
 function decisionReadyOutputs() {
   return {
-    insight_summary: 'Meta Ads มี Impressions 120000 เพิ่มขึ้น 20% แต่ Clicks 3200 ลดลง 20% เมื่อเทียบกับช่วงก่อน จึงเห็นสัญญาณต้น Funnel และปลาย Funnel สวนทางกัน',
-    strengths: 'Meta Ads มี Impressions เพิ่มขึ้น 20% เมื่อเทียบกับช่วงก่อน',
-    weaknesses: 'Meta Ads มี Clicks ลดลง 20% เมื่อเทียบกับช่วงก่อน แม้ Impressions เพิ่มขึ้น',
-    recommendations: '[TEST] Fresh Campaign A มี Impressions 120000 และ Clicks 3200 แต่ยังไม่มี Conversion/ROAS จึงทดสอบต่อด้วยงบจำกัด\n[NO-SCALE] Fresh Campaign A ยังไม่มีหลักฐานปลาย Funnel และ Clicks ลดลง จึงไม่เพิ่มงบรวมในรอบนี้',
+    insight_summary: 'Meta Ads มีการแสดงผล 120000 เพิ่มขึ้น 20% แต่การคลิก 3200 ลดลง 20% เมื่อเทียบกับช่วงก่อน จึงเห็นสัญญาณต้น Funnel และปลาย Funnel สวนทางกัน',
+    strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้น 20% เมื่อเทียบกับช่วงก่อน',
+    weaknesses: 'Meta Ads มีการคลิกลดลง 20% เมื่อเทียบกับช่วงก่อน แม้การแสดงผลเพิ่มขึ้น',
+    recommendations: '[TEST] Fresh Campaign A มีการแสดงผล 120000 และการคลิก 3200 แต่ยังไม่มี Conversion/ROAS จึงทดสอบต่อด้วยงบจำกัด\n[NO-SCALE] Fresh Campaign A ยังไม่มีหลักฐานปลาย Funnel และการคลิกลดลง จึงไม่เพิ่มงบรวมในรอบนี้',
   };
 }
 
