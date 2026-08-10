@@ -9,6 +9,7 @@ import {
 export const REPORT_LARK_CURRENT_SLOT_RETENTION_VERSION = 'report-lark-current-slot-retention-v1';
 export const REPORT_LARK_CURRENT_SLOT_RETENTION_CONFIRMATION = 'APPLY_REPORT_LARK_CURRENT_SLOT_RETENTION_V1';
 
+const DASHBOARD_REPORT_TYPE = 'dashboard_performance_report';
 const TABLE_ROLES = Object.freeze({
   snapshots: Object.freeze({
     tableName: '🧾 MKT_Report_Snapshots',
@@ -44,10 +45,17 @@ export function assertReportLarkCurrentSlotRetentionConfirmation(value) {
 export function planReportLarkCurrentSlotRetention(input = {}) {
   const role = requireRole(input.role);
   const records = requireArray(input.records, 'records');
-  const retainBySlot = new Map();
-  const normalized = records.map((record) => normalizeRecord(role, record));
+  const managed = [];
+  const legacyPreserved = [];
 
-  for (const row of normalized) {
+  for (const record of records) {
+    const classified = classifyRecord(role, record);
+    if (classified.kind === 'legacy_preserved') legacyPreserved.push(classified);
+    else managed.push(classified);
+  }
+
+  const retainBySlot = new Map();
+  for (const row of managed) {
     const previous = retainBySlot.get(row.slotKey);
     if (!previous || compareLatest(row, previous) > 0) retainBySlot.set(row.slotKey, row);
   }
@@ -57,7 +65,7 @@ export function planReportLarkCurrentSlotRetention(input = {}) {
   const deletes = [];
   let customRangeCount = 0;
 
-  for (const row of normalized) {
+  for (const row of managed) {
     if (row.periodKind === 'custom_range') customRangeCount += 1;
     if (!retainedRecordIds.has(row.recordId)) {
       deletes.push(Object.freeze({
@@ -81,11 +89,15 @@ export function planReportLarkCurrentSlotRetention(input = {}) {
   const rollingSlotCount = [...retainBySlot.values()]
     .filter((row) => row.periodKind === 'rolling_days').length;
   const customSlotCount = retainBySlot.size - rollingSlotCount;
+  const managedRetainedCount = retainBySlot.size;
 
   return Object.freeze({
     role,
     recordCount: records.length,
-    retainedCount: retainBySlot.size,
+    managedRecordCount: managed.length,
+    managedRetainedCount,
+    legacyPreservedCount: legacyPreserved.length,
+    retainedCount: managedRetainedCount + legacyPreserved.length,
     staleDeleteCount: deletes.length,
     slotKeyUpdateCount: updates.length,
     rollingSlotCount,
@@ -100,15 +112,54 @@ export function planReportLarkCurrentSlotRetention(input = {}) {
       generatedAt: row.generatedAt,
       primaryValue: row.primaryValue,
     }))),
+    legacyPreserved: Object.freeze(legacyPreserved.map((row) => Object.freeze({
+      recordId: row.recordId,
+      primaryValue: row.primaryValue,
+      reportType: row.reportType,
+      reason: row.reason,
+    }))),
   });
 }
 
-function normalizeRecord(role, record) {
+function classifyRecord(role, record) {
   const source = requireObject(record, 'record');
   const recordId = requireText(source.recordId ?? source.record_id, 'recordId');
   const fields = requireObject(source.fields ?? {}, 'record.fields');
+  const primaryValue = optionalText(fields[TABLE_ROLES[role].primaryKey]);
+  const periodKind = optionalText(fields.period_kind);
+  const reportType = optionalText(fields.report_type);
+
+  // Rows created before the dashboard materialization contract may not have period_kind at all.
+  // They are historical non-dashboard presentation rows and are preserved untouched. A dashboard
+  // row missing period_kind is malformed current materialization and must still fail closed.
+  if (!periodKind) {
+    if (reportType === DASHBOARD_REPORT_TYPE) {
+      throw operatorError(
+        'Dashboard Report row is missing period_kind',
+        'REPORT_LARK_CURRENT_SLOT_DASHBOARD_PERIOD_KIND_REQUIRED',
+        { role, recordId, primaryValue },
+      );
+    }
+    return Object.freeze({
+      kind: 'legacy_preserved',
+      recordId,
+      primaryValue,
+      reportType,
+      reason: 'legacy_non_dashboard_missing_period_kind',
+    });
+  }
+
+  return normalizeManagedRecord(role, {
+    recordId,
+    fields,
+    primaryValue: requireText(primaryValue, TABLE_ROLES[role].primaryKey),
+    periodKind,
+  });
+}
+
+function normalizeManagedRecord(role, input) {
+  const fields = input.fields;
   const reportId = requireText(fields.report_id, 'report_id');
-  const periodKind = requireText(fields.period_kind, 'period_kind');
   const slotBase = buildLarkReportSlotBase({
     reportId,
     customerProfile: requireText(fields.customer_profile, 'customer_profile'),
@@ -117,16 +168,16 @@ function normalizeRecord(role, record) {
     platform: normalizePlatform(fields.platform),
     accountId: requireText(fields.account_id, 'account_id'),
     reportType: requireText(fields.report_type, 'report_type'),
-    periodKind,
+    periodKind: input.periodKind,
     windowDays: fields.window_days,
   });
-  const primaryValue = requireText(fields[TABLE_ROLES[role].primaryKey], TABLE_ROLES[role].primaryKey);
-  const slotKey = buildRoleSlotKey(role, slotBase, fields, primaryValue);
+  const slotKey = buildRoleSlotKey(role, slotBase, fields, input.primaryValue);
   return Object.freeze({
-    recordId,
+    kind: 'managed',
+    recordId: input.recordId,
     fields,
-    primaryValue,
-    periodKind,
+    primaryValue: input.primaryValue,
+    periodKind: input.periodKind,
     periodEnd: requireEpoch(fields.period_end, 'period_end'),
     generatedAt: requireEpoch(fields.generated_at, 'generated_at'),
     existingSlotKey: optionalText(fields[LARK_REPORT_SLOT_KEY_FIELD]),
