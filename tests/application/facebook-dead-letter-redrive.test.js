@@ -109,6 +109,7 @@ test('Facebook redrive does not send when the exact Work is already processing',
       const values = [
         Date.parse('2026-08-11T00:01:00.000Z'),
         Date.parse('2026-08-11T00:01:01.000Z'),
+        Date.parse('2026-08-11T00:01:02.000Z'),
       ];
       return () => values.shift();
     })(),
