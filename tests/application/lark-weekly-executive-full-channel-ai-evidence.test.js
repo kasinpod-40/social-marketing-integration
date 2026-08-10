@@ -258,9 +258,9 @@ test('full-channel AI keeps rich decision evidence while Native AI prompt stays 
   assert.equal(meta.adCandidates[0].roas, 4);
   assert.equal(woo.availableMetrics[0].display_name, 'ยอดขายสุทธิ');
   assert.ok(Math.abs(woo.availableMetrics[0].change_percent + 33) < 0.01);
-  assert.match(summary.writerContract.recommendations, /\[SCALE\]/u);
-  assert.match(summary.writerContract.recommendations, /only scale=1/u);
-  assert.match(summary.writerContract.funnelDecision, /\[NO-SCALE\]/u);
+  assert.match(summary.writerContract.recommendations, /SCALE iff scale=1/u);
+  assert.match(summary.writerContract.recommendations, /bare label\/name invalid/u);
+  assert.match(summary.writerContract.funnelDecision, /NO-SCALE/u);
 });
 
 test('saturated eight-channel decision evidence preserves three candidate names per applicable channel under Native AI budget', () => {
