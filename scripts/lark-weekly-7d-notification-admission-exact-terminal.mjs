@@ -19,8 +19,6 @@ import { readDevVars } from './lib/dev-vars.js';
 import {
   assertLarkNotificationRuntimeSettingsState,
   buildLarkNotificationRuntimeActivationWranglerConfig,
-  resolveLarkNotificationRuntimeActivationSettings,
-  selectLarkNotificationRuntimeExecutivePreviews,
 } from './lib/lark-notification-runtime-activation.js';
 import {
   extractLarkNotificationWranglerD1Rows,
@@ -50,6 +48,9 @@ import {
   loadFreshWeekly7dExecutiveDecisionNotificationSource,
 } from './lib/lark-weekly-7d-fresh-decision-notification-source.js';
 import {
+  resolveLarkWeekly7dNotificationSourceSettings,
+} from './lib/lark-weekly-7d-notification-source-settings.js';
+import {
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_AUTOMATIONS,
 } from '../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
 import {
@@ -63,7 +64,6 @@ import { LarkRecordRepository } from '../packages/connectors/src/lark/lark-recor
 import { loadLarkNotificationDeliveryRequest } from '../packages/connectors/src/lark/lark-notification-delivery-source.js';
 import { TableSyncEngine } from '../packages/sync-engine/src/table-sync-engine.js';
 import {
-  parseSourceReportIds,
   resolveLarkNotificationControlledUatTables,
 } from './lib/lark-notification-controlled-uat.js';
 
@@ -500,6 +500,7 @@ async function prepare(mode) {
     run('node', ['--test',
       'tests/application/lark-weekly-7d-notification-admission.test.js',
       'tests/application/lark-weekly-7d-fresh-decision-notification-source.test.js',
+      'tests/application/lark-weekly-7d-notification-source-settings.test.js',
       'tests/application/deliver-lark-executive-notification.test.js',
       'tests/application/lark-notification-active-job-router.test.js',
       'tests/connectors/lark-notification-delivery-source.test.js',
@@ -545,37 +546,11 @@ async function prepare(mode) {
   await chmod(evidenceDir, 0o700);
 
   stage = 'resolve-runtime-settings-authority';
-  const executiveRows = await larkRepository.listByFieldValues(
-    tableIds.aiRuns,
-    'scope_type',
-    ['executive'],
-  );
-  const previews = selectLarkNotificationRuntimeExecutivePreviews(executiveRows);
-  const runtimeSourceReportIds = [...new Set(previews.flatMap((record) => (
-    parseSourceReportIds(record.fields.source_report_ids_json)
-  )))].sort();
-  const allSourceReportIds = [...new Set([
-    ...runtimeSourceReportIds,
-    ...admission.sourceReportIds,
-  ])].sort();
   const snapshotRows = await larkRepository.listByFieldValues(
     tableIds.reportSnapshots,
     'report_id',
-    allSourceReportIds,
+    admission.sourceReportIds,
   );
-  const settingKeys = [...new Set(runtimeSourceReportIds.map((reportId) => {
-    const matchesForReport = snapshotRows.filter((record) => (
-      String(scalar(record?.fields?.report_id) ?? '') === reportId
-    ));
-    if (matchesForReport.length !== 1) {
-      fail(
-        'Could not resolve exact Runtime source Report Snapshot',
-        'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_SOURCE_INVALID',
-        { matchCount: matchesForReport.length },
-      );
-    }
-    return requireText(scalar(matchesForReport[0].fields.report_setting_key), 'report_setting_key');
-  }))].sort();
   const sourceSettingKeys = [...new Set(admission.sourceReportIds.map((reportId) => {
     const matchesForReport = snapshotRows.filter((record) => (
       String(scalar(record?.fields?.report_id) ?? '') === reportId
@@ -592,25 +567,14 @@ async function prepare(mode) {
   const settingRows = await larkRepository.listByFieldValues(
     tableIds.reportSettings,
     'report_setting_key',
-    [...new Set([...settingKeys, ...sourceSettingKeys])],
+    sourceSettingKeys,
   );
-  const settingsAuthority = resolveLarkNotificationRuntimeActivationSettings({
-    previews,
+  const settingsAuthority = resolveLarkWeekly7dNotificationSourceSettings({
+    sourceReportIds: admission.sourceReportIds,
     snapshots: snapshotRows,
     settings: settingRows,
-    expectedState: 'active',
     expectedDestinationKeyHash: LARK_EXECUTIVE_DESTINATION_KEY_HASH,
   });
-  const missingSourceSettings = sourceSettingKeys.filter(
-    (key) => !settingsAuthority.settingKeys.includes(key),
-  );
-  if (missingSourceSettings.length > 0) {
-    fail(
-      'Fresh Weekly Executive Decision source Reports are outside the active Notification Runtime Settings authority',
-      'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_SOURCE_INVALID',
-      { missingSourceSettingCount: missingSourceSettings.length },
-    );
-  }
 
   stage = 'resolve-local-runtime-topology';
   const sourceText = await readFile(SOURCE_CONFIG, 'utf8');
@@ -675,7 +639,6 @@ async function prepare(mode) {
     sourceRecord,
     sourceStateSha256,
     admission,
-    previews,
     snapshotRows,
     settingsAuthority,
   });
