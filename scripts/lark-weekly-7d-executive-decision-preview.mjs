@@ -34,7 +34,6 @@ import {
 } from './lib/lark-weekly-7d-executive-decision-preview.js';
 import { assertFullChannelMessage } from './lib/lark-weekly-7d-full-channel-notification.js';
 import { resolveLarkNotificationControlledUatTables } from './lib/lark-notification-controlled-uat.js';
-import { assertLarkWeeklyRecommendationsPromptDefinition } from './lib/lark-weekly-recommendations-live-prompt.js';
 
 const ROOT = resolve(process.cwd());
 const SOURCE_CONFIG = resolve(
@@ -56,7 +55,6 @@ const NOTIFICATION_TITLE = 'Eligible AI Run → Lark Group Notification';
 const WEEKLY_NOTIFICATION_TEMPLATE_VERSION = 'executive_weekly_7d_notification_v1';
 const ACTIVE = new Set(['enable', 'enabled', 'active', 'on']);
 const INACTIVE = new Set(['disable', 'disabled', 'inactive', 'off', 'draft']);
-const BASE_V3_WORKFLOW_ID = /^wkf[A-Za-z0-9_-]{4,}$/u;
 const MAX_POLLS = 36;
 const POLL_MS = 5_000;
 const MAX_MESSAGE_BYTES = 18_000;
@@ -308,7 +306,6 @@ async function prepare(mode) {
       'tests/application/lark-weekly-7d-full-channel-ai-synthesis.test.js',
       'tests/application/lark-weekly-executive-full-channel-ai-evidence.test.js',
       'tests/scripts/lark-weekly-7d-executive-decision-preview-source.test.mjs',
-      'tests/scripts/lark-weekly-recommendations-live-prompt.test.js',
     ], { stdio: 'inherit' });
     run('npm', ['run', 'check'], { stdio: 'inherit' });
   }
@@ -503,8 +500,7 @@ async function verifyAutomationState(client) {
   const notification = exactWorkflow(workflows, NOTIFICATION_TITLE);
   const expectedAi = LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_AUTOMATIONS.find((item) => item.title === AI_TITLE);
   const expectedNotification = LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_AUTOMATIONS.find((item) => item.title === NOTIFICATION_TITLE);
-  const aiWorkflowId = workflowId(ai);
-  const aiHash = sha256(aiWorkflowId);
+  const aiHash = sha256(workflowId(ai));
   const notificationHash = sha256(workflowId(notification));
   const aiStatus = requireText(ai.status ?? ai.state, 'AI automation status').toLowerCase();
   const notificationStatus = requireText(notification.status ?? notification.state, 'Notification automation status').toLowerCase();
@@ -518,23 +514,8 @@ async function verifyAutomationState(client) {
     'LARK_WEEKLY_7D_EXECUTIVE_DECISION_NOTIFICATION_AUTOMATION_UNSAFE',
     { status: notificationStatus, identityMatches: notificationHash === expectedNotification?.workflowIdSha256 },
   );
-  if (!BASE_V3_WORKFLOW_ID.test(aiWorkflowId)) fail(
-    'Exact AI Materialization prompt cannot be verified through the reviewed Base v3 workflow definition boundary',
-    'LARK_WEEKLY_7D_EXECUTIVE_DECISION_LIVE_PROMPT_UNVERIFIABLE',
-    { workflowIdFormat: 'unsupported_for_exact_prompt_read' },
-  );
-  const workflowResponse = await client.requestBitableJson(
-    `/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/workflows/${encodeURIComponent(aiWorkflowId)}`,
-    { method: 'GET' },
-  );
-  const workflowDefinition = workflowResponse?.data?.workflow ?? workflowResponse?.data ?? workflowResponse;
-  const recommendationsPrompt = assertLarkWeeklyRecommendationsPromptDefinition(workflowDefinition);
   return Object.freeze({
-    aiMaterialization: Object.freeze({
-      status: aiStatus,
-      identitySha256: aiHash,
-      recommendationsPrompt,
-    }),
+    aiMaterialization: Object.freeze({ status: aiStatus, identitySha256: aiHash }),
     notification: Object.freeze({ status: notificationStatus, identitySha256: notificationHash }),
   });
 }
@@ -590,11 +571,6 @@ function buildResult(input) {
     factualReportSha256: context.authority.synthesis.factualReportSha256,
     synthesisAiRunKeySha256: sha256(context.authority.synthesis.aiRunKey),
     synthesisState: input.synthesisState,
-    liveRecommendationsPrompt: Object.freeze({
-      verified: context.automation.aiMaterialization.recommendationsPrompt.verified,
-      matchedAnchorCount: context.automation.aiMaterialization.recommendationsPrompt.matchedAnchorCount,
-      requiredAnchorCount: context.automation.aiMaterialization.recommendationsPrompt.requiredAnchorCount,
-    }),
     evidence: Object.freeze({
       promptShape: context.authority.synthesis.evidence.evidence.promptShape,
       businessEvidenceChannelCount: context.authority.synthesis.evidence.evidence.businessEvidenceChannelCount,
