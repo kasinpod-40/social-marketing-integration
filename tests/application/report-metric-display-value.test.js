@@ -97,12 +97,15 @@ test('materialized Lark metric row carries canonical current_value and derived d
   assert.equal(row.unit, 'currency');
 });
 
-test('report schema v6 adds display_value as an additive Number field', () => {
-  assert.equal(LARK_REPORT_SCHEMA_V2_VERSION, 'report-materialization-schema-v6');
-  const table = LARK_REPORT_SCHEMA_V2.find((entry) => entry.key === 'mktReportMetricValues');
-  const displayField = table.fields.find((field) => field.fieldName === 'display_value');
+test('report schema v7 keeps display_value and adds lark_slot_key as additive Text', () => {
+  assert.equal(LARK_REPORT_SCHEMA_V2_VERSION, 'report-materialization-schema-v7');
+  const metricTable = LARK_REPORT_SCHEMA_V2.find((entry) => entry.key === 'mktReportMetricValues');
+  const displayField = metricTable.fields.find((field) => field.fieldName === 'display_value');
+  const slotField = metricTable.fields.find((field) => field.fieldName === 'lark_slot_key');
   assert.equal(displayField.type, 2);
   assert.equal(displayField.uiType, 'Number');
   assert.equal(displayField.property?.formatter, '0.0000');
   assert.notEqual(displayField.property?.formatter, '1,000.0000');
+  assert.equal(slotField.type, 1);
+  assert.equal(slotField.uiType, 'Text');
 });
