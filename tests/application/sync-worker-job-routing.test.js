@@ -186,6 +186,70 @@ test('reliability-handled permanent YouTube failure still marks resumable work t
   assert.equal(deadLetter.bindings[7], 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH');
 });
 
+for (const input of [
+  {
+    type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
+    operationId: 'facebook-daily-terminal-test',
+    workKey: 'facebook:facebook-daily-terminal-test',
+  },
+  {
+    type: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+    operationId: 'instagram-daily-terminal-test',
+    workKey: 'instagram:instagram-daily-terminal-test',
+  },
+  {
+    type: JOB_TYPES.META_ADS_SYNC,
+    operationId: 'meta-ads-daily-terminal-test',
+    workKey: 'meta_ads:chemistry_k:meta-ads-daily-terminal-test',
+    sourceAccountKey: 'chemistry_k',
+  },
+  {
+    type: JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,
+    operationId: 'google-ads-daily-terminal-test',
+    workKey: 'google_ads:google-ads-daily-terminal-test',
+  },
+  {
+    type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
+    operationId: 'woocommerce-daily-terminal-test',
+    workKey: 'woocommerce:woocommerce-daily-terminal-test',
+  },
+]) {
+  test(`permanent ${input.type} failure marks its exact resumable work terminal`, async () => {
+    const originalRequestedAt = Date.parse('2026-08-10T00:00:00.000Z');
+    const message = createMessage({
+      ...input,
+      requestedAt: new Date(originalRequestedAt).toISOString(),
+      originalRequestedAt,
+      generation: originalRequestedAt,
+    });
+    message.id = `${input.operationId}-message`;
+    const db = createFakeD1();
+    const worker = createSyncWorker({
+      processJob: async () => {
+        throw permanentError('Synthetic permanent connector failure', {
+          code: 'SYNTHETIC_PERMANENT_CONNECTOR_FAILURE',
+        });
+      },
+      createOperationalStore: () => ({
+        async saveDeadLetter() { return true; },
+        async saveSystemAlert() { return true; },
+      }),
+    });
+
+    await worker.queue({ queue: 'sync-main', messages: [message] }, {
+      ...minimalEnv(),
+      MKT_STATE_DB: db,
+    });
+
+    assert.equal(message.acked, true);
+    assert.equal(message.retried, false);
+    const terminal = db.calls.find((call) => /lifecycle_status = 'terminal'/u.test(call.sql));
+    assert.ok(terminal);
+    assert.ok(terminal.bindings.includes(input.workKey));
+    assert.ok(terminal.bindings.includes('QUEUE_PERMANENT_FAILURE'));
+  });
+}
+
 
 
 test('reliability mirror delivery routes before customer runtime and exposes safe counters only', async () => {

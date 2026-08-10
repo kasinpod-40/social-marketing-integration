@@ -26,6 +26,14 @@ export const QUEUE_ROLES = Object.freeze({
   UNKNOWN: 'unknown',
 });
 
+const STABLE_RESUMABLE_WORK_JOB_TYPES = new Set([
+  JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
+  JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+  JOB_TYPES.META_ADS_SYNC,
+  JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,
+  JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
+]);
+
 /** Queue routing เป็น whitelist และ fail-closed: Main, DLQ หรือ Unknown เท่านั้น */
 export async function routeQueueBatch(batch, env, dependencies = {}) {
   const role = classifyQueueBatch(batch, env);
@@ -359,7 +367,8 @@ async function recordPermanentQueueFailure(input) {
 
 async function markQueueWorkTerminal(input) {
   const platform = platformFromJobType(input.jobType);
-  if (!new Set(['youtube', 'tiktok', 'chatwoot']).has(platform)) return false;
+  if (!new Set(['youtube', 'tiktok', 'chatwoot']).has(platform)
+    && !STABLE_RESUMABLE_WORK_JOB_TYPES.has(input.jobType)) return false;
   if (!input.env?.MKT_STATE_DB) return false;
   let workKey = input.workKey;
   if (!workKey && input.stableOperation !== true && !isStableOperationJobType(input.jobType)) {
