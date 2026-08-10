@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { assertLarkWeeklyRecommendationsPromptDefinition } from '../../scripts/lib/lark-weekly-recommendations-live-prompt.js';
+import {
+  LARK_WEEKLY_RECOMMENDATIONS_PROMPT_ATTESTATION,
+  assertLarkWeeklyRecommendationsPromptDefinition,
+  verifyLarkWeeklyRecommendationsPrompt,
+} from '../../scripts/lib/lark-weekly-recommendations-live-prompt.js';
 
 const APPROVED = `หน้าที่ของฟิลด์นี้:
 - ถ้า metric_summary_json มี rb=[...] ให้ถือ rb เป็นคำตอบ Recommendations ที่เตรียมจากหลักฐานแล้ว และกฎ rb นี้มี authority สูงสุดเหนือกฎ Recommendations ข้ออื่นทั้งหมด
@@ -45,4 +49,54 @@ test('blocks the stale pre-rb recommendations prompt without exposing its conten
       return true;
     },
   );
+});
+
+test('uses exact Base v3 definition verification for wkf workflow identities', async () => {
+  let readCount = 0;
+  const result = await verifyLarkWeeklyRecommendationsPrompt({
+    workflowId: 'wkfAI12345',
+    env: {},
+    async readDefinition() {
+      readCount += 1;
+      return { steps: [{ data: { prompt: APPROVED } }] };
+    },
+  });
+  assert.equal(readCount, 1);
+  assert.deepEqual(result, {
+    verificationAccepted: true,
+    verificationMode: 'base_v3_exact_definition',
+    exactPromptApiVerified: true,
+    manualAttestationVerified: false,
+    matchedAnchorCount: 5,
+    requiredAnchorCount: 5,
+  });
+});
+
+test('fails closed for decimal Bitable v1 Automation until exact manual prompt attestation is supplied', async () => {
+  await assert.rejects(
+    () => verifyLarkWeeklyRecommendationsPrompt({ workflowId: '7293459700009998484', env: {} }),
+    (error) => {
+      assert.equal(error.code, 'LARK_WEEKLY_7D_EXECUTIVE_DECISION_LIVE_PROMPT_ATTESTATION_REQUIRED');
+      assert.deepEqual(error.details, { envName: LARK_WEEKLY_RECOMMENDATIONS_PROMPT_ATTESTATION.envName });
+      return true;
+    },
+  );
+});
+
+test('accepts explicit manual attestation for decimal Bitable v1 Automation without pretending API prompt verification', async () => {
+  const result = await verifyLarkWeeklyRecommendationsPrompt({
+    workflowId: '7293459700009998484',
+    env: {
+      [LARK_WEEKLY_RECOMMENDATIONS_PROMPT_ATTESTATION.envName]:
+        LARK_WEEKLY_RECOMMENDATIONS_PROMPT_ATTESTATION.value,
+    },
+  });
+  assert.deepEqual(result, {
+    verificationAccepted: true,
+    verificationMode: 'manual_attestation_for_bitable_v1',
+    exactPromptApiVerified: false,
+    manualAttestationVerified: true,
+    matchedAnchorCount: null,
+    requiredAnchorCount: 5,
+  });
 });
