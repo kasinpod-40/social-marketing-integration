@@ -10,6 +10,12 @@ Manager Script boundary เพื่อไม่สร้าง duplicate produc
 ห้าม replay, Production blocked. รายละเอียดและ activation gate อยู่ที่
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md`.
 
+Integration Workspace activation เมื่อ 2026-08-10 เปิด Source และ Daily/Weekly Report schedules
+พร้อม D1/Lark readback 32 snapshots สำหรับ period end `2026-08-09`. Notification runtime,
+automatic weekly notification, DLQ redrive และ Production ยังปิด. Google Ads Provider UI,
+YouTube Analytics OAuth identity และ Chatwoot mutable pagination เป็น external blockers ที่ยัง
+ห้ามประกาศ full LIVE pass; รายละเอียด live evidence อยู่ในเอกสารเดียวกัน.
+
 ## Chatwoot Initial terminal recovery — 2026-08-01
 
 The current retained Initial operation was terminalized after Final UAT polling mistakenly treated a `running`

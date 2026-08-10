@@ -27,7 +27,10 @@ refresh jobs. Queue fan-out ใช้ `sendBatch` เมื่อ binding รอ
 
 Meta Ads และ Chatwoot ใช้ primary cron สำหรับ Source schedule. Google Ads ยังคงใช้ external
 Manager Script trigger และ signed ingress เพื่อไม่สร้าง producer ซ้ำ. ทุก execution/schedule flag
-ใน example config ยังเป็น `false`; TikTok Ads ยัง `planned`; Production blocked. ดู
+ใน example config ยังเป็น `false`; Integration Workspace เปิด Source/Daily/Weekly schedules แล้ว
+และ materialize `2026-08-09` ครบ 32 D1/Lark snapshots. Google Ads Provider frequency/fresh LIVE,
+YouTube Analytics OAuth และ Chatwoot mutable pagination ยังเป็น external blockers; TikTok Ads ยัง
+`planned`; Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
 `docs/current-task.md`.
 
@@ -67,9 +70,9 @@ Organic D1 bootstrap merge         d182bf9efc8c6ea51f275ea725cdb0eaeae3d5e0
 Customer OAuth remote rollout      complete
 TikTok Canonical Lark sync         implemented / protected Lark Native source retained
 Shared Report runtime              8 reviewed channels / 1D 3D 7D 30D
-Meta Ads / Google Ads / Chatwoot   active catalogs / explicit gates default false
-Source schedules                   repository-ready / runtime activation separately gated
-Daily / Weekly Report schedules    repository-ready / runtime activation separately gated
+Meta Ads / Google Ads / Chatwoot   active catalogs / Integration runtime explicit gates
+Source schedules                   Integration Workspace active / Provider blockers documented
+Daily / Weekly Report schedules    Integration Workspace active / 32-window readback pass
 Production                         blocked
 Google Ads signed delivery         Remote transport UAT pass / safely closed
 Google Ads actual Script DRY_RUN   pass / six datasets / no changes

@@ -90,3 +90,28 @@ Repository merge is not runtime activation. Integration Workspace activation req
 8. Production profile remains blocked.
 
 Facebook retained R2 evidence is immutable and must never be replayed as part of activation.
+
+## Integration Workspace LIVE activation result — 2026-08-10
+
+Source และ Daily/Weekly Shared Report schedules เปิดบน Integration Workspace แล้ว โดย Sync Worker
+active version คือ `04dc61e2-1f6a-4c79-9226-6dedbbec9593`; primary cron ยังคง
+`*/5 * * * *`, YouTube wake-up cron ยังคง `50 0,6,12,18 * * *` และ Queue มี producer/consumer
+ชุดเดิมเพียงชุดเดียว. Notification runtime, automatic weekly notification, DLQ redrive และ
+Production ยังคงปิด.
+
+Previous-day source catch-up สำเร็จสำหรับ TikTok, Facebook, Instagram, YouTube public,
+Meta Ads และ WooCommerce. Instagram ต้องแก้ period propagation และ staged-unit pagination ก่อน
+R3 จะจบด้วย D1/Lark reconciliation `failed=0`. Chatwoot ยังติด mutable Provider pagination;
+YouTube Analytics ยังติด OAuth owner/channel identity mismatch; Google Ads Manager UI ยังถูก
+ad-blocker modal บัง จึงยังไม่ยืนยัน Provider Daily Frequency หรือ fresh six-dataset LIVE run.
+
+Daily materialization วันที่สิ้นสุด `2026-08-09` สำเร็จครบ 32 D1/Lark snapshot identities:
+8 platforms × `1D/3D/7D/30D`. Lark readback พบ 32 snapshots, 1,236 metric rows,
+80 Top Content rows และ 40 Top Ads rows โดย stable-key duplicate เป็นศูนย์. Data status คงตาม
+Source contract: `complete=17`, `no_data_confirmed=3`, `partial=3`, `revisable=9`; ไม่มีการแทน
+missing metric ด้วยศูนย์. Paid Ads รอบแรก 8 jobs ที่ขาด Top Ads binding ถูกเก็บเป็น DLQ evidence;
+รอบแก้ใช้ operation IDs ใหม่และไม่ redrive.
+
+Readback หลัง primary cron อย่างน้อยสองรอบ ณ `2026-08-10 12:55 Asia/Bangkok` พบ mirror outbox
+เฉพาะ `delivered=336`, pending 0, mirror DLQ ใหม่ 0 และ active non-expired lock 0. Active work
+ที่เหลือมีเพียง protected Meta Ads forensic history ซึ่งอยู่นอก activation scope และไม่ได้ถูกแก้ไข.

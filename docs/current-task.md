@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                         = DASHBOARD_READY_WITH_EXTERNAL_BLOCKERS
 CURRENT_PROGRAM                     = MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_ACTIVATION_V1
-BRANCH                              = codex/meta-staged-unit-pagination
-EXACT_BASE                          = 6154693746dd304a1a98504c1fac8131d46875d4
+BRANCH                              = codex/multichannel-live-activation-closeout
+EXACT_BASE                          = 77dbccdfa0db64ffbe567c2e579b47670b146eb9
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
@@ -45,6 +45,9 @@ DLQ_REDRIVE                         = BLOCKED_OFF
 
 1. Reliability mirror outbox เขียน Lark `MKT_Sync_Log.platform` ค่า `woocommerce` และ `chatwoot` ไม่ได้ เพราะ Single Select ขาดสอง options นี้ ทำให้ outbox ค้างและเกิด mirror DLQ ใหม่ทุก primary cron.
 2. Queue terminalization เรียก shared `abandonWork` เฉพาะ YouTube/TikTok/Chatwoot ทำให้ stable resumable Facebook/Instagram/Meta Ads/Google Ads/WooCommerce permanent failures ถูก acknowledge แต่ Work ยัง `active`.
+3. Instagram previous-day catch-up ไม่ส่งช่วงวันที่ผ่าน orchestration/source collector ไปยัง adapter จึงขยายเป็น full-account inventory 1,857 รายการแทน 1 วัน.
+4. Meta staged-unit reader ส่ง total ceiling 2,500 เป็น D1 page limit ครั้งเดียว ทั้งที่ store รับได้สูงสุด 500; แก้เป็น bounded pagination 500 + remainder.
+5. Paid Ads Report 8 jobs แรกขาด ignored runtime binding `LARK_TABLE_MKT_REPORT_TOP_ADS`; live schema preview ยืนยัน table เดิมโดยไม่มี schema action แล้วเพิ่มเฉพาะ binding ก่อนส่ง operation IDs ใหม่.
 
 ## Contract
 
@@ -86,9 +89,10 @@ git diff --check
 ## Implementation result
 
 ```text
-STATUS                              = IN_PROGRESS
+STATUS                              = DASHBOARD_READY_EXTERNAL_PROVIDER_BLOCKERS_REMAIN
 LARK_PLATFORM_OPTIONS               = ADDITIVE_FIX_APPLIED_AND_READ_BACK
 RELIABILITY_OUTBOX_PENDING          = 0
+RELIABILITY_MIRROR_NEW_FAILURES     = 0_AFTER_TWO_PRIMARY_CRON_INTERVALS
 QUEUE_TERMINALIZATION_FIX           = MERGED_PR_580_AND_DEPLOYED
 META_SOURCE_UNIT_CAPACITY_HOTFIX    = IMPLEMENTED_BOUNDED_2500_DEFAULT_UNCHANGED
 INSTAGRAM_INVENTORY_PERIOD_HOTFIX   = IMPLEMENTED_EXISTING_DATE_RANGE_CONTRACT
@@ -101,11 +105,17 @@ ARCHITECTURE_HYGIENE                = PASS
 DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                      = PASS
 SAFE_CONFIG_RECONCILIATION          = COMPLETE_LOCAL_IGNORED_CONFIG
-REMOTE_ACTIVATION                   = PARTIAL_SOURCE_CATCH_UP_IN_PROGRESS
-SOURCE_CATCH_UP_COMPLETE            = TIKTOK_FACEBOOK_YOUTUBE_PUBLIC_META_ADS_WOOCOMMERCE
+API_ACTIVE_VERSION                  = c804e6a6-0afe-42b9-b149-f253c877e892
+SYNC_ACTIVE_VERSION                 = 04dc61e2-1f6a-4c79-9226-6dedbbec9593
+REMOTE_ACTIVATION                   = SOURCE_AND_REPORT_SCHEDULES_ON
+SOURCE_CATCH_UP_COMPLETE            = TIKTOK_FACEBOOK_INSTAGRAM_YOUTUBE_PUBLIC_META_ADS_WOOCOMMERCE
 SOURCE_CATCH_UP_BLOCKED             = YOUTUBE_ANALYTICS_CHATWOOT
-INSTAGRAM_CATCH_UP                  = R2_TERMINAL_WAITING_FOR_PAGINATED_R3
-DAILY_REPORT_MATERIALIZATION        = WAITING_FOR_SOURCE_QUEUE_STABILITY
+INSTAGRAM_CATCH_UP                  = R3_PASS_D1_LARK_RECONCILIATION_FAILED_0
+DAILY_REPORT_MATERIALIZATION        = PASS_32_OF_32_D1_AND_LARK
+LARK_REPORT_READBACK                = SNAPSHOTS_32_METRICS_1236_TOP_CONTENT_80_TOP_ADS_40
+REPORT_DATA_STATUS                  = COMPLETE_17_NO_DATA_3_PARTIAL_3_REVISABLE_9
+ACTIVE_NONEXPIRED_LOCKS             = 0
+ACTIVE_WORK                         = PROTECTED_META_ADS_FORENSIC_HISTORY_ONLY
 GOOGLE_ADS_PROVIDER_SCHEDULE        = BLOCKED_BY_VISIBLE_AD_BLOCKER_MODAL
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
 AUTOMATIC_WEEKLY_NOTIFICATION       = BLOCKED_OFF
@@ -118,3 +128,7 @@ Hotfix นี้ขยายเฉพาะ hard maximum ของ `MKT_META_SOU
 Live progress หลัง deploy ยืนยันว่าช่วงวันที่ของ Instagram หลุดหายสองชั้นก่อนถึง adapter ทำให้ previous-day catch-up กลายเป็น full-account inventory 1,857 รายการ ทั้งที่ adapter มี newest-first bounded date-range contract อยู่แล้ว; hotfix จึงส่ง `periodStart`/`periodEnd` ผ่าน orchestration และ source collector เดิม โดยไม่เปลี่ยน Provider query schema หรือ write semantics.
 
 Instagram R2 ยืนยันว่า period-bound contract ถูกใช้แล้ว แต่พบว่า source ceiling 2,500 ถูกส่งเป็น `listPhaseUnits.limit` ครั้งเดียว ขัดกับ D1 store page cap 500; hotfix จึงอ่าน staged units แบบหลายหน้าไม่เกิน 500 และ fail closed เมื่อ cursor ไม่เดินหรือจำนวน units ไม่ครบ.
+
+Instagram R3 สำเร็จด้วย 1 content, 7 insight rows, D1 3/3 operations, Lark 7/7 tables, warning 0 และ reconciliation `failed=0`. Daily materialization มี D1/Lark snapshots ครบ 32 identities สำหรับ 8 platforms × `1D/3D/7D/30D`; Lark stable-key duplicate เป็นศูนย์ทุก Report table. Paid Ads predecessor DLQ 8 รายการถูกเก็บเป็นหลักฐานและ recovery ใช้ operation IDs `-r2` ใหม่โดยไม่ redrive.
+
+External blockers ที่ยังทำให้ห้ามประกาศ `MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_PASS`: Google Ads UI แสดง ad-blocker modal จึงยังตั้ง Provider Daily Frequency/ทำ fresh LIVE ไม่ได้, YouTube Analytics OAuth owner ไม่ตรง configured channel และ Chatwoot pagination เปลี่ยนระหว่าง continuation. Public YouTube, existing report coverage และ Dashboard materialization ยังคงพร้อมตรวจ; Production/Notification/DLQ redrive ยังปิด.
