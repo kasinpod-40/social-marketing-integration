@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                         = DASHBOARD_READY_WITH_EXTERNAL_BLOCKERS
+TASK_STATUS                         = DASHBOARD_READY_YOUTUBE_ANALYTICS_CHATWOOT_BLOCKERS
 CURRENT_PROGRAM                     = MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_ACTIVATION_V1
-BRANCH                              = codex/multichannel-live-activation-closeout
-EXACT_BASE                          = 77dbccdfa0db64ffbe567c2e579b47670b146eb9
+BRANCH                              = codex/google-ads-live-schedule-closeout
+EXACT_BASE                          = 99c88691db1237c9a08dff6922d1836486f3772d
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
@@ -89,7 +89,7 @@ git diff --check
 ## Implementation result
 
 ```text
-STATUS                              = DASHBOARD_READY_EXTERNAL_PROVIDER_BLOCKERS_REMAIN
+STATUS                              = DASHBOARD_READY_YOUTUBE_ANALYTICS_CHATWOOT_BLOCKERS_REMAIN
 LARK_PLATFORM_OPTIONS               = ADDITIVE_FIX_APPLIED_AND_READ_BACK
 RELIABILITY_OUTBOX_PENDING          = 0
 RELIABILITY_MIRROR_NEW_FAILURES     = 0_AFTER_TWO_PRIMARY_CRON_INTERVALS
@@ -98,25 +98,29 @@ META_SOURCE_UNIT_CAPACITY_HOTFIX    = IMPLEMENTED_BOUNDED_2500_DEFAULT_UNCHANGED
 INSTAGRAM_INVENTORY_PERIOD_HOTFIX   = IMPLEMENTED_EXISTING_DATE_RANGE_CONTRACT
 META_STAGED_UNIT_PAGINATION_HOTFIX  = IMPLEMENTED_D1_PAGE_CAP_500
 FOCUSED_REGRESSION                  = PASS_21_OF_21
-FULL_UNIT_TESTS                     = PASS_2897
+FULL_UNIT_TESTS                     = PASS_2900
 WORKERS_RUNTIME_TESTS               = PASS_18
 REPORT_RELIABILITY_TESTS            = PASS_105
 ARCHITECTURE_HYGIENE                = PASS
 DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                      = PASS
 SAFE_CONFIG_RECONCILIATION          = COMPLETE_LOCAL_IGNORED_CONFIG
-API_ACTIVE_VERSION                  = c804e6a6-0afe-42b9-b149-f253c877e892
+API_ACTIVE_VERSION                  = 4166852d-c8bb-438a-9ab4-ffeec9520a7f
 SYNC_ACTIVE_VERSION                 = 04dc61e2-1f6a-4c79-9226-6dedbbec9593
 REMOTE_ACTIVATION                   = SOURCE_AND_REPORT_SCHEDULES_ON
-SOURCE_CATCH_UP_COMPLETE            = TIKTOK_FACEBOOK_INSTAGRAM_YOUTUBE_PUBLIC_META_ADS_WOOCOMMERCE
+SOURCE_CATCH_UP_COMPLETE            = TIKTOK_FACEBOOK_INSTAGRAM_YOUTUBE_PUBLIC_META_ADS_GOOGLE_ADS_WOOCOMMERCE
 SOURCE_CATCH_UP_BLOCKED             = YOUTUBE_ANALYTICS_CHATWOOT
 INSTAGRAM_CATCH_UP                  = R3_PASS_D1_LARK_RECONCILIATION_FAILED_0
 DAILY_REPORT_MATERIALIZATION        = PASS_32_OF_32_D1_AND_LARK
 LARK_REPORT_READBACK                = SNAPSHOTS_32_METRICS_1236_TOP_CONTENT_80_TOP_ADS_40
-REPORT_DATA_STATUS                  = COMPLETE_17_NO_DATA_3_PARTIAL_3_REVISABLE_9
+REPORT_DATA_STATUS                  = COMPLETE_17_PARTIAL_3_REVISABLE_12
 ACTIVE_NONEXPIRED_LOCKS             = 0
 ACTIVE_WORK                         = PROTECTED_META_ADS_FORENSIC_HISTORY_ONLY
-GOOGLE_ADS_PROVIDER_SCHEDULE        = BLOCKED_BY_VISIBLE_AD_BLOCKER_MODAL
+GOOGLE_ADS_FRESH_LIVE_RUN           = PASS_609cc147_7_OF_7_CHUNKS_1335_OF_1335_ROWS
+GOOGLE_ADS_RECONCILIATION           = PASS_6_DATASETS_FAILED_ROWS_0
+GOOGLE_ADS_D1_LARK_PARITY           = PASS_ENTITIES_1105_DAILY_390
+GOOGLE_ADS_REPORT_R3                = PASS_4_OF_4_FRESH_WATERMARK
+GOOGLE_ADS_PROVIDER_SCHEDULE        = PASS_DAILY_0600_0700_PROVIDER_LOCAL_TIME
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
 AUTOMATIC_WEEKLY_NOTIFICATION       = BLOCKED_OFF
 DLQ_REDRIVE                         = BLOCKED_OFF
@@ -131,7 +135,9 @@ Instagram R2 ยืนยันว่า period-bound contract ถูกใช�
 
 Instagram R3 สำเร็จด้วย 1 content, 7 insight rows, D1 3/3 operations, Lark 7/7 tables, warning 0 และ reconciliation `failed=0`. Daily materialization มี D1/Lark snapshots ครบ 32 identities สำหรับ 8 platforms × `1D/3D/7D/30D`; Lark stable-key duplicate เป็นศูนย์ทุก Report table. Paid Ads predecessor DLQ 8 รายการถูกเก็บเป็นหลักฐานและ recovery ใช้ operation IDs `-r2` ใหม่โดยไม่ redrive.
 
-External blockers ที่ยังทำให้ห้ามประกาศ `MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_PASS`: Google Ads UI แสดง ad-blocker modal จึงยังตั้ง Provider Daily Frequency/ทำ fresh LIVE ไม่ได้, YouTube Analytics OAuth owner ไม่ตรง configured channel และ Chatwoot pagination เปลี่ยนระหว่าง continuation. Public YouTube, existing report coverage และ Dashboard materialization ยังคงพร้อมตรวจ; Production/Notification/DLQ redrive ยังปิด.
+Google Ads fresh LIVE ใช้ run ใหม่ `609cc147-809b-404a-a484-dcbb82c12a6f` โดยไม่ replay historical run ที่ถูกป้องกันไว้: signed delivery รับ 7/7 chunks และ 1,335/1,335 rows, admission `completed` ด้วย send attempt เดียว, reconciliation ครบ 6 datasets และ `failed_rows=0`. D1/Lark readback ตรงกันที่ Ads entities 1,105 และ Daily facts 390; Google Ads report R3 ทั้ง `1D/3D/7D/30D` มี coverage 1 และ fresh source watermark เดียวกัน. Google Ads Manager Script UI ยืนยัน script หลัก Enabled และ Provider frequency `Daily between 6:00 AM and 7:00 AM`; PREVIEW script ไม่มี schedule จึงไม่เกิด duplicate provider producer.
+
+External blockers ที่ยังทำให้ห้ามประกาศ `MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_PASS` เหลือสองรายการ: YouTube Analytics OAuth owner ไม่ตรง configured channel และ Chatwoot pagination เปลี่ยนระหว่าง continuation. Public YouTube, Google Ads fresh LIVE, existing report coverage และ Dashboard materialization พร้อมตรวจ; Production/Notification/DLQ redrive ยังปิด.
 
 ## Downstream Weekly Executive Decision Preview blocker — 2026-08-10
 
