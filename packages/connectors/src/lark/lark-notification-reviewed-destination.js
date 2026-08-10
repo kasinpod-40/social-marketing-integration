@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import {
   LARK_EXECUTIVE_DESTINATION_KEY_HASH,
 } from '../../../config/src/lark-notification-runtime-config.js';
@@ -68,7 +66,7 @@ export async function resolveLarkNotificationReviewedDestination(input = {}) {
       { matchCount: unique.length },
     );
   }
-  const observedDestinationKeyHash = sha256(unique[0].chatId);
+  const observedDestinationKeyHash = await sha256Hex(unique[0].chatId);
   if (observedDestinationKeyHash !== expectedDestinationKeyHash) {
     throw destinationError(
       'Reviewed Executive Lark chat identity does not match the locked destination hash',
@@ -100,8 +98,20 @@ function requireText(value, fieldName) {
   }
   return value.trim();
 }
-function sha256(value) {
-  return createHash('sha256').update(String(value)).digest('hex');
+async function sha256Hex(value) {
+  if (!globalThis.crypto?.subtle) {
+    throw destinationError(
+      'Web Crypto SHA-256 is required for reviewed destination validation',
+      'LARK_NOTIFICATION_DESTINATION_RESOLUTION_INVALID',
+    );
+  }
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(String(value)),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 function destinationError(message, code, details = {}) {
   const error = new Error(message);
