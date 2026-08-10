@@ -93,7 +93,13 @@ test('AI metric summary keeps ranked candidates once without legacy duplicate al
   assert.equal(meta.adCandidates.length, 3);
   assert.equal(Object.hasOwn(facebook, 'topContent'), false);
   assert.equal(Object.hasOwn(meta, 'topAds'), false);
+  assert.equal(Object.hasOwn(summary.decisionEvidence, 'contentCandidates'), false);
+  assert.equal(Object.hasOwn(summary.decisionEvidence, 'adCandidates'), false);
+  assert.equal(summary.decisionEvidence.scaleEvidenceAdNames.length, 3);
+  assert.equal(summary.decisionEvidence.funnelDivergences.length, 1);
   assert.equal(built.evidence.contentCandidateNames.length, 3);
   assert.equal(built.evidence.adCandidateNames.length, 3);
+  assert.equal(built.evidence.scaleEvidenceAdNames.length, 3);
+  assert.equal(built.evidence.funnelDivergences.length, 1);
   assert.ok(built.metricSummaryChars <= 8000);
 });
