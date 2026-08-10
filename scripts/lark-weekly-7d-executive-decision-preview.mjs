@@ -577,7 +577,7 @@ function buildResult(input) {
       comparisonEvidenceChannelCount: context.authority.synthesis.evidence.evidence.comparisonEvidenceChannelCount,
       businessEvidenceChannelNames: context.authority.synthesis.evidence.evidence.businessEvidenceChannelNames,
       contentCandidateNames: context.authority.synthesis.evidence.evidence.contentCandidateNames,
-      paidCandidateNames: context.authority.synthesis.evidence.evidence.paidCandidateNames,
+      adCandidateNames: context.authority.synthesis.evidence.evidence.adCandidateNames,
       funnelDivergences: context.authority.synthesis.evidence.evidence.funnelDivergences,
       organicPaidMappingAvailable: context.authority.synthesis.evidence.evidence.organicPaidMappingAvailable,
     }),
