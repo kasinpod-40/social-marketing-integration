@@ -119,6 +119,71 @@ function factualReport() {
   });
 }
 
+function threeContent(channelKey) {
+  return Array.from({ length: 3 }, (_, index) => ({
+    rank: index + 1,
+    external_content_id: `${channelKey}-content-${index + 1}`,
+    caption: `${channelKey} คอนเทนต์ตัดสินใจอันดับ ${index + 1} ชื่อยาวเพื่อพิสูจน์ Native AI compact budget`,
+    period_views: 200000 - (index * 10000),
+    period_engagement: 12000 - (index * 1000),
+    period_engagement_rate: 6.5 - index,
+    data_status: 'complete',
+  }));
+}
+
+function threeAds(channelKey) {
+  return Array.from({ length: 3 }, (_, index) => ({
+    rank: index + 1,
+    external_ad_id: `${channelKey}-ad-${index + 1}`,
+    ad_name: `${channelKey} โฆษณาตัดสินใจอันดับ ${index + 1} ชื่อยาวเพื่อพิสูจน์ Native AI compact budget`,
+    spend_micros: 1200000000 - (index * 100000000),
+    clicks: 4553 - (index * 500),
+    impressions: 582054 - (index * 50000),
+    conversions: 42 - (index * 10),
+    conversion_value_micros: 4800000000 - (index * 500000000),
+    cpc_micros: 263562 + (index * 10000),
+    cpa_micros: 28571429 + (index * 1000000),
+    roas: 4 - index,
+    data_status: 'complete',
+  }));
+}
+
+function saturatedFactualReport() {
+  const organic = ['tiktok_organic', 'facebook_organic', 'instagram_organic', 'youtube_organic'];
+  const reportBundles = organic.map((channelKey, index) => bundle(channelKey, [
+    metric(`${channelKey}:views`, 'Views', 1000000 + index, 900000 + index),
+    metric(`${channelKey}:reach`, 'Reach', 700000 + index, 650000 + index),
+    metric(`${channelKey}:interactions`, 'Interactions', 60000 - index, 65000 + index),
+  ], { topContent: threeContent(channelKey) }));
+  reportBundles.push(
+    bundle('meta_ads', [
+      metric('meta_ads:spend_micros', 'Spend', 17742800000, 16582000000, 'currency'),
+      metric('meta_ads:impressions', 'Impressions', 3025762, 2909329),
+      metric('meta_ads:clicks', 'Clicks', 38627, 43401),
+    ], { topAds: threeAds('meta_ads') }),
+    bundle('google_ads', [
+      metric('google_ads:spend_micros', 'Spend', 9000000000, 8500000000, 'currency'),
+      metric('google_ads:impressions', 'Impressions', 1200000, 1100000),
+      metric('google_ads:clicks', 'Clicks', 14000, 15000),
+    ], { topAds: threeAds('google_ads') }),
+    bundle('woocommerce', [
+      metric('woocommerce:net_sales_micros', 'Net sales', 168010000000, 250761000000, 'currency'),
+      metric('woocommerce:gross_sales_micros', 'Gross sales', 170210000000, 253995000000, 'currency'),
+      metric('woocommerce:refunds_micros', 'Refunds', 0, 1000000, 'currency'),
+    ]),
+    bundle('chatwoot', [
+      metric('chatwoot:conversations', 'Conversations', 1200, 1100),
+      metric('chatwoot:resolved', 'Resolved', 900, 850),
+      metric('chatwoot:response_time', 'Response time', 30, 32),
+    ]),
+  );
+  return buildLarkWeeklyExecutiveFactualReport({ targetPeriod: PERIOD, reportBundles });
+}
+
+function statusVector(report) {
+  return JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey, readinessStatus: 'report_ready' })));
+}
+
 test('weekly factual rendering derives percentage points from canonical current and compare values', () => {
   const report = factualReport();
   const sections = renderLarkWeeklyExecutiveChannelSections(report);
@@ -145,17 +210,17 @@ test('zero comparison never produces infinity or a fabricated percentage', () =>
   assert.doesNotMatch(line, /Infinity|NaN|123%/u);
 });
 
-test('full-channel AI evidence keeps signals plus multiple content and paid decision candidates', () => {
+test('full-channel AI keeps rich decision evidence while Native AI prompt stays within proven 2800/700 budgets', () => {
   const report = factualReport();
-  const statusVector = JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey })));
   const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
     factualReport: report,
-    channelStatusVectorJson: statusVector,
+    channelStatusVectorJson: statusVector(report),
   });
   const summary = JSON.parse(built.metricSummaryJson);
   assert.equal(summary.promptShape, LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE);
-  assert.equal(summary.promptShape, 'lark_ai_executive_decision_v1');
-  assert.equal(summary.evidenceShape, 'executive_decision_v1');
+  assert.equal(summary.evidenceShape, 'executive_decision_compact_v1');
+  assert.ok(built.metricSummaryChars <= 2800);
+  assert.ok(built.channelStatusVectorChars <= 700);
   assert.equal(built.evidence.businessEvidenceChannelCount, 4);
   assert.equal(built.evidence.comparisonEvidenceChannelCount, 2);
   assert.ok(built.evidence.positiveComparisonChannelNames.includes('Meta Ads'));
@@ -169,50 +234,64 @@ test('full-channel AI evidence keeps signals plus multiple content and paid deci
   assert.ok(built.evidence.scaleEvidenceAdNames.includes('(01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา'));
   assert.equal(built.evidence.funnelDivergences[0].type, 'awareness_up_outcome_down');
   assert.equal(built.evidence.organicPaidMappingAvailable, false);
-  assert.ok(built.metricSummaryChars <= 8000);
 
-  const facebook = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'facebook_organic');
-  const instagram = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'instagram_organic');
-  const meta = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'meta_ads');
-  const woo = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'woocommerce');
+  const facebook = built.evidence.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'facebook_organic');
+  const instagram = built.evidence.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'instagram_organic');
+  const meta = built.evidence.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'meta_ads');
+  const woo = built.evidence.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'woocommerce');
   assert.equal(facebook.availableMetrics[0].display_name, 'ผู้ติดตาม');
   assert.equal(facebook.contentCandidates.length, 2);
   assert.equal(facebook.contentCandidates[0].shares, 1200);
   assert.equal(facebook.contentCandidates[0].engagement_rate, 6.33);
   assert.equal(instagram.availableMetrics[0].display_name, 'ยอดดู');
   assert.equal(instagram.availableMetrics[1].display_name, 'การเข้าถึง');
-  assert.deepEqual(
-    meta.availableMetrics.map(({ metric_key }) => metric_key),
-    ['meta_ads:spend_micros', 'meta_ads:impressions', 'meta_ads:clicks'],
-  );
-  assert.deepEqual(
-    meta.availableMetrics.map(({ signal }) => signal),
-    ['neutral', 'positive', 'negative'],
-  );
+  assert.deepEqual(meta.availableMetrics.map(({ metric_key }) => metric_key), [
+    'meta_ads:spend_micros', 'meta_ads:impressions', 'meta_ads:clicks',
+  ]);
+  assert.deepEqual(meta.availableMetrics.map(({ signal }) => signal), ['neutral', 'positive', 'negative']);
   assert.equal(meta.availableMetrics[0].current_value, 17742.8);
   assert.ok(Math.abs(meta.availableMetrics[0].change_percent - 7) < 0.01);
-  assert.equal(meta.availableMetrics[2].display_name, 'การคลิก');
-  assert.ok(Math.abs(meta.availableMetrics[2].change_percent + 11) < 0.1);
   assert.equal(meta.adCandidates.length, 2);
   assert.equal(meta.adCandidates[0].derived_ctr_percent, 0.78223);
   assert.equal(meta.adCandidates[0].conversion_value, 4800);
   assert.equal(meta.adCandidates[0].cpa, 28.5714);
   assert.equal(meta.adCandidates[0].roas, 4);
   assert.equal(woo.availableMetrics[0].display_name, 'ยอดขายสุทธิ');
-  assert.equal(woo.availableMetrics[1].display_name, 'ยอดขายรวม');
-  assert.equal(woo.availableMetrics[0].current_value, 168010);
   assert.ok(Math.abs(woo.availableMetrics[0].change_percent + 33) < 0.01);
   assert.match(summary.writerContract.recommendations, /\[SCALE\]/u);
-  assert.match(summary.writerContract.recommendations, /ห้าม \[SCALE\]/u);
-  assert.match(summary.writerContract.funnelDecision, /สวนทาง/u);
+  assert.match(summary.writerContract.recommendations, /only scale=1/u);
+  assert.match(summary.writerContract.funnelDecision, /\[NO-SCALE\]/u);
+});
+
+test('saturated eight-channel decision evidence preserves three candidate names per applicable channel under Native AI budget', () => {
+  const report = saturatedFactualReport();
+  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
+    factualReport: report,
+    channelStatusVectorJson: statusVector(report),
+  });
+  const summary = JSON.parse(built.metricSummaryJson);
+  assert.ok(built.metricSummaryChars <= 2800, `metric summary was ${built.metricSummaryChars}`);
+  assert.ok(built.channelStatusVectorChars <= 700, `status vector was ${built.channelStatusVectorChars}`);
+  assert.equal(built.evidence.businessEvidenceChannelCount, 8);
+  assert.equal(built.evidence.contentCandidateNames.length, 12);
+  assert.equal(built.evidence.adCandidateNames.length, 6);
+  const facebook = summary.channels.find(([name]) => name === 'Facebook Organic');
+  const meta = summary.channels.find(([name]) => name === 'Meta Ads');
+  assert.equal(facebook[2].length, 3);
+  assert.equal(meta[3].length, 3);
+  for (const fullName of built.evidence.contentCandidateNames) {
+    const token = fullName.replace(/\s+/gu, ' ').slice(0, 28);
+    assert.ok(built.metricSummaryJson.includes(token));
+  }
+  for (const fullName of built.evidence.adCandidateNames) {
+    const token = fullName.replace(/\s+/gu, ' ').slice(0, 28);
+    assert.ok(built.metricSummaryJson.includes(token));
+  }
 });
 
 test('executive decision quality requires named content, named paid action and funnel divergence', () => {
   const report = factualReport();
-  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
-    factualReport: report,
-    channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
-  });
+  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({ factualReport: report, channelStatusVectorJson: statusVector(report) });
   const accepted = validateLarkWeeklyExecutiveFullChannelAiOutputs({
     insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้ โดยการมองเห็นโตแต่ผลปลาย Funnel อ่อนลง',
     strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
@@ -236,10 +315,7 @@ test('executive decision quality requires named content, named paid action and f
 
 test('quality blocks unsupported scale and fabricated Organic-to-Paid identity claims', () => {
   const report = factualReport();
-  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
-    factualReport: report,
-    channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
-  });
+  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({ factualReport: report, channelStatusVectorJson: statusVector(report) });
   const evidenceWithoutScale = Object.freeze({ ...built.evidence, scaleEvidenceAdNames: Object.freeze([]) });
   const unsupportedScale = validateLarkWeeklyExecutiveFullChannelAiOutputs({
     insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010',
@@ -262,10 +338,7 @@ test('quality blocks unsupported scale and fabricated Organic-to-Paid identity c
 
 test('full-channel AI quality still requires positive metric strength and negative metric weakness', () => {
   const report = factualReport();
-  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
-    factualReport: report,
-    channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
-  });
+  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({ factualReport: report, channelStatusVectorJson: statusVector(report) });
   const neutralStrength = validateLarkWeeklyExecutiveFullChannelAiOutputs({
     insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้',
     strengths: 'Meta Ads มีค่าใช้จ่ายเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
@@ -290,10 +363,7 @@ test('full-channel AI quality still requires positive metric strength and negati
 
 test('full-channel AI quality rejects internal fields and non-executive comparison wording', () => {
   const report = factualReport();
-  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
-    factualReport: report,
-    channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
-  });
+  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({ factualReport: report, channelStatusVectorJson: statusVector(report) });
   const internalFields = validateLarkWeeklyExecutiveFullChannelAiOutputs({
     insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010',
     strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',

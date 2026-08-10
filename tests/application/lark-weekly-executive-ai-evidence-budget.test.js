@@ -86,20 +86,22 @@ test('AI metric summary keeps ranked candidates once without legacy duplicate al
     channelStatusVectorJson: JSON.stringify(STATUS_CHANNELS.map((channelKey) => ({ channelKey }))),
   });
   const summary = JSON.parse(built.metricSummaryJson);
-  const facebook = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'facebook_organic');
-  const meta = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'meta_ads');
+  const organic = built.evidence.channelBusinessEvidence.find((row) => row.channelKey === 'facebook_organic');
+  const paid = built.evidence.channelBusinessEvidence.find((row) => row.channelKey === 'meta_ads');
 
-  assert.equal(facebook.contentCandidates.length, 3);
-  assert.equal(meta.adCandidates.length, 3);
-  assert.equal(Object.hasOwn(facebook, 'topContent'), false);
-  assert.equal(Object.hasOwn(meta, 'topAds'), false);
-  assert.equal(Object.hasOwn(summary.decisionEvidence, 'contentCandidates'), false);
-  assert.equal(Object.hasOwn(summary.decisionEvidence, 'adCandidates'), false);
-  assert.equal(summary.decisionEvidence.scaleEvidenceAdNames.length, 3);
-  assert.equal(summary.decisionEvidence.funnelDivergences.length, 1);
+  assert.equal(summary.promptShape, 'lark_ai_executive_decision_v1');
+  assert.equal(summary.evidenceShape, 'executive_decision_compact_v1');
+  assert.equal(built.evidence.businessEvidenceChannelCount, 2);
+  assert.equal(Array.isArray(organic?.contentCandidates), true);
+  assert.equal(Array.isArray(paid?.adCandidates), true);
+  assert.equal(organic.contentCandidates.length, 3);
+  assert.equal(paid.adCandidates.length, 3);
   assert.equal(built.evidence.contentCandidateNames.length, 3);
   assert.equal(built.evidence.adCandidateNames.length, 3);
   assert.equal(built.evidence.scaleEvidenceAdNames.length, 3);
   assert.equal(built.evidence.funnelDivergences.length, 1);
-  assert.ok(built.metricSummaryChars <= 8000);
+  assert.equal(Object.hasOwn(summary, 'channelBusinessEvidence'), false);
+  assert.equal(Object.hasOwn(summary, 'decisionEvidence'), false);
+  assert.ok(built.metricSummaryJson.length <= 2800);
+  assert.ok(built.channelStatusVectorJson.length <= 700);
 });

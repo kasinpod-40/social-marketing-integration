@@ -14,8 +14,9 @@ export const LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE =
 const MAX_AI_METRICS_PER_CHANNEL = 3;
 const MAX_AI_CONTENT_CANDIDATES_PER_CHANNEL = 3;
 const MAX_AI_AD_CANDIDATES_PER_CHANNEL = 3;
-const MAX_METRIC_SUMMARY_CHARS = 8_000;
+const MAX_METRIC_SUMMARY_CHARS = 2_800;
 const MAX_STATUS_VECTOR_CHARS = 700;
+const CANDIDATE_LABEL_LIMITS = Object.freeze([36, 32, 28]);
 const LOWER_IS_BETTER = /(?:cpc|cpm|cpa|cost_per|refund)/iu;
 const NEUTRAL_DIRECTION = /(?:spend|budget|ค่าใช้จ่าย|งบ)/iu;
 const INTERNAL_METRIC_LANGUAGE = /\b(?:metric_key|change_percent|compare_value|current_value|derived_ctr_percent)\b/iu;
@@ -88,33 +89,16 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     funnelDivergenceCount: funnelDivergences.length,
     organicPaidMappingAvailable: false,
   });
-  const metricSummary = Object.freeze({
-    evidenceShape: 'executive_decision_v1',
-    promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
-    qualityContext,
-    writerContract: Object.freeze({
-      overview: 'สรุป facts อย่างน้อย 2 ช่องทาง; ชี้ต้น/ปลาย Funnel ไปทางเดียวกันหรือสวนทาง',
-      strengths: 'ใช้ signal=positive; spend/budget เป็น neutral ห้ามเป็น strength',
-      weaknesses: 'ใช้ signal=negative; missing ไม่ใช่ weakness; awareness โตแต่ outcome ลด = ความเสี่ยง',
-      recommendations: '2-5 bullets ใช้ [CONTENT]/[SCALE]/[TEST]/[KEEP]/[REDUCE]/[STOP]/[NO-SCALE] และชื่อ candidate จริง; ห้าม [SCALE] ถ้า scaleEvidenceAdNames ว่าง; Organic winner ใช้ [TEST]; mapping=false ห้ามอ้าง Organic↔Paid เป็นชิ้นเดียวกัน',
-      contentDecision: 'ใช้ views/engagement/ER/rank; Organic ดีไม่ยืนยัน Paid',
-      paidDecision: 'ใช้ CTR/CPC/CPA/conversions/value/ROAS; CTR อย่างเดียวห้าม Scale',
-      funnelDecision: 'awareness เพิ่มแต่ clicks/conversions/sales/revenue ลด = สัญญาณสวนทาง; ห้ามเพิ่มงบรวมจนปลาย Funnel ฟื้น',
-      language: 'ใช้ display_name; ห้าม field ภายใน',
-      comparison: 'ใช้ “เทียบช่วงก่อน”; ห้ามศัพท์ระบบ comparison',
-    }),
-    decisionEvidence: Object.freeze({
-      scaleEvidenceAdNames,
-      funnelDivergences,
-      organicPaidMappingAvailable: false,
-    }),
-    channelBusinessEvidence: channels,
+
+  const metricSummaryJson = buildNativeAiBoundedDecisionSummary({
+    businessChannels,
+    scaleEvidenceAdNames,
+    funnelDivergences,
   });
-  const metricSummaryJson = stableStringify(metricSummary);
   const normalizedStatusVectorJson = stableStringify(compactStatusVector);
   if (metricSummaryJson.length > MAX_METRIC_SUMMARY_CHARS) {
     throw evidenceError(
-      'Full-channel Weekly AI evidence exceeds the bounded metric-summary budget',
+      'Full-channel Weekly AI evidence exceeds the proven Native AI metric-summary budget after compaction',
       'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_METRIC_LIMIT_EXCEEDED',
       { observedChars: metricSummaryJson.length, maximumChars: MAX_METRIC_SUMMARY_CHARS },
     );
@@ -150,6 +134,7 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     organicPaidMappingAvailable: false,
     summaryRequiredFacts,
     derivedCtrFacts,
+    channelBusinessEvidence: channels,
   });
 
   return deepFreeze({
@@ -284,6 +269,89 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
     passed: violations.length === 0,
     violations: Object.freeze([...new Set(violations)]),
   });
+}
+
+function buildNativeAiBoundedDecisionSummary(input) {
+  let last = null;
+  for (const labelLimit of CANDIDATE_LABEL_LIMITS) {
+    const summary = buildCompactDecisionSummary(input, labelLimit);
+    const json = stableStringify(summary);
+    last = json;
+    if (json.length <= MAX_METRIC_SUMMARY_CHARS) return json;
+  }
+  throw evidenceError(
+    'Full-channel Weekly AI decision evidence remains above the proven Native AI input budget after deterministic compaction',
+    'LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_METRIC_LIMIT_EXCEEDED',
+    { observedChars: last?.length ?? null, maximumChars: MAX_METRIC_SUMMARY_CHARS },
+  );
+}
+
+function buildCompactDecisionSummary(input, labelLimit) {
+  const scaleNames = new Set(input.scaleEvidenceAdNames ?? []);
+  const channels = input.businessChannels.map((channel) => [
+    channel.displayName,
+    channel.availableMetrics.map((metric) => compactTuple([
+      metric.display_name,
+      metric.current_value,
+      metric.change_percent,
+      signalCode(metric.signal),
+    ])),
+    (channel.contentCandidates ?? []).map((item) => compactTuple([
+      compactCandidateLabel(item.caption, labelLimit),
+      item.rank,
+      item.views,
+      item.engagement,
+      item.engagement_rate,
+    ])),
+    (channel.adCandidates ?? []).map((item) => compactTuple([
+      compactCandidateLabel(item.ad_name, labelLimit),
+      item.rank,
+      item.spend,
+      item.clicks,
+      item.derived_ctr_percent,
+      item.conversions,
+      item.conversion_value,
+      item.roas,
+      scaleNames.has(item.ad_name) ? 1 : 0,
+    ])),
+  ]);
+  const funnelUp = unique((input.funnelDivergences ?? [])
+    .flatMap(({ positiveFacts }) => positiveFacts?.map(({ metric }) => metric) ?? []));
+  const funnelDown = unique((input.funnelDivergences ?? [])
+    .flatMap(({ negativeFacts }) => negativeFacts?.map(({ metric }) => metric) ?? []));
+  return Object.freeze({
+    evidenceShape: 'executive_decision_compact_v1',
+    promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
+    legend: 'ch=[name,m,c,a]; m=[name,value,changePct,+/-/0]; c=[name,rank,views,eng,ER]; a=[name,rank,spend,clicks,CTR,conv,value,ROAS,scale]',
+    writerContract: Object.freeze({
+      recommendations: '2-5 [CONTENT]/[TEST]/[SCALE]/[KEEP]/[REDUCE]/[STOP]/[NO-SCALE]; [SCALE] only scale=1, never CTR-only; Organic without Paid proof => [TEST]; mapping=false: no same-creative claim',
+      funnelDecision: 'awareness + with outcome - => [NO-SCALE] broad budget',
+      strengths: '+ only; spend/budget neutral',
+      weaknesses: '- only; missing data is not weakness',
+    }),
+    funnelMetrics: Object.freeze({ up: funnelUp, down: funnelDown }),
+    organicPaidMappingAvailable: false,
+    channels: Object.freeze(channels),
+  });
+}
+
+function compactTuple(values) {
+  const output = [...values];
+  while (output.length > 0 && (output.at(-1) === null || output.at(-1) === undefined || output.at(-1) === '')) {
+    output.pop();
+  }
+  return Object.freeze(output);
+}
+
+function compactCandidateLabel(value, maximumChars) {
+  const normalized = text(value).replace(/\s+/gu, ' ');
+  return normalized.length <= maximumChars ? normalized : normalized.slice(0, maximumChars);
+}
+
+function signalCode(signal) {
+  if (signal === 'positive') return '+';
+  if (signal === 'negative') return '-';
+  return '0';
 }
 
 function toAiChannelEvidence(channel) {
