@@ -34,7 +34,7 @@ export const REPORT_METRIC_DIMENSION_TYPE_OPTIONS = Object.freeze([
  * Additive repository contract for the materialization consumer tables.
  * It is intentionally plan-only; applying it to a Live Base requires a separate authorization.
  */
-export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v6';
+export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v7';
 export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
   sharedOptionExtensions: {
     platforms: PLATFORM_OPTIONS,
@@ -50,6 +50,7 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     mktReportSnapshots: {
       keyField: 'report_id',
       additiveFields: [
+        text('lark_slot_key'),
         text('customer_key'),
         text('capability'),
         number('coverage_rate', '0.0000'),
@@ -61,6 +62,7 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     mktReportMetricValues: {
       keyField: 'report_metric_key',
       additiveFields: [
+        text('lark_slot_key'),
         ...sharedRowAdditiveFields({
           windowDaysField: select('window_days', DASHBOARD_WINDOW_DAY_OPTIONS),
         }),
@@ -75,7 +77,7 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     },
     mktReportTopContent: {
       keyField: 'report_content_key',
-      additiveFields: sharedRowAdditiveFields(),
+      additiveFields: [text('lark_slot_key'), ...sharedRowAdditiveFields()],
       platformField: {
         fieldName: 'platform',
         type: 3,
@@ -93,7 +95,7 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
       keyField: 'report_ad_key',
       sourceContract: 'validated materialization.topAds',
       fields: [
-        text('report_ad_key', true), text('report_id'), text('report_setting_key'),
+        text('report_ad_key', true), text('lark_slot_key'), text('report_id'), text('report_setting_key'),
         text('customer_key'), text('customer_profile'), text('capability'),
         select('report_type', ['dashboard_performance_report']),
         select('platform', PAID_ADS_PLATFORM_OPTIONS), text('account_id'),
