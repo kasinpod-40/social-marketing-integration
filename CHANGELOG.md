@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — YouTube Customer OAuth Runtime Credential-path Correction — 2026-08-10
+
+### Changed
+
+- Corrected the earlier owner/channel diagnosis: the retained customer connection is connected/validated
+  with a matching active encrypted Refresh Token reference; the ingestion runtime had bypassed it in favor
+  of the legacy static YouTube OAuth environment path.
+- Added a read-only D1 authorization gate for exact customer, connector, state, scopes, active credential
+  reference and configured Channel identity.
+- Routed Analytics-enabled Owner clients through the existing encrypted customer credential repository and
+  shared Google refresh provider while keeping Access Tokens memory-only.
+- Kept Public YouTube and operator public-only dry-run behavior separate and prohibited legacy Owner OAuth
+  fallback when Analytics is enabled.
+
+### Safety
+
+- No new invitation, customer consent, Secret rotation/deletion, remote data mutation or Worker deployment
+  occurred; the customer does not need to reconnect.
+- Repository gates passed, including Workers runtime `18/18`, report reliability `105/105`, architecture and
+  hygiene checks, zero dependency vulnerabilities, deploy dry-run and diff check.
+- Repository implementation is fixed, but Live remains unvalidated until a reviewed deployment, read-only
+  Owner preflight and controlled Analytics catch-up/reconciliation pass.
+
 ## Unreleased — Multichannel Runtime & Schedule LIVE Activation — 2026-08-10
 
 ### Changed
@@ -16,7 +39,9 @@
 
 - Retained the original 8 Paid Ads configuration-failure DLQ entries as evidence; recovery used new `-r2` operation IDs and no DLQ redrive.
 - Preserved null/N/A, `partial`, `revisable` and `no_data_confirmed` semantics without fabricating zero values.
-- Notification runtime, automatic weekly notification, DLQ redrive and Production remain off. The remaining external blockers are YouTube Analytics OAuth identity and Chatwoot mutable pagination.
+- Notification runtime, automatic weekly notification, DLQ redrive and Production remain off. YouTube
+  Analytics is repository-fixed but awaits reviewed deploy/live validation; Chatwoot mutable pagination
+  remains an external blocker.
 - Preserved historical Google Ads run `88351cb4-714d-49ef-91db-d95550a93ebf` without replay and observed zero new Google Ads DLQ entries, alerts or active locks.
 
 ## Unreleased — Weekly Executive Decision Report v1 — 2026-08-10

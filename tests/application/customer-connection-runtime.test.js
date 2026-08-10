@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   loadGoogleAdsRuntimeConfig,
   loadGoogleOAuthRuntimeConfig,
+  loadCustomerCredentialRuntimeConfig,
   loadCustomerConnectionRuntimeConfig,
 } from '../../apps/sync-worker/src/customer-connection-runtime.js';
 
@@ -14,6 +15,7 @@ test('connection runtime locks Integration Workspace and reads exact redirect/ke
   assert.equal(config.redirectUris.google_ads, 'https://worker.example/oauth/google-ads/callback');
   assert.equal(config.redirectUris.youtube, 'https://worker.example/oauth/youtube/callback');
   assert.equal(config.encryptionKeyVersion, 'v1');
+  assert.equal(loadCustomerCredentialRuntimeConfig(validEnv()).customerKey, 'chemistry_k');
   assert.equal(loadGoogleAdsRuntimeConfig(validEnv()).managerCustomerId, '9463570541');
   assert.equal(loadGoogleAdsRuntimeConfig(validEnv()).advertiserCustomerId, '5662332033');
   assert.equal(loadGoogleOAuthRuntimeConfig(validEnv()).clientId, 'google-client-id');
@@ -44,6 +46,22 @@ test('shared/YouTube runtime does not require a Google Ads Developer Token', () 
   assert.equal(loadCustomerConnectionRuntimeConfig(env).customerKey, 'chemistry_k');
   assert.equal(loadGoogleOAuthRuntimeConfig(env).clientId, 'google-client-id');
   assert.throws(() => loadGoogleAdsRuntimeConfig(env), /GOOGLE_ADS_DEVELOPER_TOKEN/u);
+});
+
+test('Queue credential runtime does not require HTTP invitation or redirect secrets', () => {
+  const env = validEnv();
+  for (const field of [
+    'MKT_CONNECTION_PUBLIC_ORIGIN',
+    'MKT_GOOGLE_ADS_REDIRECT_URI',
+    'MKT_YOUTUBE_REDIRECT_URI',
+    'MKT_CONNECTION_OPERATOR_TOKEN',
+    'MKT_CONNECTION_INVITATION_SIGNING_KEY',
+    'MKT_CONNECTION_STATE_SIGNING_KEY',
+    'MKT_CONNECTION_SELECTION_SIGNING_KEY',
+  ]) delete env[field];
+  const config = loadCustomerCredentialRuntimeConfig(env);
+  assert.equal(config.customerProfile, 'integration_workspace');
+  assert.equal(config.encryptionKeyVersion, 'v1');
 });
 
 function validEnv() {

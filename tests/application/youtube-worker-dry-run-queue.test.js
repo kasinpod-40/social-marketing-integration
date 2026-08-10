@@ -116,8 +116,9 @@ function createOperatorWorker(harness) {
     processJob: (input) => processYouTubeOrganicEndToEndJob({
       ...input,
       dependencies: {
-        createYouTubeClientsFromEnv(env, options) {
+        createYouTubeRuntimeClients(env, options) {
           assert.equal(options.publicApiKeyOnly, true);
+          assert.equal(options.analyticsEnabled, false);
           assert.equal(env.YOUTUBE_API_KEY, 'test-public-api-key');
           return {
             publicClient: { mode: 'public_get_only' },

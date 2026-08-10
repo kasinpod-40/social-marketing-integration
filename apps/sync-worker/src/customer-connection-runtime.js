@@ -31,6 +31,37 @@ export function createCustomerConnectionRuntime(env, dependencies = {}) {
 }
 
 export function loadCustomerConnectionRuntimeConfig(env = {}) {
+  const credential = loadCustomerCredentialRuntimeConfig(env);
+  return Object.freeze({
+    ...credential,
+    publicOrigin: requireHttpsOrigin(
+      env.MKT_CONNECTION_PUBLIC_ORIGIN,
+      'MKT_CONNECTION_PUBLIC_ORIGIN',
+    ),
+    operatorToken: requireSecret(env.MKT_CONNECTION_OPERATOR_TOKEN, 'MKT_CONNECTION_OPERATOR_TOKEN'),
+    invitationSigningKey: requireSecret(
+      env.MKT_CONNECTION_INVITATION_SIGNING_KEY,
+      'MKT_CONNECTION_INVITATION_SIGNING_KEY',
+    ),
+    stateSigningKey: requireSecret(
+      env.MKT_CONNECTION_STATE_SIGNING_KEY,
+      'MKT_CONNECTION_STATE_SIGNING_KEY',
+    ),
+    selectionSigningKey: requireSecret(
+      env.MKT_CONNECTION_SELECTION_SIGNING_KEY,
+      'MKT_CONNECTION_SELECTION_SIGNING_KEY',
+    ),
+    redirectUris: Object.freeze(Object.fromEntries(
+      Object.entries(REDIRECT_ENV_KEYS).map(([connectorKey, envKey]) => [
+        connectorKey,
+        requireHttpsUrl(env[envKey], envKey),
+      ]),
+    )),
+  });
+}
+
+/** โหลดเฉพาะขอบเขตที่ Queue/Cron ต้องใช้เพื่ออ่าน Dynamic Customer credential จาก D1 */
+export function loadCustomerCredentialRuntimeConfig(env = {}) {
   const environment = requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
   requireExact(
     env.MKT_CUSTOMER_PROFILE,
@@ -49,34 +80,11 @@ export function loadCustomerConnectionRuntimeConfig(env = {}) {
       'chemistry_k',
       'MKT_CONNECTION_CUSTOMER_KEY',
     ),
-    publicOrigin: requireHttpsOrigin(
-      env.MKT_CONNECTION_PUBLIC_ORIGIN,
-      'MKT_CONNECTION_PUBLIC_ORIGIN',
-    ),
-    operatorToken: requireSecret(env.MKT_CONNECTION_OPERATOR_TOKEN, 'MKT_CONNECTION_OPERATOR_TOKEN'),
-    invitationSigningKey: requireSecret(
-      env.MKT_CONNECTION_INVITATION_SIGNING_KEY,
-      'MKT_CONNECTION_INVITATION_SIGNING_KEY',
-    ),
-    stateSigningKey: requireSecret(
-      env.MKT_CONNECTION_STATE_SIGNING_KEY,
-      'MKT_CONNECTION_STATE_SIGNING_KEY',
-    ),
-    selectionSigningKey: requireSecret(
-      env.MKT_CONNECTION_SELECTION_SIGNING_KEY,
-      'MKT_CONNECTION_SELECTION_SIGNING_KEY',
-    ),
     encryptionKeyVersion,
     encryptionKey: requireSecret(
       env[`MKT_CONNECTION_ENCRYPTION_KEY_${encryptionKeyVersion.toUpperCase()}`],
       `MKT_CONNECTION_ENCRYPTION_KEY_${encryptionKeyVersion.toUpperCase()}`,
     ),
-    redirectUris: Object.freeze(Object.fromEntries(
-      Object.entries(REDIRECT_ENV_KEYS).map(([connectorKey, envKey]) => [
-        connectorKey,
-        requireHttpsUrl(env[envKey], envKey),
-      ]),
-    )),
   });
 }
 

@@ -106,8 +106,10 @@ pagination ก่อน R3 จะจบด้วย D1/Lark reconciliation `fail
 `completed` ด้วย send attempt เดียว, reconciliation ครบ 6 datasets โดย `failed_rows=0` และ
 ไม่มี DLQ/Alert ใหม่. D1/Lark parity คือ Ads entities 1,105 และ Daily facts 390. Manager Script
 หลัก Enabled และ Provider UI readback ยืนยัน `Daily between 6:00 AM and 7:00 AM`; PREVIEW script
-ไม่มี frequency จึงไม่มี duplicate producer. Chatwoot ยังติด mutable Provider pagination และ
-YouTube Analytics ยังติด OAuth owner/channel identity mismatch.
+ไม่มี frequency จึงไม่มี duplicate producer. Chatwoot ยังติด mutable Provider pagination.
+YouTube Analytics ถูกวินิจฉัยใหม่ว่า ingestion อ่าน legacy OAuth path แทน Customer Connection เดิม;
+repository bridge แก้และผ่าน gates แล้วโดยไม่ต้องให้ลูกค้า Connect ซ้ำ แต่ยังรอ reviewed deploy,
+Owner preflight และ controlled Analytics catch-up จึงยังไม่ถือว่า Live ผ่าน.
 
 Daily materialization วันที่สิ้นสุด `2026-08-09` สำเร็จครบ 32 D1/Lark snapshot identities:
 8 platforms × `1D/3D/7D/30D`. Lark readback พบ 32 snapshots, 1,236 metric rows,
