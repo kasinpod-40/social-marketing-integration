@@ -16,12 +16,16 @@
 
 ### Safety
 
-- No new invitation, customer consent, Secret rotation/deletion, remote data mutation or Worker deployment
-  occurred; the customer does not need to reconnect.
+- PR `#593` was merged and reviewed-deployed to the Integration Workspace as Worker version
+  `25f835d9-81e3-4acb-b62e-a678fd4c90fc`; Production, Notification runtime and DLQ redrive remained off.
 - Repository gates passed, including Workers runtime `18/18`, report reliability `105/105`, architecture and
   hygiene checks, zero dependency vulnerabilities, deploy dry-run and diff check.
-- Repository implementation is fixed, but Live remains unvalidated until a reviewed deployment, read-only
-  Owner preflight and controlled Analytics catch-up/reconciliation pass.
+- Owner preflight R1 stopped safely at the generation fence with zero Provider/Business writes. A new R2
+  reached Google token refresh and failed with sanitized HTTP 400 / OAuth `invalid_grant`, also with zero
+  Provider reads and Business writes.
+- The controlled Analytics catch-up was not sent and no automatic retry/redrive occurred. Live remains
+  unvalidated until owner 2-Step Verification, OAuth app readiness review, one exact customer reconnect,
+  a passing Owner preflight and controlled catch-up/reconciliation all complete.
 
 ## Unreleased — Multichannel Runtime & Schedule LIVE Activation — 2026-08-10
 

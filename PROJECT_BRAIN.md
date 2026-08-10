@@ -15,8 +15,10 @@ Integration Workspace activation เมื่อ 2026-08-10 เปิด Source 
 automatic weekly notification, DLQ redrive และ Production ยังปิด. Google Ads fresh LIVE ผ่าน
 6 datasets, 7 chunks, 1,335 rows, D1/Lark parity และ Provider schedule readback `Daily between
 6:00 AM and 7:00 AM`; PREVIEW ไม่มี schedule. Blockers ที่ยังห้ามประกาศ full LIVE pass คือ
-YouTube Analytics repository bridge แก้แล้วแต่ยังรอ reviewed deploy/live validation และ Chatwoot
-mutable pagination; รายละเอียด live evidence อยู่ในเอกสารเดียวกัน.
+YouTube Analytics repository bridge merge/deploy แล้ว แต่ reviewed Owner preflight พบ Google OAuth
+`invalid_grant` ก่อน Provider read/write; catch-up ไม่ถูกส่ง. ต้องเปิด 2-Step Verification, ตรวจ OAuth
+app readiness แล้ว reconnect exact owner/channel หนึ่งครั้งก่อน preflight/catch-up ใหม่. Chatwoot
+mutable pagination ยังเป็น blocker ที่เหลือร่วมกัน; รายละเอียด live evidence อยู่ในเอกสารเดียวกัน.
 
 ## YouTube Customer OAuth runtime credential-path correction — 2026-08-10
 
@@ -30,9 +32,14 @@ state, scopes, active credential reference และ configured Channel แบ�
 Google refresh provider; ไม่มี legacy Owner fallback. Full unit, Workers runtime `18/18`, report
 reliability `105/105`, architecture/hygiene, audit, deploy dry-run และ diff check ผ่าน. ไม่มีการสร้าง
 invitation, consent ซ้ำ, remote mutation หรือ deployment. `REPOSITORY_FIXED=YES` แต่
-`LIVE_VALIDATED=NO`; ลูกค้าไม่ต้องทำอะไร และต้องรอ reviewed deployment + controlled Analytics
-validation ก่อนปิด Live blocker. รายละเอียดอยู่ที่
+`LIVE_VALIDATED=NO`; ข้อสรุปนี้เป็นสถานะก่อน live token validation. รายละเอียดอยู่ที่
 `docs/project-brain/youtube-customer-oauth-runtime-credential-path-incident-2026-08-10.md`.
+
+Reviewed deploy ภายหลัง merge PR `#593` เปิด version
+`25f835d9-81e3-4acb-b62e-a678fd4c90fc` ที่ 100%. Owner preflight R2 ใช้ Customer Connection path
+จริงและไปถึง Google token endpoint แต่ถูกปฏิเสธด้วย sanitized `invalid_grant`; Provider reads และ
+Business writes เป็นศูนย์ จึงไม่ส่ง Analytics catch-up. ข้อความเดิมที่ว่า “ลูกค้าไม่ต้องทำอะไร”
+ถูกแทนที่: ต้อง reconnect หนึ่งครั้งหลัง owner เปิด 2-Step Verification และตรวจ OAuth app readiness แล้ว.
 
 ## Chatwoot Initial terminal recovery — 2026-08-01
 

@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                         = DASHBOARD_READY_YOUTUBE_ANALYTICS_LIVE_VALIDATION_CHATWOOT_BLOCKERS
 CURRENT_PROGRAM                     = MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_ACTIVATION_V1
-BRANCH                              = codex/google-ads-live-schedule-closeout
-EXACT_BASE                          = 99c88691db1237c9a08dff6922d1836486f3772d
+BRANCH                              = codex/youtube-owner-preflight-invalid-grant-record
+EXACT_BASE                          = f07626f68f3d9f15a444250636fada0443b42047
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
@@ -98,7 +98,7 @@ META_SOURCE_UNIT_CAPACITY_HOTFIX    = IMPLEMENTED_BOUNDED_2500_DEFAULT_UNCHANGED
 INSTAGRAM_INVENTORY_PERIOD_HOTFIX   = IMPLEMENTED_EXISTING_DATE_RANGE_CONTRACT
 META_STAGED_UNIT_PAGINATION_HOTFIX  = IMPLEMENTED_D1_PAGE_CAP_500
 FOCUSED_REGRESSION                  = PASS_21_OF_21
-FULL_UNIT_TESTS                     = PASS_2900
+FULL_UNIT_TESTS                     = PASS_2910
 WORKERS_RUNTIME_TESTS               = PASS_18
 REPORT_RELIABILITY_TESTS            = PASS_105
 ARCHITECTURE_HYGIENE                = PASS
@@ -138,8 +138,9 @@ Instagram R3 สำเร็จด้วย 1 content, 7 insight rows, D1 3/3 op
 Google Ads fresh LIVE ใช้ run ใหม่ `609cc147-809b-404a-a484-dcbb82c12a6f` โดยไม่ replay historical run ที่ถูกป้องกันไว้: signed delivery รับ 7/7 chunks และ 1,335/1,335 rows, admission `completed` ด้วย send attempt เดียว, reconciliation ครบ 6 datasets และ `failed_rows=0`. D1/Lark readback ตรงกันที่ Ads entities 1,105 และ Daily facts 390; Google Ads report R3 ทั้ง `1D/3D/7D/30D` มี coverage 1 และ fresh source watermark เดียวกัน. Google Ads Manager Script UI ยืนยัน script หลัก Enabled และ Provider frequency `Daily between 6:00 AM and 7:00 AM`; PREVIEW script ไม่มี schedule จึงไม่เกิด duplicate provider producer.
 
 Blockers ที่ยังทำให้ห้ามประกาศ `MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_PASS` เหลือสองรายการ:
-YouTube Analytics customer-credential runtime bridge แก้ใน Repository และผ่าน gates แล้ว แต่ยังรอ
-reviewed deployment กับ controlled live validation; Chatwoot pagination ยังเปลี่ยนระหว่าง continuation.
+YouTube Analytics customer-credential runtime bridge แก้ใน Repository, merge และ reviewed deploy แล้ว;
+Owner preflight ไปถึง Google token endpoint แต่ถูกปฏิเสธด้วย sanitized OAuth `invalid_grant` ก่อน
+Provider read/Business write จึงยังไม่ส่ง Analytics catch-up. Chatwoot pagination ยังเปลี่ยนระหว่าง continuation.
 Public YouTube, Google Ads fresh LIVE, existing report coverage และ Dashboard materialization พร้อมตรวจ;
 Production/Notification/DLQ redrive ยังปิด.
 
@@ -158,15 +159,15 @@ Hotfix PR #587 ลบเฉพาะ duplicate candidate collections จาก `
 ### Incident status before correction
 
 ```text
-INCIDENT                            = YOUTUBE_CUSTOMER_OAUTH_RUNTIME_CREDENTIAL_PATH_REGRESSION
-CUSTOMER_CONNECTION                = CONNECTED_VALIDATED
-ACTIVE_ENCRYPTED_REFRESH_REFERENCE = PRESENT_AND_MATCHED
-CUSTOMER_RECONNECT_REQUIRED        = NO
+INCIDENT                            = YOUTUBE_CUSTOMER_OAUTH_RUNTIME_CREDENTIAL_PATH_REGRESSION_AND_STALE_TOKEN
+CUSTOMER_CONNECTION                = CONNECTED_VALIDATED_METADATA
+ACTIVE_ENCRYPTED_REFRESH_REFERENCE = PRESENT_AND_MATCHED_BUT_PROVIDER_REJECTED
+CUSTOMER_RECONNECT_REQUIRED        = YES_AFTER_OAUTH_APP_READINESS
 PUBLIC_YOUTUBE_SYNC                = PASS
 OWNER_ANALYTICS                    = BLOCKED
-REPOSITORY_FIX                     = IN_PROGRESS
-REMOTE_DEPLOYMENT                  = NOT_AUTHORIZED_BY_THIS_TASK
-LIVE_ANALYTICS_REVALIDATION        = PENDING_AFTER_REVIEWED_DEPLOYMENT
+REPOSITORY_FIX                     = MERGED_PR_593
+REMOTE_DEPLOYMENT                  = PASS_VERSION_25f835d9
+LIVE_ANALYTICS_REVALIDATION        = FAILED_CLOSED_INVALID_GRANT
 ```
 
 ### Diagnostic correction record
@@ -174,7 +175,7 @@ LIVE_ANALYTICS_REVALIDATION        = PENDING_AFTER_REVIEWED_DEPLOYMENT
 คำอธิบายก่อนหน้าที่สรุปว่า OAuth owner ของลูกค้าไม่ตรง Channel และเสนอให้ลูกค้า Connect ใหม่
 เป็นการวินิจฉัยที่ไม่ครบและทำให้โยนภาระไปที่ลูกค้าผิดจุด. Read-only D1 audit ยืนยันว่า Customer
 Connection ยังเป็น `connected/validated`, `credential_reference` ตรงกับ active encrypted
-Refresh Token และไม่มี recorded refresh failure. Source inspection ยืนยันว่า YouTube ingestion
+Refresh Token และก่อน reviewed deploy ไม่มี recorded refresh failure. Source inspection ยืนยันว่า YouTube ingestion
 สร้าง Owner client จาก legacy `YOUTUBE_OAUTH_*` environment path โดยไม่อ่าน Customer
 Connection/credential reference ที่ callback บันทึกไว้.
 
@@ -202,32 +203,50 @@ YouTube path ไม่ใช่ Owner Analytics success. ห้ามใช้ s
 - หลัง implementation ต้องอัปเดตหัวข้อนี้และ Project Brain แยก `REPOSITORY_FIXED` ออกจาก
   `LIVE_VALIDATED`; ห้ามบันทึกว่า Live แก้แล้วก่อน reviewed deploy และ controlled Analytics run ผ่าน.
 
-### Implementation result
+### Implementation and reviewed-live result
 
 ```text
-STATUS                            = REPOSITORY_FIXED_LIVE_VALIDATION_PENDING
+STATUS                            = REPOSITORY_FIXED_DEPLOYED_LIVE_TOKEN_REJECTED
 REPOSITORY_FIXED                  = YES
 LIVE_VALIDATED                    = NO
-CUSTOMER_ACTION                   = NONE
-CUSTOMER_RECONNECT_REQUIRED       = NO
+CUSTOMER_ACTION                   = ENABLE_OWNER_2SV_VERIFY_OAUTH_APP_READINESS_THEN_RECONNECT_ONCE
+CUSTOMER_RECONNECT_REQUIRED       = YES_AFTER_APP_READINESS
 OWNER_CREDENTIAL_SOURCE           = ENCRYPTED_CUSTOMER_CONNECTION_D1
 LEGACY_OWNER_OAUTH_FALLBACK       = PROHIBITED_WHEN_ANALYTICS_ENABLED
 FOCUSED_REGRESSION                = PASS
-FULL_UNIT_TESTS                   = PASS
+FULL_UNIT_TESTS                   = PASS_2910
 WORKERS_RUNTIME_TESTS             = PASS_18_OF_18
 REPORT_RELIABILITY_TESTS          = PASS_105_OF_105
 ARCHITECTURE_HYGIENE              = PASS_749_FILES_0_CYCLES
 DEPENDENCY_AUDIT                  = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                    = PASS
 DIFF_CHECK                        = PASS
-REMOTE_DEPLOYMENT                 = NOT_RUN_NOT_AUTHORIZED_BY_THIS_TASK
-LIVE_OWNER_PREFLIGHT              = NOT_RUN
-LIVE_ANALYTICS_CATCH_UP           = NOT_RUN
+MERGED_PR                         = 593
+MERGED_SHA                        = f07626f68f3d9f15a444250636fada0443b42047
+REMOTE_DEPLOYMENT                 = PASS_VERSION_25f835d9_81e3_4acb_b62e_a678fd4c90fc
+LIVE_OWNER_PREFLIGHT_R1           = SAFE_REJECT_METRIC_DATE_GENERATION_MISMATCH_WRITES_0
+LIVE_OWNER_PREFLIGHT_R2           = FAILED_GOOGLE_OAUTH_INVALID_GRANT_READS_0_WRITES_0
+LIVE_ANALYTICS_CATCH_UP           = NOT_SENT_FAIL_CLOSED
+GOOGLE_CLOUD_OWNER_CONSOLE        = BLOCKED_UNTIL_2_STEP_VERIFICATION
+SECONDARY_CONSOLE_SESSION         = INSUFFICIENT_PROJECT_PERMISSION
+PRODUCTION_NOTIFICATION_DLQ       = UNCHANGED_BLOCKED_OFF
 ```
 
 Runtime routes ทั้ง dedicated และ compatibility path ใช้ `createYouTubeRuntimeClients` ร่วมกัน.
 เมื่อ Analytics เปิด Factory จะอ่าน exact YouTube Customer Connection จาก D1, ตรวจ
 `connected/validated`, approved scopes, active encrypted credential reference และ configured Channel
 ก่อนสร้าง Owner client ผ่าน shared Google refresh provider. Access Token อยู่ใน memory เท่านั้น;
-Public/API-key และ operator dry-run paths คงเดิม. การแก้ครั้งนี้ไม่ได้สร้าง invitation, ไม่ขอ consent
-ซ้ำ, ไม่ rotate/delete Secret, ไม่ deploy Worker และไม่ mutate remote data.
+Public/API-key และ operator dry-run paths คงเดิม. การแก้ครั้งนี้ไม่ได้สร้าง invitation, ไม่ rotate/delete
+Secret และไม่ mutate Production.
+
+Reviewed deploy เปิด merged SHA บน Integration Workspace เป็น Worker version
+`25f835d9-81e3-4acb-b62e-a678fd4c90fc` ที่ 100%. Preflight R1 ถูก generation fence ปฏิเสธอย่าง
+ปลอดภัยเพราะ controller ใช้ metric date ผิดวันและไม่มี Business write; R2 แก้ identity ใหม่แล้วไปถึง
+Google token endpoint แต่ refresh ถูกปฏิเสธด้วย `invalid_grant`, Provider reads/writes เป็นศูนย์.
+จึงไม่ส่ง catch-up และไม่ redrive/retry อัตโนมัติ.
+
+สถานะ D1 `connected/validated` พิสูจน์เฉพาะ metadata/reference consistency ไม่ได้พิสูจน์ว่า token ยัง
+ใช้กับ Provider ได้. ต้องเปิด 2-Step Verification ให้ owner session, ตรวจ OAuth app publishing/readiness
+ก่อน แล้วค่อยให้ owner reconnect หนึ่งครั้งเพื่อออก refresh token ใหม่. ห้ามส่งลิงก์ consent ใหม่ก่อน
+ปิด app-readiness gate และยังคง `LIVE_VALIDATED=NO` จน Owner preflight กับ controlled Analytics
+catch-up/reconciliation ผ่านจริง.
