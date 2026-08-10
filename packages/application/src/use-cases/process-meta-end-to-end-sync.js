@@ -601,7 +601,7 @@ function normalizeLimits(value) {
   const source = requireObject(value ?? {}, 'limits');
   return Object.freeze({
     sourceMaxPages: boundedInteger(source.sourceMaxPages ?? 100, 'sourceMaxPages', 1, 100),
-    sourceMaxUnits: boundedInteger(source.sourceMaxUnits ?? 500, 'sourceMaxUnits', 1, 500),
+    sourceMaxUnits: boundedInteger(source.sourceMaxUnits ?? 500, 'sourceMaxUnits', 1, 2_500),
     sourceMaxRows: boundedInteger(source.sourceMaxRows ?? 50_000, 'sourceMaxRows', 1, 50_000),
     sourceMaxUnitBytes: boundedInteger(
       source.sourceMaxUnitBytes ?? 524_288,

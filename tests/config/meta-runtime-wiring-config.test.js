@@ -52,6 +52,15 @@ test('Meta runtime gates and bounded staging limits default fail-closed', () => 
   assert.equal(config.limits.sourceMaxUnitBytes, 524_288);
 });
 
+test('Meta runtime accepts a bounded large-inventory unit ceiling without changing the default', () => {
+  const config = loadMetaEndToEndRuntimeConfig({ MKT_META_SOURCE_MAX_UNITS: '2500' });
+  assert.equal(config.limits.sourceMaxUnits, 2_500);
+  assert.throws(
+    () => loadMetaEndToEndRuntimeConfig({ MKT_META_SOURCE_MAX_UNITS: '2501' }),
+    (error) => error instanceof TypeError && /1 to 2500/u.test(error.message),
+  );
+});
+
 test('builds GET-only source adapters with a separate Facebook Page credential', () => {
   const runtime = createMetaTokenConnectionRuntime({
     META_GRAPH_API_VERSION: 'v25.0',

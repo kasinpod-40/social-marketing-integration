@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
 CURRENT_PROGRAM                     = MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_ACTIVATION_V1
-BRANCH                              = codex/multichannel-runtime-schedule-live-activation-v1
-EXACT_BASE                          = e2e038b8214a472c3ea38876afbbadfa9329e5bd
+BRANCH                              = codex/meta-source-unit-capacity-hotfix
+EXACT_BASE                          = 221935e25f7c84b0ba2a3f3fb0cedf2b106e0e9c
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = BLOCKED_OFF
@@ -89,15 +89,26 @@ git diff --check
 STATUS                              = IN_PROGRESS
 LARK_PLATFORM_OPTIONS               = ADDITIVE_FIX_APPLIED_AND_READ_BACK
 RELIABILITY_OUTBOX_PENDING          = 0
-QUEUE_TERMINALIZATION_FIX           = IMPLEMENTED_LOCAL_GATES_PASS
-FOCUSED_REGRESSION                  = PASS_24_OF_24
-FULL_UNIT_TESTS                     = PASS_2887
+QUEUE_TERMINALIZATION_FIX           = MERGED_PR_580_AND_DEPLOYED
+META_SOURCE_UNIT_CAPACITY_HOTFIX    = IMPLEMENTED_BOUNDED_2500_DEFAULT_UNCHANGED
+FOCUSED_REGRESSION                  = PASS_13_OF_13
+FULL_UNIT_TESTS                     = PASS_2895
 WORKERS_RUNTIME_TESTS               = PASS_18
 REPORT_RELIABILITY_TESTS            = PASS_105
 ARCHITECTURE_HYGIENE                = PASS
 DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                      = PASS
 SAFE_CONFIG_RECONCILIATION          = COMPLETE_LOCAL_IGNORED_CONFIG
-REMOTE_ACTIVATION                   = NOT_STARTED
+REMOTE_ACTIVATION                   = PARTIAL_SOURCE_CATCH_UP_IN_PROGRESS
+SOURCE_CATCH_UP_COMPLETE            = TIKTOK_FACEBOOK_YOUTUBE_PUBLIC_META_ADS_WOOCOMMERCE
+SOURCE_CATCH_UP_BLOCKED             = YOUTUBE_ANALYTICS_CHATWOOT
+INSTAGRAM_CATCH_UP                  = ACTIVE_REQUIRES_DEPLOYED_UNIT_CAPACITY_HOTFIX
+DAILY_REPORT_MATERIALIZATION        = WAITING_FOR_SOURCE_QUEUE_STABILITY
+GOOGLE_ADS_PROVIDER_SCHEDULE        = BLOCKED_BY_VISIBLE_AD_BLOCKER_MODAL
+NOTIFICATION_RUNTIME                = BLOCKED_OFF
+AUTOMATIC_WEEKLY_NOTIFICATION       = BLOCKED_OFF
+DLQ_REDRIVE                         = BLOCKED_OFF
 PRODUCTION                          = BLOCKED
 ```
+
+Hotfix นี้ขยายเฉพาะ hard maximum ของ `MKT_META_SOURCE_MAX_UNITS` จาก 500 เป็น 2,500 โดยคง default ที่ 500 และคงขอบเขต rows/bytes เดิม เพื่อให้ Instagram inventory 1,857 รายการเดินต่อแบบ resumable ได้โดยไม่เปลี่ยน retry, idempotency หรือ write semantics.

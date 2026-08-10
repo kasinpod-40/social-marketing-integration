@@ -340,6 +340,25 @@ test('fails before another Provider call when the durable source-unit limit is r
   assert.equal(calls, 1);
 });
 
+test('accepts the reviewed large-inventory durable source-unit ceiling', async () => {
+  const result = await processMetaEndToEndSync(baseInput({
+    resumableWorkStore: createWorkStore(),
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+    limits: {
+      sourceMaxPages: 10,
+      sourceMaxUnits: 2_500,
+      sourceMaxRows: 50_000,
+      sourceMaxUnitBytes: 100_000,
+      d1RowsPerInvocation: 2,
+      larkTablesPerInvocation: 2,
+    },
+  }));
+
+  assert.equal(result.status, 'source_continuation');
+});
+
 test('Meta Ads stages account then July insights and derives only activity entities', async () => {
   const workStore = createWorkStore();
   const calls = [];
