@@ -11,6 +11,7 @@ import {
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION,
 } from '../../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
 import {
+  LARK_WEEKLY_7D_FULL_CHANNEL_AI_TRIGGER_MARKER,
   assertLarkWeekly7dFullChannelAiGenerated,
   assertLarkWeekly7dFullChannelAiPrepared,
 } from './lark-weekly-7d-full-channel-ai-synthesis.js';
@@ -19,8 +20,10 @@ export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_PREVIEW_CONTRACT_VERSION =
   'lark_weekly_7d_executive_decision_preview_v1';
 export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_AI_PREFIX =
   'weekly-7d-executive-decision-ai:';
-export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_TRIGGER_MARKER =
+export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_LEGACY_TRIGGER_MARKER =
   'CONTROLLED_WEEKLY_EXECUTIVE_DECISION_PREVIEW_V1';
+export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_TRIGGER_MARKER =
+  LARK_WEEKLY_7D_FULL_CHANNEL_AI_TRIGGER_MARKER;
 export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_CLOSED_PERIOD_END = '2026-07-31';
 
 const HASH = /^[a-f0-9]{64}$/u;
@@ -88,6 +91,9 @@ export function buildLarkWeekly7dExecutiveDecisionSynthesis(input = {}) {
 }
 
 export function assertLarkWeekly7dExecutiveDecisionPrepared(fields, expected) {
+  if (scalar(fields?.failure_code) === LARK_WEEKLY_7D_EXECUTIVE_DECISION_LEGACY_TRIGGER_MARKER) {
+    return assertLarkWeekly7dFullChannelAiPrepared({ ...fields, failure_code: null }, expected);
+  }
   return assertLarkWeekly7dFullChannelAiPrepared(fields, expected);
 }
 
