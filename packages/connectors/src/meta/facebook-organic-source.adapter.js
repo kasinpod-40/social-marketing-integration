@@ -40,14 +40,12 @@ export class FacebookOrganicSourceAdapter {
     const pageId = requireMetaExternalId(input.pageId, 'pageId');
     const dataset = contract('facebook.content.inventory');
     const range = normalizeMetaDateRange(input);
+    const inventoryRange = facebookContentInventoryRange(range);
     const page = await this.client.getPage(
       buildMetaDatasetPath(dataset, { page_id: pageId }),
       {
         fields: fieldsQuery(dataset),
-        ...(range.since ? {
-          since: range.since,
-          until: facebookContentExclusiveUntil(range.until),
-        } : {}),
+        ...inventoryRange,
       },
       {
         ...normalizeMetaPageOptions(input),
@@ -116,6 +114,21 @@ export class FacebookOrganicSourceAdapter {
       page,
     });
   }
+}
+
+/**
+ * A one-day Facebook run is a daily observation boundary, not a publication-discovery boundary.
+ * It must observe the current metrics of the Page's tracked content even when no post was published
+ * on that day. Provider pagination/sourceMaxUnits still bound the full inventory read. Multi-day
+ * history runs retain publication-range filtering so historical discovery remains bounded.
+ */
+function facebookContentInventoryRange(range) {
+  if (!range.since) return Object.freeze({});
+  if (range.since === range.until) return Object.freeze({});
+  return Object.freeze({
+    since: range.since,
+    until: facebookContentExclusiveUntil(range.until),
+  });
 }
 
 function facebookContentExclusiveUntil(inclusiveUntil) {
