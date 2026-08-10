@@ -44,13 +44,13 @@ import {
   assertLarkWeekly7dNotificationAdmissionStable,
   buildLarkWeekly7dNotificationAdmissionJob,
   buildLarkWeekly7dNotificationAdmissionReadbackSql,
-  buildLarkWeekly7dNotificationAdmissionRow,
-  isExactAcceptedWeekly7dSource,
   normalizeLarkWeekly7dNotificationAdmissionReadback,
 } from './lib/lark-weekly-7d-notification-admission.js';
 import {
+  loadFreshWeekly7dExecutiveDecisionNotificationSource,
+} from './lib/lark-weekly-7d-fresh-decision-notification-source.js';
+import {
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_AUTOMATIONS,
-  LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION,
 } from '../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
 import {
   LARK_EXECUTIVE_DESTINATION_KEY_HASH,
@@ -102,12 +102,14 @@ const SOURCE_HASH_FIELDS = Object.freeze([
   'sent_to_group',
   'dedupe_key',
   'source_report_ids_json',
+  'source_report_checksum',
   'metric_summary_json',
   'channel_status_vector_json',
   'insight_summary',
   'strengths',
   'weaknesses',
   'recommendations',
+  'generated_at',
 ]);
 
 let stage = 'init';
@@ -120,6 +122,7 @@ let workerDeploymentCount = 0;
 try {
   action = parseArgs(process.argv.slice(2));
   if (action === 'plan') printPlan();
+  else if (action === 'preview') await previewAdmission();
   else if (action === 'execute') await executeAdmission();
   else await recoverAdmission();
 } catch (error) {
@@ -138,12 +141,63 @@ try {
     blindRerunAllowed: !queueAttemptRecorded,
     workerDeploymentCount,
     reportSettingWriteCount: 0,
-    sourceV9MutationCount: 0,
+    sourceDecisionMutationCount: 0,
     automationActivationCount: 0,
     scheduleActivationCount: 0,
     production: 'BLOCKED',
   }, null, 2)}\n`);
   process.exitCode = 1;
+}
+
+async function previewAdmission() {
+  const context = await prepare('preview');
+
+  stage = 'verify-automation-state-read-only';
+  const automation = await verifyAutomationState(context.client);
+
+  stage = 'remote-read-only-preflight';
+  const beforeD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
+  const beforeLark = await readLarkBaseline(context);
+  await assertSettingsActive(context);
+  await assertSourceUnchanged(context);
+
+  stage = 'validate-reviewed-fresh-decision-message';
+  assertBusinessFirstMessage(context, context.admission.reviewedMessage);
+  assertReviewedMessageParity(context, context.admission.reviewedMessage);
+
+  const summary = Object.freeze({
+    ok: true,
+    contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION,
+    action: 'preview',
+    mode: 'READ_ONLY',
+    stage: 'complete',
+    status: 'weekly_7d_notification_admission_read_only_passed',
+    repository,
+    sourceAiRunKeySha256: sha256(context.admission.sourceAiRunKey),
+    admissionAiRunKeySha256: sha256(context.admission.aiRunKey),
+    sourcePromptShape: context.admission.evidence.promptShape,
+    qualityGatePassed: context.admission.qualityGate.passed,
+    reviewedMessageSha256: context.admission.reviewedMessageSha256,
+    reviewedMessageBytes: context.admission.reviewedMessageBytes,
+    deliveryRowsBefore: beforeD1.totalDeliveryRows,
+    sentMirroredRowsBefore: beforeD1.sentMirroredRows,
+    notificationLogRowsBefore: beforeLark.totalSentNotificationLogRows,
+    admissionAiRowsBefore: beforeLark.admissionAiRowsBefore,
+    admissionLogRowsBefore: beforeLark.admissionLogRowsBefore,
+    queueAdmissionCount: 0,
+    messageSendCount: 0,
+    workerDeploymentCount: 0,
+    reportSettingWriteCount: 0,
+    sourceDecisionMutationCount: 0,
+    aiAutomationStatus: automation.aiMaterialization.status,
+    notificationAutomationStatus: automation.notification.status,
+    notificationProducerEnabled: false,
+    automationActivationCount: 0,
+    scheduleActivationCount: 0,
+    production: 'BLOCKED',
+    nextGate: 'execute_requires_exact_confirmation',
+  });
+  process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 }
 
 async function executeAdmission() {
@@ -171,7 +225,11 @@ async function executeAdmission() {
     sourceReportIds: context.admission.sourceReportIds,
     promptShape: context.admission.evidence.promptShape,
     qualityGatePassed: context.admission.qualityGate.passed,
-    derivedCtrFacts: context.admission.evidence.derivedCtrFacts,
+    contentCandidateNames: context.admission.evidence.contentCandidateNames,
+    adCandidateNames: context.admission.evidence.adCandidateNames,
+    funnelDivergences: context.admission.evidence.funnelDivergences,
+    reviewedMessageSha256: context.admission.reviewedMessageSha256,
+    reviewedMessageBytes: context.admission.reviewedMessageBytes,
     deliveryRowsBefore: beforeD1.totalDeliveryRows,
     notificationLogRowsBefore: beforeLark.totalSentNotificationLogRows,
     controlledUatStable: true,
@@ -236,13 +294,15 @@ async function executeAdmission() {
   assertDeliveryChain(context, request);
   const message = buildLarkExecutiveNotificationMessage(request);
   assertBusinessFirstMessage(context, message);
+  assertReviewedMessageParity(context, message);
   await privateJson(join(context.evidenceDir, '02-message-preview.json'), {
     contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION,
     title: message.title,
     messageSha256: sha256(message.text),
+    reviewedMessageSha256: context.admission.reviewedMessageSha256,
+    exactReviewedMessageParity: true,
     messageBytes: Buffer.byteLength(message.text, 'utf8'),
     containsInternalReadinessLabel: hasInternalReadiness(message.text),
-    requiredFactsPresent: requiredFactsPresent(context, message.text),
     rawDestinationPersisted: false,
   });
 
@@ -267,6 +327,7 @@ async function executeAdmission() {
     operationIdSha256: sha256(operationId),
     jobSha256: jobHash,
     sourceStateSha256: context.sourceStateSha256,
+    reviewedMessageSha256: context.admission.reviewedMessageSha256,
     attemptedAt: new Date().toISOString(),
     maximumQueueAdmissionCount: 1,
     blindRerunAllowedAfterThisFile: false,
@@ -304,6 +365,7 @@ async function executeAdmission() {
   const summary = Object.freeze({
     ok: true,
     contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION,
+    action: 'execute',
     stage: 'complete',
     status: 'weekly_7d_notification_admission_sent_and_verified',
     repository,
@@ -312,7 +374,8 @@ async function executeAdmission() {
     notificationTemplateVersion: 'executive_report_notification_v2',
     sourcePromptShape: context.admission.evidence.promptShape,
     qualityGatePassed: context.admission.qualityGate.passed,
-    sourceV9MutationCount: 0,
+    reviewedMessageSha256: context.admission.reviewedMessageSha256,
+    sourceDecisionMutationCount: 0,
     sourceAiRunKeySha256: sha256(context.admission.sourceAiRunKey),
     admissionAiRunKeySha256: sha256(context.admission.aiRunKey),
     queueAdmissionCount: 1,
@@ -340,7 +403,7 @@ async function executeAdmission() {
     automationActivationCount: 0,
     scheduleActivationCount: 0,
     production: 'BLOCKED',
-    nextGate: 'automatic_weekly_notification_admission_requires_separate_approval',
+    nextGate: 'automatic_weekly_notification_schedule_requires_separate_approval',
   });
   await privateJson(join(context.evidenceDir, 'notification-admission-summary.json'), summary);
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
@@ -354,9 +417,10 @@ async function recoverAdmission() {
   await assertNoFile(join(context.evidenceDir, 'notification-admission-summary.json'), false);
   const attempt = JSON.parse(await readFile(attemptPath, 'utf8'));
   if (attempt.aiRunKey !== context.admission.aiRunKey
-      || attempt.sourceStateSha256 !== context.sourceStateSha256) {
+      || attempt.sourceStateSha256 !== context.sourceStateSha256
+      || attempt.reviewedMessageSha256 !== context.admission.reviewedMessageSha256) {
     fail(
-      'Recovery evidence does not match the retained accepted weekly source',
+      'Recovery evidence does not match the retained Fresh Weekly Executive Decision source',
       'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_INVALID',
     );
   }
@@ -393,11 +457,13 @@ async function recoverAdmission() {
   const summary = Object.freeze({
     ok: true,
     contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION,
+    action: 'recover',
     stage: 'complete',
     status: 'weekly_7d_notification_admission_recovered_without_resend',
     repository,
     mode: 'POLL_ONLY_RECOVERY',
-    sourceV9MutationCount: 0,
+    sourceDecisionMutationCount: 0,
+    reviewedMessageSha256: context.admission.reviewedMessageSha256,
     queueAdmissionCountByRecovery: 0,
     messageSendCountByRecovery: 0,
     deliveryStatus: delivered.admissionDeliveryStatus,
@@ -421,7 +487,7 @@ async function prepare(mode) {
   const fileEnv = await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars');
   const env = Object.freeze({ ...fileEnv, ...process.env });
   if (mode === 'execute') assertLarkWeekly7dNotificationAdmissionConfirmation(env);
-  else assertRecoveryConfirmation(env);
+  else if (mode === 'recover') assertRecoveryConfirmation(env);
   exact(env.MKT_ENV, 'development', 'MKT_ENV');
   exact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   exact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
@@ -433,6 +499,7 @@ async function prepare(mode) {
   if (mode === 'execute') {
     run('node', ['--test',
       'tests/application/lark-weekly-7d-notification-admission.test.js',
+      'tests/application/lark-weekly-7d-fresh-decision-notification-source.test.js',
       'tests/application/deliver-lark-executive-notification.test.js',
       'tests/application/lark-notification-active-job-router.test.js',
       'tests/connectors/lark-notification-delivery-source.test.js',
@@ -465,22 +532,13 @@ async function prepare(mode) {
   const larkRepository = new LarkRecordRepository({ client });
   const syncEngine = new TableSyncEngine();
 
-  stage = 'load-exact-accepted-v9-source';
-  const candidates = await larkRepository.listByFieldValues(
-    tableIds.aiRuns,
-    'template_version',
-    [LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION],
-  );
-  const matches = candidates.filter((record) => isExactAcceptedWeekly7dSource(record?.fields));
-  if (matches.length !== 1) {
-    fail(
-      'Expected exactly one accepted finalized V9 weekly Executive source row',
-      'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_SOURCE_INVALID',
-      { candidates: candidates.length, exactMatches: matches.length },
-    );
-  }
-  const sourceRecord = matches[0];
-  const admission = buildLarkWeekly7dNotificationAdmissionRow(sourceRecord);
+  stage = 'load-exact-fresh-executive-decision-source';
+  const admission = await loadFreshWeekly7dExecutiveDecisionNotificationSource({
+    client,
+    repository: larkRepository,
+    aiRunsTableId: tableIds.aiRuns,
+  });
+  const sourceRecord = admission.sourceRecord;
   const sourceStateSha256 = hashSourceState(sourceRecord.fields);
   const evidenceDir = resolve(OUTPUT_ROOT, sha256(admission.aiRunKey));
   await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
@@ -524,7 +582,7 @@ async function prepare(mode) {
     ));
     if (matchesForReport.length !== 1) {
       fail(
-        'Could not resolve exact accepted weekly source Report Snapshot',
+        'Could not resolve exact Fresh Weekly Executive Decision source Report Snapshot',
         'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
         { matchCount: matchesForReport.length },
       );
@@ -548,7 +606,7 @@ async function prepare(mode) {
   );
   if (missingSourceSettings.length > 0) {
     fail(
-      'Accepted weekly source Reports are outside the active Notification Runtime Settings authority',
+      'Fresh Weekly Executive Decision source Reports are outside the active Notification Runtime Settings authority',
       'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_SOURCE_INVALID',
       { missingSourceSettingCount: missingSourceSettings.length },
     );
@@ -673,7 +731,6 @@ function assertBusinessFirstMessage(context, message) {
   if (!message.text.includes('⚠️ สิ่งที่ต้องจับตา')) invalid.push('weaknessesHeading');
   if (!message.text.includes('🎯 สิ่งที่ควรทำสัปดาห์หน้า')) invalid.push('recommendationsHeading');
   if (hasInternalReadiness(message.text)) invalid.push('internalReadinessLeak');
-  if (!requiredFactsPresent(context, message.text)) invalid.push('requiredBusinessFacts');
   for (const output of [
     context.admission.fields.insight_summary,
     context.admission.fields.strengths,
@@ -694,11 +751,22 @@ function assertBusinessFirstMessage(context, message) {
   }
 }
 
-function requiredFactsPresent(context, textValue) {
-  const text = String(textValue ?? '');
-  const facts = context.admission.evidence.summaryRequiredFacts;
-  return facts.length > 0 && facts.every((fact) => text.includes(String(fact.value)));
+function assertReviewedMessageParity(context, message) {
+  const observedSha256 = sha256(message.text);
+  if (message.text !== context.admission.reviewedMessage.text
+      || observedSha256 !== context.admission.reviewedMessageSha256) {
+    fail(
+      'Weekly Notification runtime message differs from the reviewed Fresh Executive Decision Preview',
+      'LARK_WEEKLY_7D_NOTIFICATION_MESSAGE_PARITY_FAILED',
+      {
+        expectedMessageSha256: context.admission.reviewedMessageSha256,
+        observedMessageSha256: observedSha256,
+      },
+    );
+  }
+  return true;
 }
+
 function hasInternalReadiness(textValue) {
   return /report_partial|report_available|readiness_status|data_status|สถานะข้อมูล|ระดับ:\s*(?:info|warning|critical)/iu
     .test(String(textValue ?? ''));
@@ -715,7 +783,7 @@ async function assertSourceUnchanged(context) {
   ));
   if (exact.length !== 1 || hashSourceState(exact[0].fields) !== context.sourceStateSha256) {
     fail(
-      'Accepted V9 weekly source row changed during Notification Admission',
+      'Fresh Weekly Executive Decision source row changed during Notification Admission',
       'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_MUTATED',
       { matchCount: exact.length },
     );
@@ -1235,18 +1303,18 @@ function exactMainHead() {
 }
 
 function parseArgs(args) {
-  const execute = args.includes('--execute');
-  const recover = args.includes('--recover');
-  const unknown = args.filter((arg) => !['--execute', '--recover'].includes(arg));
-  if (unknown.length > 0 || (execute && recover)) {
+  const modes = ['--preview', '--execute', '--recover'].filter((mode) => args.includes(mode));
+  const unknown = args.filter((arg) => !['--preview', '--execute', '--recover'].includes(arg));
+  if (unknown.length > 0 || modes.length > 1) {
     fail(
-      'Weekly Notification terminal accepts either --execute or --recover',
+      'Weekly Notification terminal accepts one of --preview, --execute, or --recover',
       'LARK_WEEKLY_7D_NOTIFICATION_ARGUMENT_INVALID',
       { unknown },
     );
   }
-  if (execute) return 'execute';
-  if (recover) return 'recover';
+  if (modes[0] === '--preview') return 'preview';
+  if (modes[0] === '--execute') return 'execute';
+  if (modes[0] === '--recover') return 'recover';
   return 'plan';
 }
 function printPlan() {
@@ -1257,22 +1325,23 @@ function printPlan() {
     admissionConfirmation: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION,
     recoveryConfirmation: RECOVERY_CONFIRMATION,
     sequence: [
-      'revalidate exact accepted V9 weekly 7D source and Business Quality Gate',
+      'revalidate exact generated Fresh Weekly Executive Decision v4 and unchanged Decision Quality Gate',
+      'rebuild the exact reviewed full-channel message and require SHA-256 parity before admission',
       'verify AI Automation active and Base Notification Automation inactive',
       'verify Controlled UAT and Runtime Smoke are sent/mirrored and Settings remain active',
       'deploy current-main Notification Runtime renderer v2 at 100 percent traffic',
-      'reconcile one dedicated weekly notification identity without mutating V9 source',
-      'preview exact business-first message and reject internal readiness/status vocabulary',
+      'reconcile one dedicated weekly notification identity without mutating the Fresh Decision source',
       'record immutable Queue-attempt evidence before exactly one Runtime Queue admission',
       'verify one sent/mirrored D1 delivery, one Notification Log row and sent_to_group=true',
       'observe without another admission and prove duplicate delivery zero',
     ],
+    readOnlyPreviewAvailable: true,
     afterQueueAttemptFailure: 'use --recover only; never rerun --execute',
     maximumWorkerDeploymentCount: 1,
     maximumQueueAdmissionCount: 1,
     maximumMessageSendCount: 1,
     reportSettingWriteCount: 0,
-    sourceV9MutationCount: 0,
+    sourceDecisionMutationCount: 0,
     baseNotificationAutomationActivationCount: 0,
     automaticNotificationProducerEnabled: false,
     scheduleActivationCount: 0,
