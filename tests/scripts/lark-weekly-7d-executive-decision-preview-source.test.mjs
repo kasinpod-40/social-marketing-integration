@@ -35,6 +35,11 @@ test('persisted row remains preview-only while notification render is in memory'
   assert.match(source, /assertFullChannelMessage/);
 });
 
+test('result evidence uses the reviewed ad candidate contract', () => {
+  assert.match(source, /adCandidateNames:\s*context\.authority\.synthesis\.evidence\.evidence\.adCandidateNames/u);
+  assert.doesNotMatch(source, /paidCandidateNames/u);
+});
+
 test('terminal contains no Queue admission, group send, Worker deploy, settings write, or Schedule activation path', () => {
   assert.match(source, /queueAdmissionCount:\s*0/u);
   assert.match(source, /messageSendCount:\s*0/u);
