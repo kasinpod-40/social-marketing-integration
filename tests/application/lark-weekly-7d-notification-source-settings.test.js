@@ -35,7 +35,7 @@ function setting(settingKey, overrides = {}) {
   };
 }
 
-test('resolves safe-off Settings with null destination from only the exact Fresh 7D source Reports', () => {
+test('resolves inactive Settings with null destination from only the exact Fresh 7D source Reports', () => {
   const authority = resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds: ['report-google-7d', 'report-meta-7d'],
     snapshots: [
@@ -55,6 +55,25 @@ test('resolves safe-off Settings with null destination from only the exact Fresh
   assert.equal(authority.baseline.every((row) => !row.aiEnabled), true);
   assert.equal(authority.baseline.every((row) => !row.notificationEnabled), true);
   assert.equal(authority.baseline.every((row) => row.groupId === null), true);
+});
+
+test('accepts one exact uniformly active retained baseline without turning runtime scheduling on', () => {
+  const authority = resolveLarkWeekly7dNotificationSourceSettings({
+    sourceReportIds: ['report-google-7d', 'report-meta-7d'],
+    snapshots: [
+      snapshot('report-meta-7d', 'setting-meta-7d'),
+      snapshot('report-google-7d', 'setting-google-7d'),
+    ],
+    settings: [
+      setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
+      setting('setting-google-7d', { ai_enabled: true, notification_enabled: true }),
+    ],
+    expectedDestinationKeyHash: DESTINATION_HASH,
+  });
+
+  assert.equal(authority.state, 'active');
+  assert.equal(authority.baseline.every((row) => row.aiEnabled), true);
+  assert.equal(authority.baseline.every((row) => row.notificationEnabled), true);
 });
 
 test('accepts a retained reviewed destination but rejects any non-reviewed destination', () => {
@@ -102,7 +121,7 @@ test('fails closed when an exact Fresh source Snapshot is missing', () => {
   );
 });
 
-test('fails closed on pre-activated Settings', () => {
+test('fails closed on partial activation or mixed active/inactive source Settings', () => {
   assert.throws(
     () => resolveLarkWeekly7dNotificationSourceSettings({
       sourceReportIds: ['report-current-7d'],
@@ -121,5 +140,19 @@ test('fails closed on pre-activated Settings', () => {
       expectedDestinationKeyHash: DESTINATION_HASH,
     }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
+  );
+
+  assert.throws(
+    () => resolveLarkWeekly7dNotificationSourceSettings({
+      sourceReportIds: ['report-a', 'report-b'],
+      snapshots: [snapshot('report-a', 'setting-a'), snapshot('report-b', 'setting-b')],
+      settings: [
+        setting('setting-a', { ai_enabled: true, notification_enabled: true }),
+        setting('setting-b'),
+      ],
+      expectedDestinationKeyHash: DESTINATION_HASH,
+    }),
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID'
+      && error.details.activeStateCount === 2,
   );
 });
