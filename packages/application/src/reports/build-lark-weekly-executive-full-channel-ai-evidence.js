@@ -641,7 +641,7 @@ function evidenceError(message, code, details = {}) {
   error.name = 'LarkWeeklyExecutiveFullChannelAiEvidenceError';
   error.code = code;
   error.details = Object.freeze({ ...details });
-  throw error;
+  return error;
 }
 function deepFreeze(value, seen = new WeakSet()) {
   if (!value || typeof value !== 'object' || seen.has(value)) return value;
