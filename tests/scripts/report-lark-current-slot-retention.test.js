@@ -33,6 +33,8 @@ test('keeps only latest rolling metric record for the same Lark slot', () => {
   });
 
   assert.equal(plan.recordCount, 2);
+  assert.equal(plan.managedRecordCount, 2);
+  assert.equal(plan.legacyPreservedCount, 0);
   assert.equal(plan.retainedCount, 1);
   assert.equal(plan.staleDeleteCount, 1);
   assert.equal(plan.deletes[0].recordId, 'rec-old');
@@ -82,6 +84,41 @@ test('custom ranges remain separate materialized slots', () => {
   assert.equal(plan.customSlotCount, 2);
 });
 
+test('preserves pre-dashboard legacy rows that never had period_kind', () => {
+  const plan = planReportLarkCurrentSlotRetention({
+    role: 'snapshots',
+    records: [
+      legacySnapshotRecord({ recordId: 'legacy-daily', reportId: 'legacy-daily-report' }),
+      rollingSnapshotRecord({ recordId: 'rolling-old', reportId: 'rolling-old-report', periodEnd: JUL31, generatedAt: GENERATED_OLD }),
+      rollingSnapshotRecord({ recordId: 'rolling-new', reportId: 'rolling-new-report', periodEnd: AUG09, generatedAt: GENERATED_NEW }),
+    ],
+  });
+
+  assert.equal(plan.recordCount, 3);
+  assert.equal(plan.managedRecordCount, 2);
+  assert.equal(plan.legacyPreservedCount, 1);
+  assert.equal(plan.retainedCount, 2);
+  assert.equal(plan.staleDeleteCount, 1);
+  assert.equal(plan.deletes[0].recordId, 'rolling-old');
+  assert.equal(plan.legacyPreserved[0].recordId, 'legacy-daily');
+  assert.equal(plan.legacyPreserved[0].reason, 'legacy_non_dashboard_missing_period_kind');
+});
+
+test('dashboard materialization without period_kind still fails closed', () => {
+  const malformed = rollingSnapshotRecord({
+    recordId: 'malformed-dashboard',
+    reportId: 'malformed-dashboard-report',
+    periodEnd: AUG09,
+    generatedAt: GENERATED_NEW,
+  });
+  delete malformed.fields.period_kind;
+
+  assert.throws(
+    () => planReportLarkCurrentSlotRetention({ role: 'snapshots', records: [malformed] }),
+    (error) => error?.code === 'REPORT_LARK_CURRENT_SLOT_DASHBOARD_PERIOD_KIND_REQUIRED',
+  );
+});
+
 test('retention execution requires exact confirmation token', () => {
   assert.throws(() => assertReportLarkCurrentSlotRetentionConfirmation('wrong'));
   assert.doesNotThrow(() => assertReportLarkCurrentSlotRetentionConfirmation(
@@ -125,6 +162,37 @@ function snapshotRecord(input) {
       window_days: null,
       period_end: input.periodEnd,
       generated_at: GENERATED_NEW,
+    },
+  };
+}
+
+function rollingSnapshotRecord(input) {
+  return {
+    recordId: input.recordId,
+    fields: {
+      report_id: input.reportId,
+      customer_profile: 'integration_workspace',
+      customer_key: 'chemistry_k',
+      capability: 'organic',
+      platform: ['tiktok'],
+      account_id: 'chemistry_k',
+      report_type: 'dashboard_performance_report',
+      period_kind: 'rolling_days',
+      window_days: 7,
+      period_end: input.periodEnd,
+      generated_at: input.generatedAt,
+    },
+  };
+}
+
+function legacySnapshotRecord(input) {
+  return {
+    recordId: input.recordId,
+    fields: {
+      report_id: input.reportId,
+      report_type: 'daily_organic_report',
+      platform: ['tiktok'],
+      generated_at: GENERATED_OLD,
     },
   };
 }
