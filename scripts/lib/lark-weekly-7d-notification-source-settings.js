@@ -13,8 +13,8 @@ const HASH = /^[a-f0-9]{64}$/u;
  * The current Multichannel baseline intentionally keeps Notification Runtime and automatic
  * notification admission blocked. Every exact Fresh source Report must therefore resolve to one
  * retained Snapshot and one enabled Setting whose AI/notification flags are initially false.
- * A one-time controlled admission may activate those exact Settings only inside its bounded
- * runtime window and must restore this baseline before closeout.
+ * A safe-off Setting may retain the reviewed destination or may have group_id unset; when unset,
+ * the live reviewed destination is resolved independently through Lark IM before delivery.
  */
 export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const sourceReportIds = normalizeSourceReportIds(input.sourceReportIds);
@@ -46,7 +46,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const settingKeys = [...new Set(exactSnapshots.map((record) => (
     requireText(scalar(record.fields.report_setting_key), 'report_setting_key')
   )))].sort();
-  const groupIds = [];
+  const configuredGroupIds = [];
   const baseline = settingKeys.map((settingKey) => {
     const matches = settings.filter((record) => (
       String(scalar(record?.fields?.report_setting_key) ?? '') === settingKey
@@ -74,7 +74,8 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
         { enabled, aiEnabled, notificationEnabled },
       );
     }
-    groupIds.push(requireText(scalar(fields.group_id), 'group_id'));
+    const groupId = optionalText(scalar(fields.group_id));
+    if (groupId) configuredGroupIds.push(groupId);
     return Object.freeze({
       recordId: requireText(record.recordId ?? record.record_id, 'recordId'),
       reportSettingKey: settingKey,
@@ -82,15 +83,18 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
       enabled,
       aiEnabled,
       notificationEnabled,
+      groupId,
     });
   });
 
-  const uniqueGroups = [...new Set(groupIds)];
-  if (uniqueGroups.length !== 1 || sha256(uniqueGroups[0]) !== expectedDestinationKeyHash) {
+  const uniqueConfiguredGroups = [...new Set(configuredGroupIds)];
+  if (uniqueConfiguredGroups.length > 1
+      || (uniqueConfiguredGroups.length === 1
+        && sha256(uniqueConfiguredGroups[0]) !== expectedDestinationKeyHash)) {
     throw sourceError(
-      'Fresh Weekly 7D source Settings do not resolve to the reviewed Executive destination',
+      'Fresh Weekly 7D source Settings contain a non-reviewed destination',
       'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID',
-      { destinationRedacted: true, destinationCount: uniqueGroups.length },
+      { destinationRedacted: true, destinationCount: uniqueConfiguredGroups.length },
     );
   }
 
@@ -100,6 +104,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
     settingKeys,
     customerProfile: SOURCE_PROFILE,
     destinationKeyHash: expectedDestinationKeyHash,
+    destinationBaseline: uniqueConfiguredGroups.length === 0 ? 'unset' : 'reviewed',
     baseline,
   });
 }
@@ -139,6 +144,11 @@ function requireText(value, label) {
   const normalized = value === null || value === undefined ? '' : String(scalar(value) ?? '').trim();
   if (!normalized) throw new TypeError(`${label} is required`);
   return normalized;
+}
+function optionalText(value) {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
 }
 function readBoolean(value, label) {
   const item = scalar(value);
