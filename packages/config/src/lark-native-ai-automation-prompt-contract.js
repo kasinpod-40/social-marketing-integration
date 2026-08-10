@@ -119,14 +119,16 @@ ${sharedReferenceBlock}
 ${sharedRules}
 
 หน้าที่ของฟิลด์นี้:
-- เขียนเฉพาะ action ทางการตลาดที่เชื่อมกับ business evidence ที่มีอยู่จริง 1–3 ข้อ
-- ถ้ามี comparison ให้ต่อยอดสิ่งที่ดีหรือแก้สิ่งที่อ่อนตามหลักฐานจริง
-- ถ้ามีเพียง observed-only Paid Ads ที่มี clicks, impressions และ spend ให้เสนอ “คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป” ได้ โดยห้ามตัดสินว่าดีหรือแย่ก่อนมี baseline
-- ห้ามแนะนำเพิ่ม/ลดงบ หยุดช่องทาง หรือเปลี่ยนกลยุทธ์ใหญ่ หากไม่มี comparison/benchmark รองรับ
+- เขียน 2–4 action สั้น ๆ และทุกข้อ ต้องขึ้นต้นด้วย label เดียวจาก [CONTENT] [TEST] [SCALE] [KEEP] [REDUCE] [STOP] [NO-SCALE]
+- ถ้ามี c=[name,...] อย่างน้อยหนึ่งรายการ ต้องมีอย่างน้อยหนึ่ง [CONTENT] หรือ [TEST] ที่คัดลอกชื่อ Content candidate ที่เห็นในหลักฐานมาในข้อนั้น; คำแนะนำ Organic แบบไม่ระบุชื่อ candidate ใช้ไม่ได้
+- ถ้ามี a=[name,...] อย่างน้อยหนึ่งรายการ ต้องมีอย่างน้อยหนึ่ง [SCALE] [TEST] [KEEP] [REDUCE] [STOP] หรือ [NO-SCALE] ที่คัดลอกชื่อ Paid candidate ที่เห็นในหลักฐานมาในข้อนั้น; คำแนะนำ Paid แบบระบุเพียงชื่อช่องทางใช้ไม่ได้
+- ใช้ [SCALE] ได้เฉพาะ Paid candidate เดียวกันที่มี scale=1; CTR, impressions, reach, clicks หรือ spend อย่างเดียวห้ามใช้เป็นเหตุผล Scale
+- Organic ที่ไม่มีหลักฐาน Paid รองรับ ใช้ได้สูงสุด [TEST] และห้ามอ้างว่าเป็น creative เดียวกันกับโฆษณา
+- ถ้า funnelMetrics.up และ funnelMetrics.down มีค่า ต้องมี [NO-SCALE] อย่างน้อยหนึ่งข้อ และกล่าวชื่อ metric อย่างน้อยหนึ่งตัวจาก up และหนึ่งตัวจาก down ในข้อนั้น
+- ถ้าไม่มี a candidate แต่มีเพียง observed-only Paid Ads ที่มี clicks, impressions และ spend จึงค่อยเสนอ “คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป” ได้; ถ้ามี a candidate ต้องใช้ชื่อ candidate แทนคำแนะนำแบบ generic
 - ห้ามเขียนเรื่องเติมข้อมูล ตรวจข้อมูล แก้ระบบ แก้ Connection รอข้อมูล รอข้อมูลเต็ม หรือกล่าวรายชื่อช่องทางที่ไม่มีข้อมูล เมื่อมี business evidence อย่างน้อยหนึ่งช่องทาง
-- ห้ามคัดลอกประโยค fallback ของ Strengths หรือ Weaknesses มาไว้ในฟิลด์นี้
-- ห้ามเขียน Insight, Strengths หรือ Weaknesses ซ้ำ
-- เขียนเป็นรายการสั้น 1–3 ข้อ ไม่เกิน 550 ตัวอักษร`,
+- ห้ามคัดลอกประโยค fallback ของ Strengths หรือ Weaknesses มาไว้ในฟิลด์นี้ และห้ามเขียน Insight, Strengths หรือ Weaknesses ซ้ำ
+- ไม่เกิน 650 ตัวอักษร`,
   },
 });
 

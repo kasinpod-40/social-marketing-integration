@@ -17,7 +17,7 @@ import {
 } from './lark-weekly-7d-full-channel-ai-synthesis.js';
 
 export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_PREVIEW_CONTRACT_VERSION =
-  'lark_weekly_7d_executive_decision_preview_v1';
+  'lark_weekly_7d_executive_decision_preview_v2';
 export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_AI_PREFIX =
   'weekly-7d-executive-decision-ai:';
 export const LARK_WEEKLY_7D_EXECUTIVE_DECISION_LEGACY_TRIGGER_MARKER =
