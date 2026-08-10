@@ -101,7 +101,7 @@ export function buildFacebookRecoveryWranglerConfig(sourceText, redriveEnabled) 
   if (typeof redriveEnabled !== 'boolean') {
     throw contractError('redriveEnabled must be boolean', 'FACEBOOK_RECOVERY_CONFIG_INVALID');
   }
-  const next = structuredClone(validated.source);
+  const next = { ...validated.source };
   next.vars = {
     ...next.vars,
     MKT_DLQ_REDRIVE_ENABLED: redriveEnabled ? 'true' : 'false',
