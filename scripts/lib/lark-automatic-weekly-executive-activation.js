@@ -130,6 +130,33 @@ export function buildAutomaticWeeklyExecutiveActiveBaseline(authority) {
   })));
 }
 
+export async function readAutomaticWeeklyExecutiveSourceSettingRecords(input = {}) {
+  const repository = input.repository;
+  if (!repository || typeof repository.listByFieldValues !== 'function') {
+    throw activationError('Automatic Weekly activation requires the existing Lark Record repository');
+  }
+  const tableId = requireText(input.tableId, 'tableId');
+  const sourceAuthorities = input.sourceAuthorities;
+  if (!Array.isArray(sourceAuthorities) || sourceAuthorities.length === 0) {
+    throw activationError('Automatic Weekly activation requires canonical source authorities');
+  }
+  const settingKeys = sourceAuthorities
+    .map((authority) => requireText(authority?.reportSettingKey, 'sourceAuthority.reportSettingKey'))
+    .sort();
+  if (new Set(settingKeys).size !== settingKeys.length) {
+    throw activationError('Automatic Weekly activation source Settings must be one-to-one');
+  }
+  const records = await repository.listByFieldValues(
+    tableId,
+    'report_setting_key',
+    settingKeys,
+  );
+  if (!Array.isArray(records)) {
+    throw activationError('Automatic Weekly activation source Settings readback is invalid');
+  }
+  return records;
+}
+
 function parseConfig(value) {
   let parsed;
   try {

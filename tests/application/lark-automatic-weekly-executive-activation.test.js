@@ -5,6 +5,7 @@ import {
   buildAutomaticWeeklyExecutiveActivationConfig,
   buildAutomaticWeeklyExecutiveActiveBaseline,
   buildAutomaticWeeklyExecutiveSettingRows,
+  readAutomaticWeeklyExecutiveSourceSettingRecords,
 } from '../../scripts/lib/lark-automatic-weekly-executive-activation.js';
 
 const TABLES = Object.freeze({
@@ -90,4 +91,52 @@ test('automatic Weekly Settings plan activates only inactive exact source rows',
     { reportSettingKey: 'a', aiEnabled: true, notificationEnabled: true },
     { reportSettingKey: 'b', aiEnabled: true, notificationEnabled: true },
   ]);
+});
+
+test('automatic Weekly activation reads raw Lark Setting records from canonical setting keys', async () => {
+  const records = [
+    {
+      recordId: 'rec_a',
+      fields: {
+        report_setting_key: 'a',
+        customer_profile: 'integration_workspace',
+        enabled: true,
+        ai_enabled: false,
+        notification_enabled: false,
+      },
+    },
+    {
+      recordId: 'rec_b',
+      fields: {
+        report_setting_key: 'b',
+        customer_profile: 'integration_workspace',
+        enabled: true,
+        ai_enabled: true,
+        notification_enabled: true,
+      },
+    },
+  ];
+  const calls = [];
+  const repository = {
+    async listByFieldValues(tableId, fieldName, values) {
+      calls.push({ tableId, fieldName, values });
+      return records;
+    },
+  };
+
+  const result = await readAutomaticWeeklyExecutiveSourceSettingRecords({
+    repository,
+    tableId: 'tbl_settings',
+    sourceAuthorities: [
+      { reportId: 'report_b', reportSettingKey: 'b' },
+      { reportId: 'report_a', reportSettingKey: 'a' },
+    ],
+  });
+
+  assert.equal(result, records);
+  assert.deepEqual(calls, [{
+    tableId: 'tbl_settings',
+    fieldName: 'report_setting_key',
+    values: ['a', 'b'],
+  }]);
 });
