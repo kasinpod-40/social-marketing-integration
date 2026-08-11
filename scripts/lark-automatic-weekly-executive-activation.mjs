@@ -27,6 +27,7 @@ import {
   buildAutomaticWeeklyExecutiveSettingRows,
   LARK_AUTOMATIC_WEEKLY_EXECUTIVE_ACTIVATION_CONFIRMATION,
   LARK_AUTOMATIC_WEEKLY_EXECUTIVE_ACTIVATION_VERSION,
+  readAutomaticWeeklyExecutiveSourceSettingRecords,
 } from './lib/lark-automatic-weekly-executive-activation.js';
 import {
   collectLarkNativeAiWeekly7dControlledUatSource,
@@ -143,10 +144,15 @@ async function prepare() {
     periodEnd: source.targetPeriod.periodEnd,
     windowDays: 7,
   });
+  const sourceSettingRecords = await readAutomaticWeeklyExecutiveSourceSettingRecords({
+    repository: larkRepository,
+    tableId: tableIds.reportSettings,
+    sourceAuthorities: reportAuthority.authorities,
+  });
   const settingsAuthority = resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds,
     sourceAuthorities: reportAuthority.authorities,
-    settings: source.settings,
+    settings: sourceSettingRecords,
   });
   await verifyAutomationState(client);
 
