@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
+  assertLarkWeekly7dNotificationSourceSettingsBaseline,
+  normalizeLarkWeekly7dNotificationRestorableBaseline,
   resolveLarkWeekly7dNotificationSourceSettings,
+  summarizeLarkWeekly7dNotificationSettingsBaseline,
 } from '../../scripts/lib/lark-weekly-7d-notification-source-settings.js';
 
 const GROUP_ID = 'weekly-reviewed-destination';
@@ -43,7 +46,11 @@ function resolve(overrides = {}) {
 test('resolves inactive Settings from canonical source authority without Report Snapshots', () => {
   const authority = resolve();
   assert.equal(authority.state, 'inactive');
+  assert.equal(authority.activeSettingCount, 0);
+  assert.equal(authority.inactiveSettingCount, 2);
   assert.equal(authority.destinationBaseline, 'unset');
+  assert.equal(authority.configuredDestinationRowCount, 0);
+  assert.equal(authority.unsetDestinationRowCount, 2);
   assert.deepEqual(authority.sourceReportIds, ['report-google-7d', 'report-meta-7d']);
   assert.deepEqual(authority.settingKeys, ['setting-google-7d', 'setting-meta-7d']);
   assert.equal(authority.baseline.length, 2);
@@ -61,11 +68,96 @@ test('accepts one exact uniformly active retained baseline without changing runt
     ],
   });
   assert.equal(authority.state, 'active');
+  assert.equal(authority.activeSettingCount, 2);
+  assert.equal(authority.inactiveSettingCount, 0);
   assert.equal(authority.baseline.every((row) => row.aiEnabled), true);
   assert.equal(authority.baseline.every((row) => row.notificationEnabled), true);
 });
 
-test('accepts a retained reviewed destination but rejects any non-reviewed destination', () => {
+test('accepts mixed active/inactive source rows and retains the exact per-row restore baseline', () => {
+  const settings = [
+    setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
+    setting('setting-google-7d'),
+  ];
+  const authority = resolve({ settings });
+
+  assert.equal(authority.state, 'mixed');
+  assert.equal(authority.activeSettingCount, 1);
+  assert.equal(authority.inactiveSettingCount, 1);
+  assert.deepEqual(authority.restorableBaseline, [
+    {
+      reportSettingKey: 'setting-google-7d',
+      aiEnabled: false,
+      notificationEnabled: false,
+    },
+    {
+      reportSettingKey: 'setting-meta-7d',
+      aiEnabled: true,
+      notificationEnabled: true,
+    },
+  ]);
+  assert.equal(
+    assertLarkWeekly7dNotificationSourceSettingsBaseline(settings, authority),
+    true,
+  );
+});
+
+test('retained per-row baseline is normalized, summarized and checked exactly', () => {
+  const authority = resolve({
+    settings: [
+      setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
+      setting('setting-google-7d'),
+    ],
+  });
+  const retained = normalizeLarkWeekly7dNotificationRestorableBaseline([
+    {
+      reportSettingKey: 'setting-meta-7d',
+      aiEnabled: true,
+      notificationEnabled: true,
+    },
+    {
+      reportSettingKey: 'setting-google-7d',
+      aiEnabled: false,
+      notificationEnabled: false,
+    },
+  ]);
+  assert.deepEqual(summarizeLarkWeekly7dNotificationSettingsBaseline(retained), {
+    state: 'mixed',
+    activeSettingCount: 1,
+    inactiveSettingCount: 1,
+    sourceSettingCount: 2,
+  });
+  assert.equal(
+    assertLarkWeekly7dNotificationSourceSettingsBaseline([
+      setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
+      setting('setting-google-7d'),
+    ], authority, retained),
+    true,
+  );
+  assert.throws(
+    () => assertLarkWeekly7dNotificationSourceSettingsBaseline([
+      setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
+      setting('setting-google-7d', { ai_enabled: true, notification_enabled: true }),
+    ], authority, retained),
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_READBACK_FAILED',
+  );
+});
+
+test('accepts reviewed destination on any non-empty subset while preserving unset rows', () => {
+  const authority = resolve({
+    settings: [
+      setting('setting-meta-7d', { group_id: GROUP_ID }),
+      setting('setting-google-7d'),
+    ],
+  });
+  assert.equal(authority.destinationBaseline, 'reviewed_with_unset');
+  assert.equal(authority.configuredDestinationRowCount, 1);
+  assert.equal(authority.unsetDestinationRowCount, 1);
+  assert.equal(authority.baseline.find((row) => row.reportSettingKey === 'setting-meta-7d').groupId, GROUP_ID);
+  assert.equal(authority.baseline.find((row) => row.reportSettingKey === 'setting-google-7d').groupId, null);
+});
+
+test('accepts a fully configured reviewed destination but rejects wrong or multiple destinations', () => {
   const authority = resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds: ['report-current-7d'],
     sourceAuthorities: [sourceAuthority('report-current-7d', 'setting-current-7d')],
@@ -83,6 +175,16 @@ test('accepts a retained reviewed destination but rejects any non-reviewed desti
       expectedDestinationKeyHash: DESTINATION_HASH,
     }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID',
+  );
+  assert.throws(
+    () => resolve({
+      settings: [
+        setting('setting-meta-7d', { group_id: GROUP_ID }),
+        setting('setting-google-7d', { group_id: 'other-destination' }),
+      ],
+    }),
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID'
+      && error.details.destinationCount === 2,
   );
 });
 
@@ -102,7 +204,7 @@ test('fails closed when canonical source authority is missing or mismatched', ()
   );
 });
 
-test('fails closed on partial activation or mixed active/inactive source Settings', () => {
+test('fails closed on partial activation inside any one source Setting', () => {
   assert.throws(
     () => resolve({ settings: [setting('setting-meta-7d'), setting('setting-google-7d', { notification_enabled: true })] }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
@@ -112,13 +214,13 @@ test('fails closed on partial activation or mixed active/inactive source Setting
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
   );
   assert.throws(
-    () => resolve({
-      settings: [
-        setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
-        setting('setting-google-7d'),
-      ],
-    }),
-    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID'
-      && error.details.activeStateCount === 2,
+    () => normalizeLarkWeekly7dNotificationRestorableBaseline([
+      {
+        reportSettingKey: 'setting-meta-7d',
+        aiEnabled: true,
+        notificationEnabled: false,
+      },
+    ]),
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
   );
 });
