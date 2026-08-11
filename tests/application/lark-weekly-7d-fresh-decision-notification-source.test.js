@@ -153,3 +153,28 @@ test('clones the exact generated Fresh v4 decision into one full-channel notific
   assert.ok(admission.reviewedMessageBytes > 0);
   assert.deepEqual(input.sourceRecord, original);
 });
+
+test('builds the same notification identity from retained factual authority without reconstructing a parent synthesis', () => {
+  const input = authority();
+  const outputs = Object.freeze({
+    insight_summary: input.sourceRecord.fields.insight_summary,
+    strengths: input.sourceRecord.fields.strengths,
+    weaknesses: input.sourceRecord.fields.weaknesses,
+    recommendations: input.sourceRecord.fields.recommendations,
+  });
+  const admission = buildFreshWeekly7dExecutiveDecisionNotificationAdmission({
+    sourceRecord: input.sourceRecord,
+    factualReport: input.factualReport,
+    evidence: input.synthesis.evidence.evidence,
+    qualityGate: { passed: true, violations: [] },
+    outputs,
+  });
+
+  assert.equal(admission.synthesis, null);
+  assert.deepEqual(admission.sourceReportIds, [...input.factualReport.sourceReportIds].sort());
+  assert.equal(admission.fields.notification_eligible, true);
+  assert.equal(admission.fields.preview_mode, false);
+  assert.match(admission.fields.insight_summary, /💰 Meta Ads/u);
+  assert.match(admission.fields.insight_summary, /🔎 Google Ads/u);
+  assert.match(admission.reviewedMessageSha256, /^[a-f0-9]{64}$/u);
+});
