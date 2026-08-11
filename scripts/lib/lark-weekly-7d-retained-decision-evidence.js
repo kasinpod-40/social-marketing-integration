@@ -1,16 +1,23 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
 
 import {
   resolveDashboardReportSourceAuthority,
 } from '../../packages/application/src/reports/dashboard-report-source-authority.js';
 import {
-  LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
+  validateLarkWeeklyExecutiveFullChannelAiOutputs,
 } from '../../packages/application/src/reports/build-lark-weekly-executive-full-channel-ai-evidence.js';
+import {
+  readLarkWeeklyExecutiveCompactAiEvidence,
+} from '../../packages/application/src/reports/read-lark-weekly-executive-compact-ai-evidence.js';
 import {
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION,
 } from '../../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
+import {
+  LARK_WEEKLY_7D_ACCEPTED_FACTUAL_RENDER,
+  LARK_WEEKLY_7D_ACCEPTED_FACTUAL_REPORT_SHA256,
+  LARK_WEEKLY_7D_ACCEPTED_CHANNEL_SECTIONS_SHA256,
+  renderAcceptedWeekly7dChannelSections,
+} from './lark-weekly-7d-accepted-factual-render.js';
 import {
   assertFreshWeekly7dDecisionPeriod,
   isLarkWeekly7dExecutiveDecisionIdentity,
@@ -19,7 +26,7 @@ import {
 export const LARK_WEEKLY_7D_NOTIFICATION_LOCKED_SOURCE_AI_RUN_KEY_SHA256 =
   '24ed4cbae0a92e6dd89e850833056ca411781275c53fa9f8d7577c99a3d9c861';
 export const LARK_WEEKLY_7D_NOTIFICATION_LOCKED_FACTUAL_REPORT_SHA256 =
-  'a732d4c4790ef99261e23e6a129a38822e9268a1f478387dfc2e82126b8a6fea';
+  LARK_WEEKLY_7D_ACCEPTED_FACTUAL_REPORT_SHA256;
 export const LARK_WEEKLY_7D_NOTIFICATION_LOCKED_REVIEWED_MESSAGE_SHA256 =
   '6b8a2f1d2243c0bb2575082afb4e5ea7a530e8d16de31a02ee666fcf27da2a5f';
 export const LARK_WEEKLY_7D_NOTIFICATION_LOCKED_REVIEWED_MESSAGE_BYTES = 4118;
@@ -40,7 +47,6 @@ const SOURCE_CHANNEL = 'executive';
 const SOURCE_PROFILE = 'integration_workspace';
 const SOURCE_ACCOUNT_KEY = 'chemistry_k';
 const LOCKED_GENERATED_AT = 1_786_385_677_223;
-const RETAINED_SUMMARY_FILE = 'decision-preview-summary.json';
 const LOCKED_PERIOD = Object.freeze({
   periodStart: '2026-08-03',
   periodEnd: '2026-08-09',
@@ -49,11 +55,13 @@ const LOCKED_PERIOD = Object.freeze({
   comparisonMode: 'previous_period',
   windowDays: 7,
 });
+const CTR_CLAIM = /\bCTR\b|อัตราการคลิก|ค่าดัชนีการคลิก/iu;
 
 /**
- * Resolve the immutable accepted Fresh v4 row and its retained review evidence without reading
- * rolling Report Snapshot rows. The accepted Report identities are regenerated through the same
- * shared materialization contracts that originally created them.
+ * Resolve the immutable accepted Fresh v4 authority without rolling Snapshots or ignored local
+ * output files. Native-AI outputs and compact evidence come from the durable Lark AI row. Exact
+ * Report identities are regenerated through shared materialization contracts. The deterministic
+ * factual channel render is retained in source control and bound to the accepted factual SHA.
  */
 export async function loadLockedFreshWeekly7dDecisionEvidence(input = {}) {
   const repository = requireRepository(input.repository);
@@ -89,10 +97,33 @@ export async function loadLockedFreshWeekly7dDecisionEvidence(input = {}) {
     periodEnd: sourceAuthority.period.periodEnd,
     windowDays: 7,
   });
-  const retainedSummary = await readLockedSummary(input.decisionEvidenceRoot);
-  assertLockedSummary(retainedSummary, sourceAuthority);
+  const factualRender = assertAcceptedFactualRender(sourceAuthority.period);
+  const evidence = readLarkWeeklyExecutiveCompactAiEvidence({
+    metricSummaryJson: sourceAuthority.metricSummaryJson,
+    channelStatusVectorJson: sourceAuthority.channelStatusVectorJson,
+  });
+  assertCompactRecommendationAuthority(sourceAuthority.outputs, evidence);
+  assertCompactInsightBoundary(sourceAuthority.outputs, evidence);
+  const qualityGate = validateLarkWeeklyExecutiveFullChannelAiOutputs(
+    sourceAuthority.outputs,
+    evidence,
+  );
+  if (qualityGate.passed !== true || qualityGate.violations.length !== 0) {
+    throw evidenceError(
+      'Accepted Fresh v4 outputs no longer pass the unchanged Executive Decision Quality Gate',
+      'LARK_WEEKLY_7D_NOTIFICATION_FRESH_SOURCE_QUALITY_FAILED',
+      { violations: qualityGate.violations },
+    );
+  }
 
-  return deepFreeze({ sourceRecord, sourceAuthority, reportAuthority, retainedSummary });
+  return deepFreeze({
+    sourceRecord,
+    sourceAuthority,
+    reportAuthority,
+    evidence,
+    qualityGate,
+    factualRender,
+  });
 }
 
 function assertLockedSourceFields(fields = {}, now) {
@@ -131,14 +162,10 @@ function assertLockedSourceFields(fields = {}, now) {
   }
   const outputs = readOutputs(fields);
   const metricSummaryJson = requireText(scalar(fields.metric_summary_json), 'metric_summary_json');
-  const metricSummary = parseJsonObject(metricSummaryJson, 'metric_summary_json');
-  if (metricSummary.promptShape !== LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE) invalid.push('promptShape');
-  const statusVector = parseJsonArray(
-    requireText(scalar(fields.channel_status_vector_json), 'channel_status_vector_json'),
+  const channelStatusVectorJson = requireText(
+    scalar(fields.channel_status_vector_json),
     'channel_status_vector_json',
   );
-  if (statusVector.length !== 9) invalid.push('channelStatusVector');
-
   const sourceReportChecksum = requireHash(
     scalar(fields.source_report_checksum),
     'source_report_checksum',
@@ -157,100 +184,82 @@ function assertLockedSourceFields(fields = {}, now) {
       { invalid },
     );
   }
-  return deepFreeze({ sourceAiRunKey, sourceReportIds, period, outputs, metricSummaryJson });
+  return deepFreeze({
+    sourceAiRunKey,
+    sourceReportIds,
+    period,
+    outputs,
+    metricSummaryJson,
+    channelStatusVectorJson,
+    sourceReportChecksum,
+  });
 }
 
-async function readLockedSummary(explicitRoot) {
-  const evidenceRoot = resolve(
-    explicitRoot
-      ?? process.env.MKT_LARK_WEEKLY_7D_EXECUTIVE_DECISION_EVIDENCE_ROOT
-      ?? 'outputs/lark-weekly-7d-executive-decision-preview',
-  );
-  const path = join(
-    evidenceRoot,
-    LARK_WEEKLY_7D_NOTIFICATION_LOCKED_SOURCE_AI_RUN_KEY_SHA256,
-    RETAINED_SUMMARY_FILE,
-  );
-  try {
-    return JSON.parse(await readFile(path, 'utf8'));
-  } catch (cause) {
-    throw evidenceError(
-      'Accepted Fresh v4 requires its retained decision-preview summary evidence',
-      'LARK_WEEKLY_7D_NOTIFICATION_RETAINED_EVIDENCE_MISSING',
-      { evidenceName: RETAINED_SUMMARY_FILE, causeCode: cause?.code ?? null },
-    );
-  }
-}
-
-function assertLockedSummary(summaryInput, sourceAuthority) {
-  const summary = requireObject(summaryInput, 'retainedSummary');
+function assertAcceptedFactualRender(period) {
+  const render = LARK_WEEKLY_7D_ACCEPTED_FACTUAL_RENDER;
   const invalid = [];
-  const period = normalizePeriod(summary.period);
-  const sourceReportIds = normalizeSourceReportIds(summary.sourceReportIds);
-  const message = optionalText(summary.messagePreview);
-
-  if (summary.ok !== true) invalid.push('ok');
-  if (summary.synthesisState !== 'generated') invalid.push('synthesisState');
-  if (summary.synthesisAiRunKeySha256 !== LARK_WEEKLY_7D_NOTIFICATION_LOCKED_SOURCE_AI_RUN_KEY_SHA256) invalid.push('sourceIdentity');
-  if (summary.factualReportSha256 !== LARK_WEEKLY_7D_NOTIFICATION_LOCKED_FACTUAL_REPORT_SHA256) invalid.push('factualReportSha256');
-  if (JSON.stringify(period) !== JSON.stringify(LOCKED_PERIOD)) invalid.push('period');
-  if (JSON.stringify(sourceReportIds) !== JSON.stringify(sourceAuthority.sourceReportIds)) invalid.push('sourceReportIds');
-  try { assertOutputsEqual(sourceAuthority.outputs, summary.outputs); } catch { invalid.push('outputs'); }
-  if (summary.qualityGate?.passed !== true
-      || !Array.isArray(summary.qualityGate?.violations)
-      || summary.qualityGate.violations.length !== 0) invalid.push('qualityGate');
-  if (summary.evidence?.promptShape !== LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE) invalid.push('promptShape');
-  if (!message) invalid.push('messagePreview');
-  else {
-    if (sha256(message) !== LARK_WEEKLY_7D_NOTIFICATION_LOCKED_REVIEWED_MESSAGE_SHA256) invalid.push('messageSha256Computed');
-    if (Buffer.byteLength(message, 'utf8') !== LARK_WEEKLY_7D_NOTIFICATION_LOCKED_REVIEWED_MESSAGE_BYTES) invalid.push('messageBytesComputed');
+  if (render.factualReportSha256 !== LARK_WEEKLY_7D_NOTIFICATION_LOCKED_FACTUAL_REPORT_SHA256) {
+    invalid.push('factualReportSha256');
   }
-  if (summary.messageSha256 !== LARK_WEEKLY_7D_NOTIFICATION_LOCKED_REVIEWED_MESSAGE_SHA256) invalid.push('messageSha256');
-  if (Number(summary.messageBytes) !== LARK_WEEKLY_7D_NOTIFICATION_LOCKED_REVIEWED_MESSAGE_BYTES) invalid.push('messageBytes');
-  if (summary.persistedPreviewMode !== true) invalid.push('persistedPreviewMode');
-  if (summary.persistedNotificationEligible !== false) invalid.push('persistedNotificationEligible');
-  if (summary.persistedSentToGroup !== false) invalid.push('persistedSentToGroup');
-  if (Number(summary.queueAdmissionCount ?? -1) !== 0) invalid.push('queueAdmissionCount');
-  if (Number(summary.messageSendCount ?? -1) !== 0) invalid.push('messageSendCount');
-
+  if (JSON.stringify(render.period) !== JSON.stringify(period)) invalid.push('period');
+  const channelSectionsText = renderAcceptedWeekly7dChannelSections();
+  const observedSectionsSha256 = sha256(channelSectionsText);
+  if (render.channelSectionsSha256 !== LARK_WEEKLY_7D_ACCEPTED_CHANNEL_SECTIONS_SHA256
+      || observedSectionsSha256 !== LARK_WEEKLY_7D_ACCEPTED_CHANNEL_SECTIONS_SHA256) {
+    invalid.push('channelSectionsSha256');
+  }
+  if (render.channelSections.length !== 9) invalid.push('channelSectionCount');
   if (invalid.length > 0) {
     throw evidenceError(
-      'Retained Fresh v4 decision-preview evidence differs from the accepted reviewed authority',
-      'LARK_WEEKLY_7D_NOTIFICATION_RETAINED_EVIDENCE_INVALID',
+      'Tracked Weekly factual rendering drifted from the accepted factual-report authority',
+      'LARK_WEEKLY_7D_NOTIFICATION_FACTUAL_RENDER_INVALID',
       { invalid },
     );
   }
-  return true;
+  return deepFreeze({
+    ...render,
+    channelSectionsText,
+    observedSectionsSha256,
+  });
 }
 
-function assertOutputsEqual(expectedInput, observedInput) {
-  const expected = readOutputs(expectedInput);
-  const observed = readOutputs(observedInput);
-  if (JSON.stringify(expected) !== JSON.stringify(observed)) {
+function assertCompactRecommendationAuthority(outputs, evidence) {
+  const blueprints = evidence.recommendationBlueprints ?? [];
+  if (blueprints.length === 0 || outputs.recommendations !== blueprints.join('\n')) {
     throw evidenceError(
-      'Retained Fresh outputs differ from the accepted generated source row',
-      'LARK_WEEKLY_7D_NOTIFICATION_RETAINED_EVIDENCE_INVALID',
+      'Accepted Fresh v4 Recommendations must equal durable rb blueprints member-for-member',
+      'LARK_WEEKLY_7D_NOTIFICATION_FRESH_SOURCE_RB_MISMATCH',
+      { blueprintCount: blueprints.length },
     );
   }
   return true;
 }
+
+function assertCompactInsightBoundary(outputs, evidence) {
+  // The compact paid tuple retains reviewed CTR but intentionally drops impressions. The original
+  // Quality Gate can therefore validate all durable decision rules except recomputing an Insight
+  // CTR claim. Fail stricter if Insight contains CTR rather than silently weakening that proof.
+  if (CTR_CLAIM.test(outputs.insight_summary)) {
+    throw evidenceError(
+      'Compact retained evidence cannot re-prove an Insight CTR claim without impressions',
+      'LARK_WEEKLY_7D_NOTIFICATION_COMPACT_INSIGHT_CTR_UNPROVABLE',
+    );
+  }
+  if (evidence.organicPaidMappingAvailable !== false) {
+    throw evidenceError(
+      'Accepted Fresh compact evidence must retain organicPaidMappingAvailable=false',
+      'LARK_WEEKLY_7D_NOTIFICATION_COMPACT_EVIDENCE_INVALID',
+    );
+  }
+  return true;
+}
+
 function readOutputs(fields = {}) {
   return Object.freeze({
     insight_summary: requireText(scalar(fields.insight_summary), 'insight_summary'),
     strengths: requireText(scalar(fields.strengths), 'strengths'),
     weaknesses: requireText(scalar(fields.weaknesses), 'weaknesses'),
     recommendations: requireText(scalar(fields.recommendations), 'recommendations'),
-  });
-}
-function normalizePeriod(value) {
-  const period = requireObject(value, 'period');
-  return Object.freeze({
-    periodStart: requireDateOnly(period.periodStart ?? period.period_start, 'periodStart'),
-    periodEnd: requireDateOnly(period.periodEnd ?? period.period_end, 'periodEnd'),
-    compareStart: optionalDateOnly(period.compareStart ?? period.compare_start),
-    compareEnd: optionalDateOnly(period.compareEnd ?? period.compare_end),
-    comparisonMode: requireText(period.comparisonMode ?? period.comparison_mode ?? 'none', 'comparisonMode'),
-    windowDays: Number(period.windowDays ?? period.window_days ?? 7),
   });
 }
 function normalizeSourceReportIds(value) {
@@ -268,24 +277,6 @@ function parseSourceReportIds(value) {
       'Fresh Weekly Executive Decision source Report identities are invalid',
       'LARK_WEEKLY_7D_NOTIFICATION_FRESH_SOURCE_INVALID',
     );
-  }
-}
-function parseJsonObject(value, label) {
-  try {
-    const parsed = JSON.parse(String(value));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not object');
-    return parsed;
-  } catch {
-    throw evidenceError(`${label} must be a JSON object`, 'LARK_WEEKLY_7D_NOTIFICATION_FRESH_SOURCE_INVALID');
-  }
-}
-function parseJsonArray(value, label) {
-  try {
-    const parsed = JSON.parse(String(value));
-    if (!Array.isArray(parsed)) throw new Error('not array');
-    return parsed;
-  } catch {
-    throw evidenceError(`${label} must be a JSON array`, 'LARK_WEEKLY_7D_NOTIFICATION_FRESH_SOURCE_INVALID');
   }
 }
 function normalizeRecord(record) {
@@ -308,22 +299,9 @@ function nullableDateOnlyValue(value) {
   const item = scalar(value);
   return item === null || item === undefined || item === '' ? null : dateOnlyValue(item);
 }
-function optionalDateOnly(value) {
-  if (value === null || value === undefined || value === '') return null;
-  return requireDateOnly(value, 'optionalDate');
-}
-function requireDateOnly(value, label) {
-  const text = requireText(value, label);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) throw new TypeError(`${label} must be date-only`);
-  return text;
-}
 function requireRepository(repository) {
   if (typeof repository?.listByFieldValues !== 'function') throw new TypeError('repository.listByFieldValues is required');
   return repository;
-}
-function requireObject(value, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${label} is required`);
-  return value;
 }
 function scalar(value) {
   if (value === null || value === undefined) return null;

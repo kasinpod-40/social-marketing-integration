@@ -51,12 +51,17 @@ export async function loadFreshWeekly7dExecutiveDecisionNotificationSource(input
   const retained = await loadLockedFreshWeekly7dDecisionEvidence({
     repository: input.repository,
     aiRunsTableId: input.aiRunsTableId,
-    decisionEvidenceRoot: input.decisionEvidenceRoot,
     now: input.now,
   });
   const admission = buildFreshWeekly7dExecutiveDecisionNotificationAdmission({
     sourceRecord: retained.sourceRecord,
-    retainedSummary: retained.retainedSummary,
+    acceptedEvidence: {
+      factualReportSha256: LARK_WEEKLY_7D_NOTIFICATION_LOCKED_FACTUAL_REPORT_SHA256,
+      period: retained.sourceAuthority.period,
+      evidence: retained.evidence,
+      qualityGate: retained.qualityGate,
+      channelSections: retained.factualRender.channelSections,
+    },
     sourceAuthorities: retained.reportAuthority.authorities,
   });
   if (admission.reviewedMessageSha256
@@ -84,10 +89,12 @@ export async function loadFreshWeekly7dExecutiveDecisionNotificationSource(input
     sourceAuthorities: retained.reportAuthority.authorities,
     sourceReportSettingKeys: retained.reportAuthority.reportSettingKeys,
     retainedDecisionEvidence: {
-      factualReportSha256: retained.retainedSummary.factualReportSha256,
-      messageSha256: retained.retainedSummary.messageSha256,
-      messageBytes: retained.retainedSummary.messageBytes,
-      qualityGatePassed: retained.retainedSummary.qualityGate.passed,
+      source: 'fresh_v4_lark_row_plus_tracked_factual_render',
+      factualReportSha256: LARK_WEEKLY_7D_NOTIFICATION_LOCKED_FACTUAL_REPORT_SHA256,
+      messageSha256: admission.reviewedMessageSha256,
+      messageBytes: admission.reviewedMessageBytes,
+      qualityGatePassed: retained.qualityGate.passed,
+      channelSectionsSha256: retained.factualRender.channelSectionsSha256,
     },
     reviewedDestination: {
       name: destination.name,
@@ -181,16 +188,6 @@ export function buildFreshWeekly7dExecutiveDecisionNotificationAdmission(input =
   });
   const reviewedMessageSha256 = sha256(message.text);
   const reviewedMessageBytes = Buffer.byteLength(message.text, 'utf8');
-  if (authority.retainedMessage !== null && message.text !== authority.retainedMessage) {
-    throw sourceError(
-      'Retained Weekly Notification message does not reproduce through the shared renderer',
-      'LARK_WEEKLY_7D_NOTIFICATION_REVIEWED_MESSAGE_DRIFT',
-      {
-        retainedMessageSha256: sha256(authority.retainedMessage),
-        renderedMessageSha256: reviewedMessageSha256,
-      },
-    );
-  }
 
   return deepFreeze({
     sourceRecord: source,
@@ -242,34 +239,34 @@ function resolveBuildAuthority(source, input) {
         accepted.outputs,
         renderLarkWeeklyExecutiveChannelSections(synthesis.factualReport),
       ),
-      retainedMessage: null,
     });
   }
 
-  if (input.retainedSummary) {
-    const summary = requireObject(input.retainedSummary, 'retainedSummary');
+  if (input.acceptedEvidence) {
+    const accepted = requireObject(input.acceptedEvidence, 'acceptedEvidence');
+    const qualityGate = requireObject(accepted.qualityGate, 'acceptedEvidence.qualityGate');
+    if (qualityGate.passed !== true || !Array.isArray(qualityGate.violations)
+        || qualityGate.violations.length !== 0) {
+      throw sourceError(
+        'Notification Admission requires a passed reconstructed Executive Decision Quality Gate',
+        'LARK_WEEKLY_7D_NOTIFICATION_FRESH_SOURCE_QUALITY_FAILED',
+        { violations: qualityGate.violations ?? [] },
+      );
+    }
     const outputs = readOutputs(source.fields);
-    const period = normalizePeriod(summary.period);
     const sourceReportIds = parseSourceReportIds(source.fields.source_report_ids_json);
-    const retainedMessage = requireText(summary.messagePreview, 'retainedSummary.messagePreview');
-    const composedInsight = extractRetainedOverviewBody(retainedMessage, period, outputs);
+    const sections = normalizeSections(accepted.channelSections);
     return deepFreeze({
       synthesis: null,
       factualReport: null,
-      factualReportSha256: requireHash(summary.factualReportSha256, 'factualReportSha256'),
+      factualReportSha256: requireHash(accepted.factualReportSha256, 'factualReportSha256'),
       sourceReportIds,
       sourceAuthorities: Object.freeze([...(input.sourceAuthorities ?? [])]),
-      period,
-      evidence: requireObject(summary.evidence, 'retainedSummary.evidence'),
-      qualityGate: requireObject(summary.qualityGate, 'retainedSummary.qualityGate'),
+      period: normalizePeriod(accepted.period),
+      evidence: requireObject(accepted.evidence, 'acceptedEvidence.evidence'),
+      qualityGate,
       outputs,
-      deliveryOutputs: {
-        insight_summary: composedInsight,
-        strengths: outputs.strengths,
-        weaknesses: outputs.weaknesses,
-        recommendations: outputs.recommendations,
-      },
-      retainedMessage,
+      deliveryOutputs: buildDeliveryOutputs(outputs, sections),
     });
   }
 
@@ -301,7 +298,6 @@ function resolveBuildAuthority(source, input) {
     qualityGate,
     outputs,
     deliveryOutputs: buildDeliveryOutputs(outputs, renderLarkWeeklyExecutiveChannelSections(factualReport)),
-    retainedMessage: null,
   });
 }
 
@@ -319,28 +315,26 @@ function buildDeliveryOutputs(outputsInput, sections) {
   });
 }
 
-function extractRetainedOverviewBody(message, period, outputsInput) {
-  const outputs = readOutputs(outputsInput);
-  const prefix = `📊 Social MKT Weekly Executive Report — 7D\nช่วง ${period.periodStart} ถึง ${period.periodEnd}\n\nภาพรวมสัปดาห์นี้\n`;
-  const suffix = `\n\n🏆 สิ่งที่เด่นที่สุดประจำสัปดาห์\n${outputs.strengths}\n\n⚠️ สิ่งที่ต้องจับตา\n${outputs.weaknesses}\n\n🎯 สิ่งที่ควรทำสัปดาห์หน้า\n${outputs.recommendations}`;
-  if (!message.startsWith(prefix) || !message.endsWith(suffix)) {
-    throw sourceError(
-      'Retained reviewed message structure differs from the shared business-first renderer',
-      'LARK_WEEKLY_7D_NOTIFICATION_RETAINED_EVIDENCE_INVALID',
-    );
+function normalizeSections(value) {
+  if (!Array.isArray(value) || value.length !== 9) {
+    throw new TypeError('acceptedEvidence.channelSections must contain exactly nine sections');
   }
-  const body = message.slice(prefix.length, message.length - suffix.length);
-  if (!body.startsWith(outputs.insight_summary)
-      || body === outputs.insight_summary
-      || !body.includes('\n\n')) {
-    throw sourceError(
-      'Retained reviewed message does not contain the accepted insight plus full channel sections',
-      'LARK_WEEKLY_7D_NOTIFICATION_RETAINED_EVIDENCE_INVALID',
-    );
-  }
-  return body;
+  return Object.freeze(value.map((section, index) => {
+    if (!section || typeof section !== 'object' || Array.isArray(section)) {
+      throw new TypeError(`acceptedEvidence.channelSections[${index}] must be an object`);
+    }
+    const lines = Array.isArray(section.lines)
+      ? section.lines.map((line) => requireText(line, `channelSections[${index}].line`))
+      : null;
+    if (!lines || lines.length === 0) {
+      throw new TypeError(`acceptedEvidence.channelSections[${index}].lines is required`);
+    }
+    return Object.freeze({
+      heading: requireText(section.heading, `channelSections[${index}].heading`),
+      lines: Object.freeze(lines),
+    });
+  }));
 }
-
 function normalizePeriod(value) {
   const period = requireObject(value, 'period');
   return Object.freeze({
