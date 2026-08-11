@@ -8,6 +8,7 @@ import {
 
 const GROUP_ID = 'reviewed-group';
 const DESTINATION_HASH = createHash('sha256').update(GROUP_ID).digest('hex');
+const WRONG_DESTINATION_HASH = createHash('sha256').update('different-group').digest('hex');
 
 function setting(settingKey, groupId) {
   return {
@@ -23,18 +24,28 @@ function setting(settingKey, groupId) {
   };
 }
 
-test('rejects mixed null and configured group_id even when the configured hash is reviewed', () => {
+function resolve(expectedDestinationKeyHash) {
+  return resolveLarkWeekly7dNotificationSourceSettings({
+    sourceReportIds: ['report-a', 'report-b'],
+    sourceAuthorities: [
+      { reportId: 'report-a', reportSettingKey: 'setting-a' },
+      { reportId: 'report-b', reportSettingKey: 'setting-b' },
+    ],
+    settings: [setting('setting-a', GROUP_ID), setting('setting-b', null)],
+    expectedDestinationKeyHash,
+  });
+}
+
+test('accepts reviewed configured subset with unset rows only when the configured hash is reviewed', () => {
+  const authority = resolve(DESTINATION_HASH);
+  assert.equal(authority.destinationBaseline, 'reviewed_with_unset');
+  assert.equal(authority.configuredDestinationRowCount, 1);
+  assert.equal(authority.unsetDestinationRowCount, 1);
+
   assert.throws(
-    () => resolveLarkWeekly7dNotificationSourceSettings({
-      sourceReportIds: ['report-a', 'report-b'],
-      sourceAuthorities: [
-        { reportId: 'report-a', reportSettingKey: 'setting-a' },
-        { reportId: 'report-b', reportSettingKey: 'setting-b' },
-      ],
-      settings: [setting('setting-a', GROUP_ID), setting('setting-b', null)],
-      expectedDestinationKeyHash: DESTINATION_HASH,
-    }),
+    () => resolve(WRONG_DESTINATION_HASH),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID'
+      && error.details.destinationCount === 1
       && error.details.configuredDestinationRows === 1
       && error.details.sourceSettingCount === 2,
   );

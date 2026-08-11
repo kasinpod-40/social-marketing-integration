@@ -49,7 +49,8 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
   const ai = aiRecord.fields;
   const reportId = requireText(readScalar(ai.report_id), 'report_id');
   const sourceReportIds = parseSourceReportIds(ai.source_report_ids_json, reportId);
-  const source = isSnapshotlessWeekly7d(ai)
+  const weekly7d = isSnapshotlessWeekly7d(ai);
+  const source = weekly7d
     ? normalizeWeekly7dSourceAuthority(ai, sourceReportIds)
     : await loadSnapshotSourceAuthority(repository, tables, sourceReportIds, ai.window_days);
 
@@ -78,7 +79,7 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
 
   let groupId;
   let observedDestinationKeyHash;
-  if (nonNullGroupIds.length === 1 && nullGroupCount === 0) {
+  if (nonNullGroupIds.length === 1 && (nullGroupCount === 0 || weekly7d)) {
     groupId = nonNullGroupIds[0];
     observedDestinationKeyHash = await sha256Hex(groupId);
     if (observedDestinationKeyHash !== expectedDestinationKeyHash) {

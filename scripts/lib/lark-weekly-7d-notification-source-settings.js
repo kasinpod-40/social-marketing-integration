@@ -16,6 +16,10 @@ const HASH = /^[a-f0-9]{64}$/u;
  * (`ai_enabled === notification_enabled`), but different source Settings may legitimately retain
  * different active/inactive states. Controlled admission must activate only the inactive rows and
  * restore every row to this exact observed baseline afterwards.
+ *
+ * Destination state is also row-preserving: unset group_id is allowed alongside rows that already
+ * carry the one reviewed Executive destination. Every configured group_id must resolve to that
+ * exact reviewed destination hash. Controlled admission never writes group_id into an unset row.
  */
 export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const sourceReportIds = normalizeSourceReportIds(input.sourceReportIds);
@@ -94,10 +98,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
       : 'mixed';
 
   const uniqueConfiguredGroups = [...new Set(configuredGroupIds)];
-  const mixedDestinationState = configuredGroupIds.length > 0
-    && configuredGroupIds.length !== baseline.length;
-  if (mixedDestinationState
-      || uniqueConfiguredGroups.length > 1
+  if (uniqueConfiguredGroups.length > 1
       || (uniqueConfiguredGroups.length === 1
         && sha256(uniqueConfiguredGroups[0]) !== expectedDestinationKeyHash)) {
     throw sourceError(
@@ -111,6 +112,13 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
       },
     );
   }
+  const configuredDestinationRowCount = configuredGroupIds.length;
+  const unsetDestinationRowCount = baseline.length - configuredDestinationRowCount;
+  const destinationBaseline = uniqueConfiguredGroups.length === 0
+    ? 'unset'
+    : unsetDestinationRowCount === 0
+      ? 'reviewed'
+      : 'reviewed_with_unset';
 
   return deepFreeze({
     state,
@@ -121,7 +129,9 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
     settingKeys,
     customerProfile: SOURCE_PROFILE,
     destinationKeyHash: expectedDestinationKeyHash,
-    destinationBaseline: uniqueConfiguredGroups.length === 0 ? 'unset' : 'reviewed',
+    destinationBaseline,
+    configuredDestinationRowCount,
+    unsetDestinationRowCount,
     baseline,
     restorableBaseline: baseline.map(({ reportSettingKey, aiEnabled, notificationEnabled }) => Object.freeze({
       reportSettingKey,

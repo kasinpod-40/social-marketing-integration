@@ -29,7 +29,7 @@ const SETTING_KEYS = Object.freeze(PLATFORM_SCOPES.map(([scope]) => (
   `integration_workspace:${scope}:rolling:7d`
 )).sort());
 
-function repositoryFixture() {
+function repositoryFixture(options = {}) {
   const calls = [];
   const aiRun = {
     recordId: 'weekly-ai',
@@ -55,6 +55,8 @@ function repositoryFixture() {
       period_end: '2026-08-09',
     },
   };
+  const configuredKeys = new Set(options.configuredDestinationSettingKeys ?? []);
+  const wrongKeys = new Set(options.wrongDestinationSettingKeys ?? []);
   const settings = SETTING_KEYS.map((key) => ({
     recordId: `rec-${key}`,
     fields: {
@@ -63,14 +65,18 @@ function repositoryFixture() {
       enabled: true,
       ai_enabled: true,
       notification_enabled: true,
-      group_id: null,
+      group_id: wrongKeys.has(key)
+        ? 'other-executive-chat'
+        : configuredKeys.has(key)
+          ? CHAT_ID
+          : null,
     },
   }));
   const repository = {
     calls,
     client: {
-      async requestBitableJson(path, options) {
-        calls.push({ kind: 'client', path, options });
+      async requestBitableJson(path, optionsInput) {
+        calls.push({ kind: 'client', path, options: optionsInput });
         return { code: 0, data: { items: [{ chat_id: CHAT_ID, name: LARK_REVIEWED_EXECUTIVE_CHAT_NAME }], has_more: false } };
       },
     },
@@ -110,4 +116,36 @@ test('weekly 7D dedicated delivery regenerates exact source Settings without Rep
   assert.equal(request.settings.destinationKeyHash, DESTINATION_HASH);
   assert.equal(repository.calls.some((call) => call.tableId === TABLES.reportSnapshots), false);
   assert.equal(repository.calls.some((call) => call.tableId === TABLES.reportSettings), true);
+});
+
+test('weekly 7D delivery accepts reviewed configured subset plus unset rows without writing destination', async () => {
+  const configuredDestinationSettingKeys = SETTING_KEYS.slice(0, 7);
+  const repository = repositoryFixture({ configuredDestinationSettingKeys });
+  const request = await loadLarkNotificationDeliveryRequest({
+    repository,
+    tables: TABLES,
+    aiRunKey: 'notification-weekly-7d:test',
+    expectedDestinationKeyHash: DESTINATION_HASH,
+  });
+
+  assert.equal(request.settings.groupId, CHAT_ID);
+  assert.equal(request.settings.destinationKeyHash, DESTINATION_HASH);
+  assert.equal(repository.calls.some((call) => call.kind === 'client'), false);
+  assert.equal(repository.calls.some((call) => call.tableId === TABLES.reportSnapshots), false);
+});
+
+test('weekly 7D delivery rejects a configured wrong or second destination even with unset rows', async () => {
+  const repository = repositoryFixture({
+    configuredDestinationSettingKeys: [SETTING_KEYS[0]],
+    wrongDestinationSettingKeys: [SETTING_KEYS[1]],
+  });
+  await assert.rejects(
+    () => loadLarkNotificationDeliveryRequest({
+      repository,
+      tables: TABLES,
+      aiRunKey: 'notification-weekly-7d:test',
+      expectedDestinationKeyHash: DESTINATION_HASH,
+    }),
+    (error) => error.code === 'LARK_NOTIFICATION_DESTINATION_MISMATCH',
+  );
 });
