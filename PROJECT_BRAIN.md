@@ -860,6 +860,12 @@ remains audit evidence. Live preview for `2026-08-10` produced 64 ContentDaily c
 shares from 89 bounded Posts without writes. The old recovery identity stays immutable; deployment,
 fresh admission, Lark parity and Dashboard materialization must use a new operation identity.
 
+Live r1 then proved that Canonical/Lark date binding alone was insufficient: Organic History still
+derived its D1 observation and Coverage day from execution time. The shared Writer now supports an
+explicit historical metric date and uses a checkpoint when unchanged cumulative values are observed
+for that historical day. Existing callers retain the old observed-date default. r1 is immutable;
+only fresh r2 evidence may close D1/Lark date parity before Dashboard materialization.
+
 ## Permanent safety rules
 
 - Data model before Connector;

@@ -137,6 +137,34 @@ DLQ_REDRIVE                         = BLOCKED_OFF
 PRODUCTION                          = BLOCKED
 ```
 
+### Live metric-date correction
+
+Fresh operation `facebook-contentdaily-20260810-r1` completed without DLQ/alerts and wrote 64
+observations with 2,351 shares, but durable reconciliation found D1 `metric_date=2026-08-11` while
+the requested and canonical Lark date was `2026-08-10`. Root cause is the shared Organic History
+Writer deriving Coverage/observation date only from `observedAt` and ignoring the explicit date in
+the prepared Daily rows. The follow-up hotfix accepts an explicit `metricDate` while preserving the
+existing default, and emits an unchanged `checkpoint` for historical observations so a fresh `r2`
+can add durable correct-day evidence without deleting or mutating `r1`.
+
+```text
+R1_LIFECYCLE                       = COMPLETED_ATTEMPT_98
+R1_CONTENT_ROWS                    = 64
+R1_TOTAL_SHARES                    = 2351
+R1_DLQ_ROWS                        = 0
+R1_OPEN_ALERTS                     = 0
+R1_D1_METRIC_DATE                  = 2026-08-11_INCORRECT
+EXPECTED_METRIC_DATE               = 2026-08-10
+HISTORY_DATE_HOTFIX_FOCUSED        = PASS_16_OF_16
+HISTORY_DATE_HOTFIX_FULL_UNIT      = PASS_2995_OF_2995
+HISTORY_DATE_HOTFIX_WORKERS        = PASS_18_OF_18
+HISTORY_DATE_HOTFIX_REPORT         = PASS_105_OF_105
+HISTORY_DATE_HOTFIX_AUDIT          = PASS_0_VULNERABILITIES
+HISTORY_DATE_HOTFIX_DRY_RUN        = PASS
+R2_FRESH_OPERATION                 = PENDING_REVIEWED_MERGE
+DASHBOARD_MATERIALIZATION          = BLOCKED_UNTIL_R2_RECONCILES
+```
+
 Hotfix นี้ขยายเฉพาะ hard maximum ของ `MKT_META_SOURCE_MAX_UNITS` จาก 500 เป็น 2,500 โดยคง default ที่ 500 และคงขอบเขต rows/bytes เดิม เพื่อให้ Instagram inventory 1,857 รายการเดินต่อแบบ resumable ได้โดยไม่เปลี่ยน retry, idempotency หรือ write semantics.
 
 Live progress หลัง deploy ยืนยันว่าช่วงวันที่ของ Instagram หลุดหายสองชั้นก่อนถึง adapter ทำให้ previous-day catch-up กลายเป็น full-account inventory 1,857 รายการ ทั้งที่ adapter มี newest-first bounded date-range contract อยู่แล้ว; hotfix จึงส่ง `periodStart`/`periodEnd` ผ่าน orchestration และ source collector เดิม โดยไม่เปลี่ยน Provider query schema หรือ write semantics.

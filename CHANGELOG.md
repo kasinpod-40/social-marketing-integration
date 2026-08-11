@@ -8,6 +8,8 @@
   projected only observed `shares.count` values into the existing cumulative Organic history path.
 - Bound fallback snapshot dates to the requested operation day while retaining the actual fetch
   timestamp for audit and retry identity.
+- Added an explicit Organic History `metricDate` context and unchanged historical checkpoints so
+  D1 Coverage/observations retain the requested day instead of deriving it from execution time.
 - Kept `read_insights` as an optional enhancement instead of a hard admission gate: the active Page
   credential can still ingest explicit Post fields while Insights-only metrics remain unavailable.
 
