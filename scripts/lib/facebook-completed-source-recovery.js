@@ -35,6 +35,9 @@ const REQUIRED_TRUE_FLAGS = Object.freeze([
 
 const REQUIRED_FALSE_FLAGS = Object.freeze([
   'MKT_DLQ_REDRIVE_ENABLED',
+]);
+
+const PRESERVED_SCHEDULE_FLAGS = Object.freeze([
   'MKT_SCHEDULE_FACEBOOK_ENABLED',
   'MKT_SCHEDULE_INSTAGRAM_ENABLED',
 ]);
@@ -53,6 +56,7 @@ export function validateFacebookRecoveryWranglerConfig(sourceText) {
 
   for (const flag of REQUIRED_TRUE_FLAGS) requireBooleanFlag(source.vars?.[flag], true, flag);
   for (const flag of REQUIRED_FALSE_FLAGS) requireBooleanFlag(source.vars?.[flag], false, flag);
+  for (const flag of PRESERVED_SCHEDULE_FLAGS) requireBooleanFlagValue(source.vars?.[flag], flag);
 
   const d1 = exactlyOne(
     source.d1_databases,
@@ -282,10 +286,24 @@ function exactlyOne(values, predicate, fieldName) {
   return matches[0];
 }
 
+function normalizeBooleanFlag(value) {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return null;
+}
+
+function requireBooleanFlagValue(actual, fieldName) {
+  if (normalizeBooleanFlag(actual) === null) {
+    throw contractError(`Unexpected ${fieldName}`, 'FACEBOOK_RECOVERY_CONFIG_INVALID', {
+      fieldName,
+      expected: 'boolean true/false',
+      actual: actual ?? null,
+    });
+  }
+}
+
 function requireBooleanFlag(actual, expected, fieldName) {
-  const normalized = actual === true || actual === 'true'
-    ? true
-    : (actual === false || actual === 'false' ? false : null);
+  const normalized = normalizeBooleanFlag(actual);
   if (normalized !== expected) {
     throw contractError(`Unexpected ${fieldName}`, 'FACEBOOK_RECOVERY_CONFIG_INVALID', {
       fieldName,
