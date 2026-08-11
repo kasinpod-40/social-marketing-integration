@@ -102,3 +102,41 @@ Production                                BLOCKED
 ```
 
 Every existing Source/Daily/Weekly Report execution flag and Cron trigger must be preserved. Activation must not send a message immediately; the next real send is admitted only by the next due Fresh period.
+
+## Live activation result — 2026-08-11
+
+Automatic Weekly is now **LIVE ENABLED for the Integration Workspace**. Production remains blocked.
+
+Repository implementation PR #630 merged at `8aba0b5dc112d96b37bc6522efc0443000ce046d`. The first live preview exposed a source-Settings authority defect: the activation terminal passed flattened builder settings into a resolver that requires raw Lark records. The preview failed read-only with `LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID`, `matchCount=0`, and zero settings/deploy/Queue/message mutations. PR #633 corrected that boundary by reading the exact canonical `report_setting_key` rows through the existing Lark Record Repository and merged at `89f9c615f2ae20f798b089e639c3d9dd5f1cb38a` after exact-head CI passed.
+
+The first execute after PR #633 activated three exact 7D Report Setting rows, then Cloudflare rejected Worker version creation because the new automatic Worker path imports `node:crypto` while the ignored active Wrangler config did not yet include Node compatibility. This was a partial activation only: `settingsWriteCount=3`, `workerDeploymentCount=0`, `queueAdmissionCount=0`, `messageSendCount=0`, Base Notification Automation remained inactive, and Production remained blocked. Because deployment had been attempted, the guarded operator correctly did not perform a blind rollback.
+
+Recovery preserved the active Settings and added `nodejs_compat` to the ignored active `wrangler.sync.jsonc`. This compatibility flag must be preserved by future deployments while the current Worker path imports `node:crypto`. Recovery preview saw the exact source Settings already active, so the final execute made zero additional Setting writes and successfully deployed the runtime.
+
+Verified final state:
+
+```text
+status                              automatic_weekly_executive_notification_enabled
+repository                          main@89f9c615f2ae20f798b089e639c3d9dd5f1cb38a
+active Worker version               f19492d2-67f4-4b7c-ba78-3bb84fb439e8
+traffic                             100 percent
+activation source period            2026-08-04..2026-08-10
+source Report count                 8
+source Settings state before recovery active
+source Settings active after        true
+recovery settingsWriteCount         0
+Notification runtime                enabled
+Notification send                   enabled
+Notification mirror                 enabled
+runtime mode                        runtime
+Automatic Weekly                    enabled
+Weekly notification time            Monday 08:30 Asia/Bangkok
+AI Materialization Automation       enabled
+Base Notification Automation        disabled
+immediate Queue admission count     0
+immediate message send count        0
+recovery Worker deployment count    1
+Production                          BLOCKED
+```
+
+No manual/test message was sent during activation or recovery. The next eligible automatic cycle is Monday `2026-08-17 08:30 Asia/Bangkok`, targeting the exact fresh period `2026-08-10..2026-08-16`. If that source period is missing/incomplete, Native AI does not reach generated state, or the Executive Decision Quality Gate fails, the automatic flow must fail closed and must not substitute an older Weekly identity.
