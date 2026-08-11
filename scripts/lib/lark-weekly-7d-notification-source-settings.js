@@ -12,7 +12,10 @@ const HASH = /^[a-f0-9]{64}$/u;
  *
  * Historical Report Snapshot rows are not identity authority here. The caller supplies exact
  * reportId → reportSettingKey bindings regenerated through the shared Report materialization
- * contracts. Settings state/destination safety remains identical to the reviewed #616/#618 path.
+ * contracts. Each exact Setting must remain enabled and internally consistent
+ * (`ai_enabled === notification_enabled`), but different source Settings may legitimately retain
+ * different active/inactive states. Controlled admission must activate only the inactive rows and
+ * restore every row to this exact observed baseline afterwards.
  */
 export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const sourceReportIds = normalizeSourceReportIds(input.sourceReportIds);
@@ -82,14 +85,13 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
     });
   });
 
-  const activeStates = [...new Set(baseline.map((row) => row.aiEnabled))];
-  if (activeStates.length !== 1) {
-    throw sourceError(
-      'Fresh Weekly 7D source Settings must share one exact active/inactive state',
-      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
-      { activeStateCount: activeStates.length, sourceSettingCount: baseline.length },
-    );
-  }
+  const activeSettingCount = baseline.filter(({ aiEnabled }) => aiEnabled).length;
+  const inactiveSettingCount = baseline.length - activeSettingCount;
+  const state = activeSettingCount === 0
+    ? 'inactive'
+    : inactiveSettingCount === 0
+      ? 'active'
+      : 'mixed';
 
   const uniqueConfiguredGroups = [...new Set(configuredGroupIds)];
   const mixedDestinationState = configuredGroupIds.length > 0
@@ -111,7 +113,9 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   }
 
   return deepFreeze({
-    state: activeStates[0] ? 'active' : 'inactive',
+    state,
+    activeSettingCount,
+    inactiveSettingCount,
     sourceReportIds,
     sourceAuthorities,
     settingKeys,
@@ -119,7 +123,119 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
     destinationKeyHash: expectedDestinationKeyHash,
     destinationBaseline: uniqueConfiguredGroups.length === 0 ? 'unset' : 'reviewed',
     baseline,
+    restorableBaseline: baseline.map(({ reportSettingKey, aiEnabled, notificationEnabled }) => Object.freeze({
+      reportSettingKey,
+      aiEnabled,
+      notificationEnabled,
+    })),
   });
+}
+
+export function assertLarkWeekly7dNotificationSourceSettingsBaseline(
+  records,
+  authority,
+  baselineInput = authority?.baseline,
+) {
+  const rows = requireArray(records, 'records');
+  const baseline = normalizeRestorableBaseline(baselineInput);
+  const expectedKeys = [...(authority?.settingKeys ?? [])].sort();
+  const baselineKeys = baseline.map(({ reportSettingKey }) => reportSettingKey).sort();
+  if (JSON.stringify(expectedKeys) !== JSON.stringify(baselineKeys)) {
+    throw sourceError(
+      'Weekly Notification Settings baseline identities differ from canonical source authority',
+      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_READBACK_FAILED',
+      { sourceSettingCount: expectedKeys.length, baselineSettingCount: baselineKeys.length },
+    );
+  }
+
+  for (const expected of baseline) {
+    const matches = rows.filter((record) => (
+      String(scalar(record?.fields?.report_setting_key) ?? '') === expected.reportSettingKey
+      && String(scalar(record?.fields?.customer_profile) ?? '') === SOURCE_PROFILE
+    ));
+    if (matches.length !== 1) {
+      throw sourceError(
+        'Weekly Notification Settings readback requires one exact baseline row',
+        'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_READBACK_FAILED',
+        { matchCount: matches.length },
+      );
+    }
+    const fields = matches[0].fields ?? {};
+    const enabled = readBoolean(fields.enabled, 'enabled');
+    const aiEnabled = readBoolean(fields.ai_enabled, 'ai_enabled');
+    const notificationEnabled = readBoolean(fields.notification_enabled, 'notification_enabled');
+    if (!enabled
+        || aiEnabled !== expected.aiEnabled
+        || notificationEnabled !== expected.notificationEnabled) {
+      throw sourceError(
+        'Weekly Notification Settings readback differs from the exact per-row baseline',
+        'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_READBACK_FAILED',
+        {
+          reportSettingKey: expected.reportSettingKey,
+          expectedAiEnabled: expected.aiEnabled,
+          expectedNotificationEnabled: expected.notificationEnabled,
+          observedAiEnabled: aiEnabled,
+          observedNotificationEnabled: notificationEnabled,
+        },
+      );
+    }
+  }
+  return true;
+}
+
+export function normalizeLarkWeekly7dNotificationRestorableBaseline(value) {
+  return deepFreeze(normalizeRestorableBaseline(value));
+}
+
+export function summarizeLarkWeekly7dNotificationSettingsBaseline(value) {
+  const baseline = normalizeRestorableBaseline(value);
+  const activeSettingCount = baseline.filter(({ aiEnabled }) => aiEnabled).length;
+  const inactiveSettingCount = baseline.length - activeSettingCount;
+  return Object.freeze({
+    state: activeSettingCount === 0
+      ? 'inactive'
+      : inactiveSettingCount === 0
+        ? 'active'
+        : 'mixed',
+    activeSettingCount,
+    inactiveSettingCount,
+    sourceSettingCount: baseline.length,
+  });
+}
+
+function normalizeRestorableBaseline(value) {
+  const rows = requireArray(value, 'baseline').map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new TypeError('baseline row must be an object');
+    }
+    const aiEnabled = readBoolean(item.aiEnabled, 'baseline.aiEnabled');
+    const notificationEnabled = readBoolean(
+      item.notificationEnabled,
+      'baseline.notificationEnabled',
+    );
+    if (aiEnabled !== notificationEnabled) {
+      throw sourceError(
+        'Weekly Notification retained Settings baseline contains partial activation',
+        'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
+      );
+    }
+    return Object.freeze({
+      reportSettingKey: requireText(item.reportSettingKey, 'baseline.reportSettingKey'),
+      aiEnabled,
+      notificationEnabled,
+    });
+  });
+  if (rows.length === 0
+      || new Set(rows.map(({ reportSettingKey }) => reportSettingKey)).size !== rows.length) {
+    throw sourceError(
+      'Weekly Notification retained Settings baseline must be non-empty and unique',
+      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
+      { sourceSettingCount: rows.length },
+    );
+  }
+  return Object.freeze(rows.sort((left, right) => (
+    left.reportSettingKey.localeCompare(right.reportSettingKey)
+  )));
 }
 
 function normalizeSourceReportIds(value) {
