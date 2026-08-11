@@ -51,8 +51,8 @@ export function validateFacebookRecoveryWranglerConfig(sourceText) {
     'MKT_CONNECTION_CUSTOMER_KEY',
   );
 
-  for (const flag of REQUIRED_TRUE_FLAGS) requireEqual(source.vars?.[flag], 'true', flag);
-  for (const flag of REQUIRED_FALSE_FLAGS) requireEqual(source.vars?.[flag], 'false', flag);
+  for (const flag of REQUIRED_TRUE_FLAGS) requireBooleanFlag(source.vars?.[flag], true, flag);
+  for (const flag of REQUIRED_FALSE_FLAGS) requireBooleanFlag(source.vars?.[flag], false, flag);
 
   const d1 = exactlyOne(
     source.d1_databases,
@@ -102,9 +102,12 @@ export function buildFacebookRecoveryWranglerConfig(sourceText, redriveEnabled) 
     throw contractError('redriveEnabled must be boolean', 'FACEBOOK_RECOVERY_CONFIG_INVALID');
   }
   const next = { ...validated.source };
+  const retainedRedriveValue = validated.source.vars.MKT_DLQ_REDRIVE_ENABLED;
   next.vars = {
     ...next.vars,
-    MKT_DLQ_REDRIVE_ENABLED: redriveEnabled ? 'true' : 'false',
+    MKT_DLQ_REDRIVE_ENABLED: typeof retainedRedriveValue === 'boolean'
+      ? redriveEnabled
+      : (redriveEnabled ? 'true' : 'false'),
   };
   const changed = changedLeafPaths(validated.source, next);
   const allowed = ['vars.MKT_DLQ_REDRIVE_ENABLED'];
@@ -277,6 +280,19 @@ function exactlyOne(values, predicate, fieldName) {
     });
   }
   return matches[0];
+}
+
+function requireBooleanFlag(actual, expected, fieldName) {
+  const normalized = actual === true || actual === 'true'
+    ? true
+    : (actual === false || actual === 'false' ? false : null);
+  if (normalized !== expected) {
+    throw contractError(`Unexpected ${fieldName}`, 'FACEBOOK_RECOVERY_CONFIG_INVALID', {
+      fieldName,
+      expected: expected ? 'true' : 'false',
+      actual: actual ?? null,
+    });
+  }
 }
 
 function requireEqual(actual, expected, fieldName) {
