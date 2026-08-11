@@ -25,6 +25,10 @@ Meta Ads, Google Ads, WooCommerce และ Chatwoot ที่ `1D/3D/7D/30D`. D
 Asia/Bangkok สร้าง 32 stable materialization jobs; Weekly วันจันทร์ 08:15 สร้าง 8 stable 7D
 refresh jobs. Queue fan-out ใช้ `sendBatch` เมื่อ binding รองรับ.
 
+Facebook Organic ใช้ `pages_show_list` และ `pages_read_engagement` เป็น permission readiness contract;
+`read_insights` เป็น optional enhancement. หาก Insights scope ยังไม่มี ระบบเก็บเฉพาะ Post metrics ที่
+Provider คืนจริง เช่น `shares.count`; views/likes/comments ต้องคงเป็น null/N/A และห้ามแทนด้วยศูนย์.
+
 Meta Ads และ Chatwoot ใช้ primary cron สำหรับ Source schedule. Google Ads ยังคงใช้ external
 Manager Script trigger และ signed ingress เพื่อไม่สร้าง producer ซ้ำ. ทุก execution/schedule flag
 ใน example config ยังเป็น `false`; Integration Workspace เปิด Source/Daily/Weekly schedules แล้ว

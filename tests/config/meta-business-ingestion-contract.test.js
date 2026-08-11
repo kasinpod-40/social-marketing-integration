@@ -54,6 +54,13 @@ test('Facebook discovery and Page read credentials have separate lifecycle contr
 });
 
 test('Facebook content Insights uses only metrics accepted by the Live v25 capability probe', () => {
+  const facebook = getMetaBusinessConnectorContract(
+    META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC,
+  );
+  const contentInventory = getMetaBusinessDatasetContract(
+    META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC,
+    'facebook.content.inventory',
+  );
   const contentInsights = getMetaBusinessDatasetContract(
     META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC,
     'facebook.content.insights',
@@ -66,6 +73,11 @@ test('Facebook content Insights uses only metrics accepted by the Live v25 capab
   assert.ok(!contentInsights.metrics.includes('reactions_count'));
   assert.ok(!contentInsights.metrics.includes('comments_count'));
   assert.ok(!contentInsights.metrics.includes('shares_count'));
+  assert.deepEqual(facebook.requiredPermissions, [
+    'pages_show_list',
+    'pages_read_engagement',
+  ]);
+  assert.ok(contentInventory.fields.includes('shares'));
 });
 
 test('Instagram Login stays on graph.instagram.com with the insights permission', () => {

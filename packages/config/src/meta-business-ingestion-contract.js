@@ -127,6 +127,7 @@ export const META_BUSINESS_INGESTION_CONTRACT = deepFreeze({
             'updated_time',
             'permalink_url',
             'is_published',
+            'shares',
           ],
           rawTarget: META_BUSINESS_SHARED_RAW_TABLES.ORGANIC_CONTENT,
           metricSemantics: 'snapshot',

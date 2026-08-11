@@ -283,3 +283,48 @@ Live pass แรกของ `r6` จบที่ 7,720 IDs แล้ว pass 2 
 defect เพิ่มเติม. Cutoff correction ผ่าน focused `25/25`, full unit `2933/2933`, Workers runtime
 `18/18`, report reliability `105/105`, architecture/hygiene, audit และ deploy dry-run แล้ว; ยังต้อง
 review/deploy และรอ exact operation convergence ก่อน reconciliation.
+
+## Facebook ContentDaily Live source repair — 2026-08-11
+
+### Objective and scope
+
+แก้เหตุที่ Facebook source work เดิมจบ control-plane แต่ `MKT_Content_Daily` ไม่มีแถวและ Dashboard
+แสดงศูนย์ โดยห้าม replay/redrive operation เดิม ห้าม fabricate metric และใช้ fresh operation ID เท่านั้น.
+
+### Confirmed evidence
+
+- PR #623 merge แล้วและ exact-head CI ผ่าน; post-merge `--recover` read-only fail closed เพราะ
+  `sourceContentRows=89`, `contentDailyRows=0`, `targetDayAccountDailyRows=0`.
+- GET-only probe ของ 10 Post identities ยืนยัน `/post/insights` คืน 0 แถวทั้ง date-bound/lifetime
+  variants; token permissions มี `pages_read_engagement` แต่ขาด `read_insights`.
+- Post node `shares` ผ่าน Graph v25 และคืนค่าจริง; in-memory write-set preview จาก 89 bounded Posts
+  สร้าง 64 ContentDaily rows, total shares 2,351 และ observation date `2026-08-10`.
+
+### Implementation result
+
+```text
+STATUS                              = REPOSITORY_FIX_GATES_PASS_LIVE_FRESH_RUN_PENDING
+PR_623_RECOVERY_CONTROL_FIX         = MERGED_B7FA1629
+OLD_OPERATION_REPLAY                = PROHIBITED_NOT_RUN
+DLQ_REDRIVE                         = NOT_RUN
+PROVIDER_GET_ONLY_PROBE             = PASS_BOUNDED
+FACEBOOK_REQUIRED_PERMISSION        = PAGE_SCOPES_PASS_READ_INSIGHTS_OPTIONAL
+POST_SHARES_FALLBACK                = OBSERVED_VALUES_ONLY
+PREVIEW_SOURCE_CONTENT_ROWS         = 89
+PREVIEW_CONTENT_DAILY_ROWS          = 64
+PREVIEW_TOTAL_SHARES                = 2351
+PREVIEW_OBSERVATION_DATE            = 2026-08-10
+MISSING_VIEWS_LIKES_COMMENTS        = NULL_NOT_ZERO
+FOCUSED_REGRESSION                  = PASS_41_OF_41
+FULL_UNIT_TESTS                     = PASS_2994_OF_2994
+WORKERS_RUNTIME_TESTS               = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS            = PASS_105_OF_105
+ARCHITECTURE_HYGIENE                = PASS
+DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                      = PASS
+DIFF_CHECK                          = PASS
+LIVE_DEPLOYMENT                     = PENDING_REVIEWED_MERGE
+FRESH_OPERATION                     = PENDING_NEW_ID
+DASHBOARD_MATERIALIZATION           = PENDING_LIVE_RECONCILIATION
+PRODUCTION                          = BLOCKED
+```

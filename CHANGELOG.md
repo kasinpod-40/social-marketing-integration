@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — Facebook ContentDaily Live Source Repair — 2026-08-11
+
+### Changed
+
+- Added the Graph-v25 accepted `shares` Post field to the bounded Facebook content inventory and
+  projected only observed `shares.count` values into the existing cumulative Organic history path.
+- Bound fallback snapshot dates to the requested operation day while retaining the actual fetch
+  timestamp for audit and retry identity.
+- Kept `read_insights` as an optional enhancement instead of a hard admission gate: the active Page
+  credential can still ingest explicit Post fields while Insights-only metrics remain unavailable.
+
+### Safety
+
+- Missing views, likes and comments remain null/N/A; the repair does not fabricate zero values.
+- Live GET-only preview observed 89 bounded Posts, 64 Post rows with an explicit shares count and
+  2,351 total shares for `2026-08-10`, with zero Queue/D1/Lark/deploy/schedule mutations.
+- The prior recovery operation remains immutable and is not replayed or redriven; Live admission
+  requires a fresh operation ID after reviewed merge and deployment.
+
 ## Unreleased — Chatwoot Stable-identity Pagination Live Closeout — 2026-08-10
 
 ### Changed
