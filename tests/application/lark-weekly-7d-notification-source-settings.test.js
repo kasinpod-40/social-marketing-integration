@@ -49,6 +49,8 @@ test('resolves inactive Settings from canonical source authority without Report 
   assert.equal(authority.activeSettingCount, 0);
   assert.equal(authority.inactiveSettingCount, 2);
   assert.equal(authority.destinationBaseline, 'unset');
+  assert.equal(authority.configuredDestinationRowCount, 0);
+  assert.equal(authority.unsetDestinationRowCount, 2);
   assert.deepEqual(authority.sourceReportIds, ['report-google-7d', 'report-meta-7d']);
   assert.deepEqual(authority.settingKeys, ['setting-google-7d', 'setting-meta-7d']);
   assert.equal(authority.baseline.length, 2);
@@ -141,7 +143,21 @@ test('retained per-row baseline is normalized, summarized and checked exactly', 
   );
 });
 
-test('accepts a retained reviewed destination but rejects any non-reviewed destination', () => {
+test('accepts reviewed destination on any non-empty subset while preserving unset rows', () => {
+  const authority = resolve({
+    settings: [
+      setting('setting-meta-7d', { group_id: GROUP_ID }),
+      setting('setting-google-7d'),
+    ],
+  });
+  assert.equal(authority.destinationBaseline, 'reviewed_with_unset');
+  assert.equal(authority.configuredDestinationRowCount, 1);
+  assert.equal(authority.unsetDestinationRowCount, 1);
+  assert.equal(authority.baseline.find((row) => row.reportSettingKey === 'setting-meta-7d').groupId, GROUP_ID);
+  assert.equal(authority.baseline.find((row) => row.reportSettingKey === 'setting-google-7d').groupId, null);
+});
+
+test('accepts a fully configured reviewed destination but rejects wrong or multiple destinations', () => {
   const authority = resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds: ['report-current-7d'],
     sourceAuthorities: [sourceAuthority('report-current-7d', 'setting-current-7d')],
@@ -159,6 +175,16 @@ test('accepts a retained reviewed destination but rejects any non-reviewed desti
       expectedDestinationKeyHash: DESTINATION_HASH,
     }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID',
+  );
+  assert.throws(
+    () => resolve({
+      settings: [
+        setting('setting-meta-7d', { group_id: GROUP_ID }),
+        setting('setting-google-7d', { group_id: 'other-destination' }),
+      ],
+    }),
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_DESTINATION_INVALID'
+      && error.details.destinationCount === 2,
   );
 });
 
