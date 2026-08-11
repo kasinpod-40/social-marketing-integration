@@ -12,9 +12,10 @@ import {
 const incident = FACEBOOK_COMPLETED_SOURCE_INCIDENT;
 const GENERATION = Date.parse('2026-08-10T12:00:00.000Z');
 
-function sourceConfig({ booleanFlags = false } = {}) {
+function sourceConfig({ booleanFlags = false, schedulesEnabled = false } = {}) {
   const trueFlag = booleanFlags ? true : 'true';
   const falseFlag = booleanFlags ? false : 'false';
+  const scheduleFlag = schedulesEnabled ? trueFlag : falseFlag;
   return JSON.stringify({
     name: incident.workerName,
     main: './apps/sync-worker/src/index.js',
@@ -28,8 +29,8 @@ function sourceConfig({ booleanFlags = false } = {}) {
       MKT_META_D1_WRITE_ENABLED: trueFlag,
       MKT_META_LARK_WRITE_ENABLED: trueFlag,
       MKT_DLQ_REDRIVE_ENABLED: falseFlag,
-      MKT_SCHEDULE_FACEBOOK_ENABLED: falseFlag,
-      MKT_SCHEDULE_INSTAGRAM_ENABLED: falseFlag,
+      MKT_SCHEDULE_FACEBOOK_ENABLED: scheduleFlag,
+      MKT_SCHEDULE_INSTAGRAM_ENABLED: scheduleFlag,
       UNRELATED_FLAG: 'retained',
     },
     d1_databases: [{
@@ -151,6 +152,39 @@ test('recovery config accepts boolean Wrangler flags and preserves the redrive v
   assert.deepEqual(changed, original);
 });
 
+test('recovery config preserves active Facebook and Instagram schedule baseline', () => {
+  const source = sourceConfig({ schedulesEnabled: true });
+  const original = JSON.parse(source);
+  const validated = validateFacebookRecoveryWranglerConfig(source);
+  assert.equal(validated.executionFlags.facebookSchedule, 'true');
+  assert.equal(validated.executionFlags.instagramSchedule, 'true');
+
+  const recovery = buildFacebookRecoveryWranglerConfig(source, true);
+  const changed = JSON.parse(recovery.text);
+  assert.deepEqual(recovery.changed, ['vars.MKT_DLQ_REDRIVE_ENABLED']);
+  assert.equal(changed.vars.MKT_SCHEDULE_FACEBOOK_ENABLED, 'true');
+  assert.equal(changed.vars.MKT_SCHEDULE_INSTAGRAM_ENABLED, 'true');
+  assert.equal(changed.vars.MKT_DLQ_REDRIVE_ENABLED, 'true');
+
+  changed.vars.MKT_DLQ_REDRIVE_ENABLED = 'false';
+  assert.deepEqual(changed, original);
+});
+
+test('recovery config preserves active boolean schedule baseline', () => {
+  const source = sourceConfig({ booleanFlags: true, schedulesEnabled: true });
+  const original = JSON.parse(source);
+  const recovery = buildFacebookRecoveryWranglerConfig(source, true);
+  const changed = JSON.parse(recovery.text);
+
+  assert.deepEqual(recovery.changed, ['vars.MKT_DLQ_REDRIVE_ENABLED']);
+  assert.equal(changed.vars.MKT_SCHEDULE_FACEBOOK_ENABLED, true);
+  assert.equal(changed.vars.MKT_SCHEDULE_INSTAGRAM_ENABLED, true);
+  assert.equal(changed.vars.MKT_DLQ_REDRIVE_ENABLED, true);
+
+  changed.vars.MKT_DLQ_REDRIVE_ENABLED = false;
+  assert.deepEqual(changed, original);
+});
+
 test('recovery config still rejects non-boolean flag representations', () => {
   const invalid = JSON.parse(sourceConfig());
   invalid.vars.MKT_CONNECTOR_FACEBOOK_ENABLED = 1;
@@ -158,6 +192,16 @@ test('recovery config still rejects non-boolean flag representations', () => {
     () => validateFacebookRecoveryWranglerConfig(JSON.stringify(invalid)),
     (error) => error?.code === 'FACEBOOK_RECOVERY_CONFIG_INVALID'
       && error?.details?.fieldName === 'MKT_CONNECTOR_FACEBOOK_ENABLED',
+  );
+});
+
+test('recovery config rejects non-boolean schedule representations', () => {
+  const invalid = JSON.parse(sourceConfig({ schedulesEnabled: true }));
+  invalid.vars.MKT_SCHEDULE_FACEBOOK_ENABLED = 'enabled';
+  assert.throws(
+    () => validateFacebookRecoveryWranglerConfig(JSON.stringify(invalid)),
+    (error) => error?.code === 'FACEBOOK_RECOVERY_CONFIG_INVALID'
+      && error?.details?.fieldName === 'MKT_SCHEDULE_FACEBOOK_ENABLED',
   );
 });
 
