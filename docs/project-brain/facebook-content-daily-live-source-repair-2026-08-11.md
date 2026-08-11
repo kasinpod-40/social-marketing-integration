@@ -51,3 +51,25 @@ write-set and canonical Lark row were bound to requested date `2026-08-10`. The 
 Writer default unchanged, accepts an explicit historical `metricDate`, and records an unchanged
 historical snapshot as a `checkpoint`. A fresh r2 must prove D1/Lark date parity before any Dashboard
 materialization; r1 remains immutable.
+
+## Live closeout
+
+PR #629 and PR #632 merged after exact-head Branch/Meta CI passed. Merged Worker version
+`5ede6471-b890-4459-a090-e9f8c3d2ca5d` was deployed at 100% traffic with current Integration
+Workspace flags preserved and DLQ redrive disabled. The active ignored deploy profile had drifted
+from the checked-in Sync Worker example by omitting `nodejs_compat`; the exact deploy config restored
+that already-declared compatibility flag without changing the user's local profile.
+
+Fresh operation `facebook-contentdaily-20260810-r2` was admitted once and completed after 98 bounded
+Queue attempts. Durable D1 and GET-only Lark OpenAPI readback agree on 64 distinct ContentDaily keys,
+`metric_date=2026-08-10`, 2,352 total shares and zero null-share rows. Content Coverage is complete
+64/64 with failed rows 0; DLQ rows and open alerts are both 0. The one-share increase from the earlier
+2,351 preview is a newly observed Provider value, not a correction or fabricated delta.
+
+Fresh Dashboard operations materialized 1D/3D/7D/30D once each. D1 and Lark metric rows expose
+`facebook:latest_total_shares=2352`, display value 2,352 and availability `available` for every
+window. The user visually confirmed Facebook is shown on the existing Dashboard. Views, Likes and
+Comments remain null/N/A: App-level `read_insights` is ready for testing, but the active runtime
+token's live `/me/permissions` grant does not include it and Graph rejects the related reads.
+
+The retained recovery identity and r1 remain immutable; neither was replayed or redriven.
