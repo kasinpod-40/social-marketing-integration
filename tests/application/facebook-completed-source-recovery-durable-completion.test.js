@@ -86,7 +86,7 @@ function completedLatest(overrides = {}) {
 
 test('durable closeout passes after completeWork deletes staging phases and no new observation is required', () => {
   const result = evaluateFacebookCompletedSourceCompletion({ latest: completedLatest() });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.status, 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_COMPLETE');
   assert.equal(result.summary.sourceContentRows, incident.expectedContentCount);
   assert.equal(result.summary.operationObservations, 0);
