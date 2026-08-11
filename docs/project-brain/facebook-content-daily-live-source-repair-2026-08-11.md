@@ -41,3 +41,13 @@ returned 89 Posts, 64 explicit shares counts and 2,351 total shares.
 6. Read back D1 and Lark values and verify the existing Dashboard filters without changing Dashboard
    configuration.
 7. Keep Production and Notification runtime blocked.
+
+## Live correction after r1
+
+The first fresh operation completed with 64 observations and 2,351 shares, no DLQ and no open
+alert. Durable D1 readback exposed a second regression: the shared Organic History Writer derived
+`metric_date` and Coverage period from execution `observedAt` (`2026-08-11`) even though the Meta
+write-set and canonical Lark row were bound to requested date `2026-08-10`. The correction keeps the
+Writer default unchanged, accepts an explicit historical `metricDate`, and records an unchanged
+historical snapshot as a `checkpoint`. A fresh r2 must prove D1/Lark date parity before any Dashboard
+materialization; r1 remains immutable.

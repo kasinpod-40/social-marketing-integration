@@ -174,6 +174,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
       sourceAccountId: accountId,
       sourceTimezone,
       observedAt: fetchedAt,
+      metricDate: observationDate,
       fetchedAt,
       historySyncRunId: syncRunId,
       coverageRunId: `${operationId}:${connectorKey}:content`,

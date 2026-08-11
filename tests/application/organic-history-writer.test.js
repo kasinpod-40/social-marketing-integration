@@ -99,6 +99,56 @@ test('new observations classify unchanged, changed and cumulative correction cor
   }
 });
 
+test('explicit historical metric date creates an unchanged checkpoint on that requested day', async () => {
+  const { d1, gateway } = await createGateway();
+  try {
+    const initial = createWriter(gateway, { observedAt: START, suffix: 'historical-initial' });
+    const batch = sourceBatch({ views: 100, likes: 10, shares: 4 });
+    await initial.writeBatch(batch);
+
+    const historical = createWriter(gateway, {
+      observedAt: START + 19 * DAY,
+      metricDate: '2026-08-10',
+      suffix: 'historical-checkpoint',
+    });
+    const plan = await historical.preflightBatch(batch);
+    assert.equal(plan.observationRows.length, 1);
+    assert.equal(plan.observationRows[0].observation_kind, 'checkpoint');
+    assert.equal(plan.observationRows[0].metric_date, '2026-08-10');
+
+    await historical.beginCoverage({
+      expectedEntities: 1,
+      expectedRows: 1,
+      sourceWatermark: 'historical-watermark',
+    });
+    await historical.writeBatch(batch);
+    await historical.completeCoverage({
+      expectedEntities: 1,
+      observedEntities: 1,
+      expectedRows: 1,
+      observedRows: 1,
+      writtenRows: 1,
+      sourceWatermark: 'historical-watermark',
+      completedAt: START + 19 * DAY + 1,
+    });
+
+    const observation = d1.database.prepare(
+      "SELECT observation_kind,metric_date FROM organic_content_observations WHERE sync_run_id='history:historical-checkpoint'",
+    ).get();
+    assert.deepEqual(observation, { observation_kind: 'checkpoint', metric_date: '2026-08-10' });
+    const coverage = d1.database.prepare(
+      "SELECT period_start,period_end,status FROM data_coverage_runs WHERE coverage_run_id='coverage:historical-checkpoint'",
+    ).get();
+    assert.deepEqual(coverage, {
+      period_start: '2026-08-10',
+      period_end: '2026-08-10',
+      status: 'complete',
+    });
+  } finally {
+    d1.close();
+  }
+});
+
 async function createGateway() {
   const d1 = createSqliteD1();
   d1.exec(await readFile(MIGRATION_URL, 'utf8'));
@@ -117,6 +167,7 @@ function createWriter(gateway, input) {
     sourceAccountId: null,
     sourceTimezone: 'Asia/Bangkok',
     observedAt: input.observedAt,
+    ...(input.metricDate ? { metricDate: input.metricDate } : {}),
     fetchedAt: input.observedAt,
     historySyncRunId: `history:${input.suffix}`,
     coverageRunId: `coverage:${input.suffix}`,

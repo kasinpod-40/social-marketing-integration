@@ -148,6 +148,7 @@ test('uses Facebook Post shares as a real ContentDaily fallback on the requested
   assert.equal(writeSet.canonical.contentDaily[0].shares, 4);
   assert.match(writeSet.canonical.contentDaily[0].content_daily_key, /:2026-08-10$/u);
   assert.equal(writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].shares, 4);
+  assert.equal(writeSet.context.metricDate, '2026-08-10');
   assert.equal(writeSet.d1.accountDailyFacts[0].metric_date, '2026-08-10');
   assert.equal(writeSet.reconciliation.contentDailyRows, 1);
   assert.equal(writeSet.reconciliation.missingContentInsightRows, 0);

@@ -5,6 +5,7 @@ import {
   validateStorageRow,
 } from './marketing-history-contract.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
+import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const CUMULATIVE_COUNTER_FIELDS = Object.freeze([
@@ -209,7 +210,12 @@ async function buildRows(context, contentRow, dailyRow, existing) {
   ]);
   const metricsChanged = !existing || existing.metrics_hash !== metricsHash;
   const metadataChanged = !existing || existing.metadata_hash !== metadataHash;
-  const observationKind = classifyObservation(existing, metrics, metricsHash);
+  const observationKind = classifyObservation(
+    existing,
+    metrics,
+    metricsHash,
+    context.checkpointUnchangedObservation,
+  );
   const firstSeenAt = existing ? Number(existing.first_seen_at) : context.observedAt;
   const lastChangedAt = metricsChanged || metadataChanged
     ? context.observedAt
@@ -285,6 +291,10 @@ function normalizeContext(input) {
   const gateway = requireGateway(input.gateway);
   const observedAt = requiredTimestamp(input.observedAt, 'observedAt');
   const sourceTimezone = requireText(input.sourceTimezone, 'sourceTimezone');
+  const observedMetricDate = dateOnlyInTimeZone(observedAt, sourceTimezone);
+  const metricDate = requireDateOnly(input.metricDate ?? observedMetricDate, {
+    label: 'metricDate',
+  });
   return Object.freeze({
     gateway,
     customerProfile: requireText(input.customerProfile, 'customerProfile'),
@@ -295,7 +305,8 @@ function normalizeContext(input) {
     sourceTimezone,
     observedAt,
     fetchedAt: requiredTimestamp(input.fetchedAt ?? observedAt, 'fetchedAt'),
-    metricDate: dateOnlyInTimeZone(observedAt, sourceTimezone),
+    metricDate,
+    checkpointUnchangedObservation: metricDate !== observedMetricDate,
     historySyncRunId: requireText(input.historySyncRunId, 'historySyncRunId'),
     coverageRunId: requireText(input.coverageRunId, 'coverageRunId'),
     sourceRevision: optionalText(input.sourceRevision),
@@ -413,9 +424,11 @@ function readMetrics(contentRow, dailyRow) {
   });
 }
 
-function classifyObservation(existing, metrics, metricsHash) {
+function classifyObservation(existing, metrics, metricsHash, checkpointUnchangedObservation = false) {
   if (!existing) return 'initial';
-  if (existing.metrics_hash === metricsHash) return null;
+  if (existing.metrics_hash === metricsHash) {
+    return checkpointUnchangedObservation ? 'checkpoint' : null;
+  }
   const correction = CUMULATIVE_COUNTER_FIELDS.some((field) => {
     const before = toNullableNumber(existing[field]);
     const after = metrics[field];
