@@ -9,10 +9,24 @@ BRANCH                              = codex/google-ads-live-schedule-closeout
 EXACT_BASE                          = 99c88691db1237c9a08dff6922d1836486f3772d
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
-NOTIFICATION_RUNTIME                = BLOCKED_OFF
-AUTOMATIC_WEEKLY_NOTIFICATION       = BLOCKED_OFF
+NOTIFICATION_RUNTIME                = ENABLED_RUNTIME_FOR_AUTOMATIC_WEEKLY
+AUTOMATIC_WEEKLY_NOTIFICATION       = LIVE_ENABLED_MONDAY_0830_ASIA_BANGKOK
+BASE_NOTIFICATION_AUTOMATION        = DISABLED
 DLQ_REDRIVE                         = BLOCKED_OFF
 ```
+
+### Downstream authority override — 2026-08-11
+
+The original scope below intentionally kept Notification runtime and Automatic Weekly OFF during the
+Multichannel Runtime/Schedule activation. That historical boundary was later superseded **only for the
+approved Automatic Weekly Executive Notification workstream** after the user reviewed the successful one-shot
+message and explicitly approved automatic weekly delivery. PR #630 implemented the guarded automatic path;
+PR #633 fixed the live source-Settings authority boundary. Integration Workspace activation is now complete:
+Notification runtime/send/mirror are enabled in `runtime` mode, Automatic Weekly is enabled for Monday 08:30
+Asia/Bangkok, AI Materialization Automation remains enabled, Base Notification Automation remains disabled,
+and Production/DLQ redrive remain blocked. Detailed evidence is in
+`docs/project-brain/lark-automatic-weekly-executive-notification-2026-08-11.md` and
+`docs/tasks/lark-automatic-weekly-executive-notification-v1.md`.
 
 ## Objective
 
@@ -84,6 +98,9 @@ DLQ_REDRIVE                         = BLOCKED_OFF
 - notification runtime/automatic weekly notification/DLQ redrive OFF และ Production BLOCKED;
 - Dashboard พร้อมตรวจโดยไม่เปลี่ยน Dashboard configuration.
 
+The notification-off criterion above is historical to this task and is superseded only by the approved downstream
+Automatic Weekly authority recorded at the top of this document. DLQ redrive and Production remain blocked.
+
 ## Required tests
 
 ```text
@@ -131,11 +148,31 @@ GOOGLE_ADS_RECONCILIATION           = PASS_6_DATASETS_FAILED_ROWS_0
 GOOGLE_ADS_D1_LARK_PARITY           = PASS_ENTITIES_1105_DAILY_390
 GOOGLE_ADS_REPORT_R3                = PASS_4_OF_4_FRESH_WATERMARK
 GOOGLE_ADS_PROVIDER_SCHEDULE        = PASS_DAILY_0600_0700_PROVIDER_LOCAL_TIME
-NOTIFICATION_RUNTIME                = BLOCKED_OFF
-AUTOMATIC_WEEKLY_NOTIFICATION       = BLOCKED_OFF
+NOTIFICATION_RUNTIME                = ENABLED_RUNTIME_FOR_AUTOMATIC_WEEKLY
+AUTOMATIC_WEEKLY_NOTIFICATION       = LIVE_ENABLED_MONDAY_0830_ASIA_BANGKOK
+BASE_NOTIFICATION_AUTOMATION        = DISABLED
+AUTOMATIC_WEEKLY_ACTIVE_VERSION     = f19492d2-67f4-4b7c-ba78-3bb84fb439e8_100_PERCENT
+AUTOMATIC_WEEKLY_IMMEDIATE_SENDS    = 0
 DLQ_REDRIVE                         = BLOCKED_OFF
 PRODUCTION                          = BLOCKED
 ```
+
+### Automatic Weekly Executive live activation — 2026-08-11
+
+PR #630 implemented the automatic Weekly orchestration. A read-only live preview then exposed a source-Settings
+shape mismatch (`matchCount=0`) with zero mutation; PR #633 corrected the activation boundary by reading raw
+Lark Setting records from exact canonical keys and merged at
+`89f9c615f2ae20f798b089e639c3d9dd5f1cb38a` after exact-head CI passed.
+
+The first execute after #633 activated three exact 7D Settings but Cloudflare rejected the new Worker version
+because the automatic Worker path imports `node:crypto` and the ignored active config lacked Node compatibility.
+That attempt had `settingsWriteCount=3`, `workerDeploymentCount=0`, Queue admission 0 and message send 0. The
+recovery preserved those active Settings, added `nodejs_compat` to ignored `wrangler.sync.jsonc`, and completed
+with active Worker version `f19492d2-67f4-4b7c-ba78-3bb84fb439e8` serving 100% traffic. Recovery wrote zero
+additional Settings, admitted zero immediate Queue jobs and sent zero immediate Lark messages. Runtime/send/mirror
+are now enabled in runtime mode, Automatic Weekly is enabled Monday 08:30 Asia/Bangkok, AI Materialization
+Automation is enabled, Base Notification Automation is disabled, and Production remains blocked. The next eligible
+period is `2026-08-10..2026-08-16`, due Monday `2026-08-17 08:30 Asia/Bangkok`.
 
 ### Live metric-date correction
 
@@ -180,6 +217,10 @@ YouTube Analytics customer-credential runtime bridge แก้ใน Repository 
 reviewed deployment กับ controlled live validation; Chatwoot pagination ยังเปลี่ยนระหว่าง continuation.
 Public YouTube, Google Ads fresh LIVE, existing report coverage และ Dashboard materialization พร้อมตรวจ;
 Production/Notification/DLQ redrive ยังปิด.
+
+The final sentence above is historical to the original Multichannel activation. Notification runtime and Automatic
+Weekly are now enabled under the downstream authority recorded in this document; Production and DLQ redrive remain
+blocked.
 
 ## Downstream Weekly Executive Decision Preview blocker — 2026-08-10
 
