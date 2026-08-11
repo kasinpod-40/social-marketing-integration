@@ -21,6 +21,9 @@ import {
   LARK_NOTIFICATION_RUNTIME_MODES,
 } from '../../../packages/config/src/lark-notification-runtime-config.js';
 import {
+  createLarkBitableClientFromEnv,
+} from '../../../packages/connectors/src/lark/lark-bitable.client.js';
+import {
   permanentError,
   transientError,
 } from '../../../packages/shared/src/errors/runtime-error.js';
@@ -68,19 +71,22 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
     ?? buildFreshWeekly7dExecutiveDecisionNotificationAdmission;
   const buildNotificationJob = dependencies.buildNotificationJob
     ?? buildLarkWeekly7dNotificationAdmissionJob;
+  const createClient = dependencies.createClient
+    ?? createLarkBitableClientFromEnv;
   const now = dependencies.now ?? (() => Date.now());
 
   return async function processAutomaticWeeklyExecutive(jobInput = {}) {
     const body = jobInput.job?.body ?? {};
     assertAutomaticJob(body, jobInput.config);
     const periodEnd = requireDateOnly(body.periodEnd, 'job.periodEnd');
+    const aiRunsTableId = requireText(jobInput.config?.tables?.aiRuns, 'config.tables.aiRuns');
     const maximumAttempts = readMaximumAttempts(jobInput.env);
     const mainQueueAttempts = readPositiveInteger(
       jobInput.mainQueueAttempts ?? 1,
       'mainQueueAttempts',
     );
     const infrastructure = jobInput.getInfrastructure();
-    const client = infrastructure.getLarkClient();
+    const client = createClient(jobInput.env);
     const repository = infrastructure.repository;
     const syncEngine = infrastructure.syncEngine;
     const workStore = infrastructure.getResumableWorkStore();
@@ -182,6 +188,7 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
 
     try {
       const generatedRecord = await ensureFreshAiGenerated({
+        aiRunsTableId,
         client,
         repository,
         syncEngine,
@@ -200,6 +207,7 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
         synthesis,
       });
       const admissionRecord = await ensureAdmissionRow({
+        aiRunsTableId,
         repository,
         syncEngine,
         workStore,
@@ -242,6 +250,14 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
       try {
         await queue.send(notificationJob);
       } catch (cause) {
+        if (mainQueueAttempts >= maximumAttempts) {
+          throw autoError(
+            'Automatic Weekly Executive delivery Queue admission exhausted its bounded attempts',
+            'LARK_WEEKLY_EXECUTIVE_AUTO_QUEUE_ADMISSION_EXHAUSTED',
+            {},
+            cause,
+          );
+        }
         throw transientError('Automatic Weekly Executive delivery Queue admission must be retried', {
           code: 'LARK_WEEKLY_EXECUTIVE_AUTO_QUEUE_ADMISSION_FAILED',
           cause,
@@ -284,31 +300,17 @@ export const processAutomaticWeeklyExecutiveNotification =
   createAutomaticWeeklyExecutiveProcessor();
 
 async function ensureFreshAiGenerated(input) {
-  let rows = exactRows(await input.repository.listByFieldValues(
-    input.synthesis.fields ? input.synthesis.fields.__table_id ?? '' : '',
-    'ai_run_key',
-    [input.synthesis.aiRunKey],
-  ), input.synthesis.aiRunKey);
-  // The production path replaces the compatibility lookup above with the reviewed AI table injected below.
-  if (input.aiRunsTableId) {
-    rows = exactRows(await input.repository.listByFieldValues(
-      input.aiRunsTableId,
-      'ai_run_key',
-      [input.synthesis.aiRunKey],
-    ), input.synthesis.aiRunKey);
-  }
-  return ensureFreshAiGeneratedAtTable({ ...input, rows });
-}
-
-async function ensureFreshAiGeneratedAtTable(input) {
   const aiRunsTableId = requireText(input.aiRunsTableId, 'aiRunsTableId');
-  let rows = input.rows ?? exactRows(await input.repository.listByFieldValues(
+  let rows = exactRows(await input.repository.listByFieldValues(
     aiRunsTableId,
     'ai_run_key',
     [input.synthesis.aiRunKey],
   ), input.synthesis.aiRunKey);
   if (rows.length > 1) {
-    throw autoError('Fresh Weekly Executive AI identity is duplicated', 'LARK_WEEKLY_EXECUTIVE_AUTO_AI_DUPLICATE');
+    throw autoError(
+      'Fresh Weekly Executive AI identity is duplicated',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_AI_DUPLICATE',
+    );
   }
   if (rows.length === 0) {
     rows = await guardedCreateExactRow({
@@ -409,13 +411,17 @@ async function ensureFreshAiGeneratedAtTable(input) {
 }
 
 async function ensureAdmissionRow(input) {
+  const aiRunsTableId = requireText(input.aiRunsTableId, 'aiRunsTableId');
   let rows = exactRows(await input.repository.listByFieldValues(
-    input.aiRunsTableId,
+    aiRunsTableId,
     'ai_run_key',
     [input.admission.aiRunKey],
   ), input.admission.aiRunKey);
   if (rows.length > 1) {
-    throw autoError('Weekly Notification admission identity is duplicated', 'LARK_WEEKLY_EXECUTIVE_AUTO_ADMISSION_DUPLICATE');
+    throw autoError(
+      'Weekly Notification admission identity is duplicated',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_ADMISSION_DUPLICATE',
+    );
   }
   if (rows.length === 0) {
     rows = await guardedCreateExactRow({
@@ -424,7 +430,7 @@ async function ensureAdmissionRow(input) {
       workStore: input.workStore,
       workKey: input.workKey,
       phase: CREATE_PHASES.admission,
-      tableId: input.aiRunsTableId,
+      tableId: aiRunsTableId,
       keyField: 'ai_run_key',
       keyValue: input.admission.aiRunKey,
       row: input.admission.fields,
@@ -470,7 +476,10 @@ async function guardedCreateExactRow(input) {
     rows: [input.row],
   });
   if (plan.createRows.length !== 1 || plan.updateRows.length !== 0 || plan.skipped !== 0) {
-    throw autoError('Automatic Weekly row create plan is not exactly one create', 'LARK_WEEKLY_EXECUTIVE_AUTO_CREATE_PLAN_INVALID');
+    throw autoError(
+      'Automatic Weekly row create plan is not exactly one create',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_CREATE_PLAN_INVALID',
+    );
   }
   await input.workStore.savePhase({
     workKey: input.workKey,
@@ -492,7 +501,10 @@ async function guardedCreateExactRow(input) {
     );
   }
   if (result.created !== 1 || result.updated !== 0) {
-    throw autoError('Automatic Weekly row was not created exactly once', 'LARK_WEEKLY_EXECUTIVE_AUTO_CREATE_FAILED');
+    throw autoError(
+      'Automatic Weekly row was not created exactly once',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_CREATE_FAILED',
+    );
   }
   const rows = exactRows(await input.repository.listByFieldValues(
     input.tableId,
@@ -500,7 +512,11 @@ async function guardedCreateExactRow(input) {
     [input.keyValue],
   ), input.keyValue);
   if (rows.length !== 1) {
-    throw autoError('Automatic Weekly row readback is not exact', input.unknownCode, { matchCount: rows.length });
+    throw autoError(
+      'Automatic Weekly row readback is not exact',
+      input.unknownCode,
+      { matchCount: rows.length },
+    );
   }
   await input.workStore.savePhase({
     workKey: input.workKey,
@@ -572,11 +588,17 @@ function assertAutomaticJob(body, config) {
       || body.trigger !== JOB_TRIGGERS.LARK_NOTIFICATION_RUNTIME
       || body.automaticWeekly !== true
       || body.scheduleCadence !== 'weekly') {
-    throw autoError('Automatic Weekly Executive Queue payload is invalid', 'LARK_WEEKLY_EXECUTIVE_AUTO_JOB_INVALID');
+    throw autoError(
+      'Automatic Weekly Executive Queue payload is invalid',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_JOB_INVALID',
+    );
   }
   if (!config?.flags?.runtimeEnabled || !config?.flags?.sendEnabled || !config?.flags?.mirrorEnabled
       || config.mode !== LARK_NOTIFICATION_RUNTIME_MODES.RUNTIME) {
-    throw autoError('Automatic Weekly Executive Notification Runtime is not active', 'LARK_WEEKLY_EXECUTIVE_AUTO_RUNTIME_DISABLED');
+    throw autoError(
+      'Automatic Weekly Executive Notification Runtime is not active',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_RUNTIME_DISABLED',
+    );
   }
 }
 
@@ -585,7 +607,10 @@ function resolveAuthorityGeneratedAt(reportBundles) {
     .map((bundle) => Number(bundle?.payload?.generatedAt))
     .filter((value) => Number.isFinite(value) && value > 0);
   if (values.length === 0) {
-    throw autoError('Weekly Executive source Report generated_at is missing', 'LARK_WEEKLY_EXECUTIVE_AUTO_SOURCE_INVALID');
+    throw autoError(
+      'Weekly Executive source Report generated_at is missing',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_SOURCE_INVALID',
+    );
   }
   return Math.max(...values);
 }
@@ -617,7 +642,10 @@ function requireStableOperation(value) {
   if (!value?.stable || !value.operationId || !value.workKey
       || !Number.isSafeInteger(value.generation)
       || !Number.isSafeInteger(value.originalRequestedAt)) {
-    throw autoError('Automatic Weekly Executive requires stable Queue identity', 'LARK_WEEKLY_EXECUTIVE_AUTO_JOB_INVALID');
+    throw autoError(
+      'Automatic Weekly Executive requires stable Queue identity',
+      'LARK_WEEKLY_EXECUTIVE_AUTO_JOB_INVALID',
+    );
   }
   return value;
 }
@@ -672,7 +700,9 @@ function requireDateOnly(value, fieldName) {
 
 function requireText(value, fieldName) {
   const text = optionalText(value);
-  if (!text) throw autoError(`${fieldName} is required`, 'LARK_WEEKLY_EXECUTIVE_AUTO_INPUT_REQUIRED');
+  if (!text) {
+    throw autoError(`${fieldName} is required`, 'LARK_WEEKLY_EXECUTIVE_AUTO_INPUT_REQUIRED');
+  }
   return text;
 }
 
@@ -685,7 +715,10 @@ function optionalText(value) {
 function readPositiveInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) {
-    throw autoError(`${fieldName} must be a positive integer`, 'LARK_WEEKLY_EXECUTIVE_AUTO_INPUT_REQUIRED');
+    throw autoError(
+      `${fieldName} must be a positive integer`,
+      'LARK_WEEKLY_EXECUTIVE_AUTO_INPUT_REQUIRED',
+    );
   }
   return number;
 }
