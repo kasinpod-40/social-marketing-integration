@@ -331,8 +331,10 @@ review/deploy และรอ exact operation convergence ก่อน reconcili
 ### Implementation result
 
 ```text
-STATUS                              = REPOSITORY_FIX_GATES_PASS_LIVE_FRESH_RUN_PENDING
+STATUS                              = LIVE_CLOSED_DURABLE_AND_DASHBOARD_VERIFIED
 PR_623_RECOVERY_CONTROL_FIX         = MERGED_B7FA1629
+PR_629_POST_SHARES_FALLBACK         = MERGED_70001D30
+PR_632_HISTORY_METRIC_DATE_FIX      = MERGED_A8606384
 OLD_OPERATION_REPLAY                = PROHIBITED_NOT_RUN
 DLQ_REDRIVE                         = NOT_RUN
 PROVIDER_GET_ONLY_PROBE             = PASS_BOUNDED
@@ -342,17 +344,33 @@ PREVIEW_SOURCE_CONTENT_ROWS         = 89
 PREVIEW_CONTENT_DAILY_ROWS          = 64
 PREVIEW_TOTAL_SHARES                = 2351
 PREVIEW_OBSERVATION_DATE            = 2026-08-10
-MISSING_VIEWS_LIKES_COMMENTS        = NULL_NOT_ZERO
-FOCUSED_REGRESSION                  = PASS_41_OF_41
-FULL_UNIT_TESTS                     = PASS_2994_OF_2994
+LIVE_R2_OPERATION                   = facebook-contentdaily-20260810-r2
+LIVE_R2_ATTEMPTS                    = 98
+LIVE_CONTENT_DAILY_ROWS             = 64
+LIVE_CONTENT_DAILY_DISTINCT_KEYS    = 64
+LIVE_TOTAL_SHARES                   = 2352
+LIVE_METRIC_DATE                    = 2026-08-10
+LIVE_COVERAGE                       = COMPLETE_64_OF_64_FAILED_0
+LIVE_DLQ_OPEN_ALERTS                = 0_0
+MISSING_VIEWS_LIKES_COMMENTS        = NULL_NOT_ZERO_READ_INSIGHTS_NOT_GRANTED_TO_ACTIVE_TOKEN
+FOCUSED_REGRESSION                  = PASS
+FULL_UNIT_TESTS                     = PASS_2995_OF_2995
 WORKERS_RUNTIME_TESTS               = PASS_18_OF_18
 REPORT_RELIABILITY_TESTS            = PASS_105_OF_105
 ARCHITECTURE_HYGIENE                = PASS
 DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                      = PASS
 DIFF_CHECK                          = PASS
-LIVE_DEPLOYMENT                     = PENDING_REVIEWED_MERGE
-FRESH_OPERATION                     = PENDING_NEW_ID
-DASHBOARD_MATERIALIZATION           = PENDING_LIVE_RECONCILIATION
+EXACT_HEAD_CI                       = PASS_BRANCH_31483799036_META_31483799052
+LIVE_DEPLOYMENT                     = PASS_WORKER_5EDE6471_100_PERCENT
+DASHBOARD_MATERIALIZATION           = PASS_1D_3D_7D_30D_SHARES_2352_AVAILABLE
+LARK_OPENAPI_READBACK               = PASS_GET_ONLY_CONTENTDAILY_64_METRICS_4_WINDOWS
+DASHBOARD_VISUAL_ACCEPTANCE         = PASS_USER_CONFIRMED_2026_08_11
 PRODUCTION                          = BLOCKED
 ```
+
+Fresh `r2` ใช้ operation identity ใหม่เพียงครั้งเดียวและจบ `completed/success`; D1 และ Lark OpenAPI
+readback ตรงกันที่ 64 stable ContentDaily keys วันที่ `2026-08-10`, shares รวม 2,352, null shares 0.
+Materialization 1D/3D/7D/30D คืน `facebook:latest_total_shares=2352` และ availability `available`
+ครบทุกช่วง; ผู้ใช้ยืนยัน Dashboard แสดง Facebook แล้ว. Active token `GET /me/permissions` ยังไม่มี
+`read_insights` แม้ App permission จะพร้อมทดสอบ จึงคง Views/Likes/Comments เป็น N/A ตาม contract.

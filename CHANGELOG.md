@@ -21,6 +21,19 @@
 - The prior recovery operation remains immutable and is not replayed or redriven; Live admission
   requires a fresh operation ID after reviewed merge and deployment.
 
+### Live validation
+
+- Merged PR #629 and PR #632, deployed merged Worker version
+  `5ede6471-b890-4459-a090-e9f8c3d2ca5d` at 100% traffic and kept DLQ redrive disabled.
+- Fresh operation `facebook-contentdaily-20260810-r2` completed with 64 distinct ContentDaily keys,
+  exact `metric_date=2026-08-10`, 2,352 shares, complete 64/64 Coverage, zero failed rows, zero DLQ
+  and zero open alerts.
+- Materialized Facebook 1D/3D/7D/30D once each; D1 and GET-only Lark readback return total shares
+  2,352 with availability `available` for every window, and the user visually confirmed the existing
+  Dashboard renders Facebook.
+- Kept Views/Likes/Comments null/N/A because the active runtime token's granted permission list does
+  not include `read_insights`; App-level “ready to test” status is not a token grant.
+
 ## Unreleased — Chatwoot Stable-identity Pagination Live Closeout — 2026-08-10
 
 ### Changed

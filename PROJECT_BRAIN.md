@@ -866,6 +866,15 @@ explicit historical metric date and uses a checkpoint when unchanged cumulative 
 for that historical day. Existing callers retain the old observed-date default. r1 is immutable;
 only fresh r2 evidence may close D1/Lark date parity before Dashboard materialization.
 
+Live closeout is now complete in the Integration Workspace. PR #629/#632 merged, Worker version
+`5ede6471-b890-4459-a090-e9f8c3d2ca5d` serves 100%, and fresh operation
+`facebook-contentdaily-20260810-r2` completed in 98 bounded attempts. D1 and GET-only Lark readback
+agree on 64 distinct ContentDaily keys dated `2026-08-10`, 2,352 shares, complete 64/64 Coverage,
+zero failed rows, zero DLQ and zero open alerts. Fresh 1D/3D/7D/30D materializations expose total
+shares 2,352 as `available`, and the user visually confirmed Facebook on the Dashboard. The active
+runtime token still lacks the actual `read_insights` grant, so Views/Likes/Comments remain N/A.
+No retained operation was replayed or redriven.
+
 ## Permanent safety rules
 
 - Data model before Connector;
