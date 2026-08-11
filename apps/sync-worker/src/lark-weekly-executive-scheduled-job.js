@@ -1,5 +1,6 @@
 import { addDaysDateOnly } from '../../../packages/application/src/reports/report-period.js';
 import {
+  JOB_SCHEMA_VERSIONS,
   JOB_TRIGGERS,
   JOB_TYPES,
 } from '../../../packages/application/src/jobs/job-catalog.js';
@@ -23,8 +24,9 @@ const WEEKDAYS = new Set([
 
 /**
  * Build one period-bound automatic Weekly Executive orchestration job after the Shared 7D Report window.
- * The job only prepares/observes Fresh Native AI and eventually admits the existing exact-once
- * Notification Runtime; it never contains a Lark destination or message payload.
+ * Reuse the reviewed `lark.notification.send` Queue type, but mark this payload as an explicit
+ * automatic Weekly orchestration request. The Worker resolves Fresh AI first; no destination or
+ * message payload is admitted by the Cron producer.
  */
 export function buildAutomaticWeeklyExecutiveScheduledJobs(input = {}) {
   const env = input.env ?? {};
@@ -77,9 +79,10 @@ export function buildAutomaticWeeklyExecutiveScheduledJobs(input = {}) {
   const periodEnd = addDaysDateOnly(local.date, -1);
   const dateKey = periodEnd.replaceAll('-', '');
   const job = createStableQueueOperationBody({
-    schemaVersion: 1,
-    type: JOB_TYPES.LARK_WEEKLY_EXECUTIVE_AUTO,
-    trigger: JOB_TRIGGERS.LARK_WEEKLY_EXECUTIVE_SCHEDULED,
+    schemaVersion: JOB_SCHEMA_VERSIONS.LARK_NOTIFICATION_RUNTIME,
+    type: JOB_TYPES.LARK_NOTIFICATION_SEND,
+    trigger: JOB_TRIGGERS.LARK_NOTIFICATION_RUNTIME,
+    automaticWeekly: true,
     periodEnd,
     scheduleCadence: 'weekly',
   }, {
