@@ -422,7 +422,6 @@ function buildDurableCompletionSummary(latest, completion) {
 function parseCompletionEvidence(value, errors) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
   if (typeof value !== 'string' || value.trim() === '') {
-    errors.push({ field: 'durable completion_json', expected: 'retained reconciliation object', actual: value ?? null });
     return null;
   }
   try {

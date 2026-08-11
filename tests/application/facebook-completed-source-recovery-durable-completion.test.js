@@ -111,3 +111,31 @@ test('durable closeout requires the exact redriven DLQ and target-day account fa
   assert.ok(result.errors.some((row) => row.field === 'dead letter status after recovery'));
   assert.ok(result.errors.some((row) => row.field === 'target-day account daily D1 rows'));
 });
+
+test('durable closeout rejects a completed source with no Facebook content daily rows', () => {
+  const missingDaily = structuredClone(completion);
+  missingDaily.source.contentDailyRows = 0;
+  missingDaily.source.missingContentInsightRows = incident.expectedContentCount;
+  missingDaily.d1.organicHistory = {
+    contentRows: 0,
+    stateWritten: 0,
+    stateSkipped: 0,
+    observationsCreated: 0,
+    observationsSkipped: 0,
+    observationsNotRequired: 0,
+    coverageEntitiesWritten: 0,
+    coverageEntitiesSkipped: 0,
+  };
+  const result = evaluateFacebookCompletedSourceCompletion({
+    latest: completedLatest({
+      completion_json: JSON.stringify(missingDaily),
+      content_coverage_expected_entities: 0,
+      content_coverage_observed_entities: 0,
+      content_coverage_expected_rows: 0,
+      content_coverage_observed_rows: 0,
+      content_coverage_written_rows: 0,
+    }),
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((row) => row.field === 'completion content daily rows'));
+});
