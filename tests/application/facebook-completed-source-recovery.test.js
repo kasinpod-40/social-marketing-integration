@@ -12,7 +12,9 @@ import {
 const incident = FACEBOOK_COMPLETED_SOURCE_INCIDENT;
 const GENERATION = Date.parse('2026-08-10T12:00:00.000Z');
 
-function sourceConfig() {
+function sourceConfig({ booleanFlags = false } = {}) {
+  const trueFlag = booleanFlags ? true : 'true';
+  const falseFlag = booleanFlags ? false : 'false';
   return JSON.stringify({
     name: incident.workerName,
     main: './apps/sync-worker/src/index.js',
@@ -21,13 +23,13 @@ function sourceConfig() {
       MKT_ENV: 'development',
       MKT_CUSTOMER_PROFILE: incident.customerProfile,
       MKT_CONNECTION_CUSTOMER_KEY: incident.customerKey,
-      MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
-      MKT_META_SOURCE_READ_ENABLED: 'true',
-      MKT_META_D1_WRITE_ENABLED: 'true',
-      MKT_META_LARK_WRITE_ENABLED: 'true',
-      MKT_DLQ_REDRIVE_ENABLED: 'false',
-      MKT_SCHEDULE_FACEBOOK_ENABLED: 'false',
-      MKT_SCHEDULE_INSTAGRAM_ENABLED: 'false',
+      MKT_CONNECTOR_FACEBOOK_ENABLED: trueFlag,
+      MKT_META_SOURCE_READ_ENABLED: trueFlag,
+      MKT_META_D1_WRITE_ENABLED: trueFlag,
+      MKT_META_LARK_WRITE_ENABLED: trueFlag,
+      MKT_DLQ_REDRIVE_ENABLED: falseFlag,
+      MKT_SCHEDULE_FACEBOOK_ENABLED: falseFlag,
+      MKT_SCHEDULE_INSTAGRAM_ENABLED: falseFlag,
       UNRELATED_FLAG: 'retained',
     },
     d1_databases: [{
@@ -129,6 +131,34 @@ test('recovery config flips only the redrive gate and retains all existing topol
 
   changed.vars.MKT_DLQ_REDRIVE_ENABLED = 'false';
   assert.deepEqual(changed, original);
+});
+
+test('recovery config accepts boolean Wrangler flags and preserves the redrive value type', () => {
+  const source = sourceConfig({ booleanFlags: true });
+  const original = JSON.parse(source);
+  const validated = validateFacebookRecoveryWranglerConfig(source);
+  assert.equal(validated.executionFlags.facebook, true);
+  assert.equal(validated.executionFlags.redrive, false);
+
+  const recovery = buildFacebookRecoveryWranglerConfig(source, true);
+  const changed = JSON.parse(recovery.text);
+  assert.deepEqual(recovery.changed, ['vars.MKT_DLQ_REDRIVE_ENABLED']);
+  assert.equal(changed.vars.MKT_DLQ_REDRIVE_ENABLED, true);
+  assert.equal(changed.vars.MKT_CONNECTOR_FACEBOOK_ENABLED, true);
+  assert.equal(changed.vars.MKT_SCHEDULE_FACEBOOK_ENABLED, false);
+
+  changed.vars.MKT_DLQ_REDRIVE_ENABLED = false;
+  assert.deepEqual(changed, original);
+});
+
+test('recovery config still rejects non-boolean flag representations', () => {
+  const invalid = JSON.parse(sourceConfig());
+  invalid.vars.MKT_CONNECTOR_FACEBOOK_ENABLED = 1;
+  assert.throws(
+    () => validateFacebookRecoveryWranglerConfig(JSON.stringify(invalid)),
+    (error) => error?.code === 'FACEBOOK_RECOVERY_CONFIG_INVALID'
+      && error?.details?.fieldName === 'MKT_CONNECTOR_FACEBOOK_ENABLED',
+  );
 });
 
 test('completed-source incident preflight passes only the exact retained Facebook operation', () => {
