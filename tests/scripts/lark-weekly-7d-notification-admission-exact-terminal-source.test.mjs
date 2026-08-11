@@ -82,6 +82,63 @@ test('read-only Notification admission preview reports mixed state without mutat
   assert.match(preview, /reportSettingWriteCount:\s*0/u);
 });
 
+test('weekly Notification preview waits for multi-sample Remote lock quiescence before strict D1 readback', () => {
+  const start = source.indexOf('async function previewAdmission()');
+  const end = source.indexOf('async function executeAdmission()', start);
+  assert.ok(start >= 0 && end > start);
+  const preview = source.slice(start, end);
+  const quiescenceIndex = preview.indexOf("awaitRemoteQuiescence(context, 'preview')");
+  const strictReadIndex = preview.indexOf('assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context))');
+  assert.ok(quiescenceIndex >= 0);
+  assert.ok(strictReadIndex > quiescenceIndex);
+  assert.match(preview, /remoteQuiescenceVerified:\s*quiescence\.verified/u);
+  assert.match(preview, /remoteQuiescenceRequiredZeroSamples:\s*quiescence\.requiredZeroSamples/u);
+});
+
+test('weekly Notification execution proves quiescence before preflight, deploy, and Queue admission', () => {
+  const start = source.indexOf('async function executeAdmission()');
+  const end = source.indexOf('async function recoverAdmission()', start);
+  assert.ok(start >= 0 && end > start);
+  const execute = source.slice(start, end);
+  const preflight = execute.indexOf("awaitRemoteQuiescence(context, 'execute-preflight')");
+  const settings = execute.indexOf("stage = 'ensure-exact-source-report-settings-active'");
+  const preDeploy = execute.indexOf("awaitRemoteQuiescence(context, 'execute-pre-deploy')");
+  const deploy = execute.indexOf("stage = 'deploy-bounded-notification-runtime-window'");
+  const preAdmission = execute.indexOf("awaitRemoteQuiescence(context, 'execute-pre-admission')");
+  const attempt = execute.indexOf("stage = 'record-one-queue-attempt'");
+  assert.ok(preflight >= 0);
+  assert.ok(settings > preflight);
+  assert.ok(preDeploy > settings);
+  assert.ok(deploy > preDeploy);
+  assert.ok(preAdmission > deploy);
+  assert.ok(attempt > preAdmission);
+  assert.match(execute, /verify-pre-deploy-strict-baseline/u);
+  assert.match(execute, /verify-pre-admission-strict-baseline/u);
+});
+
+test('Remote quiescence is read-only, requires three consecutive zero-lock samples, and exposes no lock identity', () => {
+  const start = source.indexOf('function readActiveLockCount(context)');
+  const end = source.indexOf('function readD1State(context)', start);
+  assert.ok(start >= 0 && end > start);
+  const quiescence = source.slice(start, end);
+  assert.match(source, /const QUIESCENCE_REQUIRED_ZERO_SAMPLES = 3;/u);
+  assert.match(quiescence, /SELECT COUNT\(\*\) AS active_locks FROM sync_locks WHERE expires_at > unixepoch\('now'\) \* 1000;/u);
+  assert.match(quiescence, /consecutiveZeroSamples = activeLocks === 0 \? consecutiveZeroSamples \+ 1 : 0/u);
+  assert.match(quiescence, /consecutiveZeroSamples >= QUIESCENCE_REQUIRED_ZERO_SAMPLES/u);
+  assert.match(quiescence, /LARK_WEEKLY_7D_NOTIFICATION_REMOTE_QUIESCENCE_TIMEOUT/u);
+  assert.doesNotMatch(quiescence, /INSERT|UPDATE|DELETE|method:\s*'POST'/u);
+  assert.doesNotMatch(quiescence, /lock_key|owner_id|ownerId|work_key/u);
+});
+
+test('strict admission readback remains in place after the quiescence barrier', () => {
+  const start = source.indexOf('function readD1State(context)');
+  const end = source.indexOf('async function pollDelivered(context, before)', start);
+  assert.ok(start >= 0 && end > start);
+  const strictReadback = source.slice(start, end);
+  assert.match(strictReadback, /buildLarkWeekly7dNotificationAdmissionReadbackSql/u);
+  assert.match(strictReadback, /normalizeLarkWeekly7dNotificationAdmissionReadback/u);
+});
+
 test('weekly Notification exact terminal binds to the exact generated Fresh v4 source and never edits it', () => {
   assert.match(source, /loadFreshWeekly7dExecutiveDecisionNotificationSource/u);
   assert.match(source, /load-exact-fresh-executive-decision-source/u);
