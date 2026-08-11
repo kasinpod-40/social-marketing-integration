@@ -9,17 +9,6 @@ import {
 const GROUP_ID = 'reviewed-group';
 const DESTINATION_HASH = createHash('sha256').update(GROUP_ID).digest('hex');
 
-function snapshot(reportId, settingKey) {
-  return {
-    recordId: `snapshot-${reportId}`,
-    fields: {
-      report_id: reportId,
-      report_setting_key: settingKey,
-      customer_profile: 'integration_workspace',
-    },
-  };
-}
-
 function setting(settingKey, groupId) {
   return {
     recordId: `setting-${settingKey}`,
@@ -38,7 +27,10 @@ test('rejects mixed null and configured group_id even when the configured hash i
   assert.throws(
     () => resolveLarkWeekly7dNotificationSourceSettings({
       sourceReportIds: ['report-a', 'report-b'],
-      snapshots: [snapshot('report-a', 'setting-a'), snapshot('report-b', 'setting-b')],
+      sourceAuthorities: [
+        { reportId: 'report-a', reportSettingKey: 'setting-a' },
+        { reportId: 'report-b', reportSettingKey: 'setting-b' },
+      ],
       settings: [setting('setting-a', GROUP_ID), setting('setting-b', null)],
       expectedDestinationKeyHash: DESTINATION_HASH,
     }),

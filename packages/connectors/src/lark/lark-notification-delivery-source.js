@@ -1,9 +1,23 @@
+import {
+  resolveDashboardReportSourceAuthority,
+} from '../../../application/src/reports/dashboard-report-source-authority.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 import {
   resolveLarkNotificationReviewedDestination,
 } from './lark-notification-reviewed-destination.js';
 
 const MAX_EXECUTIVE_SOURCE_REPORTS = 32;
+const WEEKLY_7D_NOTIFICATION_TEMPLATE_VERSION = 'executive_weekly_7d_notification_v1';
+const WEEKLY_7D_PLATFORM_SCOPES = Object.freeze([
+  'chatwoot',
+  'facebook',
+  'google_ads',
+  'instagram',
+  'meta_ads',
+  'tiktok',
+  'woocommerce',
+  'youtube',
+]);
 const BANGKOK_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Bangkok',
   year: 'numeric',
@@ -11,7 +25,12 @@ const BANGKOK_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
-/** Loads one exact AI Run → source Snapshots → Settings chain without persisting raw destination identity. */
+/**
+ * Loads one exact AI Run → source Settings chain without persisting raw destination identity.
+ * Historical notification templates retain their Snapshot-backed authority. The reviewed Weekly
+ * 7D dedicated template regenerates its exact Report/Setting identities through the same shared
+ * Dashboard Report contracts because rolling historical Snapshots are not durable send evidence.
+ */
 export async function loadLarkNotificationDeliveryRequest(input = {}) {
   const repository = requireRepository(input.repository);
   const tables = requireTables(input.tables);
@@ -25,19 +44,14 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
     'ai_run_key', 'report_id', 'template_version', 'scope_type', 'generation_status',
     'notification_eligible', 'preview_mode', 'sent_to_group', 'dedupe_key', 'window_days',
     'readiness_status', 'severity', 'insight_summary', 'strengths', 'weaknesses',
-    'recommendations', 'source_report_ids_json',
+    'recommendations', 'source_report_ids_json', 'period_start', 'period_end',
   ]);
   const ai = aiRecord.fields;
   const reportId = requireText(readScalar(ai.report_id), 'report_id');
   const sourceReportIds = parseSourceReportIds(ai.source_report_ids_json, reportId);
-  const snapshots = await findExactMany(
-    repository,
-    tables.reportSnapshots,
-    'report_id',
-    sourceReportIds,
-    ['report_id', 'report_setting_key', 'customer_profile', 'period_start', 'period_end'],
-  );
-  const source = normalizeSnapshotAuthority(snapshots, ai.window_days);
+  const source = isSnapshotlessWeekly7d(ai)
+    ? normalizeWeekly7dSourceAuthority(ai, sourceReportIds)
+    : await loadSnapshotSourceAuthority(repository, tables, sourceReportIds, ai.window_days);
 
   const settingCandidates = await repository.listByFieldValues(
     tables.reportSettings,
@@ -180,6 +194,60 @@ function assertExactlyOneMirror(result, code) {
   if (result.created + result.updated + result.skipped !== 1) {
     throw permanentError('Notification state mirror did not reconcile exactly one row', { code });
   }
+}
+
+async function loadSnapshotSourceAuthority(repository, tables, sourceReportIds, windowDays) {
+  const snapshots = await findExactMany(
+    repository,
+    tables.reportSnapshots,
+    'report_id',
+    sourceReportIds,
+    ['report_id', 'report_setting_key', 'customer_profile', 'period_start', 'period_end'],
+  );
+  return normalizeSnapshotAuthority(snapshots, windowDays);
+}
+
+function isSnapshotlessWeekly7d(ai) {
+  return readScalar(ai.template_version) === WEEKLY_7D_NOTIFICATION_TEMPLATE_VERSION
+    && readScalar(ai.scope_type) === 'executive'
+    && Number(readScalar(ai.window_days)) === 7;
+}
+
+function normalizeWeekly7dSourceAuthority(ai, sourceReportIds) {
+  const periodStart = normalizeDateOnly(ai.period_start, 'period_start');
+  const periodEnd = normalizeDateOnly(ai.period_end, 'period_end');
+  if (inclusiveDays(periodStart, periodEnd) !== 7) {
+    throw permanentError('Weekly 7D Notification period must contain exactly seven days', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_MISMATCH',
+    });
+  }
+  let authority;
+  try {
+    authority = resolveDashboardReportSourceAuthority({
+      sourceReportIds,
+      platformScopes: WEEKLY_7D_PLATFORM_SCOPES,
+      profileKey: 'integration_workspace',
+      accountKey: 'chemistry_k',
+      periodKind: 'rolling_days',
+      periodStart,
+      periodEnd,
+      windowDays: 7,
+    });
+  } catch (cause) {
+    throw permanentError('Weekly 7D Notification source identities do not match canonical Report authority', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_MISMATCH',
+      details: {
+        causeCode: cause?.code ?? null,
+        sourceReportCount: sourceReportIds.length,
+      },
+    });
+  }
+  return Object.freeze({
+    customerProfile: authority.profileKey,
+    periodStart,
+    periodEnd,
+    reportSettingKeys: authority.reportSettingKeys,
+  });
 }
 
 async function findExact(repository, tableId, fieldName, value, fieldNames) {

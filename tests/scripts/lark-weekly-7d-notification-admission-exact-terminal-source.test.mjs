@@ -17,6 +17,17 @@ test('weekly Notification exact terminal keeps one Queue POST behind immutable a
   assert.match(source, /sourceSettingsState:\s*context\.settingsAuthority\.state/u);
 });
 
+test('weekly Notification exact terminal resolves Settings from canonical source authority without historical Snapshots', () => {
+  const start = source.indexOf("stage = 'resolve-runtime-settings-authority'");
+  const end = source.indexOf("stage = 'resolve-local-runtime-topology'", start);
+  assert.ok(start >= 0 && end > start);
+  const block = source.slice(start, end);
+  assert.match(block, /admission\.sourceReportSettingKeys/u);
+  assert.match(block, /sourceAuthorities:\s*admission\.sourceAuthorities/u);
+  assert.match(block, /resolveLarkWeekly7dNotificationSourceSettings/u);
+  assert.doesNotMatch(block, /reportSnapshots|snapshotRows|report_id/u);
+});
+
 test('weekly Notification exact terminal uses a bounded runtime window and restores the current Worker baseline', () => {
   const activeStage = source.indexOf("stage = 'deploy-bounded-notification-runtime-window'");
   const queueAttemptStage = source.indexOf("stage = 'record-one-queue-attempt'");

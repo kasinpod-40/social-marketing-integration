@@ -9,17 +9,9 @@ import {
 const GROUP_ID = 'weekly-reviewed-destination';
 const DESTINATION_HASH = createHash('sha256').update(GROUP_ID).digest('hex');
 
-function snapshot(reportId, settingKey) {
-  return {
-    recordId: `snapshot-${reportId}`,
-    fields: {
-      report_id: reportId,
-      report_setting_key: settingKey,
-      customer_profile: 'integration_workspace',
-    },
-  };
+function sourceAuthority(reportId, settingKey) {
+  return { reportId, reportSettingKey: settingKey };
 }
-
 function setting(settingKey, overrides = {}) {
   return {
     recordId: `setting-${settingKey}`,
@@ -35,17 +27,21 @@ function setting(settingKey, overrides = {}) {
   };
 }
 
-test('resolves inactive Settings with null destination from only the exact Fresh 7D source Reports', () => {
-  const authority = resolveLarkWeekly7dNotificationSourceSettings({
+function resolve(overrides = {}) {
+  return resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds: ['report-google-7d', 'report-meta-7d'],
-    snapshots: [
-      snapshot('report-meta-7d', 'setting-meta-7d'),
-      snapshot('report-google-7d', 'setting-google-7d'),
+    sourceAuthorities: [
+      sourceAuthority('report-meta-7d', 'setting-meta-7d'),
+      sourceAuthority('report-google-7d', 'setting-google-7d'),
     ],
     settings: [setting('setting-meta-7d'), setting('setting-google-7d')],
     expectedDestinationKeyHash: DESTINATION_HASH,
+    ...overrides,
   });
+}
 
+test('resolves inactive Settings from canonical source authority without Report Snapshots', () => {
+  const authority = resolve();
   assert.equal(authority.state, 'inactive');
   assert.equal(authority.destinationBaseline, 'unset');
   assert.deepEqual(authority.sourceReportIds, ['report-google-7d', 'report-meta-7d']);
@@ -57,20 +53,13 @@ test('resolves inactive Settings with null destination from only the exact Fresh
   assert.equal(authority.baseline.every((row) => row.groupId === null), true);
 });
 
-test('accepts one exact uniformly active retained baseline without turning runtime scheduling on', () => {
-  const authority = resolveLarkWeekly7dNotificationSourceSettings({
-    sourceReportIds: ['report-google-7d', 'report-meta-7d'],
-    snapshots: [
-      snapshot('report-meta-7d', 'setting-meta-7d'),
-      snapshot('report-google-7d', 'setting-google-7d'),
-    ],
+test('accepts one exact uniformly active retained baseline without changing runtime scheduling', () => {
+  const authority = resolve({
     settings: [
       setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
       setting('setting-google-7d', { ai_enabled: true, notification_enabled: true }),
     ],
-    expectedDestinationKeyHash: DESTINATION_HASH,
   });
-
   assert.equal(authority.state, 'active');
   assert.equal(authority.baseline.every((row) => row.aiEnabled), true);
   assert.equal(authority.baseline.every((row) => row.notificationEnabled), true);
@@ -79,7 +68,7 @@ test('accepts one exact uniformly active retained baseline without turning runti
 test('accepts a retained reviewed destination but rejects any non-reviewed destination', () => {
   const authority = resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds: ['report-current-7d'],
-    snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
+    sourceAuthorities: [sourceAuthority('report-current-7d', 'setting-current-7d')],
     settings: [setting('setting-current-7d', { group_id: GROUP_ID })],
     expectedDestinationKeyHash: DESTINATION_HASH,
   });
@@ -89,7 +78,7 @@ test('accepts a retained reviewed destination but rejects any non-reviewed desti
   assert.throws(
     () => resolveLarkWeekly7dNotificationSourceSettings({
       sourceReportIds: ['report-current-7d'],
-      snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
+      sourceAuthorities: [sourceAuthority('report-current-7d', 'setting-current-7d')],
       settings: [setting('setting-current-7d', { group_id: 'other-destination' })],
       expectedDestinationKeyHash: DESTINATION_HASH,
     }),
@@ -97,60 +86,37 @@ test('accepts a retained reviewed destination but rejects any non-reviewed desti
   );
 });
 
-test('does not require historical 1D 3D or 30D Preview Snapshot identities', () => {
-  const authority = resolveLarkWeekly7dNotificationSourceSettings({
-    sourceReportIds: ['report-current-7d'],
-    snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
-    settings: [setting('setting-current-7d')],
-    expectedDestinationKeyHash: DESTINATION_HASH,
-  });
-
-  assert.deepEqual(authority.settingKeys, ['setting-current-7d']);
-});
-
-test('fails closed when an exact Fresh source Snapshot is missing', () => {
+test('fails closed when canonical source authority is missing or mismatched', () => {
   assert.throws(
-    () => resolveLarkWeekly7dNotificationSourceSettings({
-      sourceReportIds: ['report-current-7d'],
-      snapshots: [],
-      settings: [setting('setting-current-7d')],
-      expectedDestinationKeyHash: DESTINATION_HASH,
+    () => resolve({ sourceAuthorities: [] }),
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
+  );
+  assert.throws(
+    () => resolve({
+      sourceAuthorities: [
+        sourceAuthority('report-meta-7d', 'setting-meta-7d'),
+        sourceAuthority('report-other-7d', 'setting-google-7d'),
+      ],
     }),
-    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID'
-      && error.details.matchCount === 0,
+    (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
   );
 });
 
 test('fails closed on partial activation or mixed active/inactive source Settings', () => {
   assert.throws(
-    () => resolveLarkWeekly7dNotificationSourceSettings({
-      sourceReportIds: ['report-current-7d'],
-      snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
-      settings: [setting('setting-current-7d', { notification_enabled: true })],
-      expectedDestinationKeyHash: DESTINATION_HASH,
-    }),
+    () => resolve({ settings: [setting('setting-meta-7d'), setting('setting-google-7d', { notification_enabled: true })] }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
   );
-
   assert.throws(
-    () => resolveLarkWeekly7dNotificationSourceSettings({
-      sourceReportIds: ['report-current-7d'],
-      snapshots: [snapshot('report-current-7d', 'setting-current-7d')],
-      settings: [setting('setting-current-7d', { ai_enabled: true })],
-      expectedDestinationKeyHash: DESTINATION_HASH,
-    }),
+    () => resolve({ settings: [setting('setting-meta-7d'), setting('setting-google-7d', { ai_enabled: true })] }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
   );
-
   assert.throws(
-    () => resolveLarkWeekly7dNotificationSourceSettings({
-      sourceReportIds: ['report-a', 'report-b'],
-      snapshots: [snapshot('report-a', 'setting-a'), snapshot('report-b', 'setting-b')],
+    () => resolve({
       settings: [
-        setting('setting-a', { ai_enabled: true, notification_enabled: true }),
-        setting('setting-b'),
+        setting('setting-meta-7d', { ai_enabled: true, notification_enabled: true }),
+        setting('setting-google-7d'),
       ],
-      expectedDestinationKeyHash: DESTINATION_HASH,
     }),
     (error) => error.code === 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID'
       && error.details.activeStateCount === 2,
