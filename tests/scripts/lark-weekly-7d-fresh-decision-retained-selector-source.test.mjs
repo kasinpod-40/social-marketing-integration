@@ -4,29 +4,42 @@ import test from 'node:test';
 
 const sourcePath = 'scripts/lib/lark-weekly-7d-fresh-decision-notification-source.js';
 const evidencePath = 'scripts/lib/lark-weekly-7d-retained-decision-evidence.js';
+const factualRenderPath = 'scripts/lib/lark-weekly-7d-accepted-factual-render.js';
 const deliveryPath = 'packages/connectors/src/lark/lark-notification-delivery-source.js';
 const source = await readFile(sourcePath, 'utf8');
 const evidence = await readFile(evidencePath, 'utf8');
+const factualRender = await readFile(factualRenderPath, 'utf8');
 const delivery = await readFile(deliveryPath, 'utf8');
 
-test('weekly Notification source is anchored to accepted retained Fresh v4 evidence', () => {
+test('weekly Notification authority uses durable Fresh row + tracked factual rendering only', () => {
   assert.match(evidence, /24ed4cbae0a92e6dd89e850833056ca411781275c53fa9f8d7577c99a3d9c861/u);
-  assert.match(evidence, /a732d4c4790ef99261e23e6a129a38822e9268a1f478387dfc2e82126b8a6fea/u);
-  assert.match(evidence, /decision-preview-summary\.json/u);
+  assert.match(factualRender, /a732d4c4790ef99261e23e6a129a38822e9268a1f478387dfc2e82126b8a6fea/u);
   assert.match(evidence, /source_report_checksum/u);
   assert.match(evidence, /resolveDashboardReportSourceAuthority/u);
-  assert.doesNotMatch(evidence, /reportSnapshots|searchRecordsByFieldValues/u);
+  assert.match(evidence, /readLarkWeeklyExecutiveCompactAiEvidence/u);
+  assert.match(evidence, /validateLarkWeeklyExecutiveFullChannelAiOutputs/u);
+  assert.match(evidence, /renderAcceptedWeekly7dChannelSections/u);
+  assert.doesNotMatch(evidence, /decision-preview-summary\.json|decisionEvidenceRoot|MKT_LARK_WEEKLY_7D_EXECUTIVE_DECISION_EVIDENCE_ROOT/u);
+  assert.doesNotMatch(evidence, /readFile|reportSnapshots|searchRecordsByFieldValues/u);
   assert.match(source, /loadLockedFreshWeekly7dDecisionEvidence/u);
-  assert.doesNotMatch(source, /loadRetainedWeeklyFactualReport|collectLarkNativeAiWeekly7dControlledUatSource/u);
+  assert.doesNotMatch(source, /retainedSummary|decisionEvidenceRoot|extractRetainedOverviewBody/u);
 });
 
-test('weekly Notification source preserves the exact reviewed message as immutable delivery authority', () => {
+test('weekly Notification source keeps exact reviewed final message as immutable live gate', () => {
   assert.match(evidence, /6b8a2f1d2243c0bb2575082afb4e5ea7a530e8d16de31a02ee666fcf27da2a5f/u);
   assert.match(evidence, /LOCKED_REVIEWED_MESSAGE_BYTES = 4118/u);
-  assert.match(source, /extractRetainedOverviewBody/u);
   assert.match(source, /buildLarkExecutiveNotificationMessage/u);
-  assert.match(source, /message\.text !== authority\.retainedMessage/u);
+  assert.match(source, /LARK_WEEKLY_7D_NOTIFICATION_REVIEWED_MESSAGE_DRIFT/u);
   assert.match(source, /deliveryOutputsSha256/u);
+  assert.match(source, /fresh_v4_lark_row_plus_tracked_factual_render/u);
+});
+
+test('weekly retained Quality Gate is rebuilt from durable compact evidence and remains fail-closed', () => {
+  assert.match(evidence, /validateLarkWeeklyExecutiveFullChannelAiOutputs/u);
+  assert.match(evidence, /qualityGate\.passed !== true/u);
+  assert.match(evidence, /FRESH_SOURCE_QUALITY_FAILED/u);
+  assert.match(evidence, /recommendations !== blueprints\.join\('\\n'\)/u);
+  assert.match(evidence, /COMPACT_INSIGHT_CTR_UNPROVABLE/u);
 });
 
 test('weekly dedicated Worker delivery is snapshotless while historical delivery retains its Snapshot path', () => {
