@@ -114,6 +114,72 @@ test('keeps Meta reach in Raw metrics without mislabeling it as unique viewers',
   assert.equal(writeSet.d1.organicHistoryBatch.contentRows.length, 0);
 });
 
+test('uses Facebook Post shares as a real ContentDaily fallback on the requested observation date', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'facebook',
+    accountId: 'page_fixture_001',
+    accountKey: 'chemistry_k_facebook',
+    customerProfile: 'integration_workspace',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_shares',
+    operationId: 'operation_meta_shares',
+    fetchedAt: Date.parse('2026-08-11T03:00:00Z'),
+    observationDate: '2026-08-10',
+    accountResource: {
+      id: 'page_fixture_001',
+      name: 'Fixture Facebook Page',
+      followers_count: 1250,
+    },
+    contentResources: [{
+      id: 'post_fixture_shares',
+      created_time: '2026-08-01T00:00:00+0000',
+      shares: { count: 4 },
+    }],
+    contentInsights: [{ contentId: 'post_fixture_shares', insights: [] }],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.raw.organicMetrics.length, 1);
+  assert.equal(writeSet.raw.organicMetrics[0].metric_name, 'shares_count');
+  assert.equal(writeSet.raw.organicMetrics[0].value_number, 4);
+  assert.equal(writeSet.raw.organicMetrics[0].response_shape, 'scalar');
+  assert.equal(writeSet.canonical.content[0].latest_shares, 4);
+  assert.equal(writeSet.canonical.contentDaily.length, 1);
+  assert.equal(writeSet.canonical.contentDaily[0].shares, 4);
+  assert.match(writeSet.canonical.contentDaily[0].content_daily_key, /:2026-08-10$/u);
+  assert.equal(writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].shares, 4);
+  assert.equal(writeSet.d1.accountDailyFacts[0].metric_date, '2026-08-10');
+  assert.equal(writeSet.reconciliation.contentDailyRows, 1);
+  assert.equal(writeSet.reconciliation.missingContentInsightRows, 0);
+});
+
+test('keeps an explicit Provider shares metric authoritative over the Post field fallback', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'facebook',
+    accountId: 'page_fixture_001',
+    accountKey: 'chemistry_k_facebook',
+    customerProfile: 'integration_workspace',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_shares_provider',
+    operationId: 'operation_meta_shares_provider',
+    fetchedAt: FETCHED_AT,
+    accountResource: { id: 'page_fixture_001', name: 'Fixture Facebook Page' },
+    contentResources: [{
+      id: 'post_fixture_shares',
+      created_time: '2026-07-23T17:30:00+0000',
+      shares: { count: 4 },
+    }],
+    contentInsights: [{
+      contentId: 'post_fixture_shares',
+      insights: [{ name: 'shares_count', period: 'lifetime', value: 9 }],
+    }],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.raw.organicMetrics.length, 1);
+  assert.equal(writeSet.canonical.contentDaily[0].shares, 9);
+});
+
 test('does not overwrite Organic latest metrics with null when content insights are absent', () => {
   const writeSet = buildMetaOrganicWriteSet({
     connectorKey: 'instagram',
