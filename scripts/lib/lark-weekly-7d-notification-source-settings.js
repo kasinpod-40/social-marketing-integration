@@ -8,20 +8,15 @@ const SOURCE_PROFILE = 'integration_workspace';
 const HASH = /^[a-f0-9]{64}$/u;
 
 /**
- * Resolve the exact Report Settings authority for one accepted Fresh Weekly 7D source.
+ * Resolve the exact current Report Settings for one accepted Fresh Weekly 7D source.
  *
- * Notification Runtime and automatic notification admission remain blocked independently from
- * Report Settings. The exact Fresh source Settings may therefore be uniformly inactive or retain
- * a previously reviewed active state. Mixed AI/notification flags or mixed active/inactive rows
- * are rejected before any controlled admission. The caller must restore the exact observed
- * baseline rather than assuming all-false.
- *
- * The Setting set must have group_id either unset on every row or set to the reviewed destination
- * on every row. Mixed destination state is rejected before any controlled activation.
+ * Historical Report Snapshot rows are not identity authority here. The caller supplies exact
+ * reportId → reportSettingKey bindings regenerated through the shared Report materialization
+ * contracts. Settings state/destination safety remains identical to the reviewed #616/#618 path.
  */
 export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   const sourceReportIds = normalizeSourceReportIds(input.sourceReportIds);
-  const snapshots = requireArray(input.snapshots, 'snapshots');
+  const sourceAuthorities = normalizeSourceAuthorities(input.sourceAuthorities);
   const settings = requireArray(input.settings, 'settings');
   const expectedDestinationKeyHash = input.expectedDestinationKeyHash
     ?? LARK_EXECUTIVE_DESTINATION_KEY_HASH;
@@ -29,26 +24,26 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
     throw new TypeError('expectedDestinationKeyHash must be SHA-256 hex');
   }
 
-  const exactSnapshots = sourceReportIds.map((reportId) => exactRecord(
-    snapshots,
-    'report_id',
-    reportId,
-    'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
-  ));
-  const profiles = [...new Set(exactSnapshots.map((record) => (
-    requireText(scalar(record.fields.customer_profile), 'customer_profile')
-  )))];
-  if (profiles.length !== 1 || profiles[0] !== SOURCE_PROFILE) {
+  const authorityReportIds = sourceAuthorities.map(({ reportId }) => reportId).sort();
+  if (JSON.stringify(authorityReportIds) !== JSON.stringify(sourceReportIds)) {
     throw sourceError(
-      'Fresh Weekly 7D source Reports must belong to the Integration Workspace',
+      'Fresh Weekly 7D source Report identities do not match canonical Report authority',
       'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
-      { customerProfileCount: profiles.length },
+      {
+        sourceReportCount: sourceReportIds.length,
+        authorityReportCount: authorityReportIds.length,
+      },
+    );
+  }
+  const settingKeys = [...new Set(sourceAuthorities.map(({ reportSettingKey }) => reportSettingKey))].sort();
+  if (settingKeys.length !== sourceAuthorities.length) {
+    throw sourceError(
+      'Fresh Weekly 7D source Reports must map one-to-one to Report Settings',
+      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
+      { sourceReportCount: sourceAuthorities.length, sourceSettingCount: settingKeys.length },
     );
   }
 
-  const settingKeys = [...new Set(exactSnapshots.map((record) => (
-    requireText(scalar(record.fields.report_setting_key), 'report_setting_key')
-  )))].sort();
   const configuredGroupIds = [];
   const baseline = settingKeys.map((settingKey) => {
     const matches = settings.filter((record) => (
@@ -66,10 +61,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
     const fields = record.fields ?? {};
     const enabled = readBoolean(fields.enabled, 'enabled');
     const aiEnabled = readBoolean(fields.ai_enabled, 'ai_enabled');
-    const notificationEnabled = readBoolean(
-      fields.notification_enabled,
-      'notification_enabled',
-    );
+    const notificationEnabled = readBoolean(fields.notification_enabled, 'notification_enabled');
     if (!enabled || aiEnabled !== notificationEnabled) {
       throw sourceError(
         'Fresh Weekly 7D source Settings must be enabled with matching AI/notification flags',
@@ -95,10 +87,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
     throw sourceError(
       'Fresh Weekly 7D source Settings must share one exact active/inactive state',
       'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_SETTINGS_INVALID',
-      {
-        activeStateCount: activeStates.length,
-        sourceSettingCount: baseline.length,
-      },
+      { activeStateCount: activeStates.length, sourceSettingCount: baseline.length },
     );
   }
 
@@ -124,6 +113,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
   return deepFreeze({
     state: activeStates[0] ? 'active' : 'inactive',
     sourceReportIds,
+    sourceAuthorities,
     settingKeys,
     customerProfile: SOURCE_PROFILE,
     destinationKeyHash: expectedDestinationKeyHash,
@@ -133,8 +123,7 @@ export function resolveLarkWeekly7dNotificationSourceSettings(input = {}) {
 }
 
 function normalizeSourceReportIds(value) {
-  const rows = requireArray(value, 'sourceReportIds')
-    .map((item) => requireText(item, 'sourceReportId'));
+  const rows = requireArray(value, 'sourceReportIds').map((item) => requireText(item, 'sourceReportId'));
   const unique = [...new Set(rows)].sort();
   if (unique.length === 0 || unique.length !== rows.length) {
     throw sourceError(
@@ -145,19 +134,24 @@ function normalizeSourceReportIds(value) {
   }
   return Object.freeze(unique);
 }
-
-function exactRecord(records, fieldName, expected, code) {
-  const matches = records.filter((record) => (
-    String(scalar(record?.fields?.[fieldName]) ?? '') === expected
-  ));
-  if (matches.length !== 1) {
+function normalizeSourceAuthorities(value) {
+  const rows = requireArray(value, 'sourceAuthorities').map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new TypeError('sourceAuthority must be an object');
+    }
+    return Object.freeze({
+      reportId: requireText(item.reportId, 'sourceAuthority.reportId'),
+      reportSettingKey: requireText(item.reportSettingKey, 'sourceAuthority.reportSettingKey'),
+    });
+  });
+  if (rows.length === 0
+      || new Set(rows.map(({ reportId }) => reportId)).size !== rows.length) {
     throw sourceError(
-      `Fresh Weekly 7D source requires one exact ${fieldName}`,
-      code,
-      { matchCount: matches.length },
+      'Fresh Weekly 7D canonical Report authority must be non-empty and unique',
+      'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID',
     );
   }
-  return matches[0];
+  return Object.freeze(rows.sort((left, right) => left.reportId.localeCompare(right.reportId)));
 }
 function requireArray(value, label) {
   if (!Array.isArray(value)) throw new TypeError(`${label} must be an array`);
@@ -187,9 +181,7 @@ function scalar(value) {
     return value.map(scalar).join('');
   }
   if (typeof value === 'object') {
-    for (const key of ['text', 'name', 'value']) {
-      if (value[key] !== undefined) return scalar(value[key]);
-    }
+    for (const key of ['text', 'name', 'value']) if (value[key] !== undefined) return scalar(value[key]);
   }
   return value;
 }
