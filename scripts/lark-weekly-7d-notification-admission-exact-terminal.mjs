@@ -68,6 +68,7 @@ const POLL_INTERVAL_MS = 2_000;
 const MAX_POLLS = 90;
 const OBSERVATION_MS = 15_000;
 const QUIESCENCE_REQUIRED_ZERO_SAMPLES = 3;
+const QUIESCENT_READ_MAX_BOUNDARY_ATTEMPTS = 3;
 const SOURCE_HASH_FIELDS = Object.freeze([
   'ai_run_key', 'report_id', 'template_version', 'scope_type', 'channel_key', 'window_days',
   'readiness_status', 'generation_status', 'failure_code', 'preview_mode',
@@ -122,10 +123,10 @@ async function previewAdmission() {
   const context = await prepare('preview');
   stage = 'verify-automation-state-read-only';
   const automation = await verifyAutomationState(context.client);
-  stage = 'await-remote-read-only-quiescence';
-  const quiescence = await awaitRemoteQuiescence(context, 'preview');
   stage = 'remote-read-only-preflight';
-  const beforeD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
+  const previewBoundary = await readD1StateAtQuiescence(context, 'preview');
+  const quiescence = previewBoundary.quiescence;
+  const beforeD1 = assertLarkWeekly7dNotificationAdmissionBaseline(previewBoundary.state);
   const beforeLark = await readLarkBaseline(context);
   await assertSettingsBaseline(context);
   await assertSourceUnchanged(context);
@@ -157,6 +158,7 @@ async function previewAdmission() {
     remoteQuiescenceVerified: quiescence.verified,
     remoteQuiescencePollCount: quiescence.pollCount,
     remoteQuiescenceRequiredZeroSamples: quiescence.requiredZeroSamples,
+    remoteQuiescentReadBoundaryAttempt: previewBoundary.boundaryAttempt,
     deliveryRowsBefore: beforeD1.totalDeliveryRows,
     sentMirroredRowsBefore: beforeD1.sentMirroredRows,
     notificationLogRowsBefore: beforeLark.totalSentNotificationLogRows,
@@ -199,10 +201,10 @@ async function executeAdmission() {
     await assertNoFile(join(context.evidenceDir, 'notification-admission-summary.json'), true);
     stage = 'verify-automation-state-before-window';
     automationBefore = await verifyAutomationState(context.client);
-    stage = 'await-remote-read-only-quiescence-before-preflight';
-    const preflightQuiescence = await awaitRemoteQuiescence(context, 'execute-preflight');
     stage = 'remote-read-only-preflight';
-    beforeD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
+    const preflightBoundary = await readD1StateAtQuiescence(context, 'execute-preflight');
+    const preflightQuiescence = preflightBoundary.quiescence;
+    beforeD1 = assertLarkWeekly7dNotificationAdmissionBaseline(preflightBoundary.state);
     beforeLark = await readLarkBaseline(context);
     await assertSettingsBaseline(context);
     await assertSourceUnchanged(context);
@@ -235,6 +237,7 @@ async function executeAdmission() {
       remoteQuiescenceVerified: preflightQuiescence.verified,
       remoteQuiescencePollCount: preflightQuiescence.pollCount,
       remoteQuiescenceRequiredZeroSamples: preflightQuiescence.requiredZeroSamples,
+      remoteQuiescentReadBoundaryAttempt: preflightBoundary.boundaryAttempt,
       deliveryRowsBefore: beforeD1.totalDeliveryRows,
       notificationLogRowsBefore: beforeLark.totalSentNotificationLogRows,
       automationState: automationBefore,
@@ -252,10 +255,10 @@ async function executeAdmission() {
     }
     await assertSettingsActive(context);
 
-    stage = 'await-remote-read-only-quiescence-before-deploy';
-    await awaitRemoteQuiescence(context, 'execute-pre-deploy');
     stage = 'verify-pre-deploy-strict-baseline';
-    const preDeployD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
+    const preDeployD1 = assertLarkWeekly7dNotificationAdmissionBaseline(
+      (await readD1StateAtQuiescence(context, 'execute-pre-deploy')).state,
+    );
     if (JSON.stringify(beforeD1) !== JSON.stringify(preDeployD1)) {
       fail(
         'Weekly Notification Remote delivery baseline changed before bounded Runtime deploy',
@@ -283,7 +286,9 @@ async function executeAdmission() {
     stage = 'verify-active-window-no-admission-drift';
     await assertSettingsActive(context);
     await verifyAutomationState(context.client);
-    const postDeployD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
+    const postDeployD1 = assertLarkWeekly7dNotificationAdmissionBaseline(
+      (await readD1StateAtQuiescence(context, 'execute-post-deploy')).state,
+    );
     if (JSON.stringify(beforeD1) !== JSON.stringify(postDeployD1)) {
       fail('Bounded Notification Runtime window changed delivery evidence before admission', 'LARK_WEEKLY_7D_NOTIFICATION_RUNTIME_WINDOW_DRIFT');
     }
@@ -322,10 +327,10 @@ async function executeAdmission() {
     });
     const jobHash = sha256(JSON.stringify(job));
 
-    stage = 'await-remote-read-only-quiescence-before-admission';
-    await awaitRemoteQuiescence(context, 'execute-pre-admission');
     stage = 'verify-pre-admission-strict-baseline';
-    const preAdmissionD1 = assertLarkWeekly7dNotificationAdmissionBaseline(readD1State(context));
+    const preAdmissionD1 = assertLarkWeekly7dNotificationAdmissionBaseline(
+      (await readD1StateAtQuiescence(context, 'execute-pre-admission')).state,
+    );
     if (JSON.stringify(beforeD1) !== JSON.stringify(preAdmissionD1)) {
       fail(
         'Weekly Notification Remote delivery baseline changed before exact Queue admission',
@@ -366,7 +371,7 @@ async function executeAdmission() {
     await assertSourceUnchanged(context);
     stage = 'bounded-no-additional-admission-observation';
     await sleep(readObservationMs(context.env));
-    const observed = readD1State(context);
+    const observed = (await readD1StateAtQuiescence(context, 'execute-stability')).state;
     stability = assertLarkWeekly7dNotificationAdmissionStable(delivered, observed);
     const observedLark = await verifyLarkDelivery(context, beforeLark);
     if (JSON.stringify(afterLark) !== JSON.stringify(observedLark)) {
@@ -526,7 +531,8 @@ async function recoverAdmission() {
   await assertSourceUnchanged(context);
   stage = 'recovery-no-admission-observation';
   await sleep(readObservationMs(context.env));
-  const stability = assertLarkWeekly7dNotificationAdmissionStable(delivered, readD1State(context));
+  const recoveryObserved = (await readD1StateAtQuiescence(context, 'recovery-stability')).state;
+  const stability = assertLarkWeekly7dNotificationAdmissionStable(delivered, recoveryObserved);
   const observedLark = await verifyRecoveredLarkDelivery(context, beforeLark);
   if (JSON.stringify(afterLark) !== JSON.stringify(observedLark)) {
     fail('Recovered weekly Notification state changed without a new admission', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_LARK_STABILITY_FAILED');
@@ -893,6 +899,37 @@ async function awaitRemoteQuiescence(context, label) {
     },
   );
 }
+function isActiveLockOnlyRemoteStateError(error) {
+  return error?.code === 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_REMOTE_STATE_INVALID'
+    && Array.isArray(error?.details?.invalid)
+    && error.details.invalid.length === 1
+    && error.details.invalid[0] === 'activeLocks';
+}
+async function readD1StateAtQuiescence(context, label) {
+  for (let boundaryAttempt = 1; boundaryAttempt <= QUIESCENT_READ_MAX_BOUNDARY_ATTEMPTS; boundaryAttempt += 1) {
+    const quiescence = await awaitRemoteQuiescence(context, `${label}-boundary-${boundaryAttempt}`);
+    try {
+      return Object.freeze({
+        state: readD1State(context),
+        quiescence,
+        boundaryAttempt,
+      });
+    } catch (error) {
+      if (!isActiveLockOnlyRemoteStateError(error)) throw error;
+      process.stdout.write(`${JSON.stringify({
+        event: 'lark_weekly_7d_quiescent_read_race',
+        label,
+        boundaryAttempt,
+        retrying: boundaryAttempt < QUIESCENT_READ_MAX_BOUNDARY_ATTEMPTS,
+      })}\n`);
+    }
+  }
+  fail(
+    'Weekly Notification Admission could not hold a strict zero-lock boundary through Remote readback',
+    'LARK_WEEKLY_7D_NOTIFICATION_QUIESCENT_READ_RACE_EXHAUSTED',
+    { maximumBoundaryAttempts: QUIESCENT_READ_MAX_BOUNDARY_ATTEMPTS },
+  );
+}
 function readD1State(context) {
   const output = text('npx', ['wrangler', 'd1', 'execute', context.databaseName, '--remote', '--config', context.restoreConfigPath, '--command', buildLarkWeekly7dNotificationAdmissionReadbackSql(context.admission.aiRunKey), '--json'], { env: context.cloudflare.wranglerEnv });
   return normalizeLarkWeekly7dNotificationAdmissionReadback(extractLarkNotificationWranglerD1Rows(output)[0]);
@@ -902,7 +939,7 @@ async function pollDelivered(context, before) {
   const interval = positiveInteger(context.env.MKT_LARK_WEEKLY_7D_NOTIFICATION_POLL_INTERVAL_MS ?? POLL_INTERVAL_MS, 'pollIntervalMs');
   let last = null;
   for (let index = 1; index <= maxPolls; index += 1) {
-    last = readD1State(context);
+    last = (await readD1StateAtQuiescence(context, `delivery-poll-${index}`)).state;
     process.stdout.write(`${JSON.stringify({ event: 'lark_weekly_7d_notification_progress', poll: index, totalDeliveryRows: last.totalDeliveryRows, admissionDeliveryRows: last.admissionDeliveryRows, admissionDeliveryStatus: last.admissionDeliveryStatus, admissionMirrorStatus: last.admissionMirrorStatus, unrelatedUnsafeDeliveryRows: last.unrelatedUnsafeDeliveryRows })}\n`);
     try { return assertLarkWeekly7dNotificationAdmissionDelivered(before, last); } catch (error) { if (error?.code !== 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_NOT_CONFIRMED') throw error; }
     if (index < maxPolls) await sleep(interval);
@@ -910,7 +947,7 @@ async function pollDelivered(context, before) {
   fail('Weekly Notification Admission delivery verification timed out', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_VERIFY_TIMEOUT', { admissionDeliveryRows: last?.admissionDeliveryRows ?? null, admissionDeliveryStatus: last?.admissionDeliveryStatus ?? null, admissionMirrorStatus: last?.admissionMirrorStatus ?? null });
 }
 async function pollExistingDelivered(context) {
-  const first = readD1State(context);
+  const first = (await readD1StateAtQuiescence(context, 'recovery-initial-delivery')).state;
   if (first.admissionDeliveryRows === 0) fail('Recovery found no retained admitted D1 delivery; automatic resend is forbidden', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_DELIVERY_MISSING');
   const syntheticBefore = Object.freeze({ ...first, totalDeliveryRows: first.totalDeliveryRows - 1, sentMirroredRows: Math.max(0, first.sentMirroredRows - (first.admissionDeliveryStatus === 'sent' && first.admissionMirrorStatus === 'mirrored' ? 1 : 0)), unsafeDeliveryRows: 0, admissionDeliveryRows: 0, admissionDeliveryStatus: null, admissionMirrorStatus: null, admissionClaimCount: 0, admissionSentAt: null, admissionMessageIdHash: null });
   return pollDelivered(context, syntheticBefore);
@@ -1001,7 +1038,7 @@ function resolveQueueName(config) { const matches = Array.isArray(config?.queues
 async function writeGeneratedConfig(path, configText) { const rebased = rebaseGeneratedWranglerConfigPaths(configText, { sourceDirectory: dirname(SOURCE_CONFIG), outputDirectory: dirname(path) }); await writeFile(path, rebased.text, { encoding: 'utf8', mode: 0o600 }); await chmod(path, 0o600); }
 function exactMainHead() { run('git', ['fetch', '--quiet', 'origin', 'main']); const branch = text('git', ['branch', '--show-current'], { raw: true }).trim(); const head = text('git', ['rev-parse', 'HEAD']); const originMain = text('git', ['rev-parse', 'origin/main']); const dirty = text('git', ['status', '--porcelain', '--untracked-files=all'], { raw: true }).trim(); if (branch !== 'main' || head !== originMain || dirty) fail('Weekly Notification Admission requires clean exact current main', 'LARK_WEEKLY_7D_NOTIFICATION_REPOSITORY_INVALID', { branch, head, originMain, dirtyPathCount: dirty ? dirty.split(/\r?\n/u).length : 0 }); return head; }
 function parseArgs(args) { const modes = ['--preview', '--execute', '--recover'].filter((mode) => args.includes(mode)); const unknown = args.filter((arg) => !['--preview', '--execute', '--recover'].includes(arg)); if (unknown.length > 0 || modes.length > 1) fail('Weekly Notification terminal accepts one of --preview, --execute, or --recover', 'LARK_WEEKLY_7D_NOTIFICATION_ARGUMENT_INVALID', { unknown }); if (modes[0] === '--preview') return 'preview'; if (modes[0] === '--execute') return 'execute'; if (modes[0] === '--recover') return 'recover'; return 'plan'; }
-function printPlan() { process.stdout.write(`${JSON.stringify({ ok: true, executed: false, contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION, admissionConfirmation: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION, recoveryConfirmation: RECOVERY_CONFIRMATION, sequence: ['revalidate exact generated Fresh Weekly Executive Decision v4 and unchanged Decision Quality Gate', 'require every exact Fresh source Report Setting to be enabled and internally consistent while preserving its observed per-row active/inactive baseline', 'prove a multi-sample Remote lock quiescence boundary before strict preflight, Runtime deploy, and exact Queue admission', 'build a bounded active Worker window that preserves all current source/report execution flags and triggers', 'activate only source Report Settings that are inactive in the observed baseline', 'rebuild the exact reviewed full-channel message and require SHA-256 parity before admission', 'record immutable Queue-attempt evidence including the exact non-secret per-row Settings baseline before exactly one Runtime Queue admission', 'verify one sent/mirrored D1 delivery, one Notification Log row and sent_to_group=true', 'restore the exact current Worker baseline and each Report Setting to its exact observed pre-admission state', 'observe without another admission and prove duplicate delivery zero'], readOnlyPreviewAvailable: true, afterQueueAttemptFailure: 'use --recover only; never rerun --execute', maximumWorkerDeploymentCount: 2, maximumQueueAdmissionCount: 1, maximumMessageSendCount: 1, reportSettingWriteMode: 'activate_only_inactive_rows_then_restore_exact_per_row_baseline', remoteLockQuiescenceRequiredZeroSamples: QUIESCENCE_REQUIRED_ZERO_SAMPLES, sourceDecisionMutationCount: 0, baseNotificationAutomationActivationCount: 0, automaticNotificationProducerEnabled: false, scheduleActivationCount: 0, production: 'BLOCKED' }, null, 2)}\n`); }
+function printPlan() { process.stdout.write(`${JSON.stringify({ ok: true, executed: false, contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION, admissionConfirmation: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION, recoveryConfirmation: RECOVERY_CONFIRMATION, sequence: ['revalidate exact generated Fresh Weekly Executive Decision v4 and unchanged Decision Quality Gate', 'require every exact Fresh source Report Setting to be enabled and internally consistent while preserving its observed per-row active/inactive baseline', 'prove a multi-sample Remote lock quiescence boundary and hold that boundary through every strict Remote D1 readback', 'build a bounded active Worker window that preserves all current source/report execution flags and triggers', 'activate only source Report Settings that are inactive in the observed baseline', 'rebuild the exact reviewed full-channel message and require SHA-256 parity before admission', 'record immutable Queue-attempt evidence including the exact non-secret per-row Settings baseline before exactly one Runtime Queue admission', 'verify one sent/mirrored D1 delivery, one Notification Log row and sent_to_group=true', 'restore the exact current Worker baseline and each Report Setting to its exact observed pre-admission state', 'observe without another admission and prove duplicate delivery zero'], readOnlyPreviewAvailable: true, afterQueueAttemptFailure: 'use --recover only; never rerun --execute', maximumWorkerDeploymentCount: 2, maximumQueueAdmissionCount: 1, maximumMessageSendCount: 1, reportSettingWriteMode: 'activate_only_inactive_rows_then_restore_exact_per_row_baseline', remoteLockQuiescenceRequiredZeroSamples: QUIESCENCE_REQUIRED_ZERO_SAMPLES, remoteLockQuiescentReadBoundaryAttempts: QUIESCENT_READ_MAX_BOUNDARY_ATTEMPTS, sourceDecisionMutationCount: 0, baseNotificationAutomationActivationCount: 0, automaticNotificationProducerEnabled: false, scheduleActivationCount: 0, production: 'BLOCKED' }, null, 2)}\n`); }
 function assertRecoveryConfirmation(env) { if (env?.[RECOVERY_CONFIRMATION.envName] !== RECOVERY_CONFIRMATION.value) fail(`Weekly Notification recovery requires ${RECOVERY_CONFIRMATION.envName}=${RECOVERY_CONFIRMATION.value}`, 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_CONFIRMATION_REQUIRED', { envName: RECOVERY_CONFIRMATION.envName }); }
 
 async function assertNoFile(path, failIfExists) { try { await stat(path); if (failIfExists) fail('Weekly Notification Admission retained evidence already exists; blind rerun is forbidden', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ALREADY_ATTEMPTED', { evidenceName: path.split('/').pop() }); return false; } catch (error) { if (error?.code === 'ENOENT') return true; throw error; } }
