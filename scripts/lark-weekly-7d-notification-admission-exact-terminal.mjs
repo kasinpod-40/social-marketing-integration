@@ -533,6 +533,7 @@ async function prepare(mode) {
       'tests/application/deliver-lark-executive-notification.test.js',
       'tests/application/lark-notification-active-job-router.test.js',
       'tests/connectors/lark-notification-delivery-source.test.js',
+      'tests/connectors/lark-notification-delivery-source-weekly-snapshotless.test.js',
       'tests/connectors/d1-lark-notification-delivery-store.test.js',
     ], { stdio: 'inherit' });
     run('npm', ['run', 'check'], { stdio: 'inherit' });
@@ -569,20 +570,7 @@ async function prepare(mode) {
   await chmod(evidenceDir, 0o700);
 
   stage = 'resolve-runtime-settings-authority';
-  const snapshotRows = await larkRepository.listByFieldValues(
-    tableIds.reportSnapshots,
-    'report_id',
-    admission.sourceReportIds,
-  );
-  const sourceSettingKeys = [...new Set(admission.sourceReportIds.map((reportId) => {
-    const matchesForReport = snapshotRows.filter((record) => (
-      String(scalar(record?.fields?.report_id) ?? '') === reportId
-    ));
-    if (matchesForReport.length !== 1) {
-      fail('Could not resolve exact Fresh Weekly Executive Decision source Report Snapshot', 'LARK_WEEKLY_7D_NOTIFICATION_SOURCE_REPORT_INVALID', { matchCount: matchesForReport.length });
-    }
-    return requireText(scalar(matchesForReport[0].fields.report_setting_key), 'report_setting_key');
-  }))].sort();
+  const sourceSettingKeys = [...admission.sourceReportSettingKeys];
   const settingRows = await larkRepository.listByFieldValues(
     tableIds.reportSettings,
     'report_setting_key',
@@ -590,7 +578,7 @@ async function prepare(mode) {
   );
   const settingsAuthority = resolveLarkWeekly7dNotificationSourceSettings({
     sourceReportIds: admission.sourceReportIds,
-    snapshots: snapshotRows,
+    sourceAuthorities: admission.sourceAuthorities,
     settings: settingRows,
     expectedDestinationKeyHash: LARK_EXECUTIVE_DESTINATION_KEY_HASH,
   });
@@ -629,7 +617,7 @@ async function prepare(mode) {
     activeConfigPath, restoreConfigPath, runtimeWindow,
     cloudflare, databaseName, queueName, queueId,
     client, tableIds, larkRepository, syncEngine,
-    sourceRecord, sourceStateSha256, admission, snapshotRows, settingsAuthority,
+    sourceRecord, sourceStateSha256, admission, settingsAuthority,
   });
 }
 
