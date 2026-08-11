@@ -5,13 +5,17 @@ import {
 } from '../../../packages/application/src/jobs/job-catalog.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
+import { buildAutomaticWeeklyExecutiveScheduledJobs } from './lark-weekly-executive-scheduled-job.js';
 import { buildScheduledJobs } from './scheduled-jobs.js';
 import { logQueueResult } from './worker-runtime-support.js';
 
 /** Cron ทำหน้าที่เป็น Producer เท่านั้น เพื่อให้ Retry/Lock/DLQ อยู่ใน Queue flow เดียวกัน */
 export async function produceScheduledJobs(event, env) {
   const scheduledAt = new Date(event.scheduledTime).toISOString();
-  const jobs = buildScheduledJobs({ event, env, scheduledAt });
+  const jobs = Object.freeze([
+    ...buildScheduledJobs({ event, env, scheduledAt }),
+    ...buildAutomaticWeeklyExecutiveScheduledJobs({ event, env, scheduledAt }),
+  ]);
 
   if (jobs.length === 0) {
     logQueueResult({
@@ -55,6 +59,7 @@ export async function produceScheduledJobs(event, env) {
       reportSettingKey: job.reportSettingKey ?? null,
       metricDate: job.metricDate ?? null,
       periodEnd: job.periodEnd ?? null,
+      automaticWeekly: job.automaticWeekly === true,
     });
   }
 }
