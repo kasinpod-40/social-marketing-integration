@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Automatic Weekly Executive Notification Live Activation — 2026-08-11
+
+### Changed
+
+- Promoted the already-reviewed Weekly Executive path to automatic Integration Workspace delivery by enabling the existing Notification runtime/send/mirror gates in `runtime` mode and the dedicated Monday 08:30 Asia/Bangkok producer while preserving Weekly Shared Report at Monday 08:15.
+- Kept the existing AI Materialization Automation enabled, Base `Eligible AI Run → Lark Group Notification` Automation disabled, and D1 atomic notification claim as the exact-once delivery authority.
+- Corrected the live activation source-Settings boundary in PR #633 so exact canonical `report_setting_key` values are read back as raw Lark records before the existing source-settings resolver validates them.
+- Recorded that the current live Worker path imports `node:crypto`; the ignored active `wrangler.sync.jsonc` therefore preserves `nodejs_compat` unless that implementation is later migrated away from the Node built-in.
+
+### Live validation and safety
+
+- Final activation completed on `main@89f9c615f2ae20f798b089e639c3d9dd5f1cb38a` with Worker version `f19492d2-67f4-4b7c-ba78-3bb84fb439e8` serving 100% traffic and eight exact 7D source Reports.
+- The first post-hotfix execute had a controlled partial state: three exact 7D Report Settings were activated, Cloudflare rejected Worker version creation before deployment because Node compatibility was absent, and Queue/message counts remained zero. Recovery preserved those Settings and completed with zero additional Setting writes.
+- Final runtime state is Notification runtime/send/mirror ON, Automatic Weekly ON at Monday 08:30 Asia/Bangkok, AI Materialization Automation ON, Base Notification Automation OFF, immediate Queue admissions 0, immediate Lark sends 0, and Production BLOCKED.
+- The next eligible automatic period is `2026-08-10..2026-08-16`, due Monday `2026-08-17 08:30 Asia/Bangkok`; incomplete/stale source, Native AI failure or Executive Decision Quality Gate failure must fail closed without substituting an older Weekly identity.
+
 ## Unreleased — Facebook ContentDaily Live Source Repair — 2026-08-11
 
 ### Changed
