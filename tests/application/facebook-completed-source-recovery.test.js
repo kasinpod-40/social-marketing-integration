@@ -252,7 +252,7 @@ test('completed-source incident preflight rejects missing stable generation time
   assert.ok(result.errors.some((row) => row.field === 'dead letter replay generation'));
 });
 
-test('completion contract requires D1, Lark, Work completion and target-day observations', () => {
+test('legacy phase completion remains compatible when durable completion evidence is absent', () => {
   const pass = evaluateFacebookCompletedSourceCompletion({
     latest: {
       work_lifecycle_status: 'completed',
@@ -271,6 +271,25 @@ test('completion contract requires D1, Lark, Work completion and target-day obse
     },
   });
   assert.equal(pass.ok, true);
+
+  const malformed = evaluateFacebookCompletedSourceCompletion({
+    latest: {
+      work_lifecycle_status: 'completed',
+      sync_status: 'success',
+      completion_json: '{invalid',
+      source_complete: 1,
+      source_stage: 'complete',
+      source_units: incident.expectedUnits,
+      content_index: incident.expectedContentCount,
+      content_count: incident.expectedContentCount,
+      d1_complete: 1,
+      lark_complete: 1,
+      completion_complete: 1,
+      active_locks: 0,
+    },
+  });
+  assert.equal(malformed.ok, false);
+  assert.ok(malformed.errors.some((row) => row.field === 'durable completion_json'));
 
   const fail = evaluateFacebookCompletedSourceCompletion({
     latest: {

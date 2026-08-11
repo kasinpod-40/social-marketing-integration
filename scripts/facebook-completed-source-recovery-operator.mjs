@@ -26,6 +26,8 @@ const POLL_MS = 15_000;
 const MAX_POLLS = 240;
 const AUTH_REFRESH_MS = 4 * 60 * 1000;
 const incident = FACEBOOK_COMPLETED_SOURCE_INCIDENT;
+const CONTENT_COVERAGE_RUN_ID = `${incident.operationId}:facebook:content`;
+const ACCOUNT_COVERAGE_RUN_ID = `${incident.operationId}:facebook:account_daily`;
 
 let restoreOutcome = Object.freeze({ attempted: false, status: 'not_required' });
 
@@ -44,8 +46,18 @@ try {
 }
 
 async function main() {
-  const execute = process.argv.slice(2).includes('--execute');
-  if (!execute) {
+  const args = process.argv.slice(2);
+  const execute = args.includes('--execute');
+  const recover = args.includes('--recover');
+  const unknown = args.filter((arg) => !['--execute', '--recover'].includes(arg));
+  if (unknown.length > 0 || (execute && recover)) {
+    throw operatorError(
+      'Facebook recovery operator accepts exactly one of --execute or --recover',
+      'FACEBOOK_COMPLETED_SOURCE_RECOVERY_ARGUMENT_INVALID',
+      { unknown },
+    );
+  }
+  if (!execute && !recover) {
     printPlan();
     return;
   }
@@ -57,6 +69,12 @@ async function main() {
   const fileEnv = await readDevVars(DEV_VARS_PATH);
   const runtime = await createCloudflareRuntime({ configText: sourceConfigText, fileEnv, config });
   const evidenceRoot = await createEvidenceRoot();
+
+  if (recover) {
+    await closeoutRecoveredIncident({ runtime, config, evidenceRoot });
+    return;
+  }
+
   const tempConfigPath = resolve(`.facebook-completed-source-recovery-${process.pid}.json`);
 
   const preflightSnapshot = await readPreflightSnapshot(runtime);
@@ -221,32 +239,35 @@ async function main() {
   const finalReadback = await readCompletionSnapshot(runtime);
   const finalCompletion = evaluateFacebookCompletedSourceCompletion({ latest: finalReadback });
   const deadLetter = await readExactDeadLetter(runtime);
+  const summary = finalCompletion.summary ?? {};
   const final = {
     ok: finalResult?.ok === true && finalCompletion.ok && restoreOutcome.status === 'restored',
     status: finalResult?.ok === true && finalCompletion.ok && restoreOutcome.status === 'restored'
       ? 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_CLOSED'
       : 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_FINAL_READBACK_BLOCKED',
+    mode: 'EXECUTE_ONCE',
     contractVersion: incident.contractVersion,
-    repository: {
-      requiredMergeSha: incident.requiredMainSha,
-      head: readCommand('git', ['rev-parse', 'HEAD']).trim(),
-      branch: readCommand('git', ['branch', '--show-current']).trim(),
-      clean: readCommand('git', ['status', '--porcelain']).trim() === '',
-    },
+    repository: repositorySummary(),
     source: {
-      stage: finalReadback.source_stage,
-      complete: Number(finalReadback.source_complete ?? 0),
-      unitCount: Number(finalReadback.source_units ?? 0),
-      contentIndex: Number(finalReadback.content_index ?? 0),
-      contentCount: Number(finalReadback.content_count ?? 0),
+      stage: finalCompletion.ok ? 'complete' : finalReadback.source_stage,
+      complete: finalCompletion.ok ? 1 : Number(finalReadback.source_complete ?? 0),
+      unitCount: finalCompletion.ok ? incident.expectedUnits : Number(finalReadback.source_units ?? 0),
+      contentIndex: finalCompletion.ok ? incident.expectedContentCount : Number(finalReadback.content_index ?? 0),
+      contentCount: finalCompletion.ok ? incident.expectedContentCount : Number(finalReadback.content_count ?? 0),
+      sourceContentRows: Number(summary.sourceContentRows ?? 0),
+      contentDailyRows: Number(summary.contentDailyRows ?? 0),
       providerReplayPreventedByCompletedSourceGate: true,
     },
     business: {
-      d1Complete: Number(finalReadback.d1_complete ?? 0),
-      larkComplete: Number(finalReadback.lark_complete ?? 0),
-      completionComplete: Number(finalReadback.completion_complete ?? 0),
+      d1Complete: finalCompletion.ok ? 1 : Number(finalReadback.d1_complete ?? 0),
+      larkComplete: finalCompletion.ok ? 1 : Number(finalReadback.lark_complete ?? 0),
+      completionComplete: finalCompletion.ok ? 1 : Number(finalReadback.completion_complete ?? 0),
+      d1ExpectedOperations: Number(summary.d1ExpectedOperations ?? 0),
+      d1ProcessedOperations: Number(summary.d1ProcessedOperations ?? 0),
+      larkTableCount: Number(summary.larkTableCount ?? 0),
       operationObservations: Number(finalReadback.operation_observations ?? 0),
-      targetDayObservations: Number(finalReadback.target_day_observations ?? 0),
+      accountDailyRows: Number(summary.accountDailyRows ?? 0),
+      targetDayAccountDailyRows: Number(summary.targetDayAccountDailyRows ?? 0),
     },
     deadLetter: {
       dlqId: deadLetter?.dlq_id ?? null,
@@ -270,6 +291,84 @@ async function main() {
   if (!final.ok) process.exitCode = 1;
 }
 
+async function closeoutRecoveredIncident({ runtime, config, evidenceRoot }) {
+  const finalReadback = await readCompletionSnapshot(runtime);
+  const finalCompletion = evaluateFacebookCompletedSourceCompletion({ latest: finalReadback });
+  const deadLetter = await readExactDeadLetter(runtime);
+  const summary = finalCompletion.summary ?? {};
+  const final = {
+    ok: finalCompletion.ok,
+    status: finalCompletion.ok
+      ? 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_CLOSED'
+      : 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_FINAL_READBACK_BLOCKED',
+    mode: 'READ_ONLY_CLOSEOUT',
+    contractVersion: incident.contractVersion,
+    repository: repositorySummary(),
+    source: {
+      stage: finalCompletion.ok ? 'complete' : null,
+      complete: finalCompletion.ok ? 1 : 0,
+      unitCount: finalCompletion.ok ? incident.expectedUnits : 0,
+      contentIndex: finalCompletion.ok ? incident.expectedContentCount : 0,
+      contentCount: finalCompletion.ok ? incident.expectedContentCount : 0,
+      sourceContentRows: Number(summary.sourceContentRows ?? 0),
+      contentDailyRows: Number(summary.contentDailyRows ?? 0),
+      providerReplayPreventedByCompletedSourceGate: true,
+    },
+    business: {
+      d1Complete: finalCompletion.ok ? 1 : 0,
+      larkComplete: finalCompletion.ok ? 1 : 0,
+      completionComplete: finalCompletion.ok ? 1 : 0,
+      d1ExpectedOperations: Number(summary.d1ExpectedOperations ?? 0),
+      d1ProcessedOperations: Number(summary.d1ProcessedOperations ?? 0),
+      organicHistoryContentRows: Number(summary.organicHistoryContentRows ?? 0),
+      larkTableCount: Number(summary.larkTableCount ?? 0),
+      operationObservations: Number(summary.operationObservations ?? 0),
+      accountDailyRows: Number(summary.accountDailyRows ?? 0),
+      targetDayAccountDailyRows: Number(summary.targetDayAccountDailyRows ?? 0),
+      queueAttempts: Number(summary.queueAttempts ?? 0),
+    },
+    deadLetter: {
+      dlqId: deadLetter?.dlq_id ?? null,
+      status: deadLetter?.status ?? null,
+      redriven: deadLetter?.status === 'redriven',
+    },
+    runtimeBaseline: {
+      redriveEnabled: config.executionFlags.redrive,
+      facebookSchedule: config.executionFlags.facebookSchedule,
+      instagramSchedule: config.executionFlags.instagramSchedule,
+    },
+    restore: {
+      attempted: false,
+      status: 'not_required',
+      redriveEnabled: false,
+      scheduleChanges: 0,
+    },
+    operatorMutations: {
+      workerDeployments: 0,
+      adminQueueMessages: 0,
+      providerRequests: 0,
+      directD1BusinessWrites: 0,
+      directLarkWrites: 0,
+      scheduleChanges: 0,
+    },
+    errors: finalCompletion.errors,
+    evidenceRoot,
+    production: 'BLOCKED',
+  };
+  await saveEvidence(evidenceRoot, '10-read-only-closeout.json', final);
+  console.log(JSON.stringify(final, null, 2));
+  if (!final.ok) process.exitCode = 1;
+}
+
+function repositorySummary() {
+  return {
+    requiredMergeSha: incident.requiredMainSha,
+    head: readCommand('git', ['rev-parse', 'HEAD']).trim(),
+    branch: readCommand('git', ['branch', '--show-current']).trim(),
+    clean: readCommand('git', ['status', '--porcelain']).trim() === '',
+  };
+}
+
 function printPlan() {
   console.log(JSON.stringify({
     ok: true,
@@ -285,10 +384,15 @@ function printPlan() {
       'deploy the same Worker config with only MKT_DLQ_REDRIVE_ENABLED=true',
       're-read the incident before admission',
       'push exactly one system.dead-letter.redrive command for the discovered terminal DLQ',
-      'poll the same Work until D1, Lark and completion phases are durable',
+      'poll the same Work until durable completion_json, exact D1 coverage and Lark reconciliation are complete',
       'restore the original config with MKT_DLQ_REDRIVE_ENABLED=false in finally',
       'perform final D1/dead-letter readback',
     ],
+    recoveryAfterAdmission: {
+      mode: '--recover',
+      behavior: 'read_only_closeout_without_deploy_or_queue_resend',
+      authority: 'retained completion_json plus exact D1 coverage and redriven DLQ',
+    },
     safety: {
       providerReplay: 'blocked_by_completed_source_gate',
       directD1BusinessWrites: 0,
@@ -535,6 +639,8 @@ async function readCompletionSnapshot(runtime) {
   const rows = await runtime.query(`
     SELECT
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key=${sql(incident.workKey)}) AS work_lifecycle_status,
+      (SELECT completed_at FROM sync_work_runs WHERE work_key=${sql(incident.workKey)}) AS work_completed_at,
+      (SELECT completion_json FROM sync_work_runs WHERE work_key=${sql(incident.workKey)}) AS completion_json,
       (SELECT status FROM sync_runs WHERE sync_run_id=${sql(incident.syncRunId)}) AS sync_status,
       (SELECT error_code FROM sync_runs WHERE sync_run_id=${sql(incident.syncRunId)}) AS sync_error_code,
       (SELECT complete FROM sync_work_phases WHERE work_key=${sql(incident.workKey)} AND phase=${sql(incident.sourcePhase)}) AS source_complete,
@@ -548,7 +654,26 @@ async function readCompletionSnapshot(runtime) {
       (SELECT COUNT(*) FROM organic_content_observations WHERE sync_run_id=${sql(incident.syncRunId)}) AS operation_observations,
       (SELECT COUNT(*) FROM organic_content_observations WHERE sync_run_id=${sql(incident.syncRunId)} AND metric_date=${sql(incident.periodEnd)}) AS target_day_observations,
       (SELECT COALESCE(MAX(main_queue_attempts),0) FROM queue_operation_attempts WHERE operation_id=${sql(incident.operationId)}) AS queue_attempts,
-      (SELECT COUNT(*) FROM sync_locks WHERE owner_id=${sql(incident.syncRunId)} AND expires_at > (unixepoch() * 1000)) AS active_locks
+      (SELECT COUNT(*) FROM sync_locks WHERE owner_id=${sql(incident.syncRunId)} AND expires_at > (unixepoch() * 1000)) AS active_locks,
+      (SELECT status FROM dead_letter_jobs WHERE json_extract(replay_payload_json,'$.operationId')=${sql(incident.operationId)} AND json_extract(replay_payload_json,'$.workKey')=${sql(incident.workKey)} ORDER BY created_at DESC LIMIT 1) AS dead_letter_status,
+      (SELECT status FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_status,
+      (SELECT sync_run_id FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_sync_run_id,
+      (SELECT expected_entities FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_expected_entities,
+      (SELECT observed_entities FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_observed_entities,
+      (SELECT expected_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_expected_rows,
+      (SELECT observed_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_observed_rows,
+      (SELECT written_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_written_rows,
+      (SELECT failed_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(CONTENT_COVERAGE_RUN_ID)}) AS content_coverage_failed_rows,
+      (SELECT status FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_status,
+      (SELECT sync_run_id FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_sync_run_id,
+      (SELECT expected_entities FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_expected_entities,
+      (SELECT observed_entities FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_observed_entities,
+      (SELECT expected_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_expected_rows,
+      (SELECT observed_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_observed_rows,
+      (SELECT written_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_written_rows,
+      (SELECT failed_rows FROM data_coverage_runs WHERE coverage_run_id=${sql(ACCOUNT_COVERAGE_RUN_ID)}) AS account_coverage_failed_rows,
+      (SELECT COUNT(*) FROM organic_account_daily_facts WHERE sync_run_id=${sql(incident.syncRunId)}) AS account_daily_rows,
+      (SELECT COUNT(*) FROM organic_account_daily_facts WHERE sync_run_id=${sql(incident.syncRunId)} AND metric_date=${sql(incident.periodEnd)}) AS target_day_account_daily_rows
   `);
   return rows[0] ?? {};
 }
@@ -574,11 +699,15 @@ async function pollForCompletion(runtime, { initialQueueAttempts, evidenceRoot }
         sourceUnits: Number(latest.source_units ?? 0),
         contentIndex: Number(latest.content_index ?? 0),
         contentCount: Number(latest.content_count ?? 0),
+        durableCompletionRetained: typeof latest.completion_json === 'string' && latest.completion_json.length > 0,
         d1Complete: latest.d1_complete ?? null,
         larkComplete: latest.lark_complete ?? null,
         completionComplete: latest.completion_complete ?? null,
+        contentCoverageStatus: latest.content_coverage_status ?? null,
+        accountCoverageStatus: latest.account_coverage_status ?? null,
         observations: Number(latest.operation_observations ?? 0),
-        targetDayObservations: Number(latest.target_day_observations ?? 0),
+        targetDayAccountDailyRows: Number(latest.target_day_account_daily_rows ?? 0),
+        deadLetterStatus: latest.dead_letter_status ?? null,
         queueAttempts,
         activeLocks: Number(latest.active_locks ?? 0),
       };
@@ -587,7 +716,7 @@ async function pollForCompletion(runtime, { initialQueueAttempts, evidenceRoot }
     }
 
     if (evaluation.ok) {
-      return Object.freeze({ ok: true, status: evaluation.status, latest });
+      return Object.freeze({ ok: true, status: evaluation.status, latest, summary: evaluation.summary });
     }
     if (terminalAfterAdmission) {
       return Object.freeze({

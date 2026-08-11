@@ -234,6 +234,28 @@ export function evaluateFacebookCompletedSourceCompletion(input = {}) {
   const errors = [];
   expect(errors, latest.work_lifecycle_status, 'completed', 'work lifecycle');
   expect(errors, latest.sync_status, 'success', 'sync status');
+  expect(errors, latest.sync_error_code ?? null, null, 'sync error');
+  expect(errors, Number(latest.active_locks ?? 0), 0, 'active lock count after completion');
+
+  const completion = parseCompletionEvidence(latest.completion_json ?? latest.completion, errors);
+  if (completion) {
+    validateDurableCompletionEvidence({ incident, latest, completion, errors });
+  } else {
+    validateLegacyPhaseCompletion({ incident, latest, errors });
+  }
+
+  const summary = completion ? buildDurableCompletionSummary(latest, completion) : null;
+  return Object.freeze({
+    ok: errors.length === 0,
+    status: errors.length === 0
+      ? 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_COMPLETE'
+      : 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_INCOMPLETE',
+    errors: Object.freeze(errors.map((row) => Object.freeze(row))),
+    summary,
+  });
+}
+
+function validateLegacyPhaseCompletion({ incident, latest, errors }) {
   expect(errors, Number(latest.source_complete), 1, 'source complete');
   expect(errors, latest.source_stage, 'complete', 'source stage');
   expect(errors, Number(latest.source_units), incident.expectedUnits, 'source unit count');
@@ -242,21 +264,207 @@ export function evaluateFacebookCompletedSourceCompletion(input = {}) {
   expect(errors, Number(latest.d1_complete), 1, 'D1 complete');
   expect(errors, Number(latest.lark_complete), 1, 'Lark complete');
   expect(errors, Number(latest.completion_complete), 1, 'completion complete');
-  if (Number(latest.operation_observations ?? 0) <= 0) {
-    errors.push({ field: 'operation observations', expected: '> 0', actual: latest.operation_observations ?? null });
-  }
-  if (Number(latest.target_day_observations ?? 0) <= 0) {
-    errors.push({ field: 'target-day observations', expected: '> 0', actual: latest.target_day_observations ?? null });
-  }
-  expect(errors, Number(latest.active_locks ?? 0), 0, 'active lock count after completion');
+}
 
+function validateDurableCompletionEvidence({ incident, latest, completion, errors }) {
+  expect(errors, completion.schemaVersion, 'meta_end_to_end_reconciliation_v1', 'completion schema');
+  expect(errors, completion.operationId, incident.operationId, 'completion operation id');
+  expect(errors, completion.connectorKey, 'facebook', 'completion connector');
+  expect(errors, Number(completion.failed), 0, 'completion failed count');
+
+  const source = objectOrEmpty(completion.source);
+  expect(errors, Number(source.sourceContentRows), incident.expectedContentCount, 'completion source content rows');
+  expect(errors, Number(source.rawContentRows), incident.expectedContentCount, 'completion raw content rows');
+  expect(errors, Number(source.contentInsightEntities), incident.expectedContentCount, 'completion content insight entities');
+  expect(errors, source.sourceStatus, 'complete', 'completion source status');
+  requirePositive(errors, source.contentDailyRows, 'completion content daily rows');
+  requirePositive(errors, source.accountDailyRows, 'completion account daily rows');
+
+  const d1 = objectOrEmpty(completion.d1);
+  const expectedOperations = nonNegativeOrNull(d1.expectedOperations);
+  const processedOperations = nonNegativeOrNull(d1.processedOperations);
+  if (expectedOperations === null || processedOperations === null || expectedOperations !== processedOperations) {
+    errors.push({
+      field: 'completion D1 operations',
+      expected: 'processedOperations === expectedOperations',
+      actual: { expectedOperations: d1.expectedOperations ?? null, processedOperations: d1.processedOperations ?? null },
+    });
+  }
+
+  const history = objectOrEmpty(d1.organicHistory);
+  const historyContentRows = nonNegativeOrNull(history.contentRows);
+  const contentDailyRows = nonNegativeOrNull(source.contentDailyRows);
+  if (historyContentRows === null || contentDailyRows === null || historyContentRows !== contentDailyRows) {
+    errors.push({
+      field: 'completion organic history/content daily parity',
+      expected: contentDailyRows,
+      actual: history.contentRows ?? null,
+    });
+  }
+  if (historyContentRows !== null) {
+    expectSum(errors, [history.stateWritten, history.stateSkipped], historyContentRows, 'completion organic state rows');
+    expectSum(
+      errors,
+      [history.observationsCreated, history.observationsSkipped, history.observationsNotRequired],
+      historyContentRows,
+      'completion organic observation accounting',
+    );
+    expectSum(
+      errors,
+      [history.coverageEntitiesWritten, history.coverageEntitiesSkipped],
+      historyContentRows,
+      'completion organic coverage entities',
+    );
+  }
+
+  const lark = Array.isArray(completion.lark) ? completion.lark : [];
+  if (lark.length === 0) {
+    errors.push({ field: 'completion Lark reconciliation', expected: '> 0 tables', actual: 0 });
+  }
+  for (const row of lark) {
+    const expected = nonNegativeOrNull(row?.expected);
+    if (expected === null) {
+      errors.push({ field: `completion Lark ${row?.tableKey ?? 'unknown'}`, expected: 'valid expected count', actual: row?.expected ?? null });
+      continue;
+    }
+    expectSum(
+      errors,
+      [row?.created, row?.updated, row?.skipped],
+      expected,
+      `completion Lark ${row?.tableKey ?? 'unknown'}`,
+    );
+  }
+
+  expect(errors, latest.dead_letter_status, 'redriven', 'dead letter status after recovery');
+  if (Number(latest.queue_attempts ?? 0) <= incident.expectedUnits) {
+    errors.push({
+      field: 'Queue attempts after recovery',
+      expected: `> ${incident.expectedUnits}`,
+      actual: latest.queue_attempts ?? null,
+    });
+  }
+  requireTimestampEvidence(errors, latest.work_completed_at, 'work completed_at');
+
+  if (historyContentRows !== null) {
+    validateCoverageEvidence({
+      errors,
+      prefix: 'content coverage',
+      status: latest.content_coverage_status,
+      syncRunId: latest.content_coverage_sync_run_id,
+      expectedEntities: latest.content_coverage_expected_entities,
+      observedEntities: latest.content_coverage_observed_entities,
+      expectedRows: latest.content_coverage_expected_rows,
+      observedRows: latest.content_coverage_observed_rows,
+      writtenRows: latest.content_coverage_written_rows,
+      failedRows: latest.content_coverage_failed_rows,
+      expectedCount: historyContentRows,
+      incident,
+    });
+  }
+
+  const accountDailyRows = nonNegativeOrNull(source.accountDailyRows);
+  if (accountDailyRows !== null) {
+    validateCoverageEvidence({
+      errors,
+      prefix: 'account coverage',
+      status: latest.account_coverage_status,
+      syncRunId: latest.account_coverage_sync_run_id,
+      expectedEntities: latest.account_coverage_expected_entities,
+      observedEntities: latest.account_coverage_observed_entities,
+      expectedRows: latest.account_coverage_expected_rows,
+      observedRows: latest.account_coverage_observed_rows,
+      writtenRows: latest.account_coverage_written_rows,
+      failedRows: latest.account_coverage_failed_rows,
+      expectedCount: accountDailyRows,
+      incident,
+    });
+    expect(errors, Number(latest.account_daily_rows ?? 0), accountDailyRows, 'account daily D1 rows');
+  }
+  if (Number(latest.target_day_account_daily_rows ?? 0) <= 0) {
+    errors.push({
+      field: 'target-day account daily D1 rows',
+      expected: '> 0',
+      actual: latest.target_day_account_daily_rows ?? null,
+    });
+  }
+}
+
+function validateCoverageEvidence(input) {
+  expect(input.errors, input.status, 'complete', `${input.prefix} status`);
+  expect(input.errors, input.syncRunId, input.incident.syncRunId, `${input.prefix} sync_run_id`);
+  expect(input.errors, Number(input.expectedEntities), input.expectedCount, `${input.prefix} expected entities`);
+  expect(input.errors, Number(input.observedEntities), input.expectedCount, `${input.prefix} observed entities`);
+  expect(input.errors, Number(input.expectedRows), input.expectedCount, `${input.prefix} expected rows`);
+  expect(input.errors, Number(input.observedRows), input.expectedCount, `${input.prefix} observed rows`);
+  expect(input.errors, Number(input.writtenRows), input.expectedCount, `${input.prefix} written rows`);
+  expect(input.errors, Number(input.failedRows), 0, `${input.prefix} failed rows`);
+}
+
+function buildDurableCompletionSummary(latest, completion) {
+  const source = objectOrEmpty(completion.source);
+  const d1 = objectOrEmpty(completion.d1);
+  const history = objectOrEmpty(d1.organicHistory);
+  const lark = Array.isArray(completion.lark) ? completion.lark : [];
   return Object.freeze({
-    ok: errors.length === 0,
-    status: errors.length === 0
-      ? 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_COMPLETE'
-      : 'FACEBOOK_COMPLETED_SOURCE_RECOVERY_INCOMPLETE',
-    errors: Object.freeze(errors.map((row) => Object.freeze(row))),
+    sourceContentRows: Number(source.sourceContentRows ?? 0),
+    contentDailyRows: Number(source.contentDailyRows ?? 0),
+    accountDailyRows: Number(source.accountDailyRows ?? 0),
+    d1ExpectedOperations: Number(d1.expectedOperations ?? 0),
+    d1ProcessedOperations: Number(d1.processedOperations ?? 0),
+    organicHistoryContentRows: Number(history.contentRows ?? 0),
+    larkTableCount: lark.length,
+    operationObservations: Number(latest.operation_observations ?? 0),
+    targetDayAccountDailyRows: Number(latest.target_day_account_daily_rows ?? 0),
+    queueAttempts: Number(latest.queue_attempts ?? 0),
   });
+}
+
+function parseCompletionEvidence(value, errors) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new TypeError('not an object');
+    return parsed;
+  } catch {
+    errors.push({ field: 'durable completion_json', expected: 'valid reconciliation JSON object', actual: '<invalid>' });
+    return null;
+  }
+}
+
+function expectSum(errors, values, expected, field) {
+  const normalized = values.map(nonNegativeOrNull);
+  if (normalized.some((value) => value === null)) {
+    errors.push({ field, expected, actual: values });
+    return;
+  }
+  const actual = normalized.reduce((sum, value) => sum + value, 0);
+  expect(errors, actual, expected, field);
+}
+
+function requirePositive(errors, value, field) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    errors.push({ field, expected: '> 0', actual: value ?? null });
+  }
+}
+
+function requireTimestampEvidence(errors, value, field) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < MIN_RECOVERY_TIMESTAMP) {
+    errors.push({ field, expected: 'valid completion timestamp', actual: value ?? null });
+  }
+}
+
+function nonNegativeOrNull(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+function objectOrEmpty(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
 function changedLeafPaths(left, right, prefix = '') {
