@@ -146,6 +146,7 @@ export function normalizeMetaOrganicInsightsFixture(input = {}) {
   const sourceAccountId = requireMetaExternalId(input.sourceAccountId, 'sourceAccountId');
   const sourceEntityId = requireMetaExternalId(input.sourceEntityId, 'sourceEntityId');
   const fetchedAt = requireMetaTimestamp(input.fetchedAt, 'fetchedAt');
+  const observationAt = requireMetaTimestamp(input.observationAt ?? fetchedAt, 'observationAt');
   const syncRunId = requireMetaText(input.syncRunId, 'syncRunId');
   const reportingTimezone = requireMetaText(
     input.reportingTimezone ?? 'Asia/Bangkok',
@@ -162,7 +163,7 @@ export function normalizeMetaOrganicInsightsFixture(input = {}) {
     const resource = requireMetaObject(insight, 'insight resource');
     const metricName = requireMetricToken(resource.name, 'name');
     const period = requireMetricToken(resource.period ?? 'lifetime', 'period');
-    const observations = readInsightObservations(resource, fetchedAt);
+    const observations = readInsightObservations(resource, observationAt);
     for (const observation of observations) {
       const metricDate = dateOnlyForMetaInstant(observation.instant, reportingTimezone);
       const sourceTimeKey = String(observation.instant);

@@ -843,6 +843,23 @@ The final tree contains no temporary file and no Business fact, Secret, Runtime 
 migration, Queue state, D1/Lark data or deployed infrastructure was changed by the incident. The
 commits are retained as transparent audit history.
 
+## Facebook ContentDaily source-permission correction — 2026-08-11
+
+Post-merge read-only recovery of `facebook-dashboard-repair-20260809-v1` proved the recovery
+control-plane fix was correct but the completed source carried 89 content identities and zero
+ContentDaily metrics. A bounded GET-only probe confirmed the active credential has Page inventory
+permissions but not `read_insights`; Insights-only metrics are therefore unavailable on this
+credential, while explicit Post fields remain usable.
+
+`read_insights` remains an optional enhancement rather than a hard admission gate. Graph v25 does
+return the Post `shares.count` field with the currently granted
+`pages_read_engagement` scope. The shared Facebook inventory now requests that field and projects
+only explicit counts through the existing Raw/Canonical/D1 cumulative snapshot path. Missing fields
+remain null. The requested operation date is the fallback metric date while the real fetch timestamp
+remains audit evidence. Live preview for `2026-08-10` produced 64 ContentDaily candidates and 2,351
+shares from 89 bounded Posts without writes. The old recovery identity stays immutable; deployment,
+fresh admission, Lark parity and Dashboard materialization must use a new operation identity.
+
 ## Permanent safety rules
 
 - Data model before Connector;

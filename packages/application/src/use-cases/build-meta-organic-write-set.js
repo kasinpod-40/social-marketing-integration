@@ -33,6 +33,9 @@ export function buildMetaOrganicWriteSet(input = {}) {
   if (sourceTimezone !== 'Asia/Bangkok') {
     throw new TypeError('Meta Organic canonical reporting timezone must be Asia/Bangkok');
   }
+  const observationDate = normalizeObservationDate(input.observationDate)
+    ?? dateOnlyInTimeZone(fetchedAt, sourceTimezone);
+  const observationAt = dateOnlyToEpoch(observationDate, sourceTimezone);
 
   const accountNormalized = normalizeMetaOrganicAccountFixture({
     platform,
@@ -62,7 +65,10 @@ export function buildMetaOrganicWriteSet(input = {}) {
       syncRunId,
     });
     rawContent.push(normalized.rawRow);
-    const insights = insightByContentId.get(normalized.contentCandidate.externalContentId) ?? [];
+    const insights = mergeContentInsights(
+      insightByContentId.get(normalized.contentCandidate.externalContentId) ?? [],
+      contentResourceInsights(connectorKey, resource),
+    );
     const normalizedInsights = normalizeMetaOrganicInsightsFixture({
       platform,
       entityType: 'content',
@@ -70,6 +76,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
       sourceEntityId: normalized.contentCandidate.externalContentId,
       insights,
       fetchedAt,
+      observationAt,
       syncRunId,
       reportingTimezone: sourceTimezone,
     });
@@ -118,6 +125,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
     sourceEntityId: accountId,
     insights: accountInsights,
     fetchedAt,
+    observationAt,
     syncRunId,
     reportingTimezone: sourceTimezone,
   });
@@ -137,6 +145,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
     sourceTimezone,
     fetchedAt,
     completedAt,
+    observationDate,
     accountCandidate: accountNormalized.accountCandidate,
     metricCandidates: normalizedAccountInsights.metricCandidates,
     sourceWatermark: optionalText(input.sourceWatermark),
@@ -224,11 +233,12 @@ function buildAccountDailyRows(input) {
     byDate.set(date, current);
   }
 
-  const fetchedDate = dateOnlyInTimeZone(input.fetchedAt, input.sourceTimezone);
-  const latest = byDate.get(fetchedDate) ?? emptyAccountMetrics();
+  const latest = byDate.get(input.observationDate) ?? emptyAccountMetrics();
   if (latest.followers === null) latest.followers = input.accountCandidate.followers;
   if (latest.follows === null) latest.follows = input.accountCandidate.follows;
-  if (Object.values(latest).some((value) => value !== null)) byDate.set(fetchedDate, latest);
+  if (Object.values(latest).some((value) => value !== null)) {
+    byDate.set(input.observationDate, latest);
+  }
 
   const facts = [];
   const larkRows = [];
@@ -385,6 +395,42 @@ function normalizeInsightEntries(values, fieldName) {
       insights: requireArray(object.insights ?? [], `${fieldName}.insights`),
     });
   });
+}
+
+function contentResourceInsights(connectorKey, resource) {
+  if (connectorKey !== 'facebook' || resource.shares === null || resource.shares === undefined) {
+    return Object.freeze([]);
+  }
+  const shares = requireObject(resource.shares, 'Facebook content shares');
+  const count = integerOrNull(shares.count);
+  if (count === null) throw new TypeError('Facebook content shares.count must be a non-negative integer');
+  return Object.freeze([Object.freeze({
+    name: 'shares_count',
+    period: 'lifetime',
+    value: count,
+  })]);
+}
+
+function mergeContentInsights(providerInsights, resourceInsights) {
+  const provider = requireArray(providerInsights, 'providerInsights');
+  const names = new Set(provider.map((row) => optionalText(row?.name)).filter(Boolean));
+  return Object.freeze([
+    ...provider,
+    ...resourceInsights.filter((row) => !names.has(row.name)),
+  ]);
+}
+
+function normalizeObservationDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const text = requireText(value, 'observationDate');
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) {
+    throw new TypeError('observationDate must use YYYY-MM-DD');
+  }
+  const instant = Date.parse(`${text}T00:00:00Z`);
+  if (!Number.isFinite(instant) || new Date(instant).toISOString().slice(0, 10) !== text) {
+    throw new TypeError('observationDate must be a valid date');
+  }
+  return text;
 }
 
 function latestMetricDate(candidates) {

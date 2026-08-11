@@ -469,6 +469,7 @@ async function buildWriteSet(input) {
       contentResources: input.sourceSnapshot.contentResources,
       contentInsights: input.sourceSnapshot.contentInsights,
       accountInsights: input.sourceSnapshot.accountInsights,
+      observationDate: input.dateRange.until,
     });
   }
   const accountTimezone = requireText(

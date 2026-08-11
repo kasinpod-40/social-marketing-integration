@@ -82,6 +82,19 @@ test('Meta preflight distinguishes missing mapping, scope and identity mismatch'
   assert.deepEqual(result.connectors[2].permissions.missing, ['business_management']);
 });
 
+test('Meta preflight permits observed Post metrics when optional read_insights is missing', async () => {
+  const result = await preflightMetaCustomerConnection({
+    facebook: successAdapter({
+      grantedPermissions: ['pages_show_list', 'pages_read_engagement'],
+      linkedInstagramCount: 1,
+    }),
+    mappings: { facebookPageId: 'page-private' },
+  }, 'facebook');
+
+  assert.equal(result.status, 'identity_validated');
+  assert.deepEqual(result.permissions.missing, []);
+});
+
 test('Meta preflight classifies blocked, invalid and transient provider failures independently', async () => {
   const blocked = permanentError('Meta Graph request failed', {
     code: 'META_PERMANENT_API_ERROR',
