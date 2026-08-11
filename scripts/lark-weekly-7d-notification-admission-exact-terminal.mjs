@@ -31,7 +31,12 @@ import {
   normalizeLarkWeekly7dNotificationAdmissionReadback,
 } from './lib/lark-weekly-7d-notification-admission.js';
 import { loadFreshWeekly7dExecutiveDecisionNotificationSource } from './lib/lark-weekly-7d-fresh-decision-notification-source.js';
-import { resolveLarkWeekly7dNotificationSourceSettings } from './lib/lark-weekly-7d-notification-source-settings.js';
+import {
+  assertLarkWeekly7dNotificationSourceSettingsBaseline,
+  normalizeLarkWeekly7dNotificationRestorableBaseline,
+  resolveLarkWeekly7dNotificationSourceSettings,
+  summarizeLarkWeekly7dNotificationSettingsBaseline,
+} from './lib/lark-weekly-7d-notification-source-settings.js';
 import { buildLarkWeekly7dNotificationRuntimeWindow } from './lib/lark-weekly-7d-notification-runtime-window.js';
 import { LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_AUTOMATIONS } from '../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
 import { LARK_EXECUTIVE_DESTINATION_KEY_HASH } from '../packages/config/src/lark-notification-runtime-config.js';
@@ -141,7 +146,9 @@ async function previewAdmission() {
     reviewedMessageBytes: context.admission.reviewedMessageBytes,
     sourceSettingsState: context.settingsAuthority.state,
     sourceSettingCount: context.settingsAuthority.settingKeys.length,
-    settingsMutationRequiredForExecute: context.settingsAuthority.state === 'inactive',
+    activeSourceSettingCount: context.settingsAuthority.activeSettingCount,
+    inactiveSourceSettingCount: context.settingsAuthority.inactiveSettingCount,
+    settingsMutationRequiredForExecute: context.settingsAuthority.inactiveSettingCount > 0,
     currentExecutionTrueFlagCount: context.runtimeWindow.sourceTrueFlags.length,
     currentExecutionFlagsPreserved: true,
     deliveryRowsBefore: beforeD1.totalDeliveryRows,
@@ -206,6 +213,10 @@ async function executeAdmission() {
       sourceReportIds: context.admission.sourceReportIds,
       sourceSettingCount: context.settingsAuthority.settingKeys.length,
       sourceSettingsState: context.settingsAuthority.state,
+      activeSourceSettingCount: context.settingsAuthority.activeSettingCount,
+      inactiveSourceSettingCount: context.settingsAuthority.inactiveSettingCount,
+      sourceSettingsBaseline: context.settingsAuthority.restorableBaseline,
+      sourceSettingsBaselineSha256: sha256(JSON.stringify(context.settingsAuthority.restorableBaseline)),
       currentExecutionTrueFlags: context.runtimeWindow.sourceTrueFlags,
       activeExecutionTrueFlags: context.runtimeWindow.activeTrueFlags,
       scheduleConfigPreserved: context.runtimeWindow.scheduleConfigPreserved,
@@ -224,9 +235,9 @@ async function executeAdmission() {
     });
 
     stage = 'ensure-exact-source-report-settings-active';
-    settingsActivationAttempted = context.settingsAuthority.state === 'inactive';
+    settingsActivationAttempted = context.settingsAuthority.inactiveSettingCount > 0;
     if (settingsActivationAttempted) {
-      reportSettingWriteCount += await writeSettingsState(context, true);
+      reportSettingWriteCount += await writeSettingsActive(context);
     }
     await assertSettingsActive(context);
 
@@ -300,6 +311,8 @@ async function executeAdmission() {
       jobSha256: jobHash,
       sourceStateSha256: context.sourceStateSha256,
       sourceSettingsState: context.settingsAuthority.state,
+      sourceSettingsBaseline: context.settingsAuthority.restorableBaseline,
+      sourceSettingsBaselineSha256: sha256(JSON.stringify(context.settingsAuthority.restorableBaseline)),
       reviewedMessageSha256: context.admission.reviewedMessageSha256,
       attemptedAt: new Date().toISOString(),
       maximumQueueAdmissionCount: 1,
@@ -343,8 +356,11 @@ async function executeAdmission() {
   if (settingsActivationAttempted) {
     try {
       stage = 'restore-exact-source-report-settings';
-      reportSettingWriteCount += await writeSettingsState(context, false);
-      await assertSettingsState(context, false);
+      reportSettingWriteCount += await writeSettingsBaseline(
+        context,
+        context.settingsAuthority.restorableBaseline,
+      );
+      await assertSettingsBaseline(context);
       settingsRestoreVerified = true;
     } catch (error) {
       settingsRestoreError = error;
@@ -394,6 +410,8 @@ async function executeAdmission() {
     sourceAiRunKeySha256: sha256(context.admission.sourceAiRunKey),
     admissionAiRunKeySha256: sha256(context.admission.aiRunKey),
     sourceSettingsState: context.settingsAuthority.state,
+    activeSourceSettingCount: context.settingsAuthority.activeSettingCount,
+    inactiveSourceSettingCount: context.settingsAuthority.inactiveSettingCount,
     queueAdmissionCount: 1,
     messageSendCount: 1,
     deliveryRowsBefore: delivered.deliveryRowsBefore,
@@ -413,6 +431,7 @@ async function executeAdmission() {
     runtimeRemainsActive: false,
     runtimeRestoredBlockedOff: true,
     reportSettingsRemainActive: context.settingsAuthority.state === 'active',
+    reportSettingsRemainMixed: context.settingsAuthority.state === 'mixed',
     reportSettingsRestoredInactive: context.settingsAuthority.state === 'inactive',
     reportSettingsRestoredBaseline: true,
     currentExecutionFlagsPreserved: true,
@@ -440,26 +459,28 @@ async function recoverAdmission() {
       || attempt.reviewedMessageSha256 !== context.admission.reviewedMessageSha256) {
     fail('Recovery evidence does not match the retained Fresh Weekly Executive Decision source', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_INVALID');
   }
-  const retainedSettingsState = requireSettingsState(attempt.sourceSettingsState);
+  const retainedBaseline = normalizeLarkWeekly7dNotificationRestorableBaseline(
+    attempt.sourceSettingsBaseline,
+  );
+  const retainedSettingsSummary = summarizeLarkWeekly7dNotificationSettingsBaseline(
+    retainedBaseline,
+  );
+  if (attempt.sourceSettingsState !== retainedSettingsSummary.state
+      || attempt.sourceSettingsBaselineSha256 !== sha256(JSON.stringify(retainedBaseline))) {
+    fail(
+      'Recovery Settings baseline evidence does not match its retained state/hash',
+      'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_INVALID',
+    );
+  }
+  assertRecoverySettingsRestoreBoundary(context, retainedBaseline);
   queueAttemptRecorded = true;
   queueAdmissionConfirmed = true;
   stage = 'verify-recovery-safe-boundary';
   const beforeLark = await readLarkBaseline(context, { allowAdmissionRow: true });
-  if (retainedSettingsState === 'active' && context.settingsAuthority.state !== 'active') {
-    fail('Recovery will not reactivate Report Settings that became inactive after admission', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_SETTINGS_DRIFT', {
-      retainedSettingsState,
-      currentSettingsState: context.settingsAuthority.state,
-    });
-  }
-  if (retainedSettingsState === 'inactive' && context.settingsAuthority.state === 'active') {
-    stage = 'restore-retained-source-settings-baseline';
-    reportSettingWriteCount += await writeSettingsState(context, false);
-    await assertSettingsState(context, false);
-    settingsRestoreVerified = true;
-  } else {
-    await assertSettingsState(context, retainedSettingsState === 'active');
-    settingsRestoreVerified = true;
-  }
+  stage = 'restore-retained-source-settings-baseline';
+  reportSettingWriteCount += await writeSettingsBaseline(context, retainedBaseline);
+  await assertSettingsBaseline(context, retainedBaseline);
+  settingsRestoreVerified = true;
   const automationBefore = await verifyAutomationState(context.client);
   stage = 'poll-existing-admission-without-resend';
   const delivered = await pollExistingDelivered(context);
@@ -475,7 +496,7 @@ async function recoverAdmission() {
   }
   const automationAfter = await verifyAutomationState(context.client);
   assertSameAutomationState(automationBefore, automationAfter);
-  await assertSettingsState(context, retainedSettingsState === 'active');
+  await assertSettingsBaseline(context, retainedBaseline);
   await assertSourceUnchanged(context);
 
   const summary = Object.freeze({
@@ -488,7 +509,9 @@ async function recoverAdmission() {
     mode: 'POLL_ONLY_RECOVERY',
     sourceDecisionMutationCount: 0,
     reviewedMessageSha256: context.admission.reviewedMessageSha256,
-    sourceSettingsState: retainedSettingsState,
+    sourceSettingsState: retainedSettingsSummary.state,
+    activeSourceSettingCount: retainedSettingsSummary.activeSettingCount,
+    inactiveSourceSettingCount: retainedSettingsSummary.inactiveSettingCount,
     queueAdmissionCountByRecovery: 0,
     messageSendCountByRecovery: 0,
     deliveryStatus: delivered.admissionDeliveryStatus,
@@ -499,8 +522,9 @@ async function recoverAdmission() {
     workerDeploymentCount: 0,
     reportSettingWriteCount,
     runtimeRestoredBlockedOff: true,
-    reportSettingsRemainActive: retainedSettingsState === 'active',
-    reportSettingsRestoredInactive: retainedSettingsState === 'inactive',
+    reportSettingsRemainActive: retainedSettingsSummary.state === 'active',
+    reportSettingsRemainMixed: retainedSettingsSummary.state === 'mixed',
+    reportSettingsRestoredInactive: retainedSettingsSummary.state === 'inactive',
     reportSettingsRestoredBaseline: true,
     notificationAutomationStatus: automationAfter.notification.status,
     notificationProducerEnabled: false,
@@ -621,12 +645,26 @@ async function prepare(mode) {
   });
 }
 
-async function writeSettingsState(context, active) {
-  const rows = context.settingsAuthority.baseline.map((setting) => Object.freeze({
-    report_setting_key: setting.reportSettingKey,
-    ai_enabled: active,
-    notification_enabled: active,
+async function writeSettingsActive(context) {
+  const rows = context.settingsAuthority.settingKeys.map((reportSettingKey) => Object.freeze({
+    report_setting_key: reportSettingKey,
+    ai_enabled: true,
+    notification_enabled: true,
   }));
+  return writeSettingsRows(context, rows);
+}
+
+async function writeSettingsBaseline(context, baselineInput) {
+  const baseline = normalizeLarkWeekly7dNotificationRestorableBaseline(baselineInput);
+  const rows = baseline.map((setting) => Object.freeze({
+    report_setting_key: setting.reportSettingKey,
+    ai_enabled: setting.aiEnabled,
+    notification_enabled: setting.notificationEnabled,
+  }));
+  return writeSettingsRows(context, rows);
+}
+
+async function writeSettingsRows(context, rows) {
   const plan = await context.syncEngine.planByKey({
     repository: context.larkRepository,
     tableId: context.tableIds.reportSettings,
@@ -803,7 +841,34 @@ function verifyDeployedVersion(context, versionId, configPath) {
 async function settingsRows(context) { return context.larkRepository.listByFieldValues(context.tableIds.reportSettings, 'report_setting_key', context.settingsAuthority.settingKeys); }
 async function assertSettingsState(context, active) { return assertLarkNotificationRuntimeSettingsState(await settingsRows(context), context.settingsAuthority, active); }
 async function assertSettingsActive(context) { return assertSettingsState(context, true); }
-async function assertSettingsBaseline(context) { return assertSettingsState(context, context.settingsAuthority.state === 'active'); }
+async function assertSettingsBaseline(context, baseline = context.settingsAuthority.restorableBaseline) { return assertLarkWeekly7dNotificationSourceSettingsBaseline(await settingsRows(context), context.settingsAuthority, baseline); }
+
+function assertRecoverySettingsRestoreBoundary(context, retainedBaselineInput) {
+  const retainedBaseline = normalizeLarkWeekly7dNotificationRestorableBaseline(retainedBaselineInput);
+  const currentBaseline = normalizeLarkWeekly7dNotificationRestorableBaseline(
+    context.settingsAuthority.restorableBaseline,
+  );
+  if (JSON.stringify(retainedBaseline.map(({ reportSettingKey }) => reportSettingKey))
+      !== JSON.stringify(currentBaseline.map(({ reportSettingKey }) => reportSettingKey))) {
+    fail(
+      'Recovery Settings baseline identities differ from the current canonical source Settings',
+      'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_SETTINGS_DRIFT',
+    );
+  }
+  const currentByKey = new Map(currentBaseline.map((row) => [row.reportSettingKey, row]));
+  const unsafeReactivationRows = retainedBaseline.filter((row) => (
+    row.aiEnabled === true
+    && currentByKey.get(row.reportSettingKey)?.aiEnabled !== true
+  ));
+  if (unsafeReactivationRows.length > 0) {
+    fail(
+      'Recovery will not reactivate Report Settings that became inactive after admission',
+      'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_SETTINGS_DRIFT',
+      { unsafeReactivationCount: unsafeReactivationRows.length },
+    );
+  }
+  return true;
+}
 
 async function verifyAutomationState(client) {
   const workflowResponse = await client.requestBitableJson(`/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}/workflows`, { method: 'GET' });
@@ -839,9 +904,8 @@ function resolveQueueName(config) { const matches = Array.isArray(config?.queues
 async function writeGeneratedConfig(path, configText) { const rebased = rebaseGeneratedWranglerConfigPaths(configText, { sourceDirectory: dirname(SOURCE_CONFIG), outputDirectory: dirname(path) }); await writeFile(path, rebased.text, { encoding: 'utf8', mode: 0o600 }); await chmod(path, 0o600); }
 function exactMainHead() { run('git', ['fetch', '--quiet', 'origin', 'main']); const branch = text('git', ['branch', '--show-current'], { raw: true }).trim(); const head = text('git', ['rev-parse', 'HEAD']); const originMain = text('git', ['rev-parse', 'origin/main']); const dirty = text('git', ['status', '--porcelain', '--untracked-files=all'], { raw: true }).trim(); if (branch !== 'main' || head !== originMain || dirty) fail('Weekly Notification Admission requires clean exact current main', 'LARK_WEEKLY_7D_NOTIFICATION_REPOSITORY_INVALID', { branch, head, originMain, dirtyPathCount: dirty ? dirty.split(/\r?\n/u).length : 0 }); return head; }
 function parseArgs(args) { const modes = ['--preview', '--execute', '--recover'].filter((mode) => args.includes(mode)); const unknown = args.filter((arg) => !['--preview', '--execute', '--recover'].includes(arg)); if (unknown.length > 0 || modes.length > 1) fail('Weekly Notification terminal accepts one of --preview, --execute, or --recover', 'LARK_WEEKLY_7D_NOTIFICATION_ARGUMENT_INVALID', { unknown }); if (modes[0] === '--preview') return 'preview'; if (modes[0] === '--execute') return 'execute'; if (modes[0] === '--recover') return 'recover'; return 'plan'; }
-function printPlan() { process.stdout.write(`${JSON.stringify({ ok: true, executed: false, contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION, admissionConfirmation: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION, recoveryConfirmation: RECOVERY_CONFIRMATION, sequence: ['revalidate exact generated Fresh Weekly Executive Decision v4 and unchanged Decision Quality Gate', 'require exact Fresh source Report Settings in one uniform reviewed baseline (inactive or active)', 'build a bounded active Worker window that preserves all current source/report execution flags and triggers', 'activate exact Fresh source Report Settings only when the observed baseline is inactive', 'rebuild the exact reviewed full-channel message and require SHA-256 parity before admission', 'record immutable Queue-attempt evidence before exactly one Runtime Queue admission', 'verify one sent/mirrored D1 delivery, one Notification Log row and sent_to_group=true', 'restore the exact current Worker baseline and the exact observed Report Settings baseline', 'observe without another admission and prove duplicate delivery zero'], readOnlyPreviewAvailable: true, afterQueueAttemptFailure: 'use --recover only; never rerun --execute', maximumWorkerDeploymentCount: 2, maximumQueueAdmissionCount: 1, maximumMessageSendCount: 1, reportSettingWriteMode: 'preserve_active_or_bounded_inactive_activation_then_restore', sourceDecisionMutationCount: 0, baseNotificationAutomationActivationCount: 0, automaticNotificationProducerEnabled: false, scheduleActivationCount: 0, production: 'BLOCKED' }, null, 2)}\n`); }
+function printPlan() { process.stdout.write(`${JSON.stringify({ ok: true, executed: false, contractVersion: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONTRACT_VERSION, admissionConfirmation: LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION, recoveryConfirmation: RECOVERY_CONFIRMATION, sequence: ['revalidate exact generated Fresh Weekly Executive Decision v4 and unchanged Decision Quality Gate', 'require every exact Fresh source Report Setting to be enabled and internally consistent while preserving its observed per-row active/inactive baseline', 'build a bounded active Worker window that preserves all current source/report execution flags and triggers', 'activate only source Report Settings that are inactive in the observed baseline', 'rebuild the exact reviewed full-channel message and require SHA-256 parity before admission', 'record immutable Queue-attempt evidence including the exact non-secret per-row Settings baseline before exactly one Runtime Queue admission', 'verify one sent/mirrored D1 delivery, one Notification Log row and sent_to_group=true', 'restore the exact current Worker baseline and each Report Setting to its exact observed pre-admission state', 'observe without another admission and prove duplicate delivery zero'], readOnlyPreviewAvailable: true, afterQueueAttemptFailure: 'use --recover only; never rerun --execute', maximumWorkerDeploymentCount: 2, maximumQueueAdmissionCount: 1, maximumMessageSendCount: 1, reportSettingWriteMode: 'activate_only_inactive_rows_then_restore_exact_per_row_baseline', sourceDecisionMutationCount: 0, baseNotificationAutomationActivationCount: 0, automaticNotificationProducerEnabled: false, scheduleActivationCount: 0, production: 'BLOCKED' }, null, 2)}\n`); }
 function assertRecoveryConfirmation(env) { if (env?.[RECOVERY_CONFIRMATION.envName] !== RECOVERY_CONFIRMATION.value) fail(`Weekly Notification recovery requires ${RECOVERY_CONFIRMATION.envName}=${RECOVERY_CONFIRMATION.value}`, 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_CONFIRMATION_REQUIRED', { envName: RECOVERY_CONFIRMATION.envName }); }
-function requireSettingsState(value) { if (value === 'active' || value === 'inactive') return value; fail('Weekly Notification recovery evidence has invalid source Settings state', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_INVALID', { fieldName: 'sourceSettingsState' }); }
 
 async function assertNoFile(path, failIfExists) { try { await stat(path); if (failIfExists) fail('Weekly Notification Admission retained evidence already exists; blind rerun is forbidden', 'LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_ALREADY_ATTEMPTED', { evidenceName: path.split('/').pop() }); return false; } catch (error) { if (error?.code === 'ENOENT') return true; throw error; } }
 async function requireFile(path) { try { await stat(path); } catch (error) { if (error?.code === 'ENOENT') fail('Weekly Notification recovery requires retained Queue-attempt evidence', 'LARK_WEEKLY_7D_NOTIFICATION_RECOVERY_EVIDENCE_MISSING'); throw error; } }
