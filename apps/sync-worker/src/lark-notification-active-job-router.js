@@ -15,29 +15,44 @@ import {
 } from '../../../packages/connectors/src/lark/lark-notification-state-mirror.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { processJobWithChatwootEndToEnd } from './chatwoot-active-job-router.js';
+import {
+  processAutomaticWeeklyExecutiveNotification,
+} from './lark-weekly-executive-auto.js';
 
 export function selectLarkNotificationRoute(input = {}) {
-  return input.job?.body?.type === JOB_TYPES.LARK_NOTIFICATION_SEND
-    ? 'lark_notification'
-    : 'fallback';
+  if (input.job?.body?.type !== JOB_TYPES.LARK_NOTIFICATION_SEND) return 'fallback';
+  return input.job?.body?.automaticWeekly === true
+    ? 'lark_weekly_executive_auto'
+    : 'lark_notification';
 }
 
 export function createLarkNotificationActiveJobRouter(input = {}) {
   const processFallback = input.processFallback ?? processJobWithChatwootEndToEnd;
+  const processAutomaticWeekly = input.processAutomaticWeekly
+    ?? processAutomaticWeeklyExecutiveNotification;
   const loadRequest = input.loadRequest ?? loadLarkNotificationDeliveryRequest;
   const deliver = input.deliver ?? deliverLarkExecutiveNotification;
   const readConfig = input.readConfig ?? readLarkNotificationRuntimeConfig;
 
   return async function processJobWithLarkNotification(jobInput) {
-    if (selectLarkNotificationRoute(jobInput) !== 'lark_notification') {
-      return processFallback(jobInput);
-    }
+    const route = selectLarkNotificationRoute(jobInput);
+    if (route === 'fallback') return processFallback(jobInput);
+
     const config = readConfig(jobInput.env);
     if (!config.flags.runtimeEnabled || !config.flags.sendEnabled) {
       throw permanentError('Lark notification delivery is disabled', {
         code: 'LARK_NOTIFICATION_RUNTIME_DISABLED',
       });
     }
+    if (route === 'lark_weekly_executive_auto') {
+      if (!config.flags.mirrorEnabled) {
+        throw permanentError('Automatic Weekly Notification requires Lark mirror enabled', {
+          code: 'LARK_NOTIFICATION_RUNTIME_DISABLED',
+        });
+      }
+      return processAutomaticWeekly({ ...jobInput, config });
+    }
+
     const aiRunKey = requireText(jobInput.job?.body?.aiRunKey, 'job.aiRunKey');
     assertNotificationAdmission({
       mode: config.mode,
