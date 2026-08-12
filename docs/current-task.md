@@ -415,3 +415,43 @@ readback ตรงกันที่ 64 stable ContentDaily keys วันที
 Materialization 1D/3D/7D/30D คืน `facebook:latest_total_shares=2352` และ availability `available`
 ครบทุกช่วง; ผู้ใช้ยืนยัน Dashboard แสดง Facebook แล้ว. Active token `GET /me/permissions` ยังไม่มี
 `read_insights` แม้ App permission จะพร้อมทดสอบ จึงคง Views/Likes/Comments เป็น N/A ตาม contract.
+
+## YouTube customer-owner Analytics catch-up continuation — 2026-08-12
+
+```text
+CUSTOMER_OWNER_CONSENT              = PASS_CONNECTED_VALIDATED
+OWNER_CHANNEL_SUFFIX                = MATCH_9GMA
+APPROVED_SCOPES                     = PASS_2_OF_2
+ACTIVE_REFRESH_CREDENTIAL           = PASS_NEW_ACTIVE_OLD_REPLACED
+LIVE_OWNER_AUTHORIZATION            = PASS
+CONTROLLED_CATCH_UP_RANGE            = 2026_08_04_TO_2026_08_10
+FAILED_SYNC_RUN                      = bf9f39ef-fe9a-47ce-ab0e-25c2811013cf
+FAILED_WORK                          = youtube:f54a3b902951abbf42baad950f74a2c8
+FAILED_OPERATION_REPLAY             = PROHIBITED_NOT_RUN
+FAILED_OPERATION_RECORDS_WRITTEN    = 0
+ROOT_CAUSE                           = AVERAGE_VIEW_PERCENTAGE_FALSE_100_CEILING
+REPOSITORY_HOTFIX                    = IN_PROGRESS
+LIVE_ANALYTICS_CATCH_UP              = PENDING_REVIEWED_DEPLOY_AND_FRESH_OPERATION
+FOCUSED_YOUTUBE_AND_WORKBOOK_TESTS   = PASS_8_OF_8
+FULL_UNIT_TESTS                      = PASS_3007_OF_3007
+WORKERS_RUNTIME_TESTS                = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS             = PASS_105_OF_105
+ARCHITECTURE_HYGIENE                 = PASS
+DEPENDENCY_AUDIT                     = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                       = PASS
+DIFF_CHECK                           = PASS
+```
+
+Customer callback ผ่าน exact Channel/scopes และ rotate encrypted Refresh Token สำเร็จ. Fresh controlled
+catch-up ผ่าน Owner authorization แล้ว แต่หยุด fail-closed เพราะ RAW adapter บังคับ
+`averageViewPercentage <= 100`; Live Source คืนค่ามากกว่า 100 ซึ่งเกิดได้เมื่อผู้ชมรับชมซ้ำ. Hotfix ต้อง
+รักษาค่า finite non-negative ตาม Source, ห้าม clamp เป็น 100, ยังปฏิเสธค่าติดลบ/non-finite และอัปเดต
+Blueprint/Lark description ให้ตรงกัน. ห้าม replay Work ที่ล้ม; หลัง reviewed merge/deploy ให้ใช้ fresh
+Queue delivery แล้วตรวจ completion, zero new exact alerts และ D1/Lark parity ก่อนประกาศ Live PASS.
+
+### Implementation result (pre-deploy)
+
+Adapter, Source contract, Lark description และ workbook field metadata ใช้ contract เดียวกันแล้ว:
+`averageViewPercentage` ต้องเป็น finite non-negative แต่ไม่จำกัดเพดาน 100 และเก็บ exact Source value.
+Regression ครอบคลุมค่าจริง `125.5` และค่าติดลบที่ต้อง fail closed. Full repository gates ผ่านครบตาม
+ตัวเลขด้านบน; ขั้นถัดไปคือ reviewed PR/merge/deploy แล้วส่ง fresh operation เท่านั้น.

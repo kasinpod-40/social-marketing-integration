@@ -67,6 +67,22 @@ test('validates Analytics headers and preserves Pacific source day as text', () 
   }), (error) => error?.code === 'YOUTUBE_ANALYTICS_GRAIN_MISMATCH');
 });
 
+test('preserves average view percentage above 100 when viewers rewatch video portions', () => {
+  const headers = [
+    'day', 'video', 'views', 'likes', 'comments', 'shares',
+    'estimatedMinutesWatched', 'averageViewDuration', 'averageViewPercentage',
+  ].map((name) => ({ name }));
+  const rows = mapYouTubeAnalyticsResponse({
+    columnHeaders: headers,
+    rows: [['2026-08-10', 'video_A', 10, 2, 1, 1, 5.5, 30, 125.5]],
+  }, { channelId: 'channel_A', fetchedAt: 3000 });
+  assert.equal(rows[0].average_view_percentage, 125.5);
+  assert.throws(() => mapYouTubeAnalyticsResponse({
+    columnHeaders: headers,
+    rows: [['2026-08-10', 'video_A', 10, 2, 1, 1, 5.5, 30, -0.1]],
+  }, { channelId: 'channel_A', fetchedAt: 3000 }), /averageViewPercentage must be non-negative/u);
+});
+
 test('validates every mapped Analytics row against video, channel, and date scope', () => {
   const base = {
     raw_analytics_daily_key: 'youtube:channel_A:video_A:2026-07-14',

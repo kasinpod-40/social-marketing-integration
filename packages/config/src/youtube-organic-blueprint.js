@@ -65,7 +65,7 @@ export const YOUTUBE_ORGANIC_SOURCE_CONTRACT = deepFreeze({
     metricUnits: {
       estimatedMinutesWatched: 'minutes_source_multiply_by_60_only_in_future_canonical_layer',
       averageViewDuration: 'seconds_source_no_conversion',
-      averageViewPercentage: 'percentage_0_to_100_divide_by_100_only_in_future_canonical_layer',
+      averageViewPercentage: 'non_negative_percentage_may_exceed_100_divide_by_100_only_in_future_canonical_layer',
     },
   },
   contentClassification: {
@@ -474,7 +474,7 @@ export const YOUTUBE_LARK_BLUEPRINT = deepFreeze([
         nullable: true,
         keyRole: "Period metric",
         sourcePath: "Analytics averageViewPercentage",
-        semantics: "Percentage value 0–100",
+        semantics: "Non-negative percentage; may exceed 100 when viewers rewatch portions",
         importNote: "Future completion ratio = value ÷ 100",
       }),
       field('fetched_at', 5, {
