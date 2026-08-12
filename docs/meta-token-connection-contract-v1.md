@@ -13,6 +13,10 @@ DEPLOYMENT                = NOT_AUTHORIZED
 PRODUCTION                = BLOCKED
 ```
 
+> Downstream update — 2026-08-12: Business ingestion now treats `pages_read_user_content` and
+> `read_insights` as required Facebook permissions in addition to the two original discovery scopes.
+> The original preflight phase below remains historical evidence of its narrower, read-only scope.
+
 ผู้ใช้อนุมัติให้เตรียมตัวเชื่อมต่อก่อน โดยจะใส่/เปลี่ยน Credential และทำ
 Live validation เมื่อบัญชีและ Token ลูกค้าพร้อม งานนี้จึงสร้างเฉพาะ
 Token-based connection/preflight foundation สำหรับ:

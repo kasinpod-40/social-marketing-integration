@@ -97,7 +97,12 @@ export const META_BUSINESS_INGESTION_CONTRACT = deepFreeze({
       discoveryCredentialEnv: 'META_ACCESS_TOKEN',
       readCredentialEnv: 'META_FACEBOOK_PAGE_ACCESS_TOKEN',
       identityEnv: 'META_FACEBOOK_PAGE_ID',
-      requiredPermissions: ['pages_show_list', 'pages_read_engagement'],
+      requiredPermissions: [
+        'pages_show_list',
+        'pages_read_engagement',
+        'pages_read_user_content',
+        'read_insights',
+      ],
       sourceTimezone: 'UTC',
       reportingTimezone: 'Asia/Bangkok',
       d1Targets: ORGANIC_D1_TARGETS,
@@ -128,6 +133,10 @@ export const META_BUSINESS_INGESTION_CONTRACT = deepFreeze({
             'permalink_url',
             'is_published',
             'shares',
+            // ดึงเฉพาะ Summary count; limit(0) ป้องกันการนำข้อมูลผู้ใช้/ข้อความ Comment
+            // เข้าสู่ Source payload โดยไม่จำเป็น.
+            'reactions.limit(0).summary(true)',
+            'comments.limit(0).summary(true)',
           ],
           rawTarget: META_BUSINESS_SHARED_RAW_TABLES.ORGANIC_CONTENT,
           metricSemantics: 'snapshot',

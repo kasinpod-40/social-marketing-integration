@@ -35,6 +35,8 @@ test('Facebook source adapter performs contract-bound GET reads and returns a cu
   assert.equal(calls[1].query.since, '2026-07-01');
   assert.equal(calls[1].query.until, '2026-07-28');
   assert.match(calls[1].query.fields, /shares/u);
+  assert.match(calls[1].query.fields, /reactions\.limit\(0\)\.summary\(true\)/u);
+  assert.match(calls[1].query.fields, /comments\.limit\(0\)\.summary\(true\)/u);
   assert.equal(page.nextCursor, 'opaque/cursor+value');
   assert.equal(adapter.createPost, undefined);
 });

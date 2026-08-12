@@ -483,3 +483,63 @@ Focused regression `23/23`, full unit `3008/3008`, Workers runtime `18/18`, repo
 `105/105`, architecture/repository hygiene, dependency audit 0 vulnerabilities, deploy dry-run และ
 diff check ผ่าน. Workbook ตรวจ values/formulas และ render ครบ 10 sheets โดยไม่พบ formula error หรือ
 layout regression. สถานะนี้คือ Repository fixed/gated เท่านั้น ยังไม่ใช่ Live PASS.
+
+## Facebook Reactions/Comments Post summaries — 2026-08-12
+
+### Objective and scope
+
+เติม Facebook Likes/Reactions และ Comments ให้ `MKT_Content_Daily` และ Organic Dashboard โดยใช้ค่า
+จริงจาก Post summary, ไม่เพิ่มตาราง, ไม่ replay/redrive operation เก่า และไม่รวม TikTok Ads.
+
+### Confirmed evidence
+
+- Token ใหม่มี `read_insights`, `pages_show_list` และ `pages_read_engagement` แล้ว แต่ยังไม่มี
+  `pages_read_user_content`.
+- GET-only minimal reproduction ยืนยัน `shares` ผ่าน ขณะที่ `reactions` และ `comments` summary ถูก
+  Graph ปฏิเสธด้วย code 10; root cause จึงเป็น permission grant ที่ active token ไม่ครบ.
+- Canonical/D1/Lark mapping เดิมรองรับ `reactions_count → likes` และ
+  `comments_count → comments` อยู่แล้ว จึงไม่ต้อง migration หรือแก้ Dashboard schema.
+
+### Acceptance criteria
+
+- Source request ใช้ `reactions.limit(0).summary(true)` และ `comments.limit(0).summary(true)` เท่านั้น;
+  ห้ามดึง user list หรือ Comment text.
+- `0` ที่ Source คืนต้องเก็บเป็นศูนย์จริง; field ที่ไม่คืนเป็น null/N/A; malformed count ต้อง fail closed.
+- Facebook preflight ต้อง require `pages_show_list`, `pages_read_engagement`,
+  `pages_read_user_content` และ `read_insights`.
+- Focused/full repository gates และ exact-head CI ผ่านก่อน merge/deploy.
+- ห้าม deploy ก่อน secrets ทั้ง User/Page token มี permission ครบ.
+- หลัง deploy ใช้ fresh operation ID เท่านั้น แล้วตรวจ terminal success, Coverage, D1/Lark parity,
+  zero new alert/DLQ และ materialization 1D/3D/7D/30D.
+
+### Implementation result (repository pre-deploy)
+
+```text
+STATUS                              = REPOSITORY_IMPLEMENTED_CREDENTIAL_GATED
+SOURCE_REACTIONS_SUMMARY            = IMPLEMENTED_LIMIT_0_SUMMARY_TRUE
+SOURCE_COMMENTS_SUMMARY             = IMPLEMENTED_LIMIT_0_SUMMARY_TRUE
+PII_COMMENT_BODY_READ               = NOT_REQUESTED
+RAW_CANONICAL_D1_LARK_MAPPING       = REUSED_EXISTING_CONTRACT
+MIGRATION_NEW_TABLE                 = NONE
+MISSING_FIELD_SEMANTICS             = NULL_NOT_ZERO
+OBSERVED_ZERO_SEMANTICS             = REAL_ZERO
+MALFORMED_SUMMARY                   = FAIL_CLOSED
+REQUIRED_PERMISSIONS                = PAGES_SHOW_LIST_PAGES_READ_ENGAGEMENT_PAGES_READ_USER_CONTENT_READ_INSIGHTS
+LIVE_GET_ONLY_SCOPE                 = MISSING_PAGES_READ_USER_CONTENT
+FOCUSED_META_FACEBOOK_TESTS         = PASS_416_OF_416
+FULL_UNIT_TESTS                     = PASS_3009_OF_3009
+WORKERS_RUNTIME_TESTS               = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS            = PASS_105_OF_105
+ARCHITECTURE_HYGIENE                = PASS
+DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                      = PASS
+LIVE_DEPLOYMENT                     = BLOCKED_CREDENTIAL_SCOPE
+FRESH_OPERATION_RECONCILIATION      = PENDING_AFTER_REVIEWED_DEPLOY
+OLD_OPERATION_REPLAY_DLQ_REDRIVE    = PROHIBITED_NOT_RUN
+PRODUCTION                          = BLOCKED
+```
+
+Implementation ใช้ helper ใน write-set เดิมและเส้นทาง Raw/Canonical/D1/Lark เดิมทั้งหมด. Full gates
+ผ่านครบตามตัวเลขด้านบน; ขั้นถัดไปคือเปิด reviewed PR และให้ผู้ใช้ rotate/upload สอง secrets จาก token grant ที่มี
+`pages_read_user_content` ก่อน Live deployment. รายละเอียดอยู่ที่
+`docs/project-brain/facebook-reactions-comments-live-2026-08-12.md`.
