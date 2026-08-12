@@ -80,3 +80,32 @@ revive an invalid/revoked Refresh Token. The customer must use a fresh Connect l
 the Google account or Brand Account that actually owns the configured Channel. The resulting Refresh Token
 can then be reused without daily customer action until Google or the user revokes/expires it. Read-only Owner
 preflight, controlled Analytics catch-up and D1/Lark reconciliation remain required after that one-time consent.
+
+## Customer-owner consent and Analytics value-contract incident — 2026-08-12
+
+The actual customer Channel owner completed a fresh consent successfully. Remote D1 readback confirmed the
+exact configured Channel suffix, `connected/validated`, both approved scopes, one new active encrypted Refresh
+Token and the prior Refresh Token marked `replaced`. No OAuth callback Queue or Lark write occurred.
+
+One fresh controlled Analytics catch-up for `2026-08-04..2026-08-10` passed the encrypted Customer Connection,
+Refresh Token and Channel-owner gates, then stopped fail-closed before Business writes with:
+
+```text
+sync_run_id          bf9f39ef-fe9a-47ce-ab0e-25c2811013cf
+work_key             youtube:f54a3b902951abbf42baad950f74a2c8
+status               failed / terminal
+error                 averageViewPercentage must be between 0 and 100
+records_written       0
+```
+
+The Provider returned a valid non-negative `averageViewPercentage` above 100. Rewatching can make average
+watched duration exceed the source video's duration, so the metric is not a bounded probability. Repository
+validation and the blueprint incorrectly imposed a `0..100` ceiling. The correction preserves the exact
+finite non-negative Source value, continues rejecting negative/non-finite values and does not clamp or
+fabricate data. The failed operation is retained and must not be replayed; post-deploy validation uses a fresh
+Queue delivery and requires completed D1/Lark reconciliation before Live closure.
+
+The repository correction is gated before deployment: focused YouTube adapter/workbook parity `8/8`, full
+unit `3007/3007`, Workers runtime `18/18`, report reliability `105/105`, architecture/hygiene, dependency
+audit with zero vulnerabilities, clean deploy dry-run and diff check all pass. Live status remains pending
+until a reviewed deployment and a different fresh operation complete reconciliation.

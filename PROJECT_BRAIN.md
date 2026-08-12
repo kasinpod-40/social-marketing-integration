@@ -37,6 +37,13 @@ deploy แล้ว แต่ Live refresh ของ retained credential คื�
 หลังจากนั้นระบบ refresh ต่อได้จนกว่าจะถูก revoke/หมดอายุตาม Google policy. รายละเอียดอยู่ที่
 `docs/project-brain/youtube-customer-oauth-runtime-credential-path-incident-2026-08-10.md`.
 
+Customer Channel owner consent สำเร็จเมื่อ 2026-08-12: D1 ยืนยัน `connected/validated`, exact Channel,
+scopes 2/2 และ Refresh Token ใหม่ active โดย token เดิมเป็น replaced. Fresh Analytics catch-up ผ่าน
+Owner authorization แต่หยุดก่อน Business write (`records_written=0`) เพราะ adapter บังคับ
+`averageViewPercentage` ไม่เกิน 100 ทั้งที่ Source อาจเกิน 100 เมื่อมีการรับชมซ้ำ. Work ที่ล้มถูกเก็บ
+เป็นหลักฐานและห้าม replay; Repository hotfix เปลี่ยน contract เป็น finite non-negative โดยไม่ clamp และ
+ต้องผ่าน reviewed deploy + fresh operation + D1/Lark reconciliation ก่อนปิด Live Analytics.
+
 ## Chatwoot stable-identity pagination correction — 2026-08-10
 
 Provider Conversations API ใช้ mutable offset page และไม่มี snapshot cursor. Fingerprint ของ page เดิม

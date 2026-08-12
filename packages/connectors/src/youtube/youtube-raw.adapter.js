@@ -110,7 +110,7 @@ export function mapYouTubeAnalyticsResponse(response, input = {}) {
       shares: nullableCount(values[5], 'shares'),
       estimated_minutes_watched: nullableNonNegative(values[6], 'estimatedMinutesWatched'),
       average_view_duration_seconds: nullableNonNegative(values[7], 'averageViewDuration'),
-      average_view_percentage: nullablePercentage(values[8], 'averageViewPercentage'),
+      average_view_percentage: nullableNonNegative(values[8], 'averageViewPercentage'),
       fetched_at: fetchedAt,
       source_payload_json: safeJson({ headers: ANALYTICS_COLUMNS, values }),
     });
@@ -196,10 +196,5 @@ function nullableNonNegative(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) throw new TypeError(`${fieldName} must be non-negative`);
-  return number;
-}
-function nullablePercentage(value, fieldName) {
-  const number = nullableNonNegative(value, fieldName);
-  if (number !== null && number > 100) throw new TypeError(`${fieldName} must be between 0 and 100`);
   return number;
 }

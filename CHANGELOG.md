@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — YouTube Analytics Average View Percentage Live Hotfix — 2026-08-12
+
+### Changed
+
+- Removed the incorrect `100` ceiling from RAW YouTube Analytics `averageViewPercentage` while preserving
+  finite non-negative validation and the exact Provider value without clamping.
+- Aligned the YouTube blueprint and Lark field description with Source semantics: repeated viewing can make
+  average watched percentage exceed 100.
+- Updated the checked-in multichannel workbook field metadata so the executable blueprint and workbook
+  parity contract remain exact.
+
+### Live evidence and safety
+
+- Customer-owner consent completed with exact Channel identity, both approved scopes and a newly active
+  encrypted Refresh Token; the previous credential was marked replaced.
+- Fresh catch-up `2026-08-04..2026-08-10` passed Owner authorization, then stopped fail-closed with zero
+  Business records written when Live data exceeded the old ceiling.
+- The failed Work is retained and will not be replayed. Live closure requires reviewed merge/deploy and a
+  fresh catch-up operation with D1/Lark reconciliation.
+- Pre-deploy gates pass: focused YouTube/workbook `8/8`, unit `3007/3007`, Workers runtime `18/18`, report
+  reliability `105/105`, architecture/hygiene, zero-vulnerability audit and deploy dry-run.
+
 ## Unreleased — Automatic Weekly Executive Notification Live Activation — 2026-08-11
 
 ### Changed

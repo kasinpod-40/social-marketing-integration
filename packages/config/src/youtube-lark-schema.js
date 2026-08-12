@@ -76,7 +76,7 @@ const FIELD_DESCRIPTIONS_TH = deepFreeze({
     shares: 'ยอดแชร์ที่เกิดขึ้นในวันของ Source หากไม่มีให้เก็บเป็นค่าว่าง',
     estimated_minutes_watched: 'เวลาในการรับชมรวม หน่วยเป็นนาที หากแปลงเป็นวินาทีให้คูณ 60',
     average_view_duration_seconds: 'ระยะเวลารับชมเฉลี่ย หน่วยจาก Source เป็นวินาทีอยู่แล้ว',
-    average_view_percentage: 'เปอร์เซ็นต์การรับชมเฉลี่ย ค่าอยู่ระหว่าง 0–100',
+    average_view_percentage: 'เปอร์เซ็นต์การรับชมเฉลี่ยจาก Source ต้องไม่ติดลบ และอาจเกิน 100 เมื่อมีการรับชมซ้ำ',
     fetched_at: 'เวลาที่ดึงข้อมูลจาก API ในรูปแบบ UTC',
     source_payload_json: 'Payload สำหรับตรวจสอบย้อนหลัง หลังตัด Credential และข้อมูลลับออกแล้ว ใช้เฉพาะ RAW ใน Phase 1',
   },
