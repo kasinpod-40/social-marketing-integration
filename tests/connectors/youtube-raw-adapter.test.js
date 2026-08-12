@@ -83,6 +83,26 @@ test('preserves average view percentage above 100 when viewers rewatch video por
   }, { channelId: 'channel_A', fetchedAt: 3000 }), /averageViewPercentage must be non-negative/u);
 });
 
+test('preserves signed integer adjustments from daily Analytics without weakening cumulative counts', () => {
+  const headers = [
+    'day', 'video', 'views', 'likes', 'comments', 'shares',
+    'estimatedMinutesWatched', 'averageViewDuration', 'averageViewPercentage',
+  ].map((name) => ({ name }));
+  const rows = mapYouTubeAnalyticsResponse({
+    columnHeaders: headers,
+    rows: [['2026-08-10', 'video_A', 10, -1, 0, 1, 5.5, 30, 50]],
+  }, { channelId: 'channel_A', fetchedAt: 3000 });
+  assert.equal(rows[0].likes, -1);
+  assert.throws(() => mapYouTubeAnalyticsResponse({
+    columnHeaders: headers,
+    rows: [['2026-08-10', 'video_A', 10, 0.5, 0, 1, 5.5, 30, 50]],
+  }, { channelId: 'channel_A', fetchedAt: 3000 }), /likes must be a signed safe integer/u);
+  assert.throws(() => mapYouTubeVideoRawRow({
+    ...VIDEO,
+    statistics: { ...VIDEO.statistics, likeCount: '-1' },
+  }, { expectedChannelId: 'channel_A', fetchedAt: 3000 }), /likeCount must be a non-negative integer/u);
+});
+
 test('validates every mapped Analytics row against video, channel, and date scope', () => {
   const base = {
     raw_analytics_daily_key: 'youtube:channel_A:video_A:2026-07-14',

@@ -104,10 +104,10 @@ export function mapYouTubeAnalyticsResponse(response, input = {}) {
       source_metric_date: sourceMetricDate,
       channel_id: channelId,
       video_id: videoId,
-      views: nullableCount(values[2], 'views'),
-      likes: nullableCount(values[3], 'likes'),
-      comments: nullableCount(values[4], 'comments'),
-      shares: nullableCount(values[5], 'shares'),
+      views: nullableSignedCount(values[2], 'views'),
+      likes: nullableSignedCount(values[3], 'likes'),
+      comments: nullableSignedCount(values[4], 'comments'),
+      shares: nullableSignedCount(values[5], 'shares'),
       estimated_minutes_watched: nullableNonNegative(values[6], 'estimatedMinutesWatched'),
       average_view_duration_seconds: nullableNonNegative(values[7], 'averageViewDuration'),
       average_view_percentage: nullableNonNegative(values[8], 'averageViewPercentage'),
@@ -190,6 +190,12 @@ function nullableCount(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be a non-negative safe integer`);
+  return number;
+}
+function nullableSignedCount(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number)) throw new TypeError(`${fieldName} must be a signed safe integer`);
   return number;
 }
 function nullableNonNegative(value, fieldName) {

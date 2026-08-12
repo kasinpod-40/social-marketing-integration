@@ -430,10 +430,17 @@ FAILED_WORK                          = youtube:f54a3b902951abbf42baad950f74a2c8
 FAILED_OPERATION_REPLAY             = PROHIBITED_NOT_RUN
 FAILED_OPERATION_RECORDS_WRITTEN    = 0
 ROOT_CAUSE                           = AVERAGE_VIEW_PERCENTAGE_FALSE_100_CEILING
-REPOSITORY_HOTFIX                    = IN_PROGRESS
-LIVE_ANALYTICS_CATCH_UP              = PENDING_REVIEWED_DEPLOY_AND_FRESH_OPERATION
-FOCUSED_YOUTUBE_AND_WORKBOOK_TESTS   = PASS_8_OF_8
-FULL_UNIT_TESTS                      = PASS_3007_OF_3007
+REPOSITORY_HOTFIX                    = MERGED_PR_637_DEPLOYED
+DEPLOYED_WORKER_VERSION              = c56c255f-2ca0-42be-ad2b-552d9b4f0fe5_100_PERCENT
+SECOND_FAILED_SYNC_RUN               = 30383548-d570-4fac-acfb-5c92f5ea9b7d
+SECOND_FAILED_WORK                   = youtube:b9268e5ac108b031033727c0ecceb9e3
+SECOND_FAILURE                       = LIKES_NON_NEGATIVE_CONSTRAINT
+SECOND_OPERATION_RECORDS_WRITTEN     = 0
+SECOND_OPERATION_REPLAY              = PROHIBITED_NOT_RUN
+SIGNED_DAILY_COUNT_HOTFIX            = REPOSITORY_FIXED_GATED
+LIVE_ANALYTICS_CATCH_UP              = PENDING_SECOND_REVIEWED_DEPLOY_AND_FRESH_OPERATION
+FOCUSED_YOUTUBE_AND_WORKBOOK_TESTS   = PASS_23_OF_23
+FULL_UNIT_TESTS                      = PASS_3008_OF_3008
 WORKERS_RUNTIME_TESTS                = PASS_18_OF_18
 REPORT_RELIABILITY_TESTS             = PASS_105_OF_105
 ARCHITECTURE_HYGIENE                 = PASS
@@ -455,3 +462,24 @@ Adapter, Source contract, Lark description และ workbook field metadata ใ
 `averageViewPercentage` ต้องเป็น finite non-negative แต่ไม่จำกัดเพดาน 100 และเก็บ exact Source value.
 Regression ครอบคลุมค่าจริง `125.5` และค่าติดลบที่ต้อง fail closed. Full repository gates ผ่านครบตาม
 ตัวเลขด้านบน; ขั้นถัดไปคือ reviewed PR/merge/deploy แล้วส่ง fresh operation เท่านั้น.
+
+### Post-PR #637 incident and second implementation result
+
+PR #637 merge และ deploy เข้า Integration Worker สำเร็จที่ version
+`c56c255f-2ca0-42be-ad2b-552d9b4f0fe5` 100%. Fresh operation ใหม่เพียงหนึ่งรอบผ่าน Owner OAuth,
+exact Channel และ inventory 100 Videos/2 pages แล้วหยุดก่อน Analytics staging ด้วย
+`likes must be a non-negative safe integer`. Run `30383548-d570-4fac-acfb-5c92f5ea9b7d` และ Work
+`youtube:b9268e5ac108b031033727c0ecceb9e3` เป็น terminal, records written 0 และ exact alerts 2 รายการ
+ถูกเก็บเป็นหลักฐานโดยไม่ replay.
+
+Root cause ชั้นที่สองคือ RAW adapter ใช้ non-negative cumulative-count contract ของ Data API กับ
+Analytics period metrics. Correction แยกสอง contract: Analytics `views`/`likes`/`comments`/`shares`
+เก็บ signed safe integer adjustment ตาม Provider, ยังปฏิเสธ fractional/non-finite/unsafe value และไม่
+round/clamp/fabricate; Channel/Video cumulative counts ยังคง non-negative. Adapter, tests, Blueprint,
+Lark descriptions และ workbook อัปเดตแล้ว. Live status ยังไม่ปิดจน reviewed merge/deploy รอบที่สองและ
+fresh operation ใหม่สำเร็จพร้อม reconciliation.
+
+Focused regression `23/23`, full unit `3008/3008`, Workers runtime `18/18`, report reliability
+`105/105`, architecture/repository hygiene, dependency audit 0 vulnerabilities, deploy dry-run และ
+diff check ผ่าน. Workbook ตรวจ values/formulas และ render ครบ 10 sheets โดยไม่พบ formula error หรือ
+layout regression. สถานะนี้คือ Repository fixed/gated เท่านั้น ยังไม่ใช่ Live PASS.

@@ -549,6 +549,12 @@ The merge reuses the existing YouTube API client, Shared Google OAuth Core, norm
 
 The merged implementation includes bounded large-inventory storage, retry-safe Coverage, fail-closed report reads, non-destructive missing/private/deleted handling, hidden-subscriber `null` semantics, and D1-before-Lark ordering. YouTube Analytics period facts remain in `RAW_YouTube_Analytics_Daily`; no new migration was added.
 
+Live owner validation on 2026-08-12 established two additional RAW Analytics value contracts. First,
+`averageViewPercentage` is finite non-negative but may exceed 100 and must not be clamped. Second, daily
+`views`/`likes`/`comments`/`shares` preserve signed safe-integer Provider adjustments, while cumulative
+Data API statistics remain non-negative. Both failed operations stopped before Business writes and are
+retained without replay; Live PASS still requires a fresh post-correction catch-up and reconciliation.
+
 Detailed records:
 
 ```text
