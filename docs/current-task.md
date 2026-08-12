@@ -430,15 +430,25 @@ FAILED_WORK                          = youtube:f54a3b902951abbf42baad950f74a2c8
 FAILED_OPERATION_REPLAY             = PROHIBITED_NOT_RUN
 FAILED_OPERATION_RECORDS_WRITTEN    = 0
 ROOT_CAUSE                           = AVERAGE_VIEW_PERCENTAGE_FALSE_100_CEILING
-REPOSITORY_HOTFIX                    = MERGED_PR_637_DEPLOYED
-DEPLOYED_WORKER_VERSION              = c56c255f-2ca0-42be-ad2b-552d9b4f0fe5_100_PERCENT
+REPOSITORY_HOTFIX                    = MERGED_PR_637_AND_PR_638_DEPLOYED
+DEPLOYED_WORKER_VERSION              = 0aff7439-5ea2-4df3-8926-1b7430c98659_100_PERCENT
 SECOND_FAILED_SYNC_RUN               = 30383548-d570-4fac-acfb-5c92f5ea9b7d
 SECOND_FAILED_WORK                   = youtube:b9268e5ac108b031033727c0ecceb9e3
 SECOND_FAILURE                       = LIKES_NON_NEGATIVE_CONSTRAINT
 SECOND_OPERATION_RECORDS_WRITTEN     = 0
 SECOND_OPERATION_REPLAY              = PROHIBITED_NOT_RUN
-SIGNED_DAILY_COUNT_HOTFIX            = REPOSITORY_FIXED_GATED
-LIVE_ANALYTICS_CATCH_UP              = PENDING_SECOND_REVIEWED_DEPLOY_AND_FRESH_OPERATION
+SIGNED_DAILY_COUNT_HOTFIX            = LIVE_VALIDATED
+LIVE_ANALYTICS_CATCH_UP              = PASS_FRESH_OPERATION
+LIVE_SYNC_RUN                        = 4ff26ea0-6a83-4781-95f1-ca0fe609a0e1_SUCCESS
+LIVE_WORK                            = youtube:51b03da1705e0412a038e5dc51016c31_COMPLETED
+LIVE_ANALYTICS_VIDEO_SCOPE           = 837_SELECTED_837_QUERIED_0_FAILED
+LIVE_ANALYTICS_ROWS                  = 1919_COMPLETE_MISSING_0
+LIVE_RECORDS_WRITTEN                 = 2079
+LIVE_NEW_ALERTS                      = 0
+LIVE_D1_CHECKPOINT                   = PASS_COMMITTED_TO_FRESH_RUN
+LIVE_LARK_RECONCILIATION             = PASS_1919_OF_1919_UNIQUE_KEYS
+LIVE_SIGNED_ADJUSTMENTS              = PASS_13_CELLS_PRESERVED
+PRODUCTION                           = BLOCKED
 FOCUSED_YOUTUBE_AND_WORKBOOK_TESTS   = PASS_23_OF_23
 FULL_UNIT_TESTS                      = PASS_3008_OF_3008
 WORKERS_RUNTIME_TESTS                = PASS_18_OF_18
@@ -482,4 +492,26 @@ fresh operation ใหม่สำเร็จพร้อม reconciliation.
 Focused regression `23/23`, full unit `3008/3008`, Workers runtime `18/18`, report reliability
 `105/105`, architecture/repository hygiene, dependency audit 0 vulnerabilities, deploy dry-run และ
 diff check ผ่าน. Workbook ตรวจ values/formulas และ render ครบ 10 sheets โดยไม่พบ formula error หรือ
-layout regression. สถานะนี้คือ Repository fixed/gated เท่านั้น ยังไม่ใช่ Live PASS.
+layout regression. ข้อความนี้เป็นสถานะ pre-deploy ซึ่งถูก supersede โดย Live closure ด้านล่าง.
+
+### Post-PR #638 reviewed deployment and Live closure
+
+PR #638 merge เข้า `main` ที่ commit `61cd05afa0f0f1c402c206242c074296c9b47f86`; exact-head CI
+`31567102553` ผ่านทุก step. Integration Worker version
+`0aff7439-5ea2-4df3-8926-1b7430c98659` ถูก deploy และ read back ที่ traffic 100% เพียง version เดียว.
+Owner preflight ก่อนส่งงานยืนยัน connection เดียวที่ `connected/validated`, exact Channel, approved
+scopes 2 รายการ, active encrypted Refresh Token 1 รายการ และ active YouTube Work/lock เป็นศูนย์.
+
+Fresh catch-up ถูกส่งเพียงครั้งเดียวที่ `2026-08-12T05:45:57.171Z` สำหรับ requested Analytics range
+`2026-08-04..2026-08-10`; ไม่ replay/redrive failed Work ทั้งสองรายการ. Work ใหม่
+`youtube:51b03da1705e0412a038e5dc51016c31` จบ `completed` และ run
+`4ff26ea0-6a83-4781-95f1-ca0fe609a0e1` จบ `success`: inventory/resources 100/100, Analytics selected
+837 Videos, queried 837, failed 0, returned 1,919 period rows, missing reconciliation rows 0 และเขียน
+2,079 operations โดยไม่มี alert ใหม่.
+
+D1 completion เป็น `write`, checkpoint ถูก commit ไปยัง fresh run และ `reconciliation.required=false`.
+Lark GET-only readback พบ 1,919/1,919 rows กับ 1,919 unique stable keys, duplicate 0, Channel mismatch 0,
+invalid metric 0 และ signed count adjustments 13 cells ถูกเก็บตาม Source จริง. Provider มี rows วันที่
+`2026-08-04..2026-08-09` ภายใน requested window; วันที่ 10 ไม่มี Source row จึงไม่ fabricate/zero-fill.
+YouTube Customer-owner Analytics blocker ของ Integration Workspace ปิดเป็น Live PASS แล้ว; Production
+ยัง BLOCKED และ historical failed Works/alerts ยังคงเป็น immutable incident evidence.

@@ -553,7 +553,10 @@ Live owner validation on 2026-08-12 established two additional RAW Analytics val
 `averageViewPercentage` is finite non-negative but may exceed 100 and must not be clamped. Second, daily
 `views`/`likes`/`comments`/`shares` preserve signed safe-integer Provider adjustments, while cumulative
 Data API statistics remain non-negative. Both failed operations stopped before Business writes and are
-retained without replay; Live PASS still requires a fresh post-correction catch-up and reconciliation.
+retained without replay. PR #638 then merged/deployed and one fresh post-correction catch-up completed:
+837/837 Videos queried, 1,919 Analytics rows, zero failed/missing rows, D1 checkpoint committed, zero new
+alerts and Lark GET-only reconciliation at 1,919 unique stable keys with 13 signed adjustment cells retained.
+Integration Workspace Owner Analytics is Live PASS; Production remains blocked.
 
 Detailed records:
 

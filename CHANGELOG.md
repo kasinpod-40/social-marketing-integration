@@ -23,6 +23,13 @@
 - Pre-deploy gates pass: focused YouTube/workbook `23/23`, unit `3008/3008`, Workers runtime `18/18`,
   report reliability `105/105`, architecture/hygiene, zero-vulnerability audit, deploy dry-run and workbook
   visual verification across all 10 sheets.
+- PR #638 merged at `61cd05afa0f0f1c402c206242c074296c9b47f86`; exact-head CI passed and reviewed
+  Worker version `0aff7439-5ea2-4df3-8926-1b7430c98659` received 100% traffic.
+- One fresh non-replay catch-up completed with 837/837 Videos queried, zero failed Videos, 1,919 Analytics
+  rows, 2,079 writes, D1 checkpoint commit and zero new alerts.
+- GET-only Lark reconciliation verified 1,919 unique stable keys, zero duplicates/mismatches/invalid metrics
+  and 13 signed Provider adjustment cells preserved. Integration Owner Analytics is Live PASS; Production
+  remains blocked.
 
 ## Unreleased — YouTube Analytics Average View Percentage Live Hotfix — 2026-08-12
 

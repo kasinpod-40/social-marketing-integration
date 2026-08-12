@@ -132,3 +132,32 @@ correction accepts signed safe integers for Analytics `views`, `likes`, `comment
 rejects fractional/non-finite/unsafe values, and leaves cumulative Channel/Video counts non-negative.
 No value is rounded, clamped or fabricated. This second failed Work is also immutable evidence and must not
 be replayed; closure requires reviewed merge/deploy plus exactly one new catch-up and D1/Lark reconciliation.
+
+## Live closure after PR #638 — 2026-08-12
+
+PR #638 merged to `main` at `61cd05afa0f0f1c402c206242c074296c9b47f86`; exact-head CI passed.
+Reviewed Integration Worker version `0aff7439-5ea2-4df3-8926-1b7430c98659` was deployed and read back as
+the only version receiving 100% traffic. Preflight found exactly one `connected/validated` customer-owner
+connection with both scopes and one active encrypted Refresh Token, plus zero active YouTube Work/locks.
+
+Exactly one fresh Queue delivery was sent for requested range `2026-08-04..2026-08-10`. It did not replay
+either retained failure. Work `youtube:51b03da1705e0412a038e5dc51016c31` completed and sync run
+`4ff26ea0-6a83-4781-95f1-ca0fe609a0e1` succeeded with 837 selected/queried Videos, zero failed Videos,
+1,919 Analytics rows, zero missing reconciliation rows, 2,079 writes and zero new YouTube alerts.
+
+D1 completion/checkpoint committed to the fresh run with reconciliation not required. GET-only Lark
+readback verified 1,919 rows and 1,919 unique stable keys, with zero duplicates, zero Channel mismatch and
+zero invalid count values. Thirteen signed count cells were preserved exactly, proving the corrected Source
+contract on Live data. Provider rows covered `2026-08-04..2026-08-09` within the requested window; no row
+was fabricated for the day without Source data.
+
+```text
+REPOSITORY_IMPLEMENTATION = FIXED_MERGED_PR_638
+REMOTE_DEPLOYMENT         = PASS_100_PERCENT
+LIVE_OWNER_PREFLIGHT      = PASS
+LIVE_ANALYTICS_CATCH_UP   = PASS_FRESH_OPERATION
+D1_LARK_RECONCILIATION    = PASS
+CUSTOMER_RECONNECT        = COMPLETE_NO_DAILY_ACTION_REQUIRED
+FAILED_WORK_REPLAY        = PROHIBITED_NOT_RUN
+PRODUCTION                = BLOCKED
+```
