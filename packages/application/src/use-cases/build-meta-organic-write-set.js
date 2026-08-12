@@ -399,17 +399,45 @@ function normalizeInsightEntries(values, fieldName) {
 }
 
 function contentResourceInsights(connectorKey, resource) {
-  if (connectorKey !== 'facebook' || resource.shares === null || resource.shares === undefined) {
-    return Object.freeze([]);
+  if (connectorKey !== 'facebook') return Object.freeze([]);
+  const metrics = [];
+  appendFacebookCount(metrics, {
+    value: resource.shares,
+    sourceName: 'shares',
+    countPath: ['count'],
+    metricName: 'shares_count',
+  });
+  appendFacebookCount(metrics, {
+    value: resource.reactions,
+    sourceName: 'reactions',
+    countPath: ['summary', 'total_count'],
+    metricName: 'reactions_count',
+  });
+  appendFacebookCount(metrics, {
+    value: resource.comments,
+    sourceName: 'comments',
+    countPath: ['summary', 'total_count'],
+    metricName: 'comments_count',
+  });
+  return Object.freeze(metrics);
+}
+
+function appendFacebookCount(target, input) {
+  if (input.value === null || input.value === undefined) return;
+  const source = requireObject(input.value, `Facebook content ${input.sourceName}`);
+  let value = source;
+  for (const field of input.countPath) value = value?.[field];
+  const count = integerOrNull(value);
+  if (count === null) {
+    throw new TypeError(
+      `Facebook content ${input.sourceName}.${input.countPath.join('.')} must be a non-negative integer`,
+    );
   }
-  const shares = requireObject(resource.shares, 'Facebook content shares');
-  const count = integerOrNull(shares.count);
-  if (count === null) throw new TypeError('Facebook content shares.count must be a non-negative integer');
-  return Object.freeze([Object.freeze({
-    name: 'shares_count',
+  target.push(Object.freeze({
+    name: input.metricName,
     period: 'lifetime',
     value: count,
-  })]);
+  }));
 }
 
 function mergeContentInsights(providerInsights, resourceInsights) {

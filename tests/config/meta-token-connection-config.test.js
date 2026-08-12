@@ -57,6 +57,12 @@ test('Meta token connection config separates credentials and exact mappings', ()
   assert.deepEqual(config.mappings.metaAdAccountIds, ['12345', '67890']);
   assert.equal(config.mappings.metaAdAccountId, null);
   assert.equal(config.transport.maxPages, 7);
+  assert.deepEqual(META_REQUIRED_PERMISSIONS.facebook, [
+    'pages_read_engagement',
+    'pages_read_user_content',
+    'pages_show_list',
+    'read_insights',
+  ]);
   assert.deepEqual(META_REQUIRED_PERMISSIONS.meta_ads, ['ads_read', 'business_management']);
 });
 

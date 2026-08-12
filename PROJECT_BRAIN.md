@@ -888,6 +888,29 @@ shares 2,352 as `available`, and the user visually confirmed Facebook on the Das
 runtime token still lacks the actual `read_insights` grant, so Views/Likes/Comments remain N/A.
 No retained operation was replayed or redriven.
 
+## Facebook Reactions/Comments summary continuation — 2026-08-12
+
+The earlier Shares-only closeout remains valid historical evidence, but it is no longer the complete
+Facebook admission contract. A fresh GET-only probe against the newly generated token confirms
+`read_insights` is now granted while `pages_read_user_content` is still absent. Graph rejects both
+`comments.limit(0).summary(true)` and `reactions.limit(0).summary(true)` with permission code 10 and
+continues to return `shares.count`; therefore the remaining gap is credential scope, not Lark schema,
+Dashboard configuration or metric mapping.
+
+The repository implementation requests only summary counts with `limit(0)`, so user identities and
+Comment text do not enter the payload. Observed `reactions.summary.total_count` maps to the existing
+`reactions_count` Raw provenance and Canonical/D1/Lark Likes field; observed
+`comments.summary.total_count` maps to Comments. Explicit zero is real, an absent field stays null/N/A
+and malformed summaries fail closed. The Facebook permission gate now requires
+`pages_show_list`, `pages_read_engagement`, `pages_read_user_content` and `read_insights`.
+
+No new table or migration is required. Deployment is prohibited until both active Facebook secrets are
+rotated from a grant containing all four permissions. After reviewed merge/deploy, closure requires one
+fresh operation identity, terminal success, complete Coverage, zero new exact alerts/DLQ, D1/Lark parity
+for Likes/Comments and fresh 1D/3D/7D/30D materialization. Retained `r1`/`r2` identities must not be
+replayed or redriven. Detailed contract:
+`docs/project-brain/facebook-reactions-comments-live-2026-08-12.md`.
+
 ## Permanent safety rules
 
 - Data model before Connector;
