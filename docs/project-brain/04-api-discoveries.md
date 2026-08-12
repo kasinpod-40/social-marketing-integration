@@ -12,6 +12,8 @@ Status: Source contract and DEV smoke verified; customer-scale Live UAT pending.
 - Public data supports API key or OAuth; Owner Analytics requires OAuth.
 - Data API statistics are cumulative latest-state snapshots.
 - Analytics rows are period metrics and remain RAW-only in the current phase.
+- Analytics daily count columns are signed integers at the RAW boundary so Provider corrections are
+  preserved; cumulative Data API Channel/Video counters remain non-negative integers.
 - Owner Analytics completeness uses exact queried-video markers, not returned row count.
 - Analytics `day` is the exact Pacific source day.
 - Missing/unsupported metrics remain `null`; explicit zero remains zero.

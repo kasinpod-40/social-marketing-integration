@@ -109,3 +109,26 @@ The repository correction is gated before deployment: focused YouTube adapter/wo
 unit `3007/3007`, Workers runtime `18/18`, report reliability `105/105`, architecture/hygiene, dependency
 audit with zero vulnerabilities, clean deploy dry-run and diff check all pass. Live status remains pending
 until a reviewed deployment and a different fresh operation complete reconciliation.
+
+### Second post-deploy value-contract incident
+
+PR #637 merged and the reviewed Integration Worker version
+`c56c255f-2ca0-42be-ad2b-552d9b4f0fe5` served 100% traffic. One new catch-up using the same bounded range
+and a new operation identity passed Owner OAuth, exact Channel authorization and both 100-video inventory
+phases. It then stopped before staging any Analytics row:
+
+```text
+sync_run_id          30383548-d570-4fac-acfb-5c92f5ea9b7d
+work_key             youtube:b9268e5ac108b031033727c0ecceb9e3
+status               failed / terminal
+error                 likes must be a non-negative safe integer
+records_written       0
+new exact alerts      2 retained open
+```
+
+The RAW adapter had reused the cumulative Data API non-negative-count rule for period Analytics columns.
+That conflated two distinct Source contracts and rejected a signed daily Provider adjustment. The scoped
+correction accepts signed safe integers for Analytics `views`, `likes`, `comments` and `shares`, still
+rejects fractional/non-finite/unsafe values, and leaves cumulative Channel/Video counts non-negative.
+No value is rounded, clamped or fabricated. This second failed Work is also immutable evidence and must not
+be replayed; closure requires reviewed merge/deploy plus exactly one new catch-up and D1/Lark reconciliation.

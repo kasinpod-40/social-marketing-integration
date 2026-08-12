@@ -35,9 +35,10 @@ Manager Script trigger และ signed ingress เพื่อไม่สร�
 และ materialize `2026-08-09` ครบ 32 D1/Lark snapshots. Google Ads fresh LIVE ผ่าน 6 datasets,
 7 chunks, 1,335 rows พร้อม D1/Lark parity และ Provider frequency `Daily between 6:00 AM and
 7:00 AM`; PREVIEW ไม่มี schedule. YouTube customer Channel owner consent สำเร็จและออก Refresh Token
-ใหม่แล้ว; Owner authorization ผ่าน แต่ Analytics catch-up พบ Source percentage ที่เกิน 100 จากการรับชมซ้ำ
-จึงหยุดก่อน Business write. Repository hotfix รักษาค่า non-negative จริงโดยไม่ clamp และรอ reviewed
-deploy + fresh catch-up/reconciliation. Chatwoot stable-identity pagination fix merge/deploy แล้ว
+ใหม่แล้ว; Owner authorization ผ่าน และ percentage hotfix deploy แล้ว แต่ fresh Analytics catch-up พบว่า
+RAW daily likes มี Provider adjustment ที่ validator ยอดสะสมเดิมไม่ยอมรับ จึงหยุดก่อน Business write.
+Repository hotfix แยก signed daily counts ออกจาก cumulative counts โดยไม่ round/clamp/fabricate และรอ
+reviewed deploy + fresh catch-up/reconciliation. Chatwoot stable-identity pagination fix merge/deploy แล้ว
 และอยู่ระหว่าง controlled catch-up/reconciliation. TikTok Ads ยัง `planned`;
 Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
@@ -88,7 +89,7 @@ Google Ads signed delivery         Fresh LIVE pass / 7 chunks / 1,335 rows
 Google Ads actual Script LIVE      pass / six datasets / failed rows 0
 Google Ads Provider schedule       daily 06:00–07:00 / PREVIEW unscheduled
 Google Ads Secret provisioning     completed / route safely closed
-YouTube Owner Analytics            owner consent pass / value-contract hotfix gated / live catch-up pending
+YouTube Owner Analytics            owner consent pass / signed daily-count hotfix gated / live catch-up pending
 Chatwoot pagination                stable-ID cutoff fix gated / live reconciliation pending
 ```
 

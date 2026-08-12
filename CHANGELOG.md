@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — YouTube Analytics Signed Daily Counts Hotfix — 2026-08-12
+
+### Changed
+
+- Separated RAW Analytics period counts from cumulative Data API counters: daily `views`, `likes`,
+  `comments` and `shares` now preserve signed safe-integer Provider adjustments, while cumulative
+  Channel/Video statistics remain non-negative integers.
+- Continued to reject fractional, non-finite and unsafe Analytics count values; no rounding, clamping or
+  zero fabrication was added.
+- Aligned the executable blueprint, Thai Lark descriptions and checked-in workbook with the signed RAW
+  period-metric contract.
+
+### Live evidence and safety
+
+- PR #637 merged and Integration Worker version `c56c255f-2ca0-42be-ad2b-552d9b4f0fe5` reached 100%
+  traffic, resolving the prior `averageViewPercentage` ceiling.
+- The one fresh post-deploy catch-up passed OAuth/channel ownership and complete 100-video inventory, then
+  stopped fail-closed at `likes must be a non-negative safe integer`; Business records written remained 0.
+- The second failed Work and its two exact alerts are retained and will not be replayed. A fresh operation
+  is required only after this second correction completes reviewed merge and deployment.
+- Pre-deploy gates pass: focused YouTube/workbook `23/23`, unit `3008/3008`, Workers runtime `18/18`,
+  report reliability `105/105`, architecture/hygiene, zero-vulnerability audit, deploy dry-run and workbook
+  visual verification across all 10 sheets.
+
 ## Unreleased — YouTube Analytics Average View Percentage Live Hotfix — 2026-08-12
 
 ### Changed
