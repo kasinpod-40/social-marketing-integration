@@ -15,9 +15,17 @@
 
 ### Rollout safety
 
-- No Live table deletion, deployment, merge, Queue send, redrive or production mutation is included.
-- The 27-table cleanup requires exact backup/checksum, D1 migration/catch-up, stable-key parity,
-  reviewed deploy, scheduled soak and zero-consumer proof before one-by-one deletion.
+- PR #641 merged at `ffb537958f406f5c44cedc109c657c5f198739d2`; D1 migration `0020` was applied and
+  Integration Worker version `7754be21-8be3-43b3-a537-9dc858b6f5b7` reached 100% traffic.
+- Captured private D1 and exact 27-table Lark backups before mutation. The Lark backup contains 20,072
+  records plus fields, views, full records, stable-key lists and checksums; TikTok Native RAW remains present.
+- Sent one fresh YouTube Owner Analytics catch-up for `2026-08-04..2026-08-11`: 837/837 Videos,
+  2,532 complete rows, no missing rows, and zero new alert/DLQ. D1 and legacy Lark backup match at
+  2,532/2,532 stable keys with equal SHA-256 and no duplicates/extras.
+- GET-only consumer audit found zero references to the 27 targets across 46 non-target tables, 931 fields,
+  139 hydrated views and the workflow inventory.
+- Live deletion remains pending fresh post-deploy scheduled Connector cycles. No manual run is treated as
+  scheduled evidence, no table has been deleted, no retained Work was replayed and Production remains blocked.
 
 ## Unreleased — Facebook Reactions and Comments Post Summaries — 2026-08-12
 
