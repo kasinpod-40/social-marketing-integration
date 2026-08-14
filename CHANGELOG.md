@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — Facebook Reactions and Comments Post Summaries — 2026-08-12
+
+### Changed
+
+- Added bounded Facebook Post summary reads for `reactions.limit(0).summary(true)` and
+  `comments.limit(0).summary(true)` alongside the existing `shares` field; no user identities or
+  Comment text are requested.
+- Projected observed summary counts through the existing Raw metric, Canonical ContentDaily, D1 Organic
+  history and Lark paths as `reactions_count`/Likes and `comments_count`/Comments.
+- Promoted `pages_read_user_content` and `read_insights` into the Facebook readiness contract so a token
+  that cannot supply the complete Dashboard metric set fails preflight before scheduled ingestion.
+- Preserved metric semantics: an observed zero remains zero, an absent field remains null/N/A and a
+  malformed summary fails closed.
+
+### Validation and safety
+
+- Live GET-only capability evidence on 2026-08-12 confirmed the current token grants `read_insights` but
+  not `pages_read_user_content`; reactions/comments requests fail with Graph code 10 while `shares`
+  succeeds. This is the exact remaining credential gate, not a Dashboard or Lark schema defect.
+- Focused Facebook/Meta regression passes `416/416`; full unit `3009/3009`, Workers runtime `18/18`,
+  report reliability `105/105`, architecture/hygiene, zero-vulnerability audit and deploy dry-run also
+  pass. Deployment and a fresh operation remain blocked until the active User and Page credentials carry
+  `pages_read_user_content`.
+- No migration, new table, retained-operation replay, DLQ redrive, Live write or deployment is part of the
+  repository-only state recorded here.
+
 ## Unreleased — YouTube Analytics Signed Daily Counts Hotfix — 2026-08-12
 
 ### Changed

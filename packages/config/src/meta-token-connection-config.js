@@ -39,7 +39,9 @@ export const META_TOKEN_CONNECTION_ENV = Object.freeze({
 export const META_REQUIRED_PERMISSIONS = deepFreeze({
   [META_TOKEN_CONNECTION_KEYS.FACEBOOK_ORGANIC]: [
     'pages_read_engagement',
+    'pages_read_user_content',
     'pages_show_list',
+    'read_insights',
   ],
   [META_TOKEN_CONNECTION_KEYS.INSTAGRAM_ORGANIC]: [
     'instagram_business_basic',

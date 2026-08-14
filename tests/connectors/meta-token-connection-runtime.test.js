@@ -22,6 +22,8 @@ test('Meta runtime uses separate bearer secrets, versioned GETs and no token que
         data: [
           { permission: 'pages_show_list', status: 'granted' },
           { permission: 'pages_read_engagement', status: 'granted' },
+          { permission: 'pages_read_user_content', status: 'granted' },
+          { permission: 'read_insights', status: 'granted' },
           { permission: 'ads_read', status: 'granted' },
           { permission: 'business_management', status: 'granted' },
         ],

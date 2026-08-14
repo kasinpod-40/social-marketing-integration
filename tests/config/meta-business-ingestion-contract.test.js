@@ -76,8 +76,12 @@ test('Facebook content Insights uses only metrics accepted by the Live v25 capab
   assert.deepEqual(facebook.requiredPermissions, [
     'pages_show_list',
     'pages_read_engagement',
+    'pages_read_user_content',
+    'read_insights',
   ]);
   assert.ok(contentInventory.fields.includes('shares'));
+  assert.ok(contentInventory.fields.includes('reactions.limit(0).summary(true)'));
+  assert.ok(contentInventory.fields.includes('comments.limit(0).summary(true)'));
 });
 
 test('Instagram Login stays on graph.instagram.com with the insights permission', () => {

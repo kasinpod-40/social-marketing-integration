@@ -114,7 +114,7 @@ test('keeps Meta reach in Raw metrics without mislabeling it as unique viewers',
   assert.equal(writeSet.d1.organicHistoryBatch.contentRows.length, 0);
 });
 
-test('uses Facebook Post shares as a real ContentDaily fallback on the requested observation date', () => {
+test('uses Facebook Post engagement summaries as real ContentDaily metrics on the requested observation date', () => {
   const writeSet = buildMetaOrganicWriteSet({
     connectorKey: 'facebook',
     accountId: 'page_fixture_001',
@@ -134,24 +134,75 @@ test('uses Facebook Post shares as a real ContentDaily fallback on the requested
       id: 'post_fixture_shares',
       created_time: '2026-08-01T00:00:00+0000',
       shares: { count: 4 },
+      reactions: { data: [], summary: { total_count: 13 } },
+      comments: { data: [], summary: { total_count: 2 } },
     }],
     contentInsights: [{ contentId: 'post_fixture_shares', insights: [] }],
     accountInsights: [],
   });
 
-  assert.equal(writeSet.raw.organicMetrics.length, 1);
-  assert.equal(writeSet.raw.organicMetrics[0].metric_name, 'shares_count');
-  assert.equal(writeSet.raw.organicMetrics[0].value_number, 4);
-  assert.equal(writeSet.raw.organicMetrics[0].response_shape, 'scalar');
+  assert.equal(writeSet.raw.organicMetrics.length, 3);
+  assert.deepEqual(
+    writeSet.raw.organicMetrics.map((row) => [row.metric_name, row.value_number]),
+    [
+      ['shares_count', 4],
+      ['reactions_count', 13],
+      ['comments_count', 2],
+    ],
+  );
+  assert.equal(writeSet.raw.organicMetrics.every((row) => row.response_shape === 'scalar'), true);
   assert.equal(writeSet.canonical.content[0].latest_shares, 4);
+  assert.equal(writeSet.canonical.content[0].latest_likes, 13);
+  assert.equal(writeSet.canonical.content[0].latest_comments, 2);
   assert.equal(writeSet.canonical.contentDaily.length, 1);
   assert.equal(writeSet.canonical.contentDaily[0].shares, 4);
+  assert.equal(writeSet.canonical.contentDaily[0].likes, 13);
+  assert.equal(writeSet.canonical.contentDaily[0].comments, 2);
   assert.match(writeSet.canonical.contentDaily[0].content_daily_key, /:2026-08-10$/u);
   assert.equal(writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].shares, 4);
+  assert.equal(writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].likes, 13);
+  assert.equal(writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].comments, 2);
   assert.equal(writeSet.context.metricDate, '2026-08-10');
   assert.equal(writeSet.d1.accountDailyFacts[0].metric_date, '2026-08-10');
   assert.equal(writeSet.reconciliation.contentDailyRows, 1);
   assert.equal(writeSet.reconciliation.missingContentInsightRows, 0);
+});
+
+test('preserves observed zero Facebook reactions/comments and rejects malformed summaries', () => {
+  const input = {
+    connectorKey: 'facebook',
+    accountId: 'page_fixture_001',
+    accountKey: 'chemistry_k_facebook',
+    customerProfile: 'integration_workspace',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_engagement_zero',
+    operationId: 'operation_meta_engagement_zero',
+    fetchedAt: FETCHED_AT,
+    accountResource: { id: 'page_fixture_001', name: 'Fixture Facebook Page' },
+    contentResources: [{
+      id: 'post_fixture_engagement',
+      created_time: '2026-07-23T17:30:00+0000',
+      reactions: { data: [], summary: { total_count: 0 } },
+      comments: { data: [], summary: { total_count: 0 } },
+    }],
+    contentInsights: [{ contentId: 'post_fixture_engagement', insights: [] }],
+    accountInsights: [],
+  };
+
+  const writeSet = buildMetaOrganicWriteSet(input);
+  assert.equal(writeSet.canonical.contentDaily[0].likes, 0);
+  assert.equal(writeSet.canonical.contentDaily[0].comments, 0);
+
+  assert.throws(
+    () => buildMetaOrganicWriteSet({
+      ...input,
+      contentResources: [{
+        ...input.contentResources[0],
+        reactions: { data: [], summary: {} },
+      }],
+    }),
+    /reactions\.summary\.total_count must be a non-negative integer/u,
+  );
 });
 
 test('keeps an explicit Provider shares metric authoritative over the Post field fallback', () => {

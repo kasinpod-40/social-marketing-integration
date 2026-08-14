@@ -33,7 +33,7 @@ Infrastructure ownership and Source ownership are separate concerns. A customer-
 | Connector | Current source | Status |
 | --- | --- | --- |
 | TikTok Organic | Chemistry K `@chemistry_k` through Lark Native TikTok For Creator | RAW populated; Canonical sync for current customer source not yet verified |
-| Facebook Organic | Chemistry K customer credential in local Secret boundary | Exact Page identity and `pages_read_engagement` / `pages_show_list` permissions validated by guarded GET-only operator; D1-only processing remains separately blocked |
+| Facebook Organic | Chemistry K customer credential in local Secret boundary | Existing Shares path is Live; full Views/Reactions/Comments readiness now requires `pages_show_list`, `pages_read_engagement`, `pages_read_user_content` and `read_insights`. Current GET-only evidence is missing only `pages_read_user_content`; reviewed deployment/fresh reconciliation is pending |
 | Instagram Organic | Chemistry K Instagram Login credential in local Secret boundary | Exact Professional Account identity validated as `MEDIA_CREATOR` with `instagram_business_basic`; D1-only processing remains separately blocked |
 | Meta Ads | Chemistry K customer Facebook credential shared only at the Secret boundary | Exact `chemistry_k2` and `chemistry_k3` account identities validated independently with `ads_read` and `business_management`; D1-only processing remains separately blocked |
 | YouTube Organic | Developer temporary source; Customer OAuth source merged via PR `#44` | Customer Connect deployment/authorization pending |
