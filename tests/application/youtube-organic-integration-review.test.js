@@ -176,6 +176,11 @@ function context(durable) {
   return Object.freeze({
     gateway: durable.gateway,
     store: durable.store,
+    analyticsStore: {
+      async upsertMany(rows) {
+        return Object.freeze({ rows: rows.length, written: rows.length, skipped: 0 });
+      },
+    },
     customerProfile: 'dev_ft_pumkin',
     customerKey: 'integration_workspace',
     accountKey: 'channel_account',
@@ -266,9 +271,15 @@ test('YouTube cumulative metricDate must match the durable observation date', as
     async saveCoverageRun() {},
     async saveCoverageEntities() {},
   };
+  const analyticsStore = {
+    async assertSchemaReady() {},
+    async upsertMany() {},
+    async listStableKeysByScope() { return []; },
+  };
   await assert.rejects(() => syncYouTubeOrganicEndToEnd({
     historyGateway,
     historyStore: store,
+    analyticsStore,
     requestedAt: Date.parse('2026-07-27T01:00:00Z'),
     generation: Date.parse('2026-07-27T01:00:00Z'),
     metricDate: '2026-07-26',

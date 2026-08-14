@@ -40,17 +40,14 @@ test('active Meta Lark inventory contains no Meta Ads RAW, Creative or detailed 
     tableKeys.filter((key) => key.startsWith('mktAds')),
     META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
   );
-  assert.equal(META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length, 11);
+  assert.equal(META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length, 8);
 });
 
-test('Organic Lark projection remains unchanged', () => {
+test('Organic Lark projection contains only customer-facing canonical tables', () => {
   for (const connectorKey of ['facebook', 'instagram']) {
     assert.deepEqual(
       expectedLarkContracts(connectorKey).map((entry) => entry.tableKey),
       [
-        'rawMetaOrganicAccounts',
-        'rawMetaOrganicContent',
-        'rawMetaOrganicMetrics',
         'mktAccounts',
         'mktAccountDaily',
         'mktContent',

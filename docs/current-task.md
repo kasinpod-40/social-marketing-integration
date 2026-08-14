@@ -53,8 +53,10 @@ YOUTUBE_ANALYTICS_D1_MIGRATION    = ADDED_0020_NOT_APPLIED_REMOTE
 YOUTUBE_ANALYTICS_D1_STORE        = ADDED_IDEMPOTENT_NEWER_WINS
 TIKTOK_NATIVE_RAW                 = PROTECTED_READ_ONLY_UNCHANGED
 LIVE_TABLE_DELETION               = NOT_EXECUTED_REQUIRES_EXACT_ROLLOUT_GATE
-DEPLOY_MERGE_REMOTE_MUTATION       = NONE
-FULL_UNIT_TESTS                    = PASS_ALL_FILES
+DEPLOY_MERGE_REMOTE_MUTATION       = PR_641_OPEN_NO_REMOTE_RUNTIME_MUTATION
+CI_INITIAL_RESULT                  = FAILED_STALE_RAW_EXPECTATIONS_24_TESTS
+CI_FIX                             = IMPLEMENTED_OPERATOR_AND_FIXTURE_CONTRACT_ALIGNMENT
+FULL_UNIT_TESTS                    = PASS_NPM_TEST
 WORKERS_RUNTIME_TESTS              = PASS_18_OF_18
 REPORT_RELIABILITY_TESTS           = PASS_105_OF_105
 ARCHITECTURE_HYGIENE               = PASS
@@ -62,6 +64,13 @@ DEPENDENCY_AUDIT                   = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                     = PASS_API_AND_SYNC
 DIFF_CHECK                         = PASS
 ```
+
+PR #641 initial CI correctly exposed retained rollout/test contracts that still required legacy RAW table
+mappings: Meta parity expectations used 7/11 targets, WooCommerce expected 14 targets, YouTube dry-run
+preflight required three RAW mappings, and direct D1-first YouTube fixtures had no Analytics fact store.
+The focused correction removes only those stale requirements and supplies the new D1 Analytics fixture;
+it does not change Facebook metrics/provider logic. Focused tests 75/75, full `npm test`, report
+reliability 105/105, architecture/hygiene, audit 0 vulnerabilities, deploy dry-run and diff check pass.
 
 ## Objective
 
