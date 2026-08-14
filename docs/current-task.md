@@ -49,11 +49,21 @@ NON_TIKTOK_LARK_RAW_PROVISIONING  = REMOVED_FROM_ACTIVE_SCHEMA
 CHATWOOT_LARK_TARGETS             = 5_CUSTOMER_FACING_TABLES
 WOOCOMMERCE_LARK_TARGETS          = 5_CUSTOMER_FACING_TABLES
 YOUTUBE_LARK_RAW_TARGETS          = 0
-YOUTUBE_ANALYTICS_D1_MIGRATION    = ADDED_0020_NOT_APPLIED_REMOTE
+YOUTUBE_ANALYTICS_D1_MIGRATION    = APPLIED_REMOTE_2026_08_14
 YOUTUBE_ANALYTICS_D1_STORE        = ADDED_IDEMPOTENT_NEWER_WINS
 TIKTOK_NATIVE_RAW                 = PROTECTED_READ_ONLY_UNCHANGED
-LIVE_TABLE_DELETION               = NOT_EXECUTED_REQUIRES_EXACT_ROLLOUT_GATE
-DEPLOY_MERGE_REMOTE_MUTATION       = PR_641_OPEN_NO_REMOTE_RUNTIME_MUTATION
+LIVE_TABLE_DELETION               = PENDING_FRESH_SCHEDULED_CYCLES
+DEPLOY_MERGE_REMOTE_MUTATION       = PR_641_MERGED_WORKER_7754BE21_100_PERCENT
+REMOTE_D1_BACKUP                  = PASS_129_MIB_SHA256_7A828BF0
+PRIVATE_LARK_BACKUP               = PASS_27_TABLES_20072_RECORDS
+LARK_BACKUP_MANIFEST              = SHA256_29CC5C19
+YOUTUBE_D1_CATCHUP                = PASS_FRESH_EXACTLY_ONCE_20260804_20260811
+YOUTUBE_ANALYTICS_D1_FACTS        = PASS_2532_DISTINCT_KEYS
+YOUTUBE_D1_LARK_STABLE_KEY_PARITY = PASS_2532_OF_2532_HASH_EQUAL
+YOUTUBE_NEW_ALERT_DLQ             = ZERO_ZERO
+LARK_CONSUMER_AUDIT               = PASS_46_TABLES_931_FIELDS_139_VIEWS_0_WORKFLOWS
+LARK_TARGET_REFERENCES            = ZERO
+NEXT_REQUIRED_EVIDENCE            = FRESH_SCHEDULED_CONNECTOR_CYCLES_AFTER_DEPLOY
 CI_INITIAL_RESULT                  = FAILED_STALE_RAW_EXPECTATIONS_24_TESTS
 CI_FIX                             = IMPLEMENTED_OPERATOR_AND_FIXTURE_CONTRACT_ALIGNMENT
 FULL_UNIT_TESTS                    = PASS_NPM_TEST
@@ -71,6 +81,20 @@ preflight required three RAW mappings, and direct D1-first YouTube fixtures had 
 The focused correction removes only those stale requirements and supplies the new D1 Analytics fixture;
 it does not change Facebook metrics/provider logic. Focused tests 75/75, full `npm test`, report
 reliability 105/105, architecture/hygiene, audit 0 vulnerabilities, deploy dry-run and diff check pass.
+
+PR #641 merge เข้า `main` ที่ `ffb537958f406f5c44cedc109c657c5f198739d2`. ก่อน remote mutation
+ได้ export D1 ขนาด 129 MiB และสำรอง Lark RAW ทั้ง 27 ตารางแบบ private local ครบ 20,072 records พร้อม
+Fields, Views, full Records, exact stable-key lists และ per-file/manifest checksums; TikTok Native RAW
+ถูกตรวจว่าคงอยู่. Migration `0020` apply สำเร็จและ Worker version
+`7754be21-8be3-43b3-a537-9dc858b6f5b7` รับ traffic 100% โดย schedules/Queue topology เดิมไม่เปลี่ยน.
+
+Fresh YouTube Owner Analytics catch-up ถูกส่งครั้งเดียวสำหรับ `2026-08-04..2026-08-11`; run
+`c5d0e46e-492f-4a27-a0ec-0aa3a4d850d5` จบ success, selected/queried `837/837`, failed 0,
+Analytics 2,532 rows, missing 0, alert/DLQ ใหม่ 0. D1 fact keys 2,532 รายการตรงกับ legacy Lark backup
+ครบทุก key และ SHA-256 เท่ากัน โดย duplicate/missing/extra เป็นศูนย์. Lark GET-only consumer audit ตรวจ
+46 non-target tables, 931 fields, 139 hydrated views และ workflow inventory แล้วไม่พบ target Table ID
+reference. Live deletion ยังห้ามทำจน Connector ที่เกี่ยวข้องผ่าน fresh scheduled cycles หลัง deploy;
+manual catch-up ไม่ถูกใช้แทน scheduled evidence และยังไม่มีตารางใดถูกลบ.
 
 ## Objective
 

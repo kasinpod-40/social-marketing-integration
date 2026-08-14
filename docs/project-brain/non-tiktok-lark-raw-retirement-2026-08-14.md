@@ -108,3 +108,27 @@ stable-key parity.
 - Focused tests, full test, report reliability, architecture/hygiene, audit, deploy dry-run และ diff check ผ่าน.
 - Live deletion จะถือว่าเสร็จเฉพาะหลัง rollout gate ข้างต้นผ่านและมี exact evidence; repository-only change
   ไม่ใช่หลักฐานว่าตาราง Live ถูกลบแล้ว.
+
+## Live rollout evidence — 2026-08-14
+
+```text
+MERGED_MAIN_SHA                    = ffb537958f406f5c44cedc109c657c5f198739d2
+ACTIVE_WORKER_VERSION              = 7754be21-8be3-43b3-a537-9dc858b6f5b7_100_PERCENT
+D1_BACKUP                          = PASS_129_MIB_SHA256_7A828BF0
+LARK_PRIVATE_BACKUP                = PASS_27_TABLES_20072_RECORDS
+LARK_MANIFEST_SHA256               = 29CC5C19
+D1_MIGRATION_0020                  = APPLIED
+YOUTUBE_FRESH_CATCHUP              = PASS_EXACTLY_ONCE_20260804_20260811
+YOUTUBE_ANALYTICS_SCOPE            = 837_SELECTED_837_QUERIED_0_FAILED
+YOUTUBE_ANALYTICS_FACTS            = 2532_DISTINCT_KEYS
+D1_LEGACY_LARK_KEY_PARITY          = PASS_2532_OF_2532_SHA256_EQUAL
+NEW_YOUTUBE_ALERT_DLQ              = 0_0
+LARK_ZERO_CONSUMER_AUDIT           = PASS_46_TABLES_931_FIELDS_139_VIEWS_0_WORKFLOWS
+LIVE_TABLE_DELETION                = NOT_RUN_WAITING_FRESH_SCHEDULED_CYCLES
+```
+
+Backup เก็บใน private local rollout directory ด้วย permission `0700/0600` และไม่ commit เนื้อหา Records,
+Table IDs หรือ customer data เข้า Repository. Fresh catch-up ไม่ replay/redrive retained Work เก่า.
+Static runtime contract และ Lark metadata/automation audit ผ่านแล้ว แต่ rollout gate ข้อ 5 กำหนดให้รอ
+fresh scheduled cycle หลัง reviewed deploy ของ Connector ที่เกี่ยวข้องก่อน one-by-one deletion; controlled
+YouTube catch-up ไม่ถูกนับแทน scheduled evidence.
