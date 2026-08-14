@@ -3,7 +3,7 @@ import { JOB_TRIGGERS, JOB_TYPES } from '../../packages/application/src/jobs/job
 import { createStableQueueOperationBody } from '../../packages/application/src/jobs/queue-operation.js';
 import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 
-export const YOUTUBE_LARK_UAT_CONTRACT_VERSION = 'youtube_lark_full_sync_uat_v1';
+export const YOUTUBE_LARK_UAT_CONTRACT_VERSION = 'youtube_lark_full_sync_uat_v2';
 export const YOUTUBE_LARK_UAT_PHASES = Object.freeze([
   'plan', 'lark-preflight', 'remote-preflight', 'backup', 'deploy-active',
   'verify-active', 'snapshot-before', 'send-full-sync', 'verify-full-sync',
@@ -23,19 +23,15 @@ export const YOUTUBE_LARK_UAT_ACTIVE_TRUE_FLAGS = Object.freeze([
   'MKT_YOUTUBE_LARK_WRITE_ENABLED',
 ]);
 export const YOUTUBE_LARK_UAT_REQUIRED_TABLE_KEYS = Object.freeze([
-  'mktAccounts', 'rawYouTubeChannels', 'rawYouTubeVideos',
-  'rawYouTubeAnalyticsDaily', 'mktContent', 'mktContentDaily',
+  'mktAccounts', 'mktContent', 'mktContentDaily',
   'mktSyncLog', 'mktSystemAlerts',
 ]);
 export const YOUTUBE_LARK_UAT_REQUIRED_POSITIVE_COUNT_KEYS = Object.freeze([
-  'rawYouTubeChannels', 'rawYouTubeVideos', 'mktAccounts', 'mktContent', 'mktContentDaily',
+  'mktAccounts', 'mktContent', 'mktContentDaily',
 ]);
 
 const LARK_ENV_BY_KEY = Object.freeze({
   mktAccounts: 'LARK_TABLE_MKT_ACCOUNTS',
-  rawYouTubeChannels: 'LARK_TABLE_RAW_YOUTUBE_CHANNELS',
-  rawYouTubeVideos: 'LARK_TABLE_RAW_YOUTUBE_VIDEOS',
-  rawYouTubeAnalyticsDaily: 'LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY',
   mktContent: 'LARK_TABLE_MKT_CONTENT',
   mktContentDaily: 'LARK_TABLE_MKT_CONTENT_DAILY',
   mktSyncLog: 'LARK_TABLE_MKT_SYNC_LOG',
@@ -273,7 +269,7 @@ export function classifyYouTubeLarkUatCompletion(snapshotInput = {}) {
 export function classifyYouTubeLarkCounts(counts = {}) {
   const normalized = Object.fromEntries(YOUTUBE_LARK_UAT_REQUIRED_TABLE_KEYS.map((key) => [key, nonNegativeInteger(counts[key] ?? 0, key)]));
   const missingPositive = YOUTUBE_LARK_UAT_REQUIRED_POSITIVE_COUNT_KEYS.filter((key) => normalized[key] <= 0);
-  return deepFreeze({ counts: normalized, complete: missingPositive.length === 0, missingPositive, analyticsOptional: true });
+  return deepFreeze({ counts: normalized, complete: missingPositive.length === 0, missingPositive, analyticsStoredInD1: true });
 }
 
 export function compareYouTubeLarkUatRerun(input = {}) {

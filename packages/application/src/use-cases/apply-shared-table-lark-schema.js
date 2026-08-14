@@ -75,20 +75,22 @@ export async function applySharedTableLarkSchema(input = {}) {
   }
 
   const viewContract = buildSharedTableViewInstallerContract({ schema, views });
-  let viewApply;
-  try {
-    viewApply = await applyLarkReportViews({
-      client,
-      env: postSchemaEnv,
-      contract: viewContract,
-      includePermissionManualAction: false,
-      onProgress: (event) => onProgress(Object.freeze({
-        stage: `shared_${event.stage}`,
-        action: event.action ? summarizeAction(event.action) : null,
-      })),
-    });
-  } catch (error) {
-    throw wrapSharedViewApplyError(error, appliedActions);
+  let viewApply = emptyViewApplyResult();
+  if (viewContract.length > 0) {
+    try {
+      viewApply = await applyLarkReportViews({
+        client,
+        env: postSchemaEnv,
+        contract: viewContract,
+        includePermissionManualAction: false,
+        onProgress: (event) => onProgress(Object.freeze({
+          stage: `shared_${event.stage}`,
+          action: event.action ? summarizeAction(event.action) : null,
+        })),
+      });
+    } catch (error) {
+      throw wrapSharedViewApplyError(error, appliedActions);
+    }
   }
 
   const verification = await previewSharedTableLarkSchema({
@@ -99,12 +101,14 @@ export async function applySharedTableLarkSchema(input = {}) {
     schemaVersion,
     validateSchema,
   });
-  const viewVerification = await planLarkReportViews({
-    client,
-    env: postSchemaEnv,
-    contract: viewContract,
-    includePermissionManualAction: false,
-  });
+  const viewVerification = viewContract.length > 0
+    ? await planLarkReportViews({
+      client,
+      env: postSchemaEnv,
+      contract: viewContract,
+      includePermissionManualAction: false,
+    })
+    : emptyViewPreviewResult();
   assertCleanVerification({ verification, viewVerification });
 
   return deepFreeze({
@@ -143,6 +147,25 @@ export async function applySharedTableLarkSchema(input = {}) {
       protectedTableMutation: false,
       sourceApiCalled: false,
     }),
+  });
+}
+
+function emptyViewApplyResult() {
+  return deepFreeze({
+    mode: 'apply',
+    ok: true,
+    summary: { plannedActions: 0, appliedActions: 0, createdViews: 0, updatedViews: 0, manualActions: 0 },
+    appliedActions: [],
+    verification: emptyViewPreviewResult(),
+  });
+}
+
+function emptyViewPreviewResult() {
+  return deepFreeze({
+    mode: 'preview',
+    readyToApply: true,
+    summary: { tablesInScope: 0, createViews: 0, updateViews: 0, conflicts: 0, warnings: 0, manualActions: 0 },
+    resolvedTables: [], actions: [], conflicts: [], warnings: [], manualActions: [],
   });
 }
 

@@ -32,6 +32,16 @@ export class YouTubeStorageFirstSyncEngine {
     return this.tableSyncEngine.planByKey(input);
   }
 
+  captureSourceRows(input = {}) {
+    for (const name of ['rawChannels', 'rawVideos', 'rawAnalytics']) {
+      const rows = input[name];
+      if (!Array.isArray(rows)) {
+        throw new TypeError(`YouTube storage capture requires ${name}`);
+      }
+      this.captured.set(name, Object.freeze([...rows]));
+    }
+  }
+
   async executePlan(plan, options = {}) {
     if (!this.storagePromise) {
       this.storagePromise = this.d1WriteEnabled

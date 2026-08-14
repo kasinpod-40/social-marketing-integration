@@ -2,9 +2,9 @@ import { LARK_TABLE_ENV } from './lark-table-config.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 import { parseCsvRecords } from '../../shared/src/text/csv.js';
 
-export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'shared-table-lark-schema-v0.12.1';
-export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT = 7;
-export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT = 128;
+export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'customer-shared-table-lark-schema-v0.13.0';
+export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT = 2;
+export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT = 29;
 
 const FIELD_TYPE_MAP = Object.freeze({
   Text: Object.freeze({ type: 1, uiType: 'Text' }),
@@ -18,14 +18,14 @@ const FIELD_TYPE_MAP = Object.freeze({
 });
 
 const TABLE_CONTRACTS = deepFreeze({
-  RAW_Meta_Organic_Accounts: table('rawMetaOrganicAccounts', 'LARK_TABLE_RAW_META_ORGANIC_ACCOUNTS', '📋 All Accounts'),
-  RAW_Meta_Organic_Content: table('rawMetaOrganicContent', 'LARK_TABLE_RAW_META_ORGANIC_CONTENT', '📋 All Content'),
-  RAW_Meta_Organic_Metrics: table('rawMetaOrganicMetrics', 'LARK_TABLE_RAW_META_ORGANIC_METRICS', '📋 All Metrics'),
-  RAW_Ads_Entities: table('rawAdsEntities', 'LARK_TABLE_RAW_ADS_ENTITIES', '📋 All Entities'),
-  RAW_Ads_Daily: table('rawAdsDaily', 'LARK_TABLE_RAW_ADS_DAILY', '📋 All Daily Metrics'),
   MKT_Account_Daily: table('mktAccountDaily', 'LARK_TABLE_MKT_ACCOUNT_DAILY', '📋 All Account Daily'),
   MKT_Ads_Ads: table('mktAdsAds', 'LARK_TABLE_MKT_ADS_ADS', '📋 All Ads'),
 });
+
+const RETIRED_RAW_TABLES = new Set([
+  'RAW_Meta_Organic_Accounts', 'RAW_Meta_Organic_Content', 'RAW_Meta_Organic_Metrics',
+  'RAW_Ads_Entities', 'RAW_Ads_Daily',
+]);
 
 export const SHARED_TABLE_LARK_SCHEMA_TABLE_KEYS = Object.freeze(
   Object.values(TABLE_CONTRACTS).map((contract) => contract.key),
@@ -93,7 +93,7 @@ export function buildSharedTableLarkSchemaFromCsv(input) {
 
 export function buildSharedTableViewContractFromCsv(input) {
   const rows = parseCsvRecords(requireText(input?.viewPlanCsv, 'viewPlanCsv'));
-  const views = rows.map((row) => {
+  const views = rows.filter((row) => TABLE_CONTRACTS[row.Table?.trim()]).map((row) => {
     const table = requireText(row.Table, 'viewPlan.Table');
     if (!TABLE_CONTRACTS[table]) throw invalid(`View contract targets unknown shared table: ${table}`);
     return Object.freeze({
@@ -208,8 +208,8 @@ export function validateSharedTableLarkSchema(schema) {
   if (fieldCount !== SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT) {
     throw invalid(`Shared-table schema must contain exactly ${SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT} fields`);
   }
-  if (reuseCount !== 5 || createCount !== 2) {
-    throw invalid(`Shared-table schema must reuse five tables and create two tables; got reuse=${reuseCount}, create=${createCount}`);
+  if (reuseCount !== 0 || createCount !== 2) {
+    throw invalid(`Customer shared-table schema must create two tables; got reuse=${reuseCount}, create=${createCount}`);
   }
   return true;
 }
@@ -279,7 +279,9 @@ function validateFieldRows(tableName, inventory, rows) {
 
 function rejectUnexpectedTables(fieldsByTable) {
   for (const tableName of fieldsByTable.keys()) {
-    if (!TABLE_CONTRACTS[tableName]) throw invalid(`Unexpected table in shared-table field contract: ${tableName}`);
+    if (!TABLE_CONTRACTS[tableName] && !RETIRED_RAW_TABLES.has(tableName)) {
+      throw invalid(`Unexpected table in shared-table field contract: ${tableName}`);
+    }
   }
 }
 

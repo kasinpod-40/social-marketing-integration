@@ -10,6 +10,7 @@ import { normalizeYouTubeVideoBatch } from './normalize-youtube-video-batch.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
+import { createContentKey } from '../storage/marketing-history-contract.js';
 
 const ANALYTICS_METRICS = 'views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,averageViewPercentage';
 const ANALYTICS_DIMENSIONS = 'day,video';
@@ -52,6 +53,8 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const syncType = requireText(input.syncType ?? 'organic_sync', 'syncType');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
   const tables = requireTables(input.tables);
+  const historyGateway = input.historyGateway ?? null;
+  const analyticsStore = input.analyticsStore ?? null;
   const analyticsEnabled = input.analyticsEnabled === true;
   const analyticsRange = analyticsEnabled
     ? Object.freeze({
@@ -139,37 +142,39 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const missingIds = syncMode.fullSnapshot
     ? [...new Set([...requestedButUnavailable, ...[...priorIds].filter((videoId) => !videoIds.includes(videoId))])]
     : requestedButUnavailable;
-  const missingKeys = missingIds.map((videoId) => `youtube:${channelId}:${videoId}`);
-  const existingMissingRecords = missingKeys.length === 0
+  const missingContentKeys = missingIds.map((videoId) => createContentKey({
+    platform: 'youtube',
+    account_key: accountKey,
+    external_content_id: videoId,
+  }));
+  const existingMissingStates = missingContentKeys.length === 0
     ? []
-    : await repository.listByFieldValues(tables.rawYouTubeVideos, 'raw_video_key', missingKeys);
-  const normalizedMissingRecords = await normalizeExistingRecords({
-    repository,
-    tableId: tables.rawYouTubeVideos,
-    records: existingMissingRecords,
-    fieldNames: ['raw_video_key', 'last_seen_at', 'missing_since'],
-  });
-  const existingMissingByKey = new Map(normalizedMissingRecords.map((record) => [
-    record?.fields?.raw_video_key,
-    record?.fields ?? {},
+    : await requireHistoryGateway(historyGateway).listOrganicContentStatesByKeys(missingContentKeys);
+  const existingMissingByVideoId = new Map(existingMissingStates.map((row) => [
+    row.external_content_id,
+    row,
   ]));
   const requestedUnavailableSet = new Set(requestedButUnavailable);
   const priorStateById = new Map(priorStates.map((state) => [state.externalContentId, state]));
   const missingRows = missingIds.map((videoId) => {
-    const key = `youtube:${channelId}:${videoId}`;
-    const existing = existingMissingByKey.get(key) ?? {};
+    const existing = existingMissingByVideoId.get(videoId) ?? {};
     const observedInUploadsPlaylist = requestedUnavailableSet.has(videoId);
     const lastSeenAt = observedInUploadsPlaylist
       ? fetchedAt
-      : readSafeTimestamp(existing.last_seen_at)
+      : readSafeTimestamp(existing.last_observed_at)
         ?? readSafeTimestamp(priorStateById.get(videoId)?.lastSeenAt)
         ?? fetchedAt;
+    const previouslyUnavailable = ['missing', 'private', 'deleted'].includes(
+      existing.source_availability_status,
+    );
     return mapMissingYouTubeVideoRawRow({
       channelId,
       videoId,
       fetchedAt,
       lastSeenAt,
-      missingSince: readSafeTimestamp(existing.missing_since) ?? fetchedAt,
+      missingSince: previouslyUnavailable
+        ? readSafeTimestamp(existing.last_changed_at) ?? fetchedAt
+        : fetchedAt,
       observedInUploadsPlaylist,
     });
   });
@@ -210,8 +215,9 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const analyticsRows = analyticsLoad.rows;
   const analyticsReconciliation = analyticsRange
     ? await reconcileAnalyticsRows({
-      repository,
-      tableId: tables.rawYouTubeAnalyticsDaily,
+      analyticsStore: requireAnalyticsStore(analyticsStore),
+      customerKey: requireText(input.customerKey, 'customerKey'),
+      accountKey,
       channelId,
       videoIds: analyticsVideoIds,
       startDate: analyticsRange.startDate,
@@ -234,14 +240,19 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     last_sync_at: fetchedAt,
   })];
 
+  if (typeof syncEngine.captureSourceRows === 'function') {
+    syncEngine.captureSourceRows({
+      rawChannels: rawChannelRows,
+      rawVideos: [...rawVideoRows, ...missingRows],
+      rawAnalytics: analyticsRows,
+    });
+  }
+
   const plans = await planAll({
     repository,
     syncEngine,
     tables,
     rows: {
-      rawChannels: rawChannelRows,
-      rawVideos: [...rawVideoRows, ...missingRows],
-      rawAnalytics: analyticsRows,
       content: normalized.contentRows,
       daily: normalized.dailySnapshotRows,
       accounts: accountRows,
@@ -599,33 +610,14 @@ async function reconcileAnalyticsRows(input) {
     sourceMetricDates: sourceMetricDates.length,
     videos: videoIds.size,
   });
-  const existingRecords = await input.repository.listByFieldValues(
-    input.tableId,
-    'source_metric_date',
-    sourceMetricDates,
-  );
-  const normalizedRecords = await normalizeExistingRecords({
-    repository: input.repository,
-    tableId: input.tableId,
-    records: existingRecords,
-    fieldNames: ['raw_analytics_daily_key', 'source_metric_date', 'channel_id', 'video_id'],
-  });
-  const requestedDates = new Set(sourceMetricDates);
-  const previouslyObservedStableKeys = new Set();
-  for (const record of normalizedRecords) {
-    const fields = record?.fields ?? {};
-    const stableKey = optionalText(fields.raw_analytics_daily_key);
-    const sourceMetricDate = optionalText(fields.source_metric_date);
-    const sourceChannelId = optionalText(fields.channel_id);
-    const videoId = optionalText(fields.video_id);
-    if (!stableKey
-      || sourceChannelId !== input.channelId
-      || !videoIds.has(videoId)
-      || !requestedDates.has(sourceMetricDate)) {
-      continue;
-    }
-    previouslyObservedStableKeys.add(stableKey);
-  }
+  const previouslyObservedStableKeys = new Set(await input.analyticsStore.listStableKeysByScope({
+    customerKey: input.customerKey,
+    accountKey: input.accountKey,
+    channelId: input.channelId,
+    videoIds: [...videoIds],
+    startDate: input.startDate,
+    endDate: input.endDate,
+  }));
 
   const missingStableKeys = [...previouslyObservedStableKeys]
     .filter((stableKey) => !observedStableKeys.has(stableKey))
@@ -841,9 +833,6 @@ async function assertOwnerChannel({ ownerClient, channelId }) {
 
 async function planAll(input) {
   const definitions = [
-    ['rawChannels', input.tables.rawYouTubeChannels, 'raw_channel_key', input.rows.rawChannels],
-    ['rawVideos', input.tables.rawYouTubeVideos, 'raw_video_key', input.rows.rawVideos],
-    ['rawAnalytics', input.tables.rawYouTubeAnalyticsDaily, 'raw_analytics_daily_key', input.rows.rawAnalytics],
     ['content', input.tables.mktContent, 'content_key', input.rows.content],
     ['dailySnapshots', input.tables.mktContentDaily, 'content_daily_key', input.rows.daily],
     // Account ต้อง Execute สุดท้ายเพื่อไม่ประกาศ connected ก่อน RAW/Canonical writes ผ่าน
@@ -864,7 +853,7 @@ async function planAll(input) {
 }
 
 function orderedPlans(plans) {
-  return ['rawChannels', 'rawVideos', 'rawAnalytics', 'content', 'dailySnapshots', 'accounts']
+  return ['content', 'dailySnapshots', 'accounts']
     .map((name) => [name, plans[name]]);
 }
 
@@ -1055,14 +1044,14 @@ function buildResult(input) {
   const videoWarnings = input.missingIds.map((videoId) => Object.freeze({
     code: 'YOUTUBE_VIDEO_RECONCILIATION_REQUIRED',
     videoId,
-    message: 'Retained prior RAW video metrics because the current traversal could not return the video resource.',
+    message: 'Retained prior D1 video metrics because the current traversal could not return the video resource.',
   }));
   const analyticsWarnings = input.analyticsReconciliation.missingStableKeys.length > 0
     ? [Object.freeze({
       code: 'YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED',
       missingStableKeys: input.analyticsReconciliation.missingStableKeys,
       missingCount: input.analyticsReconciliation.missingStableKeys.length,
-      message: 'Retained previously observed RAW Analytics rows that disappeared from the current re-fetch.',
+      message: 'Retained previously observed D1 Analytics facts that disappeared from the current re-fetch.',
     })]
     : [];
   return Object.freeze({
@@ -1102,9 +1091,6 @@ function buildResult(input) {
       analyticsRows: input.analyticsRows.length,
       missingAnalyticsRows: input.analyticsReconciliation.missingStableKeys.length,
     }),
-    rawChannels: output('rawChannels'),
-    rawVideos: output('rawVideos'),
-    rawAnalytics: output('rawAnalytics'),
     content: output('content'),
     dailySnapshots: output('dailySnapshots'),
     accounts: output('accounts'),
@@ -1292,8 +1278,20 @@ function requireWorkStore(value) {
   return value;
 }
 function requireTables(value) {
-  const keys = ['mktAccounts', 'rawYouTubeChannels', 'rawYouTubeVideos', 'rawYouTubeAnalyticsDaily', 'mktContent', 'mktContentDaily'];
+  const keys = ['mktAccounts', 'mktContent', 'mktContentDaily'];
   return Object.freeze(Object.fromEntries(keys.map((key) => [key, requireText(value?.[key], `tables.${key}`)])));
+}
+function requireHistoryGateway(value) {
+  if (typeof value?.listOrganicContentStatesByKeys !== 'function') {
+    throw new TypeError('YouTube sync requires historyGateway.listOrganicContentStatesByKeys');
+  }
+  return value;
+}
+function requireAnalyticsStore(value) {
+  if (typeof value?.listStableKeysByScope !== 'function') {
+    throw new TypeError('YouTube sync requires analyticsStore.listStableKeysByScope');
+  }
+  return value;
 }
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`YouTube sync requires ${fieldName}`);

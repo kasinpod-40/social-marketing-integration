@@ -17,16 +17,6 @@ const DEFAULT_MAX_MESSAGE_PAGES = 50;
 const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 1_000;
 
 export const CHATWOOT_LARK_TABLE_KEYS = Object.freeze([
-  'rawChatwootAccounts',
-  'rawChatwootInboxes',
-  'rawChatwootContacts',
-  'rawChatwootAgents',
-  'rawChatwootTeams',
-  'rawChatwootLabels',
-  'rawChatwootConversations',
-  'rawChatwootConversationLabels',
-  'rawChatwootMessageAnalytics',
-  'rawChatwootReportingEvents',
   'mktConversations',
   'mktConversationDaily',
   'mktAgentDaily',

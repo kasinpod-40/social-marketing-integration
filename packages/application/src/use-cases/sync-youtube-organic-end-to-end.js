@@ -10,6 +10,8 @@ import { requireDateOnly, todayInTimeZone } from '../../../shared/src/date/date-
 export async function syncYouTubeOrganicEndToEnd(input = {}) {
   const gateway = requireHistoryGateway(input.historyGateway);
   await gateway.assertSchemaReady();
+  const analyticsStore = requireAnalyticsStore(input.analyticsStore);
+  await analyticsStore.assertSchemaReady();
 
   const requestedAt = requiredTimestamp(input.requestedAt ?? input.generation, 'requestedAt');
   const generation = requiredTimestamp(input.generation ?? requestedAt, 'generation');
@@ -52,6 +54,7 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
   });
   const context = Object.freeze({
     gateway,
+    analyticsStore,
     store: requireHistoryStore(input.historyStore ?? gateway.store),
     customerProfile: requireText(input.customerProfile, 'customerProfile'),
     customerKey: requireText(input.customerKey, 'customerKey'),
@@ -102,9 +105,6 @@ export function buildEndToEndCompletion(input = {}) {
       larkWriteEnabled: input.larkWriteEnabled === true,
       storage: input.storage ?? null,
       larkTargets: Object.freeze([
-        'RAW_YouTube_Channels',
-        'RAW_YouTube_Videos',
-        'RAW_YouTube_Analytics_Daily',
         'MKT_Accounts',
         'MKT_Content',
         'MKT_Content_Daily',
@@ -160,6 +160,14 @@ function requireHistoryStore(value) {
     || typeof value.upsertOrganicAccountDailyFact !== 'function'
     || typeof value.saveCoverageRun !== 'function') {
     throw new TypeError('YouTube end-to-end requires the shared Marketing history store');
+  }
+  return value;
+}
+
+function requireAnalyticsStore(value) {
+  const methods = ['assertSchemaReady', 'upsertMany', 'listStableKeysByScope'];
+  if (!value || methods.some((method) => typeof value[method] !== 'function')) {
+    throw new TypeError('YouTube end-to-end requires the D1 Analytics daily store');
   }
   return value;
 }

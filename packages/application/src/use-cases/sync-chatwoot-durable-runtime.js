@@ -27,10 +27,6 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const ROLLUP_PAGE_SIZE = 500;
 const REPORTING_DATASET_KEY = 'chatwoot.reporting_events';
-const REPORTING_LARK_TARGET = Object.freeze({
-  tableKey: 'rawChatwootReportingEvents',
-  keyField: 'reporting_event_key',
-});
 
 /**
  * Execute at most one bounded durable Chatwoot unit per Queue delivery. Durable phase state contains
@@ -405,19 +401,6 @@ async function executeReportingPreparedUnit(context, prepared) {
   for (const row of prepared.d1.reportingEvents) {
     await context.assertCurrent();
     await context.chatwootStore.upsertReportingEventFact(row);
-  }
-  if (context.flags.larkWrite && prepared.lark.raw.reportingEvents.length > 0) {
-    const plan = await context.syncEngine.planByKey({
-      repository: context.repository,
-      tableId: requireText(
-        context.tables[REPORTING_LARK_TARGET.tableKey],
-        `tables.${REPORTING_LARK_TARGET.tableKey}`,
-      ),
-      keyField: REPORTING_LARK_TARGET.keyField,
-      rows: prepared.lark.raw.reportingEvents,
-    });
-    await context.assertCurrent();
-    await context.syncEngine.executePlan(plan, { beforeWriteChunk: context.assertCurrent });
   }
   const entities = prepared.d1.coverageEntities.filter((row) => runIds.has(row.coverage_run_id));
   if (entities.length > 0) {

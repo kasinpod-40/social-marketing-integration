@@ -7,10 +7,7 @@ import {
   createAdsFactKey,
   createCoverageEntityKey,
 } from '../storage/marketing-history-contract.js';
-import {
-  createStableFingerprint,
-  stableSerialize,
-} from '../../../shared/src/hash/stable-fingerprint.js';
+import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import {
   dateOnlyInTimeZoneToEpochMilliseconds,
 } from '../../../shared/src/date/date-time.js';
@@ -231,63 +228,11 @@ export async function buildGoogleAdsD1WriteSet(input = {}) {
   });
 }
 
-/** Build Shared RAW and Canonical Lark rows with only connector-owned fields. */
+/** Build only customer-facing Canonical Lark rows; D1 owns raw/source facts. */
 export function buildGoogleAdsLarkWriteSet(input = {}) {
   const run = requireRun(input.run);
-  const syncRunId = requireText(input.syncRunId, 'syncRunId');
-  const fetchedAt = Date.parse(run.fetchedAt);
   const account = run.datasets.account[0];
   const campaignById = new Map(run.datasets.campaigns.map((row) => [row.campaignId, row]));
-
-  const rawEntities = [rawEntity({
-    run, account, row: account, entityType: 'account', externalId: run.customerId,
-    fetchedAt, syncRunId,
-  })];
-  for (const [datasetKey, entityType] of Object.entries(ENTITY_DATASETS)) {
-    if (datasetKey === 'account') continue;
-    for (const row of run.datasets[datasetKey]) {
-      rawEntities.push(rawEntity({
-        run,
-        account,
-        row,
-        entityType,
-        externalId: externalIdFor(datasetKey, row),
-        fetchedAt,
-        syncRunId,
-      }));
-    }
-  }
-
-  const rawDaily = run.datasets.campaignDailyMetrics.map((row) => compact({
-    raw_ads_daily_key: [
-      'google_ads', run.customerId, 'campaign', row.externalEntityId,
-      row.metricDate, 'all', identityPart(row.segmentKey ?? 'all'),
-    ].join(':'),
-    platform: 'google_ads',
-    ad_channel: row.adChannel,
-    account_id: run.customerId,
-    entity_type: 'campaign',
-    external_entity_id: row.externalEntityId,
-    external_campaign_id: row.campaignId,
-    external_ad_group_id: null,
-    external_ad_id: null,
-    external_creative_id: null,
-    metric_date: larkMetricDate(row.metricDate, run.sourceTimezone),
-    account_timezone: run.sourceTimezone,
-    currency: row.currency,
-    spend_micros: nullableInteger(row.spendMicros),
-    impressions: nullableInteger(row.impressions),
-    reach: null,
-    clicks: nullableInteger(row.clicks),
-    conversions: nullableNumber(row.conversions),
-    conversion_value_micros: nullableInteger(row.conversionValueMicros),
-    actions_json: null,
-    breakdown_key: 'all',
-    breakdown_json: null,
-    fetched_at: fetchedAt,
-    source_payload_json: safeJson(row),
-    sync_run_id: syncRunId,
-  }));
 
   const accounts = [compact({
     ads_account_key: canonicalEntityKey(run.customerId, 'account', run.customerId),
@@ -373,7 +318,6 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
   }));
 
   return deepFreeze({
-    raw: { entities: rawEntities, daily: rawDaily },
     canonical: { accounts, campaigns, adGroups, ads, creatives, daily },
   });
 }
@@ -404,37 +348,6 @@ function entityCandidate({ run, account, row, entityType, externalId }) {
     currency: account.currencyCode,
     timezone: account.timeZone,
     metadata,
-  });
-}
-
-function rawEntity({ run, account, row, entityType, externalId, fetchedAt, syncRunId }) {
-  const campaign = row.campaignId ?? null;
-  const adGroup = row.adGroupId ?? null;
-  return compact({
-    raw_ads_entity_key: canonicalEntityKey(run.customerId, entityType, externalId),
-    platform: 'google_ads',
-    ad_channel: entityType === 'creative'
-      ? 'youtube_ads'
-      : mapRawAdChannel(row.advertisingChannelType),
-    account_id: run.customerId,
-    entity_type: entityType,
-    external_entity_id: externalId,
-    parent_campaign_id: entityType === 'campaign' ? null : campaign,
-    parent_ad_group_id: entityType === 'ad' ? adGroup : null,
-    external_creative_id: null,
-    entity_name: row.descriptiveName ?? row.campaignName ?? row.adGroupName ?? row.adName ?? row.assetName ?? null,
-    status: row.status ?? null,
-    objective: row.advertisingChannelSubType ?? null,
-    currency: account.currencyCode,
-    timezone: account.timeZone,
-    budget_micros: null,
-    start_date: row.startDate ?? null,
-    end_date: row.endDate ?? null,
-    landing_page_url: Array.isArray(row.finalUrls) ? row.finalUrls[0] ?? null : null,
-    source_updated_at: null,
-    fetched_at: fetchedAt,
-    source_payload_json: safeJson(row),
-    sync_run_id: syncRunId,
   });
 }
 
@@ -560,14 +473,6 @@ function normalizeCanonicalAdChannel(value) {
   return 'google_other_ads';
 }
 
-function mapRawAdChannel(value) {
-  const normalized = optionalText(value)?.toUpperCase();
-  if (normalized === 'SEARCH') return 'google_search_ads';
-  if (normalized === 'DISPLAY') return 'google_display_ads';
-  if (normalized === 'VIDEO') return 'youtube_ads';
-  return 'google_other';
-}
-
 function normalizeGoogleAdsStatus(value) {
   const status = optionalText(value)?.toUpperCase();
   if (status === 'ENABLED') return 'active';
@@ -597,16 +502,6 @@ async function fingerprint(value) {
   return createStableFingerprint(value, {
     digestImpl: globalThis.crypto.subtle.digest.bind(globalThis.crypto.subtle),
   });
-}
-
-function safeJson(value) {
-  const json = stableSerialize(value);
-  if (new TextEncoder().encode(json).byteLength > 65_536) {
-    throw permanentError('Google Ads source row exceeds Shared RAW payload limit', {
-      code: 'GOOGLE_ADS_SOURCE_ROW_TOO_LARGE',
-    });
-  }
-  return json;
 }
 
 function compact(value) {

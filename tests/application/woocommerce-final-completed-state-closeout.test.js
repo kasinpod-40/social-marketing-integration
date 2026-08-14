@@ -378,7 +378,7 @@ test('Lark table admission reuses exact configured table IDs without schema crea
   }));
   const tableIds = validateWooCommerceCompletedStateLarkTables({ env, liveTables });
   assert.equal(Object.keys(tableIds).length, contracts.length);
-  assert.equal(tableIds.rawCommerceOrders, env.LARK_TABLE_RAW_COMMERCE_ORDERS);
+  assert.equal(tableIds.mktCommerceOrders, env.LARK_TABLE_MKT_COMMERCE_ORDERS);
   assert.throws(
     () => validateWooCommerceCompletedStateLarkTables({
       env,

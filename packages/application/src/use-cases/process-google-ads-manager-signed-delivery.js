@@ -21,8 +21,6 @@ const LARK_PHASE = 'google_ads_lark_write_v1';
 const DEFAULT_D1_ROWS_PER_INVOCATION = 250;
 
 const LARK_TABLES = Object.freeze([
-  { path: 'raw.entities', tableKey: 'rawAdsEntities', keyField: 'raw_ads_entity_key' },
-  { path: 'raw.daily', tableKey: 'rawAdsDaily', keyField: 'raw_ads_daily_key' },
   { path: 'canonical.accounts', tableKey: 'mktAdsAccounts', keyField: 'ads_account_key' },
   { path: 'canonical.campaigns', tableKey: 'mktAdsCampaigns', keyField: 'ads_campaign_key' },
   { path: 'canonical.adGroups', tableKey: 'mktAdsAdGroups', keyField: 'ads_ad_group_key' },

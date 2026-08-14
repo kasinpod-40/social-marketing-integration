@@ -1,16 +1,6 @@
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 
 export const CHATWOOT_LARK_WRITE_TARGETS = Object.freeze([
-  target('raw.accounts', 'rawChatwootAccounts', 'account_state_key'),
-  target('raw.inboxes', 'rawChatwootInboxes', 'inbox_key'),
-  target('raw.resolvedContacts', 'rawChatwootContacts', 'contact_key'),
-  target('raw.agents', 'rawChatwootAgents', 'agent_key'),
-  target('raw.teams', 'rawChatwootTeams', 'team_key'),
-  target('raw.labels', 'rawChatwootLabels', 'label_key'),
-  target('raw.conversations', 'rawChatwootConversations', 'conversation_key'),
-  target('raw.conversationLabels', 'rawChatwootConversationLabels', 'conversation_label_key'),
-  target('raw.messages', 'rawChatwootMessageAnalytics', 'message_key'),
-  target('raw.reportingEvents', 'rawChatwootReportingEvents', 'reporting_event_key'),
   target('canonical.conversations', 'mktConversations', 'conversation_key'),
   target('canonical.conversationDaily', 'mktConversationDaily', 'conversation_daily_key', true),
   target('canonical.agentDaily', 'mktAgentDaily', 'agent_daily_key', true),
@@ -72,18 +62,6 @@ export async function prepareChatwootAnalyticsSync(input = {}) {
   });
 
   const lark = Object.freeze({
-    raw: Object.freeze({
-      accounts: freezeRows([d1.account]),
-      inboxes: d1.inboxes,
-      resolvedContacts: d1.resolvedContacts,
-      agents: d1.agents,
-      teams: d1.teams,
-      labels: d1.labels,
-      conversations: d1.conversations,
-      conversationLabels: d1.conversationLabels,
-      messages: d1.messages,
-      reportingEvents: d1.reportingEvents,
-    }),
     canonical: Object.freeze({
       conversations: freezeRows(d1.conversations.map(canonicalConversation)),
       conversationDaily: d1.conversationDaily,

@@ -9,6 +9,7 @@ import { D1GoogleAdsLiveAdmissionStore } from '../../../packages/connectors/src/
 import { D1WooCommerceCommerceStore } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-commerce-store.js';
 import { D1WooCommerceReportSource } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-report-source.js';
 import { D1LarkNotificationDeliveryStore } from '../../../packages/connectors/src/lark/d1-lark-notification-delivery-store.js';
+import { D1YouTubeAnalyticsDailyStore } from '../../../packages/connectors/src/youtube/d1-youtube-analytics-daily-store.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkMessageClient } from '../../../packages/connectors/src/lark/lark-message.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
@@ -38,6 +39,7 @@ export function createInfrastructure(env) {
   let googleAdsAdmissionStore = null;
   let wooCommerceStore = null;
   let wooCommerceReportSource = null;
+  let youtubeAnalyticsDailyStore = null;
   let larkNotificationDeliveryStore = null;
   let larkMessageClient = null;
   let mirrorOutbox = null;
@@ -104,6 +106,10 @@ export function createInfrastructure(env) {
     getWooCommerceReportSource() {
       wooCommerceReportSource ??= new D1WooCommerceReportSource({ db: env?.MKT_STATE_DB });
       return wooCommerceReportSource;
+    },
+    getYouTubeAnalyticsDailyStore() {
+      youtubeAnalyticsDailyStore ??= new D1YouTubeAnalyticsDailyStore({ db: env?.MKT_STATE_DB });
+      return youtubeAnalyticsDailyStore;
     },
     getLarkNotificationDeliveryStore() {
       larkNotificationDeliveryStore ??= new D1LarkNotificationDeliveryStore({

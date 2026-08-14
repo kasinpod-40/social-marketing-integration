@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import { InMemoryResumableWorkStore } from '../../packages/sync-engine/src/in-memory-resumable-work-store.js';
-import { syncYouTubeOrganicToLark } from '../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
+import { syncYouTubeOrganicToLark as runYouTubeOrganicSync } from '../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
 import { YOUTUBE_ANALYTICS_COLUMNS } from '../../packages/connectors/src/youtube/youtube-raw.adapter.js';
 import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
 import { runReliableSync } from '../../packages/reliability/src/reliable-sync-runner.js';
@@ -28,7 +28,16 @@ const videos = ['A', 'B'].map((suffix, index) => ({
   status: { privacyStatus: 'public' },
 }));
 
-test('writes RAW, canonical, account-last and checkpoint idempotently', async () => {
+function syncYouTubeOrganicToLark(input) {
+  return runYouTubeOrganicSync({
+    customerKey: 'integration_workspace',
+    historyGateway: { async listOrganicContentStatesByKeys() { return []; } },
+    analyticsStore: { async listStableKeysByScope() { return []; } },
+    ...input,
+  });
+}
+
+test('writes only customer-facing canonical tables and checkpoints idempotently', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();
   const resumableWorkStore = new InMemoryResumableWorkStore();
@@ -51,8 +60,8 @@ test('writes RAW, canonical, account-last and checkpoint idempotently', async ()
     generation: 1000, requestedAt: 1000, tables: TABLES,
   };
   const first = await syncYouTubeOrganicToLark(base);
-  assert.equal(first.tables.rawChannels.result.created, 1);
-  assert.equal(first.tables.rawVideos.result.created, 2);
+  assert.equal(Object.hasOwn(first.tables, 'rawChannels'), false);
+  assert.equal(Object.hasOwn(first.tables, 'rawVideos'), false);
   assert.equal(first.tables.content.result.created, 2);
   assert.equal(first.tables.dailySnapshots.result.created, 2);
   assert.equal(first.tables.accounts.result.created, 1);
@@ -64,8 +73,8 @@ test('writes RAW, canonical, account-last and checkpoint idempotently', async ()
     ...base, syncRunId: 'run-2', syncEngine: new TableSyncEngine(),
     generation: 2000, requestedAt: 2000,
   });
-  assert.equal(second.tables.rawChannels.result.skipped, 1);
-  assert.equal(second.tables.rawVideos.result.skipped, 2);
+  assert.equal(Object.hasOwn(second.tables, 'rawChannels'), false);
+  assert.equal(Object.hasOwn(second.tables, 'rawVideos'), false);
   assert.equal(second.tables.content.result.skipped, 2);
   assert.equal(second.tables.dailySnapshots.result.skipped, 2);
   assert.equal(second.tables.accounts.result.skipped, 1);
@@ -146,13 +155,8 @@ test('operator-style dry-run plans with Lark GET, writes no Business data and re
   assert.equal(repository.events.some((event) => event.startsWith('write:')), false);
 });
 
-test('full reconciliation marks prior missing videos without zeroing prior metrics', async () => {
-  const repository = createRepository({
-    videos: [{
-      raw_video_key: 'youtube:channel_A:video_gone', channel_id: 'channel_A', video_id: 'video_gone',
-      view_count: 99, source_availability_status: 'available', fetched_at: 500,
-    }],
-  });
+test('full reconciliation reads prior missing-video state from D1 without a RAW Lark write', async () => {
+  const repository = createRepository();
   const stateStore = createStateStore({
     cursor: { lastFullSyncAt: 100, incrementalRunCount: 0 },
     recordStates: [{ sourceRecordId: 'video_gone', externalContentId: 'video_gone', sourceHash: 'old' }],
@@ -167,19 +171,24 @@ test('full reconciliation marks prior missing videos without zeroing prior metri
     },
     syncRunId: 'run-missing', channelId: 'channel_A', accountKey: 'youtube_dev',
     customerProfile: 'dev_ft_pumkin', cursorKey: 'youtube-lock', metricDate: '2026-07-15',
+    historyGateway: {
+      async listOrganicContentStatesByKeys() {
+        return [{
+          external_content_id: 'video_gone', source_availability_status: 'available',
+          last_observed_at: 500, last_changed_at: 500, views: 99,
+        }];
+      },
+    },
     syncMode: 'full', now: () => 2000, tables: TABLES,
   });
   assert.equal(result.sourceSummary.missingVideos, 1);
-  const record = repository.read('videos', 'raw_video_key', 'youtube:channel_A:video_gone');
-  assert.equal(record.fields.source_availability_status, 'missing');
-  assert.equal(record.fields.view_count, 99);
-  assert.equal(record.fields.channel_id, 'channel_A');
-  assert.equal(record.fields.video_id, 'video_gone');
+  assert.equal(repository.count('videos'), 0);
+  assert.equal(Object.hasOwn(result.tables, 'rawVideos'), false);
   assert.equal(result.warnings[0].code, 'YOUTUBE_VIDEO_RECONCILIATION_REQUIRED');
   assert.deepEqual(result.reconciliation.missingVideoIds, ['video_gone']);
 });
 
-test('creates a complete reconciliation RAW row when playlist id has no videos.list resource', async () => {
+test('tracks an unavailable playlist identity without creating a RAW Lark row', async () => {
   const repository = createRepository();
   const result = await syncYouTubeOrganicToLark({
     repository, syncEngine: new TableSyncEngine(), incrementalStateStore: createStateStore(),
@@ -195,39 +204,14 @@ test('creates a complete reconciliation RAW row when playlist id has no videos.l
     customerProfile: 'dev_ft_pumkin', cursorKey: 'youtube-lock', metricDate: '2026-07-15',
     syncMode: 'full', now: () => 3000, tables: TABLES,
   });
-  const record = repository.read('videos', 'raw_video_key', 'youtube:channel_A:video_unavailable');
-  assert.equal(result.tables.rawVideos.result.created, 1);
-  assert.equal(record.fields.channel_id, 'channel_A');
-  assert.equal(record.fields.video_id, 'video_unavailable');
-  assert.equal(record.fields.last_seen_at, 3000);
-  assert.equal(record.fields.missing_since, 3000);
-  assert.equal(record.fields.source_availability_status, 'missing');
-  assert.equal(Object.hasOwn(record.fields, 'view_count'), false);
+  assert.equal(result.sourceSummary.missingVideos, 1);
+  assert.equal(repository.count('videos'), 0);
+  assert.equal(Object.hasOwn(result.tables, 'rawVideos'), false);
 });
 
 test('retains a previously observed Analytics key that disappears on re-fetch and warns once', async () => {
   const missingStableKey = 'youtube:channel_A:video_A:2026-07-14';
-  const repository = createRepository({
-    analytics: [
-      {
-        raw_analytics_daily_key: missingStableKey,
-        source_metric_date: '2026-07-14', channel_id: 'channel_A', video_id: 'video_A',
-        views: 99, fetched_at: 500,
-      },
-      {
-        raw_analytics_daily_key: 'youtube:channel_A:video_A:2026-07-13',
-        source_metric_date: '2026-07-13', channel_id: 'channel_A', video_id: 'video_A', views: 88,
-      },
-      {
-        raw_analytics_daily_key: 'youtube:other_channel:video_A:2026-07-14',
-        source_metric_date: '2026-07-14', channel_id: 'other_channel', video_id: 'video_A', views: 77,
-      },
-      {
-        raw_analytics_daily_key: 'youtube:channel_A:video_unqueried:2026-07-14',
-        source_metric_date: '2026-07-14', channel_id: 'channel_A', video_id: 'video_unqueried', views: 66,
-      },
-    ],
-  });
+  const repository = createRepository();
   const analyticsRows = [
     ['2026-07-14', 'video_B', 11, 2, 1, 0, 5, 30, 50],
     ['2026-07-15', 'video_A', 12, 3, 1, 0, 6, 31, 51],
@@ -263,6 +247,9 @@ test('retains a previously observed Analytics key that disappears on re-fetch an
     metricDate: '2026-07-15',
     syncMode: 'full',
     analyticsEnabled: true,
+    analyticsStore: {
+      async listStableKeysByScope() { return [missingStableKey]; },
+    },
     analyticsStartDate: '2026-07-14',
     analyticsEndDate: '2026-07-15',
     now: () => 4000,
@@ -272,10 +259,8 @@ test('retains a previously observed Analytics key that disappears on re-fetch an
   };
   const result = await syncYouTubeOrganicToLark(input);
 
-  const retained = repository.read('analytics', 'raw_analytics_daily_key', missingStableKey);
-  assert.equal(retained.fields.views, 99);
-  assert.equal(retained.fields.fetched_at, 500);
-  assert.equal(result.tables.rawAnalytics.result.created, 2);
+  assert.equal(repository.count('analytics'), 0);
+  assert.equal(Object.hasOwn(result.tables, 'rawAnalytics'), false);
   assert.equal(result.sourceSummary.missingAnalyticsRows, 1);
   assert.deepEqual(result.reconciliation.missingAnalyticsStableKeys, [missingStableKey]);
   assert.equal(result.reconciliation.analytics.previouslyObservedStableKeys, 1);
@@ -293,7 +278,7 @@ test('retains a previously observed Analytics key that disappears on re-fetch an
     generation: 5000,
     requestedAt: 5000,
   });
-  assert.equal(rerun.tables.rawAnalytics.result.skipped, 2);
+  assert.equal(Object.hasOwn(rerun.tables, 'rawAnalytics'), false);
   assert.deepEqual(rerun.reconciliation.missingAnalyticsStableKeys, [missingStableKey]);
   assert.equal(rerun.warnings[0].code, 'YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED');
 });
@@ -374,6 +359,9 @@ test('incremental Content reads 100 recent videos while Analytics queries all 83
     resumableWorkStore,
     publicClient,
     ownerClient,
+    analyticsStore: {
+      async listStableKeysByScope() { return [missingStableKey]; },
+    },
     syncRunId: 'run-incremental-analytics',
     channelId: 'channel_A',
     accountKey: 'youtube_dev',
@@ -474,7 +462,7 @@ test('initial Full backfill resumes playlist pagination and traverses all 837 vi
   assert.equal(result.sourceSummary.contentResourceChunks, 17);
   assert.equal(result.resumableWork.resumed, true);
   assert.equal(stateStore.saved.at(-1).records.length, 837);
-  assert.equal(repository.count('videos'), 837);
+  assert.equal(repository.count('videos'), 0);
   assert.equal(repository.count('content'), 837);
   assert.equal(repository.count('daily'), 837);
 
@@ -486,15 +474,15 @@ test('initial Full backfill resumes playlist pagination and traverses all 837 vi
     generation: 6_001,
     requestedAt: 6_001,
   });
-  assert.equal(rerun.tables.rawVideos.result.created, 0);
+  assert.equal(Object.hasOwn(rerun.tables, 'rawVideos'), false);
   assert.equal(rerun.tables.content.result.created, 0);
   assert.equal(rerun.tables.dailySnapshots.result.created, 0);
-  assert.equal(repository.count('videos'), 837);
+  assert.equal(repository.count('videos'), 0);
   assert.equal(repository.count('content'), 837);
   assert.equal(repository.count('daily'), 837);
 });
 
-test('Analytics retry resumes at the failed chunk and full rerun keeps 837 stable rows', async () => {
+test('Analytics retry resumes at the failed chunk without writing RAW Lark rows', async () => {
   const allVideos = createYoutubeVideos(837);
   const recentVideos = allVideos.slice(-100);
   const repository = createRepository();
@@ -580,8 +568,8 @@ test('Analytics retry resumes at the failed chunk and full rerun keeps 837 stabl
   assert.equal(recovered.sourceSummary.analyticsSuccessfullyQueriedVideos, 837);
   assert.equal(recovered.sourceSummary.analyticsChunksProcessed, 17);
   assert.equal(recovered.sourceSummary.analyticsCompletenessStatus, 'complete');
-  assert.equal(recovered.tables.rawAnalytics.result.created, 837);
-  assert.equal(repository.count('analytics'), 837);
+  assert.equal(Object.hasOwn(recovered.tables, 'rawAnalytics'), false);
+  assert.equal(repository.count('analytics'), 0);
 
   const rerun = await syncYouTubeOrganicToLark({
     ...base,
@@ -591,9 +579,8 @@ test('Analytics retry resumes at the failed chunk and full rerun keeps 837 stabl
     generation: 7_001,
     requestedAt: 7_001,
   });
-  assert.equal(rerun.tables.rawAnalytics.result.created, 0);
-  assert.equal(rerun.tables.rawAnalytics.result.skipped, 837);
-  assert.equal(repository.count('analytics'), 837);
+  assert.equal(Object.hasOwn(rerun.tables, 'rawAnalytics'), false);
+  assert.equal(repository.count('analytics'), 0);
 });
 
 test('Analytics completeness guard detects a missing queried-video marker before Lark writes', async () => {
@@ -732,7 +719,7 @@ test('stale retry is superseded after a newer generation commits and cannot roll
 
   assert.equal(staleRetry.mode, 'superseded');
   assert.equal(staleSourceCalls, 0);
-  assert.equal(repository.read('videos', 'raw_video_key', 'youtube:channel_A:video_A').fields.view_count, 200);
+  assert.equal(repository.read('content', 'content_key', 'youtube:youtube_dev:video_A').fields.latest_views, 200);
   assert.equal(stateStore.checkpoint.cursor.lastSyncRunId, 'run-new');
 });
 

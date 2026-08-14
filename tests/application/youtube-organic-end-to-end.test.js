@@ -19,6 +19,7 @@ function createDurableState() {
   const coverage = new Map();
   const coverageEntities = new Map();
   const accountFacts = new Map();
+  const analyticsFacts = new Map();
   const events = [];
   const write = (map, key, row, event) => {
     const before = map.get(key);
@@ -62,7 +63,16 @@ function createDurableState() {
       ));
     },
   };
-  return { gateway, states, observations, coverage, coverageEntities, accountFacts, events };
+  const analyticsStore = {
+    async assertSchemaReady() { return { ready: true }; },
+    async listStableKeysByScope() { return [...analyticsFacts.keys()]; },
+    async upsertMany(rows) {
+      for (const row of rows) analyticsFacts.set(row.raw_analytics_daily_key, row);
+      events.push(`d1:analytics:${rows.length}`);
+      return { rows: rows.length, written: rows.length, skipped: 0 };
+    },
+  };
+  return { gateway, analyticsStore, states, observations, coverage, coverageEntities, accountFacts, analyticsFacts, events };
 }
 
 function createInnerEngine(events, input = {}) {
@@ -176,6 +186,7 @@ async function captureAll(engine, rows) {
 function context(durable) {
   return Object.freeze({
     gateway: durable.gateway,
+    analyticsStore: durable.analyticsStore,
     store: durable.gateway.store,
     customerProfile: 'dev_ft_pumkin',
     customerKey: 'integration_workspace',
@@ -231,6 +242,9 @@ test('end-to-end storage identity is part of the durable work completion', () =>
   assert.equal(completion.endToEnd.storage.historySyncRunId, 'history:youtube:test');
   assert.equal(completion.endToEnd.storage.contentCoverageRunId, 'coverage:youtube:test');
   assert.equal(completion.endToEnd.storage.accountCoverageRunId, 'coverage:youtube-account:test');
+  assert.deepEqual(completion.endToEnd.larkTargets, [
+    'MKT_Accounts', 'MKT_Content', 'MKT_Content_Daily',
+  ]);
 });
 
 test('D1 is durable before Lark, retry is idempotent, and unavailable states stay non-destructive', async () => {

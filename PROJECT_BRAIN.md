@@ -1,5 +1,17 @@
 # Project Brain — Social Marketing Data Integration
 
+## Non-TikTok Lark RAW retirement — 2026-08-14
+
+Customer-facing Lark Base จะไม่เก็บ API-source RAW mirrors อีกต่อไป. Meta Organic, Paid Ads,
+YouTube, WooCommerce และ Chatwoot เก็บ source facts/history/coverage ใน D1 แล้วเขียน Lark เฉพาะ
+`MKT_*` และ Report tables. ไม่มี feature switch สำหรับเปิด RAW mirror กลับมา. ข้อยกเว้นเดียวคือ
+`RAW_TikTok_Creator_Videos` ซึ่งเป็น protected Lark Native source และ Worker อ่านได้อย่างเดียว.
+
+Repository change เพิ่ม D1 `youtube_analytics_daily_facts`, ตัด active writers/preflight/schema ของ
+27 legacy RAW tables และคง exact cleanup metadata. ยังไม่มี Live table deletion/deploy; การลบต้องผ่าน
+backup/checksum, D1 catch-up, stable-key parity, reviewed deploy, scheduled soak และ zero-consumer proof
+ตาม `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
+
 ## Multichannel Report & Schedule Final Closure — 2026-08-09
 
 Meta Ads, Google Ads และ Chatwoot ได้รับการ promote เป็น active จาก retained UAT evidence

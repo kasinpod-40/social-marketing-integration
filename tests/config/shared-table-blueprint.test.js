@@ -73,15 +73,23 @@ test('protected table contract exactly matches repository governance', async () 
   assert.match(protectedRows[0]['Blocked operations'], /create\/update\/delete fields/u);
 });
 
-test('safe examples expose only new shared logical mappings and protected source mapping', async () => {
+test('safe examples expose customer-facing mappings and only the protected TikTok RAW source', async () => {
   const [devVars, wrangler] = await Promise.all([
     readFile(new URL('.dev.vars.example', ROOT), 'utf8'),
     readFile(new URL('wrangler.sync.example.jsonc', ROOT), 'utf8'),
   ]);
-  for (const key of ['rawTikTokCreatorVideos', 'rawMetaOrganicAccounts', 'rawMetaOrganicContent', 'rawMetaOrganicMetrics', 'rawAdsEntities', 'rawAdsDaily', 'mktAccountDaily']) {
+  for (const key of ['rawTikTokCreatorVideos', 'mktAccountDaily']) {
     const envName = LARK_TABLE_ENV[key];
     assert.match(devVars, new RegExp(`^${envName}=replace-with-table-id$`, 'mu'));
     assert.ok(wrangler.includes(`"${envName}": "replace-with-table-id"`), `missing ${envName} in Wrangler example`);
+  }
+  for (const retired of [
+    'rawMetaOrganicAccounts', 'rawMetaOrganicContent', 'rawMetaOrganicMetrics',
+    'rawAdsEntities', 'rawAdsDaily',
+  ]) {
+    const envName = LARK_TABLE_ENV[retired];
+    assert.doesNotMatch(devVars, new RegExp(`^${envName}=`, 'mu'));
+    assert.equal(wrangler.includes(`"${envName}"`), false);
   }
   for (const stale of ['LARK_TABLE_RAW_FACEBOOK_PAGES', 'LARK_TABLE_RAW_INSTAGRAM_MEDIA', 'LARK_TABLE_RAW_META_CAMPAIGNS']) {
     assert.doesNotMatch(devVars, new RegExp(stale, 'u'));

@@ -13,6 +13,7 @@ import { processYouTubeOrganicEndToEndJob } from '../../apps/sync-worker/src/you
 import { buildYouTubeDryRunJob } from '../../scripts/lib/youtube-dry-run-rollout-operator.js';
 import { D1ReliabilityStore } from '../../packages/reliability/src/d1-reliability-store.js';
 import { D1OrganicHistoryGateway } from '../../packages/connectors/src/d1-organic-history-gateway.js';
+import { D1YouTubeAnalyticsDailyStore } from '../../packages/connectors/src/youtube/d1-youtube-analytics-daily-store.js';
 import { D1IncrementalStateStore } from '../../packages/sync-engine/src/d1-incremental-state-store.js';
 import { D1ResumableWorkStore } from '../../packages/sync-engine/src/d1-resumable-work-store.js';
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
@@ -534,6 +535,9 @@ function createYouTubeDryRunInfrastructure(db, observations) {
     },
     getOrganicHistoryGateway() {
       return historyGateway;
+    },
+    getYouTubeAnalyticsDailyStore() {
+      return new D1YouTubeAnalyticsDailyStore({ db });
     },
     getIncrementalStateStore() {
       return new D1IncrementalStateStore({ db });

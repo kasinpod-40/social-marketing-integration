@@ -632,8 +632,8 @@ function createReconciliation({ writeSet, preflight, d1, lark }) {
 function activeLarkContracts(connectorKey) {
   const organic = connectorKey === 'facebook' || connectorKey === 'instagram';
   const prefixes = organic
-    ? ['raw.organic', 'canonical.accounts', 'canonical.accountDaily', 'canonical.content']
-    : ['raw.ads', 'canonical.ads'];
+    ? ['canonical.accounts', 'canonical.accountDaily', 'canonical.content']
+    : ['canonical.ads'];
   return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
     (contract) => prefixes.some((prefix) => contract.path.startsWith(prefix)),
   ));

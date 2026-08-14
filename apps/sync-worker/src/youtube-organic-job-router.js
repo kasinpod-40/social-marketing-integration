@@ -173,6 +173,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         resumableWorkStore,
         historyGateway,
         historyStore: historyGateway.store,
+        analyticsStore: infrastructure.getYouTubeAnalyticsDailyStore(),
         publicClient: clients.publicClient,
         ownerClient: clients.ownerClient,
         channelId,
@@ -207,9 +208,6 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         dryRun,
         tables: {
           mktAccounts: tableIds.mktAccounts,
-          rawYouTubeChannels: tableIds.rawYouTubeChannels,
-          rawYouTubeVideos: tableIds.rawYouTubeVideos,
-          rawYouTubeAnalyticsDaily: tableIds.rawYouTubeAnalyticsDaily,
           mktContent: tableIds.mktContent,
           mktContentDaily: tableIds.mktContentDaily,
         },

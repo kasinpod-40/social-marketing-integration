@@ -28,12 +28,9 @@ test('resolves the separate Ads Ad table mapping', () => {
   }, ['mktAdsAds']), { mktAdsAds: 'tbl_ads' });
 });
 
-test('YouTube activation preflight requires Account, RAW, Content and Daily tables together', () => {
+test('YouTube activation preflight requires only customer-facing Account, Content and Daily tables', () => {
   assert.deepEqual(YOUTUBE_REQUIRED_LARK_TABLE_KEYS, [
     'mktAccounts',
-    'rawYouTubeChannels',
-    'rawYouTubeVideos',
-    'rawYouTubeAnalyticsDaily',
     'mktContent',
     'mktContentDaily',
   ]);

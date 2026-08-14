@@ -14,6 +14,7 @@ import {
   compareWooCommerceRerun,
   createWooCommerceLarkSchemaContract,
   isWooCommerceExactContinuationSnapshotEmpty,
+  listWooCommerceD1Tables,
   normalizeWooCommerceFinalSnapshot,
   parseWooCommerceFinalArgs,
   selectWooCommerceFullOperation,
@@ -52,7 +53,7 @@ function completedSnapshot(attempts = 1) {
     coverage_run_count: 6,
     invalid_coverage_count: 0,
   };
-  for (const item of createWooCommerceLarkSchemaContract()) row[item.d1Table] = 2;
+  for (const d1Table of listWooCommerceD1Tables()) row[d1Table] = 2;
   return row;
 }
 
@@ -66,11 +67,11 @@ test('final operator is plan-only by default and needs exact confirmation', () =
   }), true);
 });
 
-test('Lark schema contract covers exact 14 mappings and matching key fields', () => {
+test('Lark schema contract covers exact five customer-facing mappings and matching key fields', () => {
   const contract = createWooCommerceLarkSchemaContract();
-  assert.equal(contract.length, 14);
-  assert.equal(new Set(contract.map((item) => item.tableKey)).size, 14);
-  assert.equal(new Set(contract.map((item) => item.d1Table)).size, 14);
+  assert.equal(contract.length, 5);
+  assert.equal(new Set(contract.map((item) => item.tableKey)).size, 5);
+  assert.equal(new Set(contract.map((item) => item.d1Table)).size, 5);
   for (const item of contract) {
     assert.equal(item.fields[0].fieldName, item.keyField);
     assert.equal(item.fields[0].type, 1);
@@ -182,7 +183,7 @@ test('config windows are exact safe, UAT and all-false closeout flag sets', () =
     'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
   ]);
   assert.deepEqual(windows.closeoutTrueFlags, []);
-  assert.match(windows.closeout, /"LARK_TABLE_RAW_COMMERCE_STORES": "tbl_0"/u);
+  assert.match(windows.closeout, /"LARK_TABLE_MKT_COMMERCE_ORDERS": "tbl_0"/u);
   assert.equal(windows.closeoutSha256, windows.safeSha256);
 });
 
@@ -317,7 +318,7 @@ test('exact continuation accepts only the existing partial failed durable identi
     snapshot: { ...partial, sync_run_error_code: 'UNRELATED_FAILURE' },
   }), /preflight rejected/u);
   const emptyPartial = { ...partial };
-  for (const item of createWooCommerceLarkSchemaContract()) emptyPartial[item.d1Table] = 0;
+  for (const d1Table of listWooCommerceD1Tables()) emptyPartial[d1Table] = 0;
   assert.throws(() => selectWooCommerceFullOperation({
     resumeOperationId: 'woo-final-full-e2372e56d52d',
     snapshot: emptyPartial,
@@ -432,12 +433,12 @@ test('rerun accepts only increased attempt with unchanged Business and Coverage 
   assert.throws(() => compareWooCommerceRerun(completedSnapshot(1), drift), /changed Business row counts/u);
 });
 
-test('D1/Lark parity checks all 14 table mappings exactly', () => {
+test('D1/Lark parity checks all five customer-facing table mappings exactly', () => {
   const contract = createWooCommerceLarkSchemaContract();
   const d1Counts = Object.fromEntries(contract.map((item) => [item.d1Table, 4]));
   const larkCounts = Object.fromEntries(contract.map((item) => [item.tableKey, 4]));
-  assert.equal(compareWooCommerceParity({ d1Counts, larkCounts }).tableCount, 14);
-  larkCounts.rawCommerceOrders = 3;
+  assert.equal(compareWooCommerceParity({ d1Counts, larkCounts }).tableCount, 5);
+  larkCounts.mktCommerceOrders = 3;
   assert.throws(() => compareWooCommerceParity({ d1Counts, larkCounts }), /parity mismatch/u);
 });
 

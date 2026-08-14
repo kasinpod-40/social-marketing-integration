@@ -2,7 +2,7 @@ import { YOUTUBE_LARK_BLUEPRINT } from './youtube-organic-blueprint.js';
 import { LARK_TABLE_ENV } from './lark-table-config.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 
-export const YOUTUBE_LARK_SCHEMA_VERSION = 'youtube-organic-lark-schema-v1';
+export const YOUTUBE_LARK_SCHEMA_VERSION = 'youtube-d1-raw-customer-lark-v2';
 
 const TABLE_PRESENTATION = Object.freeze({
   rawYouTubeChannels: Object.freeze({
@@ -83,7 +83,7 @@ const FIELD_DESCRIPTIONS_TH = deepFreeze({
 });
 
 /** Contract สำหรับ Preview/Apply สาม YouTube RAW tables โดย derive จาก Blueprint ชุดเดียว */
-export const YOUTUBE_LARK_SCHEMA = deepFreeze(YOUTUBE_LARK_BLUEPRINT.map((table) => {
+export const YOUTUBE_LEGACY_RAW_LARK_SCHEMA = deepFreeze(YOUTUBE_LARK_BLUEPRINT.map((table) => {
   const presentation = TABLE_PRESENTATION[table.key];
   if (!presentation) {
     throw permanentError(`Missing YouTube Lark presentation for ${table.key}`, {
@@ -112,10 +112,13 @@ export const YOUTUBE_LARK_SCHEMA = deepFreeze(YOUTUBE_LARK_BLUEPRINT.map((table)
   };
 }));
 
+// YouTube RAW is D1-owned. The customer Base has no YouTube-specific RAW table to provision.
+export const YOUTUBE_LARK_SCHEMA = Object.freeze([]);
+
 /** ตรวจ Schema ที่ derive จาก Blueprint เพื่อจับ Field order/Primary/Select contract ก่อนเรียก Lark */
 export function validateYouTubeLarkSchema(schema = YOUTUBE_LARK_SCHEMA) {
-  if (!Array.isArray(schema) || schema.length !== 3) {
-    throw permanentError('YouTube Lark schema must contain exactly three RAW tables', {
+  if (!Array.isArray(schema) || schema.length !== 0) {
+    throw permanentError('YouTube customer Lark schema must not contain RAW tables', {
       code: 'YOUTUBE_LARK_SCHEMA_INVALID',
     });
   }

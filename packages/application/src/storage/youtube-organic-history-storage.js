@@ -107,6 +107,13 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
   }
 
   await assertLockActive(context);
+  const analyticsWrite = await context.analyticsStore.upsertMany(rows.rawAnalytics, {
+    customerProfile: context.customerProfile,
+    customerKey: context.customerKey,
+    accountKey: context.accountKey,
+    syncRunId: context.syncRunId,
+  });
+  await assertLockActive(context);
   const accountWrite = await writeYouTubeAccountSnapshot({
     context,
     ids,
@@ -122,8 +129,8 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
     content: contentWrite,
     availability: availabilityWrite,
     account: accountWrite,
-    rawAnalyticsRowsObserved: rows.rawAnalytics.length,
-    analyticsStoragePolicy: 'raw_lark_period_facts_not_coerced_into_cumulative_d1_observations',
+    analytics: analyticsWrite,
+    analyticsStoragePolicy: 'd1_period_facts_not_coerced_into_cumulative_observations',
   });
 }
 
@@ -167,7 +174,7 @@ export async function previewYouTubeOrganicStorage(context, captured) {
         && !contentIds.has(row.video_id)
     )).length,
     plannedAccountRows: rows.rawChannels.length,
-    rawAnalyticsRowsObserved: rows.rawAnalytics.length,
+    plannedAnalyticsRows: rows.rawAnalytics.length,
   });
 }
 

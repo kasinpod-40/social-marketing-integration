@@ -3,14 +3,11 @@ import { permanentError } from '../../shared/src/errors/runtime-error.js';
 import { isPlaceholderConfigValue, requireConfiguredText } from '../../shared/src/config/placeholder-value.js';
 
 /**
- * ตารางที่ YouTube Activation ต้องมีครบก่อนเริ่ม Source request แรก
- * การประกาศชุดเดียวป้องกัน Runtime route ในอนาคตลืม MKT_Accounts หรือ RAW destination
+ * ตาราง Customer-facing ที่ YouTube Activation ต้องมีครบก่อนเริ่ม Source request แรก.
+ * Source/period facts are durable in D1 and are not mirrored into Lark RAW tables.
  */
 export const YOUTUBE_REQUIRED_LARK_TABLE_KEYS = Object.freeze([
   'mktAccounts',
-  'rawYouTubeChannels',
-  'rawYouTubeVideos',
-  'rawYouTubeAnalyticsDaily',
   'mktContent',
   'mktContentDaily',
 ]);

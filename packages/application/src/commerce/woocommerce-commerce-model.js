@@ -131,15 +131,6 @@ export const WOOCOMMERCE_D1_TABLE_CONTRACTS = Object.freeze({
 });
 
 export const WOOCOMMERCE_LARK_TABLES = Object.freeze([
-  larkContract('raw.stores', 'rawCommerceStores', 'store_key'),
-  larkContract('raw.orders', 'rawCommerceOrders', 'raw_order_key'),
-  larkContract('raw.orderItems', 'rawCommerceOrderItems', 'raw_order_item_key'),
-  larkContract('raw.products', 'rawCommerceProducts', 'raw_product_key'),
-  larkContract('raw.variations', 'rawCommerceProductVariations', 'raw_variation_key'),
-  larkContract('raw.categories', 'rawCommerceCategories', 'raw_category_key'),
-  larkContract('raw.customers', 'rawCommerceCustomers', 'raw_customer_key'),
-  larkContract('raw.coupons', 'rawCommerceCoupons', 'raw_coupon_key'),
-  larkContract('raw.refunds', 'rawCommerceRefunds', 'raw_refund_key'),
   larkContract('canonical.orders', 'mktCommerceOrders', 'order_key'),
   larkContract('canonical.products', 'mktCommerceProducts', 'product_key'),
   larkContract('canonical.customers', 'mktCommerceCustomers', 'customer_aggregate_key'),

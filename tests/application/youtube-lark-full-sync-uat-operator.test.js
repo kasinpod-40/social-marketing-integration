@@ -71,7 +71,7 @@ test('config window enables exactly four reviewed flags', async () => {
   assert.match(window.activeText, /"MKT_TIME_SERIES_D1_WRITE_ENABLED": "true"/u);
   assert.match(window.activeText, /"MKT_YOUTUBE_ANALYTICS_ENABLED": "false"/u);
   assert.match(window.activeText, /"MKT_SCHEDULE_YOUTUBE_ENABLED": "false"/u);
-  assert.equal(Object.keys(window.tableIds).length, 8);
+  assert.equal(Object.keys(window.tableIds).length, 5);
   assert.notEqual(window.safeSha256, window.activeSha256);
 });
 
@@ -194,11 +194,11 @@ test('completion parser accepts numeric D1 epoch timestamps from live Wrangler J
   assert.equal(result.snapshot.workCompletedAt, 1785227173381);
 });
 
-test('Lark counts require public-data targets but allow Analytics to remain empty', () => {
+test('Lark counts require customer-facing targets while Analytics is stored in D1', () => {
   const counts = classifyYouTubeLarkCounts(larkCounts());
   assert.equal(counts.complete, true);
-  assert.equal(counts.counts.rawYouTubeAnalyticsDaily, 0);
-  assert.equal(counts.analyticsOptional, true);
+  assert.equal('rawYouTubeAnalyticsDaily' in counts.counts, false);
+  assert.equal(counts.analyticsStoredInD1, true);
   const missing = classifyYouTubeLarkCounts({ ...larkCounts(), mktContent: 0 });
   assert.equal(missing.complete, false);
   assert.deepEqual(missing.missingPositive, ['mktContent']);
