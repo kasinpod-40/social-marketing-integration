@@ -194,7 +194,7 @@ test('Chatwoot Lark failure leaves only partial coverage and does not checkpoint
   assert.equal(checkpointed, false);
 });
 
-test('Chatwoot Lark state-only mode excludes four report targets', async () => {
+test('Chatwoot Lark state-only mode writes only the customer-facing conversation table', async () => {
   const tables = stateTables();
   const result = await syncChatwootAnalytics({
     ...baseInput(),
@@ -217,7 +217,7 @@ test('Chatwoot Lark state-only mode excludes four report targets', async () => {
       },
     },
   });
-  assert.equal(result.lark.tables.length, 11);
+  assert.equal(result.lark.tables.length, 1);
   assert.equal(result.lark.tables.some((row) => row.tableKey === 'mktConversationDaily'), false);
 });
 
@@ -340,9 +340,6 @@ function checkpointStore(order) {
 
 function stateTables() {
   return Object.fromEntries([
-    'rawChatwootAccounts', 'rawChatwootInboxes', 'rawChatwootContacts', 'rawChatwootAgents',
-    'rawChatwootTeams', 'rawChatwootLabels', 'rawChatwootConversations',
-    'rawChatwootConversationLabels', 'rawChatwootMessageAnalytics', 'rawChatwootReportingEvents',
     'mktConversations',
   ].map((key) => [key, `table:${key}`]));
 }

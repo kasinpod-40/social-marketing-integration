@@ -290,8 +290,8 @@ async function enqueueMetaContinuation({ input, operation, connectorKey, result 
 
 function tableKeysFor(connectorKey) {
   const prefixes = connectorKey === 'meta_ads'
-    ? ['raw.ads', 'canonical.ads']
-    : ['raw.organic', 'canonical.accounts', 'canonical.accountDaily', 'canonical.content'];
+    ? ['canonical.ads']
+    : ['canonical.accounts', 'canonical.accountDaily', 'canonical.content'];
   return Object.freeze(META_END_TO_END_LARK_TABLES
     .filter((entry) => prefixes.some((prefix) => entry.path.startsWith(prefix)))
     .map((entry) => entry.tableKey));

@@ -19,7 +19,7 @@ function remoteTables() {
   }));
 }
 
-test('final UAT auto-resolves all 15 Chatwoot tables from reviewed Blueprint aliases', () => {
+test('final UAT auto-resolves all customer-facing Chatwoot tables from reviewed Blueprint aliases', () => {
   const tables = remoteTables();
   const result = resolveChatwootFinalLarkAutoMappings({
     env: TARGET_ENV,
@@ -27,8 +27,8 @@ test('final UAT auto-resolves all 15 Chatwoot tables from reviewed Blueprint ali
   });
 
   assert.equal(result.contractVersion, CHATWOOT_FINAL_LARK_AUTO_MAPPING_CONTRACT_VERSION);
-  assert.equal(result.tableCount, 15);
-  assert.equal(result.aliasDiscoveryCount, 15);
+  assert.equal(result.tableCount, 5);
+  assert.equal(result.aliasDiscoveryCount, 5);
   assert.equal(result.staleMappingRepairCount, 0);
   assert.equal(result.configuredMappingCount, 0);
   assert.deepEqual(
@@ -53,9 +53,9 @@ test('final UAT repairs stale local Chatwoot table mappings only in the generate
   };
   const result = resolveChatwootFinalLarkAutoMappings({ env, remoteTables: tables });
 
-  assert.equal(result.tableCount, 15);
+  assert.equal(result.tableCount, 5);
   assert.equal(result.aliasDiscoveryCount, 0);
-  assert.equal(result.staleMappingRepairCount, 15);
+  assert.equal(result.staleMappingRepairCount, 5);
   assert.equal(result.configuredMappingCount, 0);
   for (const [index, table] of CHATWOOT_LARK_BLUEPRINT.entries()) {
     assert.equal(result.values[table.envName], tables[index].tableId);
@@ -68,7 +68,7 @@ test('final UAT fails closed on missing or ambiguous Chatwoot tables without exp
     () => resolveChatwootFinalLarkAutoMappings({ env: TARGET_ENV, remoteTables: missing }),
     (error) => {
       assert.equal(error.code, 'CHATWOOT_FINAL_UAT_LARK_MAPPING_DISCOVERY_BLOCKED');
-      assert.deepEqual(error.details.missingTables, ['rawChatwootAccounts']);
+      assert.deepEqual(error.details.missingTables, ['mktConversations']);
       assert.doesNotMatch(JSON.stringify(error.details), /tbl_chatwoot_/u);
       return true;
     },
@@ -80,7 +80,7 @@ test('final UAT fails closed on missing or ambiguous Chatwoot tables without exp
     () => resolveChatwootFinalLarkAutoMappings({ env: TARGET_ENV, remoteTables: ambiguous }),
     (error) => {
       assert.equal(error.code, 'CHATWOOT_FINAL_UAT_LARK_MAPPING_DISCOVERY_BLOCKED');
-      assert.deepEqual(error.details.ambiguousTables, ['rawChatwootAccounts']);
+      assert.deepEqual(error.details.ambiguousTables, ['mktConversations']);
       assert.doesNotMatch(JSON.stringify(error.details), /tbl_duplicate_alias/u);
       return true;
     },

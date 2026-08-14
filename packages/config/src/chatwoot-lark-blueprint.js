@@ -10,7 +10,7 @@ export const CHATWOOT_LARK_FIELD_TYPE = Object.freeze({
   CHECKBOX: 7,
 });
 
-export const CHATWOOT_LARK_BLUEPRINT_VERSION = 'chatwoot-lark-blueprint-v1';
+export const CHATWOOT_LARK_BLUEPRINT_VERSION = 'chatwoot-customer-lark-blueprint-v2';
 
 const T = CHATWOOT_LARK_FIELD_TYPE;
 const BOOLEAN_FIELDS = new Set([
@@ -25,7 +25,7 @@ const SELECT_FIELDS = new Set([
 ]);
 const TEXT_DATE_FIELDS = new Set(['metric_date']);
 
-const TABLE_SPECS = Object.freeze([
+const LEGACY_TABLE_SPECS = Object.freeze([
   spec('rawChatwootAccounts', 'RAW_Chatwoot_Accounts', 'account_state_key',
     'account_state_key customer_key account_key external_account_id first_seen_at last_seen_at source_updated_at metadata_hash last_coverage_run_id last_sync_run_id created_at updated_at',
     'account_state_key customer_key account_key external_account_id first_seen_at last_seen_at metadata_hash last_coverage_run_id last_sync_run_id created_at updated_at'),
@@ -73,6 +73,10 @@ const TABLE_SPECS = Object.freeze([
     'account_daily_key customer_key account_key external_account_id metric_date reporting_timezone new_conversation_count reopened_count incoming_message_count outgoing_message_count data_status coverage_run_id source_revision fetched_at sync_run_id created_at updated_at'),
 ]);
 
+// RAW specs remain exact cleanup metadata for the existing Integration Base only. New schema
+// provisioning and daily writes use the five customer-facing MKT tables below.
+const TABLE_SPECS = Object.freeze(LEGACY_TABLE_SPECS.filter((entry) => entry.key.startsWith('mkt')));
+
 export const CHATWOOT_LARK_BLUEPRINT = deepFreeze(TABLE_SPECS.map((spec) => {
   const envName = LARK_TABLE_ENV[spec.key];
   if (!envName) {
@@ -102,8 +106,8 @@ export const CHATWOOT_REQUIRED_LARK_TABLE_KEYS = Object.freeze(
 );
 
 export function validateChatwootLarkBlueprint(schema = CHATWOOT_LARK_BLUEPRINT) {
-  if (!Array.isArray(schema) || schema.length !== 15) {
-    throw invalid('Chatwoot Lark blueprint must contain exactly 15 tables');
+  if (!Array.isArray(schema) || schema.length !== 5) {
+    throw invalid('Chatwoot customer Lark blueprint must contain exactly five MKT tables');
   }
   const tableKeys = new Set();
   const envNames = new Set();

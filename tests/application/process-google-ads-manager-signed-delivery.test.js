@@ -12,8 +12,6 @@ const RUN_ID = '123e4567-e89b-42d3-a456-426614174000';
 const RUN_STARTED_AT = Date.parse('2026-07-25T04:00:00.000Z');
 
 const EXPECTED_LARK_KEY_CONTRACT = Object.freeze([
-  Object.freeze({ tableId: 'raw-entities', keyField: 'raw_ads_entity_key' }),
-  Object.freeze({ tableId: 'raw-daily', keyField: 'raw_ads_daily_key' }),
   Object.freeze({ tableId: 'accounts', keyField: 'ads_account_key' }),
   Object.freeze({ tableId: 'campaigns', keyField: 'ads_campaign_key' }),
   Object.freeze({ tableId: 'ad-groups', keyField: 'ads_ad_group_key' }),
@@ -178,17 +176,17 @@ test('durable processor completes D1 first then one Lark table per continuation'
   assert.equal(result.status, 'completed');
   assert.equal(fixture.admission.status, 'completed');
   assert.equal(fixture.historyCalls.length, 18);
-  assert.equal(fixture.continuations.length, 7);
+  assert.equal(fixture.continuations.length, 5);
   assert.equal(fixture.continuations.every((body) => body.operationId === RUN_ID), true);
   assert.equal(result.reconciliation.failed, 0);
-  assert.equal(result.reconciliation.lark.length, 8);
+  assert.equal(result.reconciliation.lark.length, 6);
 
   const normalizedCalls = fixture.planCalls.map(({ tableId, keyField }) => ({ tableId, keyField }));
   assert.equal(normalizedCalls.length, EXPECTED_LARK_KEY_CONTRACT.length * 2);
   assert.deepEqual(
     normalizedCalls.slice(0, EXPECTED_LARK_KEY_CONTRACT.length),
     EXPECTED_LARK_KEY_CONTRACT,
-    'destination preflight must use the exact eight-table stable-key contract',
+    'destination preflight must use the exact customer-facing stable-key contract',
   );
   assert.deepEqual(
     normalizedCalls.slice(EXPECTED_LARK_KEY_CONTRACT.length),

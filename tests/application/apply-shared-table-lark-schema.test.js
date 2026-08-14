@@ -48,10 +48,10 @@ test('applies the exact Shared-table plan and verifies zero drift without touchi
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.summary.renamedTables, 5);
+  assert.equal(result.summary.renamedTables, 0);
   assert.equal(result.summary.createdTables, 2);
-  assert.equal(result.summary.updatedPrimaryFields, 5);
-  assert.equal(result.summary.createdViews, 17);
+  assert.equal(result.summary.updatedPrimaryFields, 0);
+  assert.equal(result.summary.createdViews, 0);
   assert.equal(result.summary.remainingActions, 0);
   assert.equal(result.summary.conflicts, 0);
   assert.equal(result.summary.warnings, 0);
@@ -61,14 +61,9 @@ test('applies the exact Shared-table plan and verifies zero drift without touchi
   assert.equal(result.summary.recordWrites, 0);
   assert.equal(state.tables.find((table) => table.tableId === 'tblTikTokNative').name, '🎵 RAW_TikTok_Creator_Videos');
   assert.equal(state.writes.some((write) => write.kind === 'record_write'), false);
-  assert.deepEqual(
-    state.tables.filter((table) => table.tableId !== 'tblTikTokNative').map((table) => table.name).sort(),
-    [
-      'MKT_Account_Daily', 'MKT_Ads_Ads', 'RAW_Ads_Daily', 'RAW_Ads_Entities',
-      'RAW_Meta_Organic_Accounts', 'RAW_Meta_Organic_Content', 'RAW_Meta_Organic_Metrics',
-    ].sort(),
-  );
-  assert.equal(Object.keys(result.environmentUpdates).length, 7);
+  assert.ok(state.tables.some((table) => table.name === 'MKT_Account_Daily'));
+  assert.ok(state.tables.some((table) => table.name === 'MKT_Ads_Ads'));
+  assert.equal(Object.keys(result.environmentUpdates).length, 2);
 });
 
 test('is idempotent after a successful Apply', async () => {
@@ -85,18 +80,16 @@ test('is idempotent after a successful Apply', async () => {
   assert.equal(state.writes.length, writesBefore);
 });
 
-test('fails before the first write when a reuse source is no longer empty', async () => {
+test('legacy RAW records do not block customer-facing canonical table creation', async () => {
   const { schema, views } = await loadContract();
   const state = createState({ nonEmptyTableId: 'tblAds' });
-  await assert.rejects(
-    applySharedTableLarkSchema({ client: statefulClient(state), env: {}, schema, views }),
-    (error) => error.code === 'SHARED_TABLE_APPLY_PLAN_INVALID'
-      && error.details.problems.includes('preview_not_ready'),
-  );
-  assert.equal(state.writes.length, 0);
+  const result = await applySharedTableLarkSchema({ client: statefulClient(state), env: {}, schema, views });
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.createdTables, 2);
+  assert.equal(state.writes.some((write) => write.kind === 'rename_table'), false);
 });
 
-test('fails closed when the protected TikTok source is missing or a reuse slot disappeared', async () => {
+test('fails closed when the protected TikTok source is missing but ignores a missing legacy RAW slot', async () => {
   const { schema, views } = await loadContract();
   const missingProtected = createState({ omitProtected: true });
   await assert.rejects(
@@ -107,53 +100,33 @@ test('fails closed when the protected TikTok source is missing or a reuse slot d
   assert.equal(missingProtected.writes.length, 0);
 
   const missingReuse = createState({ omitTableId: 'tblGoogleLists' });
-  await assert.rejects(
-    applySharedTableLarkSchema({ client: statefulClient(missingReuse), env: {}, schema, views }),
-    (error) => error.code === 'SHARED_TABLE_APPLY_PLAN_INVALID'
-      && error.details.problems.includes('reuse_table_count_mismatch'),
-  );
-  assert.equal(missingReuse.writes.length, 0);
+  const result = await applySharedTableLarkSchema({ client: statefulClient(missingReuse), env: {}, schema, views });
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.createdTables, 2);
 });
 
 
 
-test('recovers idempotently when a View was created but its first filter PATCH failed', async () => {
+test('does not invoke the legacy RAW View installer', async () => {
   const { schema, views } = await loadContract();
   const state = createState({ failFirstViewUpdate: true });
   const client = statefulClient(state);
 
-  await assert.rejects(
-    applySharedTableLarkSchema({ client, env: {}, schema, views }),
-    (error) => {
-      assert.equal(error.code, 'TEST_VIEW_UPDATE_FAILED');
-      assert.equal(error.details.viewCreatedBeforeFailure, true);
-      assert.equal(error.details.appliedSchemaActionCount > 0, true);
-      return true;
-    },
-  );
-
-  const viewCreatesAfterFailure = state.writes.filter((write) => write.kind === 'create_view').length;
-  assert.equal(viewCreatesAfterFailure, 1);
-  const rerun = await applySharedTableLarkSchema({ client, env: {}, schema, views });
-  assert.equal(rerun.ok, true);
-  assert.equal(rerun.summary.remainingActions, 0);
-  assert.equal(state.writes.filter((write) => write.kind === 'create_view').length, 17);
+  const result = await applySharedTableLarkSchema({ client, env: {}, schema, views });
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.createdViews, 0);
+  assert.equal(state.writes.some((write) => write.kind === 'create_view'), false);
+  assert.equal(state.writes.some((write) => write.kind === 'update_view'), false);
 });
 
-test('reports confirmed schema progress when a later Field create fails', async () => {
+test('reports zero standalone Field creates for create-new canonical tables', async () => {
   const { schema, views } = await loadContract();
   const state = createState({ failFirstCreateField: true });
-  await assert.rejects(
-    applySharedTableLarkSchema({ client: statefulClient(state), env: {}, schema, views }),
-    (error) => {
-      assert.equal(error.code, 'TEST_FIELD_CREATE_FAILED');
-      assert.equal(error.details.sharedSchemaAction.kind, 'create_field');
-      assert.equal(error.details.appliedActionCount, 10);
-      return true;
-    },
-  );
-  assert.equal(state.writes.filter((write) => write.kind === 'rename_table').length, 5);
-  assert.equal(state.writes.filter((write) => write.kind === 'update_field').length, 5);
+  const result = await applySharedTableLarkSchema({ client: statefulClient(state), env: {}, schema, views });
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.createdFields, 0);
+  assert.equal(state.writes.filter((write) => write.kind === 'rename_table').length, 0);
+  assert.equal(state.writes.filter((write) => write.kind === 'update_field').length, 0);
   assert.equal(state.writes.some((write) => write.kind === 'create_view'), false);
 });
 

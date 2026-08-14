@@ -9,14 +9,11 @@ export const META_END_TO_END_FLAG_ENV = Object.freeze({
 });
 
 /**
- * Active Lark projection only. Detailed Meta Ads RAW, Creative and daily facts remain durable in D1
- * and are intentionally excluded from Lark. Meta Ads Lark stores Account plus report-range activity
- * Campaign, AdSet and Ad only.
+ * Customer-facing Lark projection only. Provider/source facts remain durable in D1 and are not
+ * mirrored into Lark RAW tables. Meta Organic exposes Canonical Account/Content rows; Meta Ads
+ * exposes Account plus report-range activity Campaign, AdSet and Ad only.
  */
 export const META_END_TO_END_LARK_TABLES = Object.freeze([
-  table('raw.organicAccounts', 'rawMetaOrganicAccounts', 'raw_account_key'),
-  table('raw.organicContent', 'rawMetaOrganicContent', 'raw_content_key'),
-  table('raw.organicMetrics', 'rawMetaOrganicMetrics', 'raw_metric_key'),
   table('canonical.accounts', 'mktAccounts', 'account_key'),
   table('canonical.accountDaily', 'mktAccountDaily', 'account_daily_key'),
   table('canonical.content', 'mktContent', 'content_key'),

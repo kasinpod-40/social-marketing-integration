@@ -2,6 +2,11 @@
 
 ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base สำหรับ Dashboard, Reporting, AI Summary, Insight, Alert และ Notification โดยใช้ JavaScript ES Modules, Cloudflare Workers, D1, Queues และ Lark Open API
 
+Storage direction ปัจจุบันคือ API Provider → D1 source/history/coverage → customer-facing Lark
+`MKT_*`/Report. ระบบไม่สร้าง non-TikTok Lark RAW mirrors ใหม่และไม่มี switch เปิดกลับ; เฉพาะ
+`RAW_TikTok_Creator_Videos` เป็น protected Lark Native source แบบ read-only. Exact retirement scope
+และ safe deletion gate อยู่ที่ `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
+
 ## Read first
 
 ```text

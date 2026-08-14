@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — Non-TikTok Lark RAW Retirement — 2026-08-14
+
+### Changed
+
+- Removed non-TikTok Lark RAW targets from active Meta Organic, Google Ads, YouTube,
+  WooCommerce and Chatwoot write/preflight/runtime contracts; customer-facing MKT/Report writes remain.
+- Reduced active Chatwoot Lark provisioning/auto-mapping to five MKT tables, WooCommerce to five MKT
+  tables, and YouTube RAW provisioning to zero.
+- Added D1 migration `0020_youtube_analytics_daily_facts.sql` and an idempotent newer-wins store so
+  YouTube Owner Analytics period facts no longer require Lark RAW authority.
+- Removed unused Google Ads and Chatwoot RAW Lark projections from the in-memory write set.
+- Kept `RAW_TikTok_Creator_Videos` protected and read-only with no contract change.
+
+### Rollout safety
+
+- No Live table deletion, deployment, merge, Queue send, redrive or production mutation is included.
+- The 27-table cleanup requires exact backup/checksum, D1 migration/catch-up, stable-key parity,
+  reviewed deploy, scheduled soak and zero-consumer proof before one-by-one deletion.
+
 ## Unreleased — Facebook Reactions and Comments Post Summaries — 2026-08-12
 
 ### Changed

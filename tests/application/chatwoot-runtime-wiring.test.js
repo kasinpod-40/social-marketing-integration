@@ -100,7 +100,7 @@ test('Chatwoot Queue identity is account-scoped and continuation preserves it', 
 });
 
 test('all Chatwoot Lark logical keys are centrally registered and unique', () => {
-  assert.equal(CHATWOOT_LARK_TABLE_KEYS.length, 15);
+  assert.equal(CHATWOOT_LARK_TABLE_KEYS.length, 5);
   const env = {};
   CHATWOOT_LARK_TABLE_KEYS.forEach((key, index) => {
     assert.equal(typeof LARK_TABLE_ENV[key], 'string');

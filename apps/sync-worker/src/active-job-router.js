@@ -17,7 +17,7 @@ import { redriveDeadLetterJob } from '../../../packages/application/src/use-case
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
 import { seedReportSettings } from '../../../packages/application/src/use-cases/seed-report-settings.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
-import { syncYouTubeOrganicToLark } from '../../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
+import { syncYouTubeOrganicEndToEnd } from '../../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import {
@@ -140,18 +140,24 @@ export async function processJob(input) {
         scope: 'reliability',
         ...sanitizeReliabilityEvent(event),
       }),
-      execute: ({ syncRunId, lockKey, assertLockActive }) => syncYouTubeOrganicToLark({
+      execute: ({ syncRunId, lockKey, assertLockActive }) => {
+        const historyGateway = infrastructure.getOrganicHistoryGateway();
+        return syncYouTubeOrganicEndToEnd({
         syncRunId,
         assertLockActive,
         repository: infrastructure.repository,
         syncEngine: infrastructure.syncEngine,
         incrementalStateStore: infrastructure.getIncrementalStateStore(),
         resumableWorkStore,
+        historyGateway,
+        historyStore: historyGateway.store,
+        analyticsStore: infrastructure.getYouTubeAnalyticsDailyStore(),
         publicClient: clients.publicClient,
         ownerClient: clients.ownerClient,
         channelId,
         accountKey: connectorConfig.accountKey,
         customerProfile: runtimeConfig.profileKey,
+        customerKey: runtimeConfig.customerKey,
         cursorKey: lockKey,
         // Queue retry คง message.id เดิม จึง Resume page/chunk ได้แม้ syncRunId ของแต่ละ attempt เปลี่ยน
         workKey: `youtube:${requireJobText(input.message?.id, 'message.id')}`,
@@ -171,16 +177,16 @@ export async function processJob(input) {
         analyticsStartDate: input.job.body?.analyticsStartDate,
         analyticsEndDate: input.job.body?.analyticsEndDate,
         analyticsMaxPages: readPositiveInteger(input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES, 1000),
+        d1WriteEnabled: readBoolean(input.env?.MKT_TIME_SERIES_D1_WRITE_ENABLED, false),
+        larkWriteEnabled: readBoolean(input.env?.MKT_YOUTUBE_LARK_WRITE_ENABLED, false),
         dryRun: input.job.body?.dryRun === true,
         tables: {
           mktAccounts: tableIds.mktAccounts,
-          rawYouTubeChannels: tableIds.rawYouTubeChannels,
-          rawYouTubeVideos: tableIds.rawYouTubeVideos,
-          rawYouTubeAnalyticsDaily: tableIds.rawYouTubeAnalyticsDaily,
           mktContent: tableIds.mktContent,
           mktContentDaily: tableIds.mktContentDaily,
         },
-      }),
+      });
+      },
     });
     // Cleanup หลัง Reliability runner ปล่อย distributed lock แล้วเท่านั้น
     // เพื่อไม่ให้ retention sweep แข่งกับ active/retryable work ของ cursor เดียวกัน

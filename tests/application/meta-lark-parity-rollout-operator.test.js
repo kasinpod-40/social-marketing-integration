@@ -64,11 +64,11 @@ test('target loader preserves the exact D1 operation identity for each target', 
   const facebook = target('facebook');
   assert.equal(facebook.workKey, 'facebook:meta-lark-facebook');
   assert.equal(facebook.syncRunId, 'meta:facebook:facebook:meta-lark-facebook');
-  assert.equal(facebook.expectedLarkTableCount, 7);
+  assert.equal(facebook.expectedLarkTableCount, 4);
 
   const instagram = target('instagram');
   assert.equal(instagram.workKey, 'instagram:meta-lark-instagram');
-  assert.equal(instagram.expectedLarkTableCount, 7);
+  assert.equal(instagram.expectedLarkTableCount, 4);
 
   const k2 = target('chemistry_k2');
   assert.equal(k2.workKey, 'meta_ads:chemistry_k2:meta-lark-chemistry_k2');
@@ -112,7 +112,7 @@ test('continuation job reuses the same stable operation without d1Only or a prov
   assert.equal(ads.workKey, 'meta_ads:chemistry_k3:meta-lark-chemistry_k3');
 });
 
-test('Lark inventory requires all 11 unique destinations and every stable key field', () => {
+test('Lark inventory requires all 8 customer-facing destinations and every stable key field', () => {
   const tableIds = {};
   const remoteTables = [];
   const fieldsByKey = {};
@@ -123,11 +123,11 @@ test('Lark inventory requires all 11 unique destinations and every stable key fi
     fieldsByKey[contract.tableKey] = [{ fieldName: contract.keyField }];
   }
   const result = validateMetaLarkInventory({ tableIds, remoteTables, fieldsByKey });
-  assert.equal(result.tableCount, 11);
+  assert.equal(result.tableCount, 8);
   assert.equal(result.allTablesPresent, true);
   assert.equal(result.allStableKeyFieldsPresent, true);
 
-  const duplicate = { ...tableIds, rawMetaOrganicContent: tableIds.rawMetaOrganicAccounts };
+  const duplicate = { ...tableIds, mktContent: tableIds.mktAccounts };
   assert.throws(
     () => validateMetaLarkInventory({ tableIds: duplicate, remoteTables, fieldsByKey }),
     (error) => error.code === 'META_LARK_PREFLIGHT_DUPLICATE_TABLE_ID',
@@ -292,7 +292,7 @@ test('completion requires Lark parity, final reconciliation, completed work and 
   const after = larkCompleteSnapshot(current);
   const classified = classifyMetaLarkCompletion(after, current);
   assert.equal(classified.complete, true);
-  assert.equal(classified.expectedLarkTableCount, 7);
+  assert.equal(classified.expectedLarkTableCount, 4);
 
   const compared = compareMetaLarkSnapshots(before, after, current);
   assert.equal(compared.accepted, true);
@@ -472,8 +472,8 @@ test('organic and Ads contracts remain isolated', () => {
   const facebookContracts = expectedLarkContracts('facebook');
   const instagramContracts = expectedLarkContracts('instagram');
   const adsContracts = expectedLarkContracts('meta_ads');
-  assert.equal(facebookContracts.length, 7);
-  assert.equal(instagramContracts.length, 7);
+  assert.equal(facebookContracts.length, 4);
+  assert.equal(instagramContracts.length, 4);
   assert.deepEqual(
     adsContracts.map((entry) => entry.tableKey),
     META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,

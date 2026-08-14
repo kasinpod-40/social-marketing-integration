@@ -99,8 +99,8 @@ test('WooCommerce Queue operation has stable identity and continuation preserves
   assert.equal(continuation.originalRequestedAt, REQUESTED_AT);
 });
 
-test('all reviewed WooCommerce Lark logical keys are centrally registered and unique', () => {
-  assert.equal(WOOCOMMERCE_LARK_TABLE_KEYS.length, 14);
+test('all customer-facing WooCommerce Lark logical keys are centrally registered and unique', () => {
+  assert.equal(WOOCOMMERCE_LARK_TABLE_KEYS.length, 5);
   const env = {};
   WOOCOMMERCE_LARK_TABLE_KEYS.forEach((key, index) => {
     assert.equal(typeof LARK_TABLE_ENV[key], 'string');

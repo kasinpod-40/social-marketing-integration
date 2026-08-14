@@ -34,7 +34,7 @@ function read(name) {
   return readFile(new URL(`${DIR}${name}`, ROOT), 'utf8');
 }
 
-test('offline-style metadata keeps primary-field review as a blocker while protecting TikTok Native', async () => {
+test('customer-facing preview plans only two canonical tables while protecting TikTok Native', async () => {
   const { schema, views } = await loadContract();
   const calls = [];
   const client = createPreviewClient({ calls });
@@ -46,60 +46,61 @@ test('offline-style metadata keeps primary-field review as a blocker while prote
     schemaVersion: SHARED_TABLE_LARK_SCHEMA_VERSION,
     validateSchema: validateSharedTableLarkSchema,
   });
-  assert.equal(result.readyForApplyAuthorization, false);
-  assert.equal(result.requiresManualSchemaResolution, true);
+  assert.equal(result.readyForApplyAuthorization, true);
+  assert.equal(result.requiresManualSchemaResolution, false);
   assert.equal(result.applyImplemented, false);
-  assert.equal(result.summary.renameTables, 5);
+  assert.equal(result.summary.renameTables, 0);
   assert.equal(result.summary.createTables, 2);
-  assert.equal(result.summary.createFields, 99);
+  assert.equal(result.summary.createFields, 0);
   assert.equal(result.summary.updateFields, 0);
   assert.equal(result.summary.updatePrimaryFields, 0);
-  assert.equal(result.summary.createViews, 17);
+  assert.equal(result.summary.createViews, 0);
   assert.equal(result.summary.protectedActions, 0);
   assert.equal(result.summary.deleteActions, 0);
   assert.equal(result.summary.recordWrites, 0);
   assert.equal(result.summary.conflicts, 0);
-  assert.equal(result.summary.blockingManualActions, 5);
+  assert.equal(result.summary.blockingManualActions, 0);
   assert.equal(result.protectedChecks[0].logicalName, 'RAW_TikTok_Creator_Videos');
   assert.equal(result.protectedChecks[0].found, true);
   assert.equal(result.protectedChecks[0].plannedActions, 0);
-  assert.equal(calls.filter(([method]) => method === 'listRecordsPage').length, 5);
+  assert.equal(calls.filter(([method]) => method === 'listRecordsPage').length, 0);
   assert.ok(calls.every(([method]) => !['createTable', 'createField', 'updateField', 'createView', 'updateView'].includes(method)));
 });
 
 
-test('authoritative live primary metadata plans safe primary renames and removes manual blockers', async () => {
+test('legacy RAW primary metadata does not enter the customer-facing install plan', async () => {
   const { schema, views } = await loadContract();
   const client = createPreviewClient({ withPrimaryFields: true });
   const result = await previewSharedTableLarkSchema({ client, env: {}, schema, views });
   assert.equal(result.readyForApplyAuthorization, true);
   assert.equal(result.requiresManualSchemaResolution, false);
-  assert.equal(result.summary.renameTables, 5);
-  assert.equal(result.summary.updatePrimaryFields, 5);
-  assert.equal(result.summary.createFields, 94);
+  assert.equal(result.summary.renameTables, 0);
+  assert.equal(result.summary.updatePrimaryFields, 0);
+  assert.equal(result.summary.createFields, 0);
   assert.equal(result.summary.blockingManualActions, 0);
-  assert.equal(result.actions.filter((action) => action.kind === 'update_primary_field').length, 5);
-  assert.ok(result.reuseChecks.every((check) => check.primaryFieldResolution === 'rename_planned'));
+  assert.equal(result.actions.filter((action) => action.kind === 'update_primary_field').length, 0);
+  assert.equal(result.reuseChecks.length, 0);
 });
 
-test('fails readiness when any reuse source contains a record', async () => {
+test('legacy RAW record counts do not block the customer-facing install plan', async () => {
   const { schema, views } = await loadContract();
   const client = createPreviewClient({ nonEmptyTableId: 'tbl_ads' });
   const result = await previewSharedTableLarkSchema({ client, env: {}, schema, views });
-  assert.equal(result.readyForApplyAuthorization, false);
-  assert.ok(result.conflicts.some((conflict) => conflict.code === 'SHARED_TABLE_REUSE_SOURCE_NOT_EMPTY' && conflict.tableId === 'tbl_ads'));
-  assert.equal(result.summary.renameTables, 4);
+  assert.equal(result.readyForApplyAuthorization, true);
+  assert.equal(result.conflicts.length, 0);
+  assert.equal(result.summary.renameTables, 0);
   assert.equal(result.summary.recordWrites, 0);
 });
 
-test('detects duplicate target table instead of planning another table', async () => {
+test('legacy RAW names do not create duplicate-target conflicts', async () => {
   const { schema, views } = await loadContract();
   const client = createPreviewClient({
     additionalTables: [{ tableId: 'tbl_duplicate_target', name: 'RAW_Ads_Daily' }],
   });
   const result = await previewSharedTableLarkSchema({ client, env: {}, schema, views });
-  assert.equal(result.readyForApplyAuthorization, false);
-  assert.ok(result.conflicts.some((conflict) => conflict.code === 'AMBIGUOUS_TABLE_NAME'));
+  assert.equal(result.readyForApplyAuthorization, true);
+  assert.equal(result.conflicts.length, 0);
+  assert.equal(result.summary.createTables, 2);
 });
 
 test('generic schema preview now accepts a truly read-only planning client while apply still requires write methods', async () => {

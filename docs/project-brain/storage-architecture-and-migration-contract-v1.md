@@ -690,8 +690,8 @@ Custom range ต้องผ่าน Queue/lock/idempotency และ Materiali
 | `MKT_Report_Metric_Values` | Materialized KPI values | Same lifecycle as Report snapshot |
 | `MKT_Report_Top_Content` | Materialized Top Content | Same lifecycle as Report snapshot |
 | `MKT_Report_Top_Ads` | Materialized Top Campaign/Ad | Same lifecycle as Report snapshot |
-| Protected/Native RAW | External source contract | Our Worker must not delete or mutate |
-| Source-specific/Shared RAW | Ingestion evidence/staging | Exact retention requires connector lineage and D1 parity |
+| Protected/Native RAW (`RAW_TikTok_Creator_Videos`) | External source contract | Our Worker must not delete or mutate |
+| Non-TikTok Source-specific/Shared RAW | Legacy Integration Base cleanup only | Retire after exact backup, D1 parity and zero-consumer proof |
 
 `MKT_Content_Daily` และ `MKT_Ads_Daily` ยังห้ามลบ/หยุดเขียนใน Phase 1
 
@@ -763,41 +763,27 @@ RAW_TikTok_Creator_Videos
 ### YouTube
 
 ```text
-RAW_YouTube_Videos cumulative state
-→ Organic state/observations
-
-RAW_YouTube_Analytics_Daily period facts
-→ period fact contract
+D1 Organic state/observations/coverage
+D1 youtube_analytics_daily_facts period facts
+→ customer-facing MKT_Content / MKT_Content_Daily / MKT_Accounts
 → must not overwrite cumulative observations
 ```
 
 ### Meta Organic
 
 ```text
-RAW_Meta_Organic_Accounts / Content latest state
-RAW_Meta_Organic_Metrics Entity×Metric×Source time
-→ explicit cumulative/period/snapshot normalization
-→ D1 state/facts/coverage
+Provider payload → explicit cumulative/period/snapshot normalization
+→ D1 state/facts/coverage → customer-facing MKT tables
 ```
 
 ### Paid Ads
 
-ก่อน Connector เปิดต้องเลือกหนึ่งเส้นทางและบันทึกใน Source contract:
-
 ```text
-Provider-specific RAW → Shared RAW → Canonical
+Provider payload → D1 entities/daily facts/coverage → Canonical Lark
 ```
 
-หรือ
-
-```text
-Provider-specific RAW → Canonical
-Shared RAW not used by that connector
-```
-
-ห้าม Dual-write Provider RAW และ Shared RAW โดยไม่มี Stable-key parity/reconciliation contract
-
-Draft Google Ads PR `#17` ข้าม Shared RAW และเขียน Provider-specific RAW + Canonical โดยตรง จึงต้อง Rebase/Rebuild ให้ตรง Contract นี้ก่อน Merge
+ห้ามกลับมา Dual-write Lark RAW; legacy RAW tables ลบได้หลัง exact backup, D1 parity และ
+zero-consumer proof ตาม retirement contract วันที่ 2026-08-14 เท่านั้น.
 
 ## 9. Feature flags for migration
 

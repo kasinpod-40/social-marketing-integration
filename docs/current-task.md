@@ -28,6 +28,50 @@ and Production/DLQ redrive remain blocked. Detailed evidence is in
 `docs/project-brain/lark-automatic-weekly-executive-notification-2026-08-11.md` and
 `docs/tasks/lark-automatic-weekly-executive-notification-v1.md`.
 
+### Downstream storage authority override — 2026-08-14
+
+ผู้ใช้อนุมัติให้ยกเลิก non-TikTok Lark RAW mirrors แบบถาวรโดยไม่สร้าง feature switch. Active API
+Connector paths ต้องเก็บ source/history/coverage ใน D1 และเขียน Lark เฉพาะ customer-facing
+`MKT_*`/Report tables. `RAW_TikTok_Creator_Videos` ยังคงเป็น protected Lark Native source แบบ
+read-only. Repository implementation อยู่บน branch แยก `codex/remove-lark-raw-mirrors` เพื่อไม่ชน
+Facebook work และไม่ deploy/merge/ลบ Live table ระหว่าง Chatwoot operation ที่กำลังทำงาน.
+
+Exact cleanup scope มี 27 tables: Meta/shared Ads 5, YouTube 3, WooCommerce 9 และ Chatwoot 10.
+ก่อนลบ Live ต้อง backup/checksum, apply D1 migration 0020, fresh YouTube Owner Analytics catch-up,
+stable-key parity, reviewed deploy, fresh scheduled cycles และ zero-consumer proof. รายละเอียดและ exact
+inventory อยู่ที่ `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
+
+#### Implementation result
+
+```text
+NON_TIKTOK_LARK_RAW_WRITERS       = REMOVED_FROM_ACTIVE_CONTRACTS
+NON_TIKTOK_LARK_RAW_PROVISIONING  = REMOVED_FROM_ACTIVE_SCHEMA
+CHATWOOT_LARK_TARGETS             = 5_CUSTOMER_FACING_TABLES
+WOOCOMMERCE_LARK_TARGETS          = 5_CUSTOMER_FACING_TABLES
+YOUTUBE_LARK_RAW_TARGETS          = 0
+YOUTUBE_ANALYTICS_D1_MIGRATION    = ADDED_0020_NOT_APPLIED_REMOTE
+YOUTUBE_ANALYTICS_D1_STORE        = ADDED_IDEMPOTENT_NEWER_WINS
+TIKTOK_NATIVE_RAW                 = PROTECTED_READ_ONLY_UNCHANGED
+LIVE_TABLE_DELETION               = NOT_EXECUTED_REQUIRES_EXACT_ROLLOUT_GATE
+DEPLOY_MERGE_REMOTE_MUTATION       = PR_641_OPEN_NO_REMOTE_RUNTIME_MUTATION
+CI_INITIAL_RESULT                  = FAILED_STALE_RAW_EXPECTATIONS_24_TESTS
+CI_FIX                             = IMPLEMENTED_OPERATOR_AND_FIXTURE_CONTRACT_ALIGNMENT
+FULL_UNIT_TESTS                    = PASS_NPM_TEST
+WORKERS_RUNTIME_TESTS              = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS           = PASS_105_OF_105
+ARCHITECTURE_HYGIENE               = PASS
+DEPENDENCY_AUDIT                   = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                     = PASS_API_AND_SYNC
+DIFF_CHECK                         = PASS
+```
+
+PR #641 initial CI correctly exposed retained rollout/test contracts that still required legacy RAW table
+mappings: Meta parity expectations used 7/11 targets, WooCommerce expected 14 targets, YouTube dry-run
+preflight required three RAW mappings, and direct D1-first YouTube fixtures had no Analytics fact store.
+The focused correction removes only those stale requirements and supplies the new D1 Analytics fixture;
+it does not change Facebook metrics/provider logic. Focused tests 75/75, full `npm test`, report
+reliability 105/105, architecture/hygiene, audit 0 vulnerabilities, deploy dry-run and diff check pass.
+
 ## Objective
 
 เปิด Source runtime และ schedules ของ Integration Workspace ทุกช่องทางที่อนุมัติ เปิด Daily/Weekly Shared Report schedules ทำ fresh previous-completed-day catch-up และ materialize 1D/3D/7D/30D ให้ Dashboard พร้อมตรวจ โดยรักษา Notification runtime, automatic weekly notification, DLQ redrive และ Production เป็น OFF/BLOCKED

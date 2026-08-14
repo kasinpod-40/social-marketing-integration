@@ -6,11 +6,11 @@ import {
 } from './chatwoot-lark-metadata-readiness.js';
 
 export const CHATWOOT_FINAL_LARK_AUTO_MAPPING_CONTRACT_VERSION =
-  'chatwoot_final_lark_auto_mapping_v1';
+  'chatwoot_final_lark_auto_mapping_v2';
 
 /**
- * Resolve the 15 reviewed Chatwoot Lark table IDs from exact Blueprint names/aliases.
- * Raw Table IDs are returned only for an ignored private generated config and must never be logged.
+ * Resolve the active customer-facing Chatwoot Lark table IDs from exact Blueprint names/aliases.
+ * Table IDs are returned only for an ignored private generated config and must never be logged.
  */
 export function resolveChatwootFinalLarkAutoMappings(input = {}) {
   const env = requireObject(input.env, 'env');
@@ -52,9 +52,10 @@ export function resolveChatwootFinalLarkAutoMappings(input = {}) {
     });
   });
 
-  if (entries.length !== 15 || new Set(entries.map((entry) => entry.tableId)).size !== 15) {
+  const expectedCount = CHATWOOT_LARK_BLUEPRINT.length;
+  if (entries.length !== expectedCount || new Set(entries.map((entry) => entry.tableId)).size !== expectedCount) {
     throw autoMappingError(
-      'Chatwoot Lark discovery must resolve 15 unique tables',
+      `Chatwoot Lark discovery must resolve ${expectedCount} unique customer-facing tables`,
       'CHATWOOT_FINAL_UAT_LARK_MAPPING_DISCOVERY_INCOMPLETE',
       { resolvedTableCount: entries.length, uniqueTableCount: new Set(entries.map((entry) => entry.tableId)).size },
     );

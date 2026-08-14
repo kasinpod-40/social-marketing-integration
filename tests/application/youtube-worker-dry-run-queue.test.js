@@ -193,6 +193,13 @@ function createHarness(options = {}) {
         async assertSchemaReady() { return { ready: true }; },
       };
     },
+    getYouTubeAnalyticsDailyStore() {
+      return {
+        async assertSchemaReady() { return { ready: true }; },
+        async upsertMany() { return { rows: 0, written: 0, skipped: 0 }; },
+        async listStableKeysByScope() { return []; },
+      };
+    },
     getIncrementalStateStore() {
       return {
         async saveCheckpoint() { harness.checkpointWrites += 1; },

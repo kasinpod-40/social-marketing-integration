@@ -20,15 +20,15 @@ import {
 
 const T = CHATWOOT_LARK_FIELD_TYPE;
 
-test('Chatwoot Lark blueprint contains the exact 15 write targets and Stable keys', () => {
+test('Chatwoot Lark blueprint contains only the five customer-facing write targets and Stable keys', () => {
   assert.equal(validateChatwootLarkBlueprint(), true);
-  assert.equal(CHATWOOT_LARK_BLUEPRINT.length, 15);
+  assert.equal(CHATWOOT_LARK_BLUEPRINT.length, 5);
   assert.deepEqual(
     CHATWOOT_LARK_BLUEPRINT.map((table) => [table.key, table.primaryField]),
     CHATWOOT_LARK_WRITE_TARGETS.map((target) => [target.tableKey, target.keyField]),
   );
   assert.deepEqual(CHATWOOT_REQUIRED_LARK_TABLE_KEYS, CHATWOOT_LARK_WRITE_TARGETS.map((row) => row.tableKey));
-  const conversations = CHATWOOT_LARK_BLUEPRINT.find((table) => table.key === 'rawChatwootConversations');
+  const conversations = CHATWOOT_LARK_BLUEPRINT.find((table) => table.key === 'mktConversations');
   assert.ok(conversations.fields.some((field) => field.fieldName === 'reopen_count_delta'));
   assert.equal(conversations.fields.some((field) => field.fieldName === 'reopen_count'), false);
 });
@@ -62,8 +62,8 @@ test('Chatwoot Lark metadata target locks Integration Workspace and reads option
   assert.equal(target.environment, 'development');
   assert.equal(target.customerProfile, 'integration_workspace');
   assert.equal(target.customerKey, 'chemistry_k');
-  assert.equal(target.tableCount, 15);
-  assert.equal(target.tableRefs.rawChatwootAccounts.configuredTableId, 'tbl_rawChatwootAccounts');
+  assert.equal(target.tableCount, 5);
+  assert.equal(target.tableRefs.mktConversations.configuredTableId, 'tbl_mktConversations');
   assert.throws(
     () => loadChatwootLarkMetadataTarget({ ...env, MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin' }),
     (error) => error.code === 'CHATWOOT_LARK_METADATA_TARGET_INVALID',
@@ -83,16 +83,16 @@ test('complete matching Lark metadata is accepted', () => {
 
 test('missing table, env mapping, and non-primary field produce additive-only plan', () => {
   const fixture = completeFixture();
-  const missingTableKey = 'rawChatwootTeams';
-  fixture.remoteTables = fixture.remoteTables.filter((table) => table.name !== 'RAW_Chatwoot_Teams');
+  const missingTableKey = 'mktAgentDaily';
+  fixture.remoteTables = fixture.remoteTables.filter((table) => table.name !== 'MKT_Agent_Daily');
   fixture.tableRefs[missingTableKey] = {
     envName: LARK_TABLE_ENV[missingTableKey],
     configuredTableId: null,
   };
-  fixture.fieldsByKey.rawChatwootAgents = fixture.fieldsByKey.rawChatwootAgents
-    .filter((field) => field.fieldName !== 'availability_status');
-  fixture.tableRefs.rawChatwootLabels = {
-    envName: LARK_TABLE_ENV.rawChatwootLabels,
+  fixture.fieldsByKey.mktConversations = fixture.fieldsByKey.mktConversations
+    .filter((field) => field.fieldName !== 'status');
+  fixture.tableRefs.mktInboxDaily = {
+    envName: LARK_TABLE_ENV.mktInboxDaily,
     configuredTableId: null,
   };
 
@@ -105,11 +105,11 @@ test('missing table, env mapping, and non-primary field produce additive-only pl
   )));
   assert.ok(analysis.additivePlan.actions.some((action) => (
     action.action === 'create_field'
-      && action.tableKey === 'rawChatwootAgents'
-      && action.fieldName === 'availability_status'
+      && action.tableKey === 'mktConversations'
+      && action.fieldName === 'status'
   )));
   assert.ok(analysis.additivePlan.actions.some((action) => (
-    action.action === 'bind_table_env' && action.tableKey === 'rawChatwootLabels'
+    action.action === 'bind_table_env' && action.tableKey === 'mktInboxDaily'
   )));
   assert.equal(analysis.additivePlan.destructiveActions, 0);
   assert.equal(analysis.additivePlan.changeFieldTypeCount, 0);
@@ -117,9 +117,8 @@ test('missing table, env mapping, and non-primary field produce additive-only pl
 
 test('compatible existing transport types are accepted without type mutation', () => {
   const fixture = completeFixture();
-  replaceFieldType(fixture, 'rawChatwootInboxes', 'enable_auto_assignment', T.NUMBER);
-  replaceFieldType(fixture, 'rawChatwootInboxes', 'source_updated_at', T.NUMBER);
-  replaceFieldType(fixture, 'rawChatwootInboxes', 'channel_type', T.TEXT);
+  replaceFieldType(fixture, 'mktConversations', 'source_updated_at', T.NUMBER);
+  replaceFieldType(fixture, 'mktConversations', 'status', T.TEXT);
   const discovery = discoverChatwootLarkTables(fixture);
   const analysis = analyzeChatwootLarkMetadata({ discovery, fieldsByKey: fixture.fieldsByKey });
   assert.equal(analysis.decision, 'PASS_CHATWOOT_LARK_METADATA_READY');
@@ -128,30 +127,30 @@ test('compatible existing transport types are accepted without type mutation', (
 
 test('incompatible field type or non-primary Stable key blocks instead of planning mutation', () => {
   const fixture = completeFixture();
-  replaceFieldType(fixture, 'rawChatwootAccounts', 'external_account_id', T.TEXT);
-  fixture.fieldsByKey.rawChatwootAccounts = fixture.fieldsByKey.rawChatwootAccounts.map((field) => (
-    field.fieldName === 'account_state_key' ? { ...field, isPrimary: false } : field
+  replaceFieldType(fixture, 'mktConversations', 'external_conversation_id', T.TEXT);
+  fixture.fieldsByKey.mktConversations = fixture.fieldsByKey.mktConversations.map((field) => (
+    field.fieldName === 'conversation_key' ? { ...field, isPrimary: false } : field
   ));
   const discovery = discoverChatwootLarkTables(fixture);
   const analysis = analyzeChatwootLarkMetadata({ discovery, fieldsByKey: fixture.fieldsByKey });
   assert.equal(analysis.decision, 'CHATWOOT_LARK_TYPE_MISMATCH_BLOCKED');
   assert.equal(analysis.accepted, false);
   assert.equal(analysis.blockers.typeMismatches.length, 1);
-  assert.deepEqual(analysis.blockers.missingPrimaryKeys, ['rawChatwootAccounts.account_state_key:not_primary']);
+  assert.deepEqual(analysis.blockers.missingPrimaryKeys, ['mktConversations.conversation_key:not_primary']);
   assert.equal(analysis.additivePlan.changeFieldTypeCount, 0);
 });
 
 test('ambiguous table aliases fail closed', () => {
   const fixture = completeFixture();
-  fixture.tableRefs.rawChatwootAccounts = {
-    envName: LARK_TABLE_ENV.rawChatwootAccounts,
+  fixture.tableRefs.mktConversations = {
+    envName: LARK_TABLE_ENV.mktConversations,
     configuredTableId: null,
   };
-  fixture.remoteTables.push({ tableId: 'tbl_duplicate', name: '📞 RAW_Chatwoot_Accounts' });
+  fixture.remoteTables.push({ tableId: 'tbl_duplicate', name: '📞 MKT_Conversations' });
   const discovery = discoverChatwootLarkTables(fixture);
   const analysis = analyzeChatwootLarkMetadata({ discovery, fieldsByKey: fixture.fieldsByKey });
   assert.equal(analysis.decision, 'CHATWOOT_LARK_TABLE_AMBIGUOUS_BLOCKED');
-  assert.deepEqual(analysis.blockers.ambiguousTables, ['rawChatwootAccounts']);
+  assert.deepEqual(analysis.blockers.ambiguousTables, ['mktConversations']);
 });
 
 test('evidence persists no raw table IDs, credentials, or metadata payloads', () => {
@@ -166,7 +165,7 @@ test('evidence persists no raw table IDs, credentials, or metadata payloads', ()
     larkRequestCount: 16,
   });
   const text = JSON.stringify(evidence);
-  assert.equal(text.includes('tbl_rawChatwootAccounts'), false);
+  assert.equal(text.includes('tbl_mktConversations'), false);
   assert.equal(text.includes('LARK_APP_SECRET'), false);
   assert.equal(text.includes('access_token'), false);
   assert.equal(evidence.boundaries.larkMutationCount, 0);

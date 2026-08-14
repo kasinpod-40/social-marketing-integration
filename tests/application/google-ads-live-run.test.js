@@ -190,8 +190,7 @@ test('D1 write set uses Storage keys, date-only facts, null semantics and comple
 test('Lark write set matches Canonical Ads v2 fields and preserves source identities', () => {
   const run = assembleGoogleAdsLiveRun(liveEnvelopes());
   const writeSet = buildGoogleAdsLarkWriteSet({ run, syncRunId: 'sync-google-ads-1' });
-  assert.equal(writeSet.raw.entities.length, 5);
-  assert.equal(writeSet.raw.daily.length, 1);
+  assert.equal('raw' in writeSet, false);
   assert.equal(writeSet.canonical.accounts.length, 1);
   assertExactCanonicalFields(writeSet);
 
@@ -228,13 +227,7 @@ test('Lark write set matches Canonical Ads v2 fields and preserves source identi
   assert.equal(writeSet.canonical.daily[0].currency, 'THB');
   assert.equal(writeSet.canonical.daily[0].average_cpv, 0);
 
-  assert.equal(
-    writeSet.raw.daily[0].raw_ads_daily_key,
-    'google_ads:2222222222:campaign:10:2026-07-24:all:all',
-  );
-  assert.equal(writeSet.raw.daily[0].metric_date, BANGKOK_METRIC_DATE_EPOCH);
   assert.equal(writeSet.canonical.daily[0].metric_date, BANGKOK_METRIC_DATE_EPOCH);
-  assert.equal(JSON.parse(writeSet.raw.daily[0].source_payload_json).metricDate, '2026-07-24');
   assert.equal(JSON.stringify(writeSet).includes('RAW_Google'), false);
   assert.equal(JSON.stringify(writeSet).includes('refresh_token'), false);
 });

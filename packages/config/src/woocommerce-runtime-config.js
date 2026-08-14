@@ -12,15 +12,6 @@ const DEFAULT_REVISION_LOOKBACK_DAYS = 30;
 
 /** Config-owned logical keys; Business row/path contracts remain Application-owned. */
 export const WOOCOMMERCE_LARK_TABLE_KEYS = Object.freeze([
-  'rawCommerceStores',
-  'rawCommerceOrders',
-  'rawCommerceOrderItems',
-  'rawCommerceProducts',
-  'rawCommerceProductVariations',
-  'rawCommerceCategories',
-  'rawCommerceCustomers',
-  'rawCommerceCoupons',
-  'rawCommerceRefunds',
   'mktCommerceOrders',
   'mktCommerceProducts',
   'mktCommerceCustomers',

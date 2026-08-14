@@ -8,7 +8,7 @@ import {
 import { LARK_TABLE_ENV } from '../../packages/config/src/lark-table-config.js';
 import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 
-export const WOOCOMMERCE_FINAL_CONTRACT_VERSION = 'woocommerce_final_rollout_v1';
+export const WOOCOMMERCE_FINAL_CONTRACT_VERSION = 'woocommerce_final_rollout_v2';
 export const WOOCOMMERCE_FINAL_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_WOOCOMMERCE_FINAL_ROLLOUT',
   value: 'EXECUTE_WOOCOMMERCE_FINAL_ROLLOUT',
@@ -39,21 +39,13 @@ const EXACT_RESUME_ERROR_CODES = new Set([
   'LARK_PREFLIGHT_FAILED',
 ]);
 const TABLE_BINDINGS = Object.freeze([
-  tableBinding('rawCommerceStores', 'RAW_Commerce_Stores', 'raw_commerce_stores'),
-  tableBinding('rawCommerceOrders', 'RAW_Commerce_Orders', 'raw_commerce_orders'),
-  tableBinding('rawCommerceOrderItems', 'RAW_Commerce_Order_Items', 'raw_commerce_order_items'),
-  tableBinding('rawCommerceProducts', 'RAW_Commerce_Products', 'raw_commerce_products'),
-  tableBinding('rawCommerceProductVariations', 'RAW_Commerce_Product_Variations', 'raw_commerce_product_variations'),
-  tableBinding('rawCommerceCategories', 'RAW_Commerce_Categories', 'raw_commerce_categories'),
-  tableBinding('rawCommerceCustomers', 'RAW_Commerce_Customers', 'raw_commerce_customers'),
-  tableBinding('rawCommerceCoupons', 'RAW_Commerce_Coupons', 'raw_commerce_coupons'),
-  tableBinding('rawCommerceRefunds', 'RAW_Commerce_Refunds', 'raw_commerce_refunds'),
   tableBinding('mktCommerceOrders', 'MKT_Commerce_Orders', 'commerce_order_state'),
   tableBinding('mktCommerceProducts', 'MKT_Commerce_Products', 'commerce_product_state'),
   tableBinding('mktCommerceCustomers', 'MKT_Commerce_Customers', 'commerce_customer_aggregates'),
   tableBinding('mktCommerceDaily', 'MKT_Commerce_Daily', 'commerce_daily_sales_facts'),
   tableBinding('mktCommerceProductDaily', 'MKT_Commerce_Product_Daily', 'commerce_product_daily_facts'),
 ]);
+const D1_TABLES = Object.freeze(Object.keys(WOOCOMMERCE_D1_TABLE_CONTRACTS));
 
 export function parseWooCommerceFinalArgs(args = []) {
   let execute = false;
@@ -273,7 +265,7 @@ export function buildWooCommerceFinalSnapshotSql(input = {}) {
   const operationId = sqlText(requireOperationId(input.operationId));
   const workKey = sqlText(`woocommerce:${requireOperationId(input.operationId)}`);
   const syncRunId = sqlText(`woocommerce:${requireOperationId(input.operationId)}`);
-  const counts = TABLE_BINDINGS.map(({ d1Table }) => (
+  const counts = D1_TABLES.map((d1Table) => (
     `(SELECT COUNT(*) FROM ${d1Table} WHERE account_key = ${accountKey}) AS ${d1Table}`
   )).join(', ');
   return compactSql(`
@@ -307,7 +299,7 @@ export function buildWooCommerceWatermarkSql(accountKey) {
 }
 
 export function normalizeWooCommerceFinalSnapshot(value = {}) {
-  const counts = Object.fromEntries(TABLE_BINDINGS.map(({ d1Table }) => [
+  const counts = Object.fromEntries(D1_TABLES.map((d1Table) => [
     d1Table,
     count(value[d1Table] ?? value.counts?.[d1Table]),
   ]));
@@ -498,6 +490,7 @@ export function safeWooCommerceFinalEvidence(value) {
 }
 export function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
 export function listWooCommerceTableBindings() { return TABLE_BINDINGS; }
+export function listWooCommerceD1Tables() { return D1_TABLES; }
 
 function tableBinding(tableKey, tableName, d1Table) { return Object.freeze({ tableKey, tableName, d1Table }); }
 function createLarkFieldContract(binding, fieldName, primary) {

@@ -21,8 +21,6 @@ import {
 } from './worker-runtime-support.js';
 
 const GOOGLE_ADS_TABLE_KEYS = Object.freeze([
-  'rawAdsEntities',
-  'rawAdsDaily',
   'mktAdsAccounts',
   'mktAdsCampaigns',
   'mktAdsAdGroups',
@@ -107,8 +105,6 @@ export async function processGoogleAdsManualUatJob(input = {}) {
         250,
       ),
       tables: {
-        rawAdsEntities: tableIds.rawAdsEntities,
-        rawAdsDaily: tableIds.rawAdsDaily,
         mktAdsAccounts: tableIds.mktAdsAccounts,
         mktAdsCampaigns: tableIds.mktAdsCampaigns,
         mktAdsAdGroups: tableIds.mktAdsAdGroups,
