@@ -960,6 +960,21 @@ for Likes/Comments and fresh 1D/3D/7D/30D materialization. Retained `r1`/`r2` id
 replayed or redriven. Detailed contract:
 `docs/project-brain/facebook-reactions-comments-live-2026-08-12.md`.
 
+### Downstream Facebook live evidence — 2026-08-15
+
+The prior token blocker is superseded by fresh Page-token Business evidence. Scheduled operation
+`facebook-scheduled-20260814` completed 91/91 full-inventory Coverage with zero failed rows/new alerts/DLQ.
+D1 and GET-only Lark stable-key parity is exact: Views 1,584,330, Likes 16,069, Comments 70 and Shares
+2,439. No further customer token rotation is required for the current Integration Workspace.
+
+Fresh post-source Dashboard jobs exposed a separate D1 reader regression: three stale Content identities
+outside the authoritative 91-item inventory contributed old Views and null Likes/Comments. The generic
+reader now scopes current/comparison/baseline observations only when exact same-period complete
+`full_inventory` Coverage and its observed entity set agree; otherwise it preserves strict null/N/A
+semantics. Reviewed CI, merged deployment, fresh 1D/3D/7D/30D Dashboard parity and Facebook retention
+defer removal remain the closeout sequence. RAW 27-table deletion remains outside this workstream and waits
+for its scheduled-soak authority.
+
 ## Permanent safety rules
 
 - Data model before Connector;
