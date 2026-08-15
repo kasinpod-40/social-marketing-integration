@@ -808,6 +808,32 @@ test('beforeChunk failure after a confirmed update chunk preserves partial progr
   assert.equal(guardCalls, 2);
 });
 
+test('batch delete sends exact record IDs in bounded chunks and confirms the count', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      const body = JSON.parse(options.body);
+      requests.push(body.records);
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { records: body.records.map((recordId) => ({ record_id: recordId })) },
+      }), { status: 200 });
+    },
+  });
+  const result = await client.batchDeleteRecords({
+    tableId: 'tbl',
+    recordIds: Array.from({ length: 101 }, (_, index) => `rec-${index}`),
+  });
+  assert.equal(result.deleted, 101);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].length, 100);
+  assert.deepEqual(requests[1], ['rec-100']);
+});
+
 test('lists and normalizes tables in the configured Base', async () => {
   const client = new LarkBitableClient({
     appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,

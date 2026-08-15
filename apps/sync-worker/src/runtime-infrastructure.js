@@ -65,6 +65,8 @@ export function createInfrastructure(env) {
   };
 
   return Object.freeze({
+    getLarkBitableClient() { return getClient(); },
+    getStateDb() { return env?.MKT_STATE_DB; },
     get repository() { return getRepository(); },
     get syncEngine() { return getSyncEngine(); },
     getIncrementalStateStore() {

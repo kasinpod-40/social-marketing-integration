@@ -23,6 +23,7 @@ export const JOB_TYPES = Object.freeze({
   DAILY_REPORT_GENERATE: 'report.daily.generate',
   WEEKLY_REPORT_GENERATE: 'report.weekly.generate',
   REPORT_MATERIALIZATION_GENERATE: 'report.materialization.generate',
+  MKT_CONTENT_DAILY_RETENTION: 'lark.mkt-content-daily.retention',
   LARK_NOTIFICATION_SEND: 'lark.notification.send',
   DEAD_LETTER_REDRIVE: 'system.dead-letter.redrive',
   RELIABILITY_MIRROR_DELIVER: 'system.reliability-mirror.deliver',
@@ -36,6 +37,7 @@ export const JOB_TRIGGERS = Object.freeze({
   DASHBOARD_PRESET: 'dashboard_preset',
   DASHBOARD_CUSTOM_RANGE: 'dashboard_custom_range',
   DASHBOARD_SCHEDULED: 'dashboard_scheduled',
+  MKT_CONTENT_DAILY_RETENTION_SCHEDULED: 'mkt_content_daily_retention_scheduled',
   YOUTUBE_WORKER_DRY_RUN: 'youtube_worker_dry_run',
   YOUTUBE_LARK_FULL_SYNC_UAT: 'youtube_lark_full_sync_uat',
   WOOCOMMERCE_MANUAL_UAT: 'manual_uat',
@@ -183,6 +185,12 @@ const JOB_CATALOG = Object.freeze({
       JOB_TRIGGERS.DASHBOARD_CUSTOM_RANGE,
       JOB_TRIGGERS.DASHBOARD_SCHEDULED,
     ],
+  }),
+  [JOB_TYPES.MKT_CONTENT_DAILY_RETENTION]: freezeJob({
+    type: JOB_TYPES.MKT_CONTENT_DAILY_RETENTION,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: null,
+    allowedTriggers: [JOB_TRIGGERS.MKT_CONTENT_DAILY_RETENTION_SCHEDULED],
   }),
   [JOB_TYPES.LARK_NOTIFICATION_SEND]: freezeJob({
     type: JOB_TYPES.LARK_NOTIFICATION_SEND,

@@ -7,6 +7,7 @@ import {
 import { JOB_TRIGGERS, JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
 import { createStableQueueOperationBody } from '../../../packages/application/src/jobs/queue-operation.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
+import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import { readMetaAdAccounts } from '../../../packages/config/src/meta-token-connection-config.js';
 import { createDashboardReportSettingKey } from '../../../packages/config/src/report-settings.seed.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
@@ -18,6 +19,7 @@ import {
 const DEFAULT_FACEBOOK_SYNC_TIME = '07:30';
 const DEFAULT_INSTAGRAM_SYNC_TIME = '07:35';
 const DEFAULT_DAILY_REPORT_TIME = '08:10';
+const DEFAULT_CONTENT_DAILY_RETENTION_TIME = '08:05';
 const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
 const DEFAULT_YOUTUBE_ANALYTICS_TIME = '07:50';
@@ -75,6 +77,9 @@ export function buildScheduledJobs(input = {}) {
   const postProcessReportEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED, false)
     : false;
+  const contentDailyRetentionEnabled = includePrimaryJobs
+    ? readStorageRuntimeConfig(env).larkDailyRetentionEnabled
+    : false;
   if (tiktokEnabled && !readBoolean(env.MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED, false)) {
     throw permanentError(
       'TikTok schedule requires watermark admission instead of blind Business sync',
@@ -131,6 +136,7 @@ export function buildScheduledJobs(input = {}) {
     || chatwootEnabled
     || dailyEnabled
     || weeklyEnabled
+    || contentDailyRetentionEnabled
     || youtubeEnabled;
   const timeZone = needsLocalSchedule
     ? requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE')
@@ -138,6 +144,24 @@ export function buildScheduledJobs(input = {}) {
   const local = needsLocalSchedule ? readZonedScheduleParts(requestedAt, timeZone) : null;
   const completedPeriodEnd = local ? addDaysDateOnly(local.date, -1) : null;
   const jobs = [];
+
+  if (includePrimaryJobs && contentDailyRetentionEnabled) {
+    const retentionTime = readScheduleTime(
+      env.MKT_CONTENT_DAILY_RETENTION_TIME ?? DEFAULT_CONTENT_DAILY_RETENTION_TIME,
+      'MKT_CONTENT_DAILY_RETENTION_TIME',
+    );
+    if (local.time === retentionTime) {
+      jobs.push(createStableQueueOperationBody({
+        schemaVersion: 1,
+        type: JOB_TYPES.MKT_CONTENT_DAILY_RETENTION,
+        trigger: JOB_TRIGGERS.MKT_CONTENT_DAILY_RETENTION_SCHEDULED,
+        deferredPlatforms: readDeferredPlatforms(env.MKT_CONTENT_DAILY_RETENTION_DEFERRED_PLATFORMS),
+      }, {
+        operationId: `mkt-content-daily-retention-${local.date.replaceAll('-', '')}`,
+        originalRequestedAt: Date.parse(requestedAt),
+      }));
+    }
+  }
 
   if (includePrimaryJobs && tiktokEnabled) {
     jobs.push(Object.freeze({
@@ -498,6 +522,18 @@ function readScheduleWeekday(value, fieldName) {
 function optionalJobText(value) {
   if (value === null || value === undefined || value === '') return null;
   return requireJobText(value, 'event.cron');
+}
+
+function readDeferredPlatforms(value) {
+  if (value === null || value === undefined || value === '') return Object.freeze([]);
+  const platforms = String(value).split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (platforms.some((platform) => !/^[a-z][a-z0-9_-]*$/u.test(platform))) {
+    throw permanentError('MKT_CONTENT_DAILY_RETENTION_DEFERRED_PLATFORMS is invalid', {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName: 'MKT_CONTENT_DAILY_RETENTION_DEFERRED_PLATFORMS' },
+    });
+  }
+  return Object.freeze([...new Set(platforms)].sort());
 }
 
 function readBoundedPositiveInteger(value, fallback, maximum, fieldName) {
