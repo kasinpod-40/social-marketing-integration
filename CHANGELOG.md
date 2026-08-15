@@ -15,14 +15,16 @@
 
 - Added strict page-1/unpaginated and row/response bounds for updated-within discovery; no Provider payload,
   Message content or PII is persisted in durable state.
-- No Provider request, Queue send, replay/redrive, D1/Lark mutation, schedule change, deployment or
-  Production action occurred. The active Daily continuation must finish before GET-only preflight/deploy.
+- The rollout sent no Queue/manual Chatwoot run, replay/redrive, schedule or secret change. The prior Daily
+  continuation completed before the GET-only Provider preflight and reviewed deployment.
 - Focused Chatwoot regression passed `222/222`; full unit passed `3015/3015`; Workers runtime passed
   `18/18`; report reliability passed `105/105`; architecture/hygiene, zero-vulnerability audit and API/Sync
   deploy dry-runs passed.
 - The prior Daily operation reached `completed` with zero failed units, exact alerts, DLQ and active locks.
-  A GET-only tenant preflight returned 51/51 unique changed Conversations in one unpaginated request;
-  merge/deployment and fresh scheduled validation remain separately gated.
+  A GET-only tenant preflight returned 51/51 unique changed Conversations in one unpaginated request.
+- PR #643 merged at `77f9c92efe36a6b36d6eed66bffc04e90326fe10`; Integration Worker version
+  `9d768d22-4f96-48aa-87d7-f1dd86c991a6` reached 100% traffic. Immediate readback found zero new alerts,
+  DLQ entries, active locks and manual Chatwoot Work. Fresh scheduled Daily validation remains pending.
 
 ## Unreleased — Non-TikTok Lark RAW Retirement — 2026-08-14
 

@@ -30,9 +30,8 @@ progress จะ migrate เป็น `stable_identity_two_pass`; เฉพาะ
 
 ## Safety and rollout
 
-- ไม่มี Webhook, Queue admission, replay/redrive, D1/Lark mutation, schedule change หรือ deployment ใน
-  Repository implementation นี้.
-- Current active Daily continuation ต้องจบด้วย deployed code เดิมก่อน. ห้าม deploy patch นี้กลาง operation.
+- ไม่มี Webhook, Queue admission, replay/redrive, manual Chatwoot run, schedule หรือ secret change ใน rollout.
+- Daily continuation เดิมจบด้วย deployed code เดิมก่อน deploy patch จึงไม่มีการเปลี่ยน strategy กลางงาน.
 - ก่อน deploy ต้องทำ GET-only Provider preflight ให้ยืนยันว่า tenant รองรับ `updated_within` และคืน bounded
   unpaginated result จากนั้นจึง reviewed merge/deploy และรอ fresh scheduled Daily evidence.
 - Post-deploy acceptance: one Conversation discovery request, detail readsเฉพาะ changed IDs, exact
@@ -45,6 +44,18 @@ active locks เป็นศูนย์ ได้เรียก Provider GET-o
 คืน 51 rows / 51 unique numeric IDs, duplicates 0, `hasMore=false`, total count 51 และ transport attempt 1.
 Preflight ไม่ส่ง Queue, ไม่เขียน D1/Lark, ไม่เปลี่ยน schedule/secret และไม่ deploy.
 
+## Reviewed merge and deployment
+
+PR #643 ผ่าน Branch Verification และ merge เข้า `main` ที่
+`77f9c92efe36a6b36d6eed66bffc04e90326fe10`. Wrangler real-config dry-run ผ่านก่อน deploy.
+Integration Worker version `9d768d22-4f96-48aa-87d7-f1dd86c991a6` รับ traffic 100% โดยใช้ deployment
+message ที่ผูกกับ exact merge SHA. Config, secrets, schedules และ Queue topology เดิมไม่ถูกเปลี่ยน.
+
+Immediate D1 readback หลัง deploy พบ system alert ใหม่ 0, DLQ ใหม่ 0, active lock 0 และไม่มี Chatwoot
+Work ที่ถูกสร้างหรืออัปเดตหลัง deploy จึงยืนยันว่า rollout ไม่ได้ใช้ manual run เป็นหลักฐาน. Final live
+acceptance ต้องรอ fresh scheduled Daily operation รอบถัดไปและตรวจ one-request discovery, exact detail
+selection, checkpoint generation, alert/DLQ และ D1/Lark parity ตาม contract เดิม.
+
 ```text
 DAILY_DISCOVERY          = UPDATED_WITHIN_ONCE
 DAILY_WINDOW             = IMMUTABLE_ROLLING_3_DAYS_PLUS_5_MIN_CLOCK_SKEW
@@ -53,6 +64,8 @@ LEGACY_ACTIVE_STATE      = PRESERVE_EXISTING_TWO_PASS_STRATEGY
 WEBHOOK_REQUIRED         = NO
 CURRENT_ACTIVE_OPERATION = TERMINAL_COMPLETED
 TENANT_PREFLIGHT         = PASS_51_UNIQUE_ONE_REQUEST_UNPAGINATED
-MERGE_DEPLOY             = PENDING_EXPLICIT_AUTHORIZATION
+MERGE_DEPLOY             = PR_643_MERGED_WORKER_9D768D22_100_PERCENT
+POST_DEPLOY_READBACK     = PASS_ALERT_0_DLQ_0_LOCK_0_MANUAL_WORK_0
+SCHEDULED_VALIDATION     = PENDING_NEXT_DAILY_0745_ASIA_BANGKOK
 PRODUCTION               = BLOCKED
 ```
