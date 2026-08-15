@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — Integration Non-wait Closeout — 2026-08-15
+
+### Added
+
+- Added an exact-confirmation TikTok alert closeout operator pinned to two `SYNC_PARTIAL_WRITE` alerts whose
+  original run/work and two newer generations all completed successfully; no broad alert mutation is possible.
+- Added a SELECT-only D1 capacity audit with reviewed table counts, index inventory, 14-day growth rates and
+  90-day/1-year/3-year projections.
+- Added a GET-only `MKT_Content_Daily` bounded-retention preview that keeps the latest row for every Content,
+  preserves malformed rows fail-closed, writes private backup/exact-key evidence and performs no Live deletion.
+- Added a local Storage Foundation 10x/100x load test and a customer-owned Production cutover runbook.
+
+### Evidence and safety
+
+- Closed exactly two TikTok partial-write alerts as `resolved_by_new_generation`; Queue, replay, redrive, DLQ,
+  Worker, schedule and Business-data actions were zero. Recent open alert/DLQ since 2026-08-15 are zero.
+- D1 is 151.74 MiB across 70 tables/175,855 rows; linear 14-day-rate estimates are 609.35 MiB at one year and
+  1.49 GiB at three years. The existing private D1/Lark backups revalidated and a local restore/integrity/
+  Migration-0020 drill passed.
+- 100x load evidence used 1,208,200 Organic observations and 823,800 Ads daily facts; indexed range queries
+  completed in 873.68 ms and 162.99 ms with SQLite integrity `ok`.
+- Live Lark preview found 19,840 `MKT_Content_Daily` rows and planned retain 9,038/delete 10,802 using a
+  four-completed-day effective window plus latest-per-Content. Deletion remains blocked until Facebook fresh
+  parity and pre-delete D1/Lark/Dashboard reconciliation.
+- Repository gates passed: focused `15/15`, full unit `3030/3030`, Workers runtime `18/18`, Report
+  reliability `105/105`, architecture/hygiene, zero-vulnerability audit, deploy dry-run and diff check.
+
 ## Unreleased — Chatwoot Daily Updated-within Incremental — 2026-08-15
 
 ### Changed

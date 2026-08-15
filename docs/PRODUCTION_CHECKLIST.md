@@ -47,11 +47,11 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Input/Destination duplicate และ Destination identity conflict มี Guard
 - [x] Empty Multi-select/URL shape ไม่สร้าง False update
 - [x] Plan เดิม Execute ซ้ำไม่ได้
-- [ ] Benchmark/Load test เมื่อข้อมูลเพิ่ม 10x และ 100x (ไม่ Block DEV/Staging deploy รอบแรก)
+- [x] Benchmark/Load test 10x/100x ผ่านบน Storage Foundation จริง: 100x = 1,208,200 Organic observations + 823,800 Ads daily rows, indexed range query 873.68/162.99 ms และ integrity `ok` (2026-08-15)
 - [x] D1 cursor/fingerprint Incremental processing พร้อม Full reconciliation 24 ชั่วโมง (RAW traversal ยัง Full เพื่อ Safety)
 - [x] Distributed lease lock บน D1 พร้อม owner-scoped renewal/heartbeat ก่อนเพิ่ม Queue concurrency
 - [x] Persisted `MKT_Sync_Log`, `sync_run_id`, DLQ alert และ Reconciliation summary
-- [ ] ยืนยัน Lark Cell-clear contract และเพิ่ม Classification field clearing โดยไม่ลบค่าผิด Field
+- [x] ยืนยัน Lark Cell-clear/Classification ownership: null/blank ล้าง protected fields ไม่ได้, manual classification/note ถูก preserve และ non-content tables ไม่ถูก policy ครอบ (focused regression ผ่าน)
 
 ### Test และ Release package
 
