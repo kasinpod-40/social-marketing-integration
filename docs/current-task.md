@@ -125,16 +125,21 @@ DEPLOY_DRY_RUN                      = PASS_API_AND_SYNC
 DIFF_CHECK                          = PASS
 CURRENT_DAILY_20260814              = COMPLETED_FAILED_0_ALERT_0_DLQ_0_LOCK_0
 REMOTE_PROVIDER_PREFLIGHT           = PASS_GET_ONLY_51_ROWS_51_UNIQUE_ONE_REQUEST
-MERGE_DEPLOY                        = NOT_AUTHORIZED_NOT_RUN
+MERGE_DEPLOY                        = PR_643_MERGED_WORKER_9D768D22_100_PERCENT
+POST_DEPLOY_READBACK                = PASS_ALERT_0_DLQ_0_LOCK_0_MANUAL_WORK_0
+NEXT_REQUIRED_EVIDENCE              = FRESH_SCHEDULED_DAILY_INCREMENTAL
 CURRENT_ACTIVE_CONTINUATION         = TERMINAL_COMPLETED
 PRODUCTION                          = BLOCKED
 ```
 
 Exact Chatwoot continuation เดิมจบ `completed` แล้ว โดย failed units, exact open alerts, DLQ และ active
 locks เป็นศูนย์. GET-only tenant preflight ของ rolling 3 days + 5 minutes ผ่านด้วย one request: 51 rows,
-51 unique IDs, duplicate 0 และ `hasMore=false`. ขั้นถัดไปคือ reviewed merge/deploy และตรวจ fresh scheduled
-Daily ว่า list discovery เกิดครั้งเดียว, checkpoint generation ตรง, zero new exact alert/DLQ และ D1/Lark
-parity 15 targets. รายละเอียด:
+51 unique IDs, duplicate 0 และ `hasMore=false`. PR #643 ผ่าน Branch Verification และ merge เข้า `main`
+ที่ `77f9c92efe36a6b36d6eed66bffc04e90326fe10`; Integration Worker version
+`9d768d22-4f96-48aa-87d7-f1dd86c991a6` รับ traffic 100%. Post-deploy readback พบ alert ใหม่ 0,
+DLQ ใหม่ 0, active lock 0 และไม่มี Chatwoot Work ที่ถูกส่งเองหลัง deploy. ขั้นถัดไปเหลือเฉพาะ fresh
+scheduled Daily ว่า list discovery เกิดครั้งเดียว, checkpoint generation ตรง, zero new exact alert/DLQ
+และ D1/Lark parity 15 targets. รายละเอียด:
 `docs/project-brain/chatwoot-daily-updated-within-incremental-2026-08-15.md`.
 
 ## Objective

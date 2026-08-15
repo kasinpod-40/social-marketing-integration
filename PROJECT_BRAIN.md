@@ -6,8 +6,10 @@ Daily ไม่ใช้ full-account stable-ID two-pass discovery อีกต�
 `updated_within` ครั้งเดียวด้วย immutable rolling 3-day window + 5-minute clock-skew overlap, deduplicate
 stable IDs และอ่าน exact detail เฉพาะ Conversation ที่เปลี่ยน. Initial/Reconciliation และ legacy state ที่
 เริ่ม scan ไปแล้วคง two-pass path เดิม. Daily operation เดิมจบ completed โดย failed/alert/DLQ/lock เป็น
-ศูนย์ และ GET-only tenant preflight ผ่าน 51/51 unique rows ใน one unpaginated request. Reviewed
-merge/deploy และ fresh scheduled evidence ยังเป็น rollout gates.
+ศูนย์ และ GET-only tenant preflight ผ่าน 51/51 unique rows ใน one unpaginated request. PR #643 merge
+เข้า `main` ที่ `77f9c92efe36a6b36d6eed66bffc04e90326fe10`; Integration Worker version
+`9d768d22-4f96-48aa-87d7-f1dd86c991a6` รับ traffic 100% และ post-deploy readback พบ alert/DLQ/lock/
+manual Chatwoot Work ใหม่เป็นศูนย์. Rollout gate ที่เหลือคือ fresh scheduled Daily evidence เท่านั้น.
 รายละเอียดอยู่ที่
 `docs/project-brain/chatwoot-daily-updated-within-incremental-2026-08-15.md`.
 
