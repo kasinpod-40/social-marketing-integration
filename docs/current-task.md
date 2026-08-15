@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                         = NON_WAIT_WORK_CLOSED_EXTERNAL_AND_SCHEDULE_GATES_REMAIN
-CURRENT_PROGRAM                     = INTEGRATION_FINAL_NON_WAIT_CLOSEOUT_20260815
-BRANCH                              = codex/integration-nonwait-closeout
-EXACT_BASE                          = adf3c05da863c04397a8d1d44f8adda9dfbf643b
+TASK_STATUS                         = FACEBOOK_DEFERRED_TIME_BASED_GATES_REMAIN
+CURRENT_PROGRAM                     = INTEGRATION_FINAL_CLOSEOUT_WITH_FACEBOOK_DEFERRED_20260815
+BRANCH                              = codex/non-facebook-final-closeout-docs
+EXACT_BASE                          = 113503171839917470a2fc496648eea87a7a5248
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = ENABLED_RUNTIME_FOR_AUTOMATIC_WEEKLY
@@ -162,10 +162,12 @@ D1_PRIVATE_BACKUP_CHECKSUM         = PASS_SHA256_7A828BF0_FULL
 D1_LOCAL_RESTORE_DRILL             = PASS_INTEGRITY_OK_70_TABLES_MIGRATION_0020_REAPPLIED
 LARK_RAW_BACKUP_REVALIDATION       = PASS_27_TABLES_20072_RECORDS
 STORAGE_LOAD_10X_100X              = PASS_INDEXED_QUERIES_INTEGRITY_OK
-MKT_CONTENT_DAILY_RECORDS          = 19840
-MKT_CONTENT_DAILY_BOUNDED_PREVIEW  = RETAIN_9038_DELETE_CANDIDATES_10802
+MKT_CONTENT_DAILY_RECORDS          = 9291_AFTER_EXACT_LIVE_RETENTION
+MKT_CONTENT_DAILY_BOUNDED_PREVIEW  = RETAIN_9291_DELETE_CANDIDATES_10649
 MKT_CONTENT_DAILY_EFFECTIVE_WINDOW = 4_COMPLETED_DAYS_PLUS_LATEST_EVERY_CONTENT
-MKT_CONTENT_DAILY_LIVE_DELETE      = NOT_RUN_WAIT_FACEBOOK_AND_PREDELETE_PARITY
+MKT_CONTENT_DAILY_LIVE_DELETE      = PASS_10649_EXACT_NON_FACEBOOK_RECORDS
+MKT_CONTENT_DAILY_FACEBOOK         = DEFERRED_PROTECTED_425_OF_425
+MKT_CONTENT_DAILY_AUTO_RETENTION   = DEPLOYED_DAILY_0805_FACEBOOK_DEFERRED
 CUSTOMER_PRODUCTION_RUNBOOK        = PREPARED_NO_REMOTE_PROVISIONING
 FOCUSED_NON_WAIT_TESTS             = PASS_15_OF_15
 FULL_UNIT_TESTS                    = PASS_3030_OF_3030
@@ -189,14 +191,21 @@ D1 capacity audit เป็น SELECT-only และเก็บ evidence privat
 `PRAGMA integrity_check=ok`. Backup ก่อน Migration 0020 restore เข้า SQLite local ผ่าน 70 tables แล้ว
 apply Migration 0020 ซ้ำผ่าน; Remote D1 ไม่ถูกแก้.
 
-Lark GET-only retention preview สำรอง `MKT_Content_Daily` 19,840 แถวพร้อม checksum และสร้าง exact key
-list private. นโยบาย max 30 days ถูกลดอัตโนมัติเป็น 4 completed days เพื่อไม่เกิน 10,000 rows โดยเก็บ
-latest row ของ Content ทั้ง 3,008 identities; plan retain 9,038/delete candidate 10,802. ยังห้ามลบจริงก่อน
-Facebook fresh metrics/D1↔Lark/Dashboard parity และ pre-delete readback ผ่าน.
+หลัง YouTube scheduled write ยืนยัน `RecordExceedLimit`, fresh preflight อ่าน `MKT_Content_Daily` 19,940
+แถวและแยก Facebook ออกจาก delete scope ทั้งหมด. Reviewed operator สำรอง full Records/exact candidates/D1
+authority แบบ private พร้อม checksums แล้วลบ exact non-Facebook 10,649 แถว: TikTok 8,138 และ YouTube
+2,511. Readback เหลือ 9,291 แถวตรง plan; Facebook 425/425 และ Instagram 37/37 คงเดิม, TikTok Native RAW
+identity/source fingerprint ไม่เปลี่ยน, D1/Queue/Worker mutation เป็นศูนย์.
 
-งานที่เหลือซึ่งต้องรอจริง: Facebook token `pages_read_user_content` + fresh run, fresh post-deploy scheduled
-cycles ก่อน RAW retirement, Automatic Weekly วันจันทร์ 08:30, MKT_Content_Daily live retention หลัง
-Facebook parity และ customer-owned Production assets. Runbook อยู่ที่
+PR #647 เพิ่ม permanent retention job เวลา 08:05 ก่อน Daily Report 08:10. Job ใช้ stable Queue identity,
+หยุดเมื่อมี active sync lock, ตรวจซ้ำก่อนทุก exact-ID batch, เก็บ latest ทุก Content และ defer Facebook
+จน credential gate ผ่าน. Worker version `3d9c363d-d1fc-4cfe-b275-9fa75b0a6ca1` รับ traffic 100%; immediate
+post-deploy alert/DLQ/lock/manual-retention work เป็นศูนย์. รายละเอียด:
+`docs/project-brain/mkt-content-daily-retention-live-closeout-2026-08-15.md`.
+
+งานที่เหลือซึ่งต้องรอจริง: Facebook token `pages_read_user_content` + fresh run (แยกจาก closeout นี้), fresh
+post-deploy scheduled cycles รวม scheduled retention รอบแรกก่อน RAW retirement, Automatic Weekly วันจันทร์
+08:30 และ customer-owned Production assets. Runbook อยู่ที่
 `docs/runbooks/customer-owned-production-cutover-v1.md`.
 
 ## Objective
