@@ -28,9 +28,10 @@ AGENTS.md
 Non-wait readiness work on 2026-08-15 closed two exact TikTok partial-write alerts, completed D1
 capacity/10x/100x/restore evidence and closed the `MKT_Content_Daily` capacity incident. Exact private backup
 preceded deletion of 10,649 non-Facebook rows; readback retained 9,291 rows with Facebook 425/425 protected.
-Permanent bounded retention now runs at 08:05 before Daily Report and stops around active sync locks. Remaining
-gates are Facebook customer permission/fresh parity, fresh scheduled soak including the first automatic
-retention cycle, Monday Automatic Weekly evidence and customer-owned Production provisioning. See
+Permanent bounded retention now runs at 08:05 before Daily Report and stops around active sync locks. Facebook
+Page-token capability and D1/Lark/Dashboard Likes/Comments parity are proven; its 07:30 source schedule is active
+and the retention defer is removed. Remaining gates are the first automatic Facebook/retention cycle,
+Monday Automatic Weekly evidence, RAW retirement and customer-owned Production provisioning. See
 `docs/current-task.md`.
 
 Repository runtime รองรับ Shared Report schedule สำหรับ Facebook, Instagram, TikTok, YouTube,
@@ -424,7 +425,7 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 | --- | --- | --- |
 | TikTok Organic | Draft PR #65 code complete and verified; protected Native RAW retained | Separate read-only-first rollout for Migration 0016, audit, one watermark admission and parity |
 | YouTube Organic | Runtime foundation exists on developer source | Separate parallel Workstream |
-| Facebook Organic | July D1/Lark parity accepted | All Meta completion Workstream; retained operation is replay-protected |
+| Facebook Organic | Live source and Dashboard Likes/Comments parity accepted; schedule active | Verify next 07:30 sync and 08:05 retention; retained operations remain replay-protected |
 | Instagram Organic | July D1/Lark parity accepted | All Meta completion Workstream; Worker restored all-false |
 | Meta Ads | July activity-scoped implementation under Gate | D1 keeps detail; Lark keeps activity entities and Shared Reports only |
 | Google Ads | Signed delivery and LIVE UAT completed / safely closed | No new implementation unless a separate incident or enhancement is approved |

@@ -791,8 +791,27 @@ ARCHITECTURE_HYGIENE                 = PASS
 DEPENDENCY_AUDIT                     = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                       = PASS_API_AND_SYNC
 DIFF_CHECK                           = PASS
-REVIEWED_PR_CI                       = PENDING
-LIVE_DASHBOARD_REMATERIALIZATION     = PENDING_AFTER_MERGED_DEPLOY
-FACEBOOK_RETENTION_DEFER_REMOVAL     = PENDING_AFTER_DASHBOARD_PARITY
+REVIEWED_PR_CI                       = PASS_PR_649_TWO_VERIFY_CHECKS
+MERGED_MAIN                          = 7F4C301413ACEC53E9003FEB08F936E38F5C14A4
+LIVE_WORKER_VERSION                  = 808FE569_100_PERCENT
+LIVE_DASHBOARD_REMATERIALIZATION     = PASS_1D_3D_7D_30D_EXACTLY_ONCE
+D1_LARK_DASHBOARD_VIEWS              = PASS_1584330_AVAILABLE
+D1_LARK_DASHBOARD_LIKES              = PASS_16069_AVAILABLE
+D1_LARK_DASHBOARD_COMMENTS           = PASS_70_AVAILABLE
+D1_LARK_DASHBOARD_SHARES             = PASS_NULL_NOT_OBSERVED_28_SOURCE_NULLS
+FACEBOOK_CONNECTOR_SCHEDULE          = ENABLED_0730_ASIA_BANGKOK
+FACEBOOK_RETENTION_DEFER_REMOVAL     = DEPLOYED_EMPTY_DEFER_SET
+POST_DEPLOY_ALERT_DLQ_LOCK           = ZERO_ZERO_ZERO
+NEXT_REQUIRED_EVIDENCE               = SCHEDULED_SYNC_0730_AND_RETENTION_0805_20260816
 RAW_27_TABLE_DELETION                = OUT_OF_SCOPE_WAIT_SCHEDULED_EVIDENCE
 ```
+
+PR #649 ผ่าน CI สองชุดและ merge เข้า `main` ที่ `7f4c301413acec53e9003feb08f936e38f5c14a4`.
+Worker version `808fe569-8319-469b-b069-2b586642e630` รับ traffic 100% พร้อม Facebook connector/schedule
+เปิด, retention เปิดและ deferred-platform set ว่าง; DLQ redrive ยังคงปิดและ Notification/ระบบอื่นคงเดิม.
+Fresh Dashboard operation IDs `report-facebook-{1,3,7,30}d-20260814-postdeploy-r2` ถูก consume
+อย่างละหนึ่งครั้งและ run สำเร็จทั้ง 4 รายการ. D1 กับ GET-only Lark readback ตรงกันทุกค่า/สถานะ.
+Shares เป็น N/A อย่างถูกต้องเพราะ 28/91 current Source rows ไม่คืน `shares`; ไม่อนุมาน missing เป็น 0.
+ไม่มี source rerun/replay/redrive หรือ manual retention. หลักฐานที่ต้องรอตามเวลาจริงคือ Facebook sync
+07:30 และ retention 08:05 วันที่ 2026-08-16; Weekly Notification วันจันทร์ 08:30 และ RAW retirement
+คงเป็น workstream แยก.

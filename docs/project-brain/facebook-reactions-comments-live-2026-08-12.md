@@ -91,8 +91,22 @@ DEPENDENCY_AUDIT                     PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                       PASS
 ACTIVE_PAGE_TOKEN_CAPABILITY         PROVEN_BY_FRESH_91_OF_91_INGESTION
 LIVE_SOURCE_RECONCILIATION           PASS_D1_LARK_EXACT
-LIVE_DASHBOARD_RECONCILIATION        PENDING_READER_FIX_DEPLOY
+REVIEWED_PR                           MERGED_649_7F4C3014
+LIVE_WORKER                           808FE569_100_PERCENT
+LIVE_DASHBOARD_RECONCILIATION         PASS_D1_LARK_1D_3D_7D_30D
+LIVE_LIKES                            16069_AVAILABLE
+LIVE_COMMENTS                         70_AVAILABLE
+LIVE_SHARES                           NULL_NOT_OBSERVED_28_SOURCE_NULLS
+FACEBOOK_SCHEDULE                     ENABLED_0730_ASIA_BANGKOK
+RETENTION_DEFER                       REMOVED
 OLD_OPERATION_REPLAY                 PROHIBITED_NOT_RUN
 DLQ_REDRIVE                          PROHIBITED_NOT_RUN
 PRODUCTION                           BLOCKED
 ```
+
+Four unique post-deploy Dashboard operations were consumed once and completed successfully with zero exact
+alerts, DLQ entries or active locks. D1 and GET-only Lark agree for all four windows: Views 1,584,330,
+Likes 16,069 and Comments 70 are available. Shares remains null/not-observed because 28 of the 91
+authoritative current rows have no Provider `shares` field; the runtime did not fabricate those missing
+values as zero. Facebook source/schedule and normal retention are now active for the 07:30 → 08:05 Bangkok
+scheduled evidence on 2026-08-16. No manual source rerun or manual retention was used as a substitute.
