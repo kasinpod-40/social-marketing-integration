@@ -17,8 +17,10 @@ load test ผ่าน 10x/100x พร้อม indexed query plans และ in
 ลบเฉพาะ TikTok/YouTube 10,649 rows และ readback เหลือ 9,291. Facebook 425/425, Instagram 37/37 และ
 protected TikTok Native RAW คงเดิม. PR #647 เพิ่ม permanent daily retention 08:05 ซึ่ง fail closed เมื่อมี
 active sync lock และตรวจ exact retained identity หลังลบ; Worker version
-`3d9c363d-d1fc-4cfe-b275-9fa75b0a6ca1` รับ traffic 100%. Facebook source/schedule ยังปิดและถูก defer
-จน Token พร้อม. Customer-owned Production runbook พร้อมแล้ว แต่การ provision ยังรอ asset ของลูกค้า.
+`3d9c363d-d1fc-4cfe-b275-9fa75b0a6ca1` รับ traffic 100% ในระยะปิด incident capacity. Downstream
+Facebook parity ผ่านแล้วและ Worker `808fe569-8319-469b-b069-2b586642e630` เปิด Facebook
+source/schedule พร้อมนำ Facebook ออกจาก retention defer; หลักฐาน scheduled 07:30/08:05 ยังต้องรอ
+วันที่ 2026-08-16. Customer-owned Production runbook พร้อมแล้ว แต่การ provision ยังรอ asset ของลูกค้า.
 รายละเอียดอยู่ที่ `docs/project-brain/mkt-content-daily-retention-live-closeout-2026-08-15.md`.
 
 ## Chatwoot Daily updated-within incremental — 2026-08-15
@@ -971,9 +973,12 @@ Fresh post-source Dashboard jobs exposed a separate D1 reader regression: three 
 outside the authoritative 91-item inventory contributed old Views and null Likes/Comments. The generic
 reader now scopes current/comparison/baseline observations only when exact same-period complete
 `full_inventory` Coverage and its observed entity set agree; otherwise it preserves strict null/N/A
-semantics. Reviewed CI, merged deployment, fresh 1D/3D/7D/30D Dashboard parity and Facebook retention
-defer removal remain the closeout sequence. RAW 27-table deletion remains outside this workstream and waits
-for its scheduled-soak authority.
+semantics. PR #649 passed two CI checks and merged at `7f4c301413acec53e9003feb08f936e38f5c14a4`.
+Worker `808fe569-8319-469b-b069-2b586642e630` serves 100%; four unique post-deploy Dashboard jobs each
+ran once with zero alert/DLQ/lock. D1 and Lark match at Views 1,584,330, Likes 16,069 and Comments 70.
+Shares stays null/not-observed because 28/91 Provider rows omit it. Facebook connector/schedule is enabled
+for 07:30 and retention defer is removed for the 08:05 scheduled evidence on 2026-08-16. RAW 27-table
+deletion remains outside this workstream and waits for its scheduled-soak authority.
 
 ## Permanent safety rules
 

@@ -10,7 +10,14 @@
   contributing unknown metric remains null/N/A rather than becoming a fabricated zero.
 - Focused cross-platform regression passed `18/18`; full unit passed `3047/3047`; Workers runtime passed
   `18/18`; report reliability passed `105/105`; architecture/hygiene, zero-vulnerability audit, deploy dry-run
-  and diff check passed. Reviewed CI/deploy and fresh Dashboard parity remain pending.
+  and diff check passed. PR #649 passed two CI checks and merged at `7f4c3014`.
+- Worker `808fe569-8319-469b-b069-2b586642e630` reached 100% traffic. Four unique post-deploy Facebook
+  Dashboard jobs completed exactly once with zero alert/DLQ/lock; D1 and Lark match at Views 1,584,330,
+  Likes 16,069 and Comments 70 across 1D/3D/7D/30D. Shares remains null/not-observed because 28/91
+  authoritative Provider rows omit it; no zero was fabricated.
+- Enabled the Facebook connector and 07:30 Bangkok schedule and removed Facebook from the retention defer
+  set. The first 07:30 source → 08:05 retention scheduled evidence remains time-gated to 2026-08-16;
+  no manual source rerun or retention was used instead.
 
 ## Unreleased — Integration Non-wait Closeout — 2026-08-15
 
