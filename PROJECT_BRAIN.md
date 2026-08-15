@@ -1,5 +1,16 @@
 # Project Brain — Social Marketing Data Integration
 
+## Chatwoot Daily updated-within incremental — 2026-08-15
+
+Daily ไม่ใช้ full-account stable-ID two-pass discovery อีกต่อไป. Fresh Daily state เรียก Chatwoot
+`updated_within` ครั้งเดียวด้วย immutable rolling 3-day window + 5-minute clock-skew overlap, deduplicate
+stable IDs และอ่าน exact detail เฉพาะ Conversation ที่เปลี่ยน. Initial/Reconciliation และ legacy state ที่
+เริ่ม scan ไปแล้วคง two-pass path เดิม. Daily operation เดิมจบ completed โดย failed/alert/DLQ/lock เป็น
+ศูนย์ และ GET-only tenant preflight ผ่าน 51/51 unique rows ใน one unpaginated request. Reviewed
+merge/deploy และ fresh scheduled evidence ยังเป็น rollout gates.
+รายละเอียดอยู่ที่
+`docs/project-brain/chatwoot-daily-updated-within-incremental-2026-08-15.md`.
+
 ## Non-TikTok Lark RAW retirement — 2026-08-14
 
 Customer-facing Lark Base จะไม่เก็บ API-source RAW mirrors อีกต่อไป. Meta Organic, Paid Ads,

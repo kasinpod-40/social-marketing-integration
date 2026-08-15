@@ -29,6 +29,32 @@ test('Chatwoot client reads one stable conversation identity without query crede
   assert.equal(request.url.includes('secret-token'), false);
 });
 
+test('Chatwoot client bounds updated-within discovery to one unpaginated page', async () => {
+  let requested = null;
+  const client = makeClient(async (url) => {
+    requested = new URL(String(url));
+    return jsonResponse({
+      data: { meta: { all_count: 7_800 }, payload: [{ id: 7001 }, { id: 7002 }] },
+    });
+  });
+
+  const page = await client.listConversationsPage({
+    page: 1,
+    status: 'all',
+    assigneeType: 'all',
+    updatedWithinSeconds: 259_500,
+  });
+
+  assert.equal(requested.searchParams.get('updated_within'), '259500');
+  assert.equal(requested.searchParams.get('sort_by'), 'last_activity_at_desc');
+  assert.equal(page.totalCount, 2);
+  assert.equal(page.hasMore, false);
+  await assert.rejects(
+    () => client.listConversationsPage({ page: 2, updatedWithinSeconds: 259_500 }),
+    /unpaginated page-1 query/u,
+  );
+});
+
 test('Chatwoot client retries non-JSON 429 and 503 responses', async () => {
   let attempts = 0;
   const delays = [];

@@ -5,6 +5,7 @@ import {
 import { syncChatwootAnalytics } from './sync-chatwoot-analytics.js';
 import {
   assertChatwootDurableState,
+  CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES,
   CHATWOOT_RUNTIME_MODES,
   CHATWOOT_RUNTIME_PHASE,
   createInitialChatwootDurableState,
@@ -27,6 +28,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const ROLLUP_PAGE_SIZE = 500;
 const REPORTING_DATASET_KEY = 'chatwoot.reporting_events';
+const UPDATED_WITHIN_CLOCK_SKEW_SECONDS = 5 * 60;
 
 /**
  * Execute at most one bounded durable Chatwoot unit per Queue delivery. Durable phase state contains
@@ -122,53 +124,65 @@ async function processConversationUnit(context, state) {
       && rowsProcessed < context.limits.conversationRowsPerInvocation
       && next.stage === 'conversations') {
     if (next.conversationPendingIds.length === 0) {
-      const pageNumber = next.conversationPage;
-      await context.assertCurrent();
-      const page = await context.client.listConversationsPage({
-        page: pageNumber,
-        status: 'all',
-        assigneeType: 'all',
-      });
-      pagesFetched += 1;
-      const seen = new Set(next.conversationSeenIds);
-      const newRows = [];
-      for (const row of page.rows) {
-        const id = requirePositiveId(row?.id, 'conversation.id');
-        if (seen.has(id)) continue;
-        seen.add(id);
-        newRows.push(row);
+      if (next.conversationDiscoveryComplete) {
+        next.conversationsComplete = true;
+        next.stage = 'reporting';
+        break;
       }
-      if (seen.size > context.limits.maxConversations) {
-        throw permanentError('Chatwoot Conversation identity discovery exceeded configured row limit', {
-          code: 'CHATWOOT_ROW_LIMIT_EXCEEDED',
-          details: { maxRows: context.limits.maxConversations },
+      if (next.conversationDiscoveryStrategy
+          === CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE) {
+        await discoverRecentlyUpdatedConversations(context, next);
+        pagesFetched += 1;
+        if (next.conversationPendingIds.length === 0) continue;
+      } else {
+        const pageNumber = next.conversationPage;
+        await context.assertCurrent();
+        const page = await context.client.listConversationsPage({
+          page: pageNumber,
+          status: 'all',
+          assigneeType: 'all',
         });
-      }
-      const boundaryRows = newRows.filter(
-        (row) => isConversationAtOrBeforeChatwootBoundary(row, context.window),
-      );
-      const pending = boundaryRows
-        .filter((row) => isConversationInChatwootWindow(row, context.window))
-        .map((row) => requirePositiveId(row?.id, 'conversation.id'));
-      next.conversationSeenIds = [...seen];
-      next.conversationPendingIds = pending;
-      next.conversationNewIdsInPass += boundaryRows.length;
-      next.conversationRowsScanned += newRows.length;
-      next.conversationPagesProcessed += 1;
-      next.conversationPage += 1;
-
-      const exhausted = page.rows.length === 0 || page.hasMore === false;
-      if (exhausted) {
-        if (next.conversationNewIdsInPass === 0) {
-          next.conversationsComplete = true;
-          next.stage = 'reporting';
-          break;
+        pagesFetched += 1;
+        const seen = new Set(next.conversationSeenIds);
+        const newRows = [];
+        for (const row of page.rows) {
+          const id = requirePositiveId(row?.id, 'conversation.id');
+          if (seen.has(id)) continue;
+          seen.add(id);
+          newRows.push(row);
         }
-        next.conversationDiscoveryPass += 1;
-        next.conversationPage = 1;
-        next.conversationNewIdsInPass = 0;
+        if (seen.size > context.limits.maxConversations) {
+          throw permanentError('Chatwoot Conversation identity discovery exceeded configured row limit', {
+            code: 'CHATWOOT_ROW_LIMIT_EXCEEDED',
+            details: { maxRows: context.limits.maxConversations },
+          });
+        }
+        const boundaryRows = newRows.filter(
+          (row) => isConversationAtOrBeforeChatwootBoundary(row, context.window),
+        );
+        const pending = boundaryRows
+          .filter((row) => isConversationInChatwootWindow(row, context.window))
+          .map((row) => requirePositiveId(row?.id, 'conversation.id'));
+        next.conversationSeenIds = [...seen];
+        next.conversationPendingIds = pending;
+        next.conversationNewIdsInPass += boundaryRows.length;
+        next.conversationRowsScanned += newRows.length;
+        next.conversationPagesProcessed += 1;
+        next.conversationPage += 1;
+
+        const exhausted = page.rows.length === 0 || page.hasMore === false;
+        if (exhausted) {
+          if (next.conversationNewIdsInPass === 0) {
+            next.conversationsComplete = true;
+            next.stage = 'reporting';
+            break;
+          }
+          next.conversationDiscoveryPass += 1;
+          next.conversationPage = 1;
+          next.conversationNewIdsInPass = 0;
+        }
+        if (next.conversationPendingIds.length === 0) continue;
       }
-      if (next.conversationPendingIds.length === 0) continue;
     }
 
     const ids = next.conversationPendingIds.slice(
@@ -214,6 +228,52 @@ async function processConversationUnit(context, state) {
   }
   next.nextSequence += 1;
   return Object.freeze(next);
+}
+
+async function discoverRecentlyUpdatedConversations(context, next) {
+  const updatedWithinSeconds = Math.ceil(
+    (Math.max(context.now(), context.requestedAt) - context.window.startAt) / 1_000,
+  ) + UPDATED_WITHIN_CLOCK_SKEW_SECONDS;
+  await context.assertCurrent();
+  const page = await context.client.listConversationsPage({
+    page: 1,
+    status: 'all',
+    assigneeType: 'all',
+    updatedWithinSeconds,
+  });
+  if (page.hasMore !== false) {
+    throw permanentError('Chatwoot updated-within query returned a paginated result', {
+      code: 'CHATWOOT_PAGE_CONTRACT_INVALID',
+      details: { operation: 'list_recently_updated_conversations' },
+    });
+  }
+  const seen = new Set();
+  const uniqueRows = [];
+  for (const row of page.rows) {
+    const id = requirePositiveId(row?.id, 'conversation.id');
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueRows.push(row);
+  }
+  if (seen.size > context.limits.maxConversations) {
+    throw permanentError('Chatwoot recently updated Conversation discovery exceeded configured row limit', {
+      code: 'CHATWOOT_ROW_LIMIT_EXCEEDED',
+      details: { maxRows: context.limits.maxConversations },
+    });
+  }
+  const boundaryRows = uniqueRows.filter(
+    (row) => isConversationAtOrBeforeChatwootBoundary(row, context.window),
+  );
+  next.conversationSeenIds = [...seen];
+  next.conversationPendingIds = boundaryRows
+    .filter((row) => isConversationInChatwootWindow(row, context.window))
+    .map((row) => requirePositiveId(row?.id, 'conversation.id'));
+  next.conversationNewIdsInPass = boundaryRows.length;
+  next.conversationRowsScanned += uniqueRows.length;
+  next.conversationPagesProcessed += 1;
+  next.conversationPage = 2;
+  next.conversationDiscoveryComplete = true;
+  next.conversationUpdatedWithinSeconds = updatedWithinSeconds;
 }
 
 async function processReportingUnit(context, state) {
@@ -674,6 +734,9 @@ function readContext(input) {
     assertCurrent: typeof input.assertCurrent === 'function'
       ? input.assertCurrent
       : async () => undefined,
+    now: typeof input.now === 'function'
+      ? () => positiveInteger(input.now(), 'now')
+      : () => Date.now(),
   });
 }
 
@@ -761,6 +824,9 @@ function reconciliation(state) {
     windowEndAt: state.windowEndAt,
     automaticBackfillExpansion: false,
     includeUpdatedOlderConversations: true,
+    conversationDiscoveryStrategy: state.conversationDiscoveryStrategy,
+    conversationDiscoveryComplete: state.conversationDiscoveryComplete,
+    conversationUpdatedWithinSeconds: state.conversationUpdatedWithinSeconds,
     conversationPagesProcessed: state.conversationPagesProcessed,
     conversationRowsScanned: state.conversationRowsScanned,
     conversationsSelected: state.conversationsSelected,
