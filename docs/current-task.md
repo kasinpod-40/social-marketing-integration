@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                         = DASHBOARD_READY_YOUTUBE_ANALYTICS_LIVE_VALIDATION_CHATWOOT_BLOCKERS
-CURRENT_PROGRAM                     = MULTICHANNEL_RUNTIME_SCHEDULE_LIVE_ACTIVATION_V1
-BRANCH                              = codex/google-ads-live-schedule-closeout
-EXACT_BASE                          = 99c88691db1237c9a08dff6922d1836486f3772d
+TASK_STATUS                         = NON_WAIT_WORK_CLOSED_EXTERNAL_AND_SCHEDULE_GATES_REMAIN
+CURRENT_PROGRAM                     = INTEGRATION_FINAL_NON_WAIT_CLOSEOUT_20260815
+BRANCH                              = codex/integration-nonwait-closeout
+EXACT_BASE                          = adf3c05da863c04397a8d1d44f8adda9dfbf643b
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = ENABLED_RUNTIME_FOR_AUTOMATIC_WEEKLY
@@ -141,6 +141,63 @@ DLQ ใหม่ 0, active lock 0 และไม่มี Chatwoot Work ที�
 scheduled Daily ว่า list discovery เกิดครั้งเดียว, checkpoint generation ตรง, zero new exact alert/DLQ
 และ D1/Lark parity 15 targets. รายละเอียด:
 `docs/project-brain/chatwoot-daily-updated-within-incremental-2026-08-15.md`.
+
+### Downstream non-wait closeout authority — 2026-08-15
+
+ผู้ใช้สั่งให้ทำทุกงานที่ไม่ต้องรอโดยไม่แตะ branch Facebook. งานนี้ใช้ worktree แยกและไม่มี Worker deploy,
+Queue send, replay/redrive, schedule change, Production provisioning หรือ Lark delete.
+
+```text
+TIKTOK_PARTIAL_WRITE_ALERTS        = RESOLVED_BY_NEW_GENERATION_EXACT_2
+ALERT_BULK_MUTATION                = ZERO
+RECENT_OPEN_ALERTS_SINCE_AUG15     = ZERO
+RECENT_OPEN_DLQ_SINCE_AUG15        = ZERO
+ACTIVE_LOCKS                       = ZERO
+KNOWN_RETAINED_FORENSIC_WORK       = META_ADS_A22_EXACT_1_PROHIBITED_FROM_TERMINALIZE
+D1_CURRENT_SIZE                    = 151_74_MIB
+D1_TABLES_ROWS_INDEXES             = 70_TABLES_175855_ROWS_104_INDEXES
+D1_LINEAR_PROJECTION_1Y            = APPROX_609_35_MIB
+D1_LINEAR_PROJECTION_3Y            = APPROX_1524_56_MIB
+D1_PRIVATE_BACKUP_CHECKSUM         = PASS_SHA256_7A828BF0_FULL
+D1_LOCAL_RESTORE_DRILL             = PASS_INTEGRITY_OK_70_TABLES_MIGRATION_0020_REAPPLIED
+LARK_RAW_BACKUP_REVALIDATION       = PASS_27_TABLES_20072_RECORDS
+STORAGE_LOAD_10X_100X              = PASS_INDEXED_QUERIES_INTEGRITY_OK
+MKT_CONTENT_DAILY_RECORDS          = 19840
+MKT_CONTENT_DAILY_BOUNDED_PREVIEW  = RETAIN_9038_DELETE_CANDIDATES_10802
+MKT_CONTENT_DAILY_EFFECTIVE_WINDOW = 4_COMPLETED_DAYS_PLUS_LATEST_EVERY_CONTENT
+MKT_CONTENT_DAILY_LIVE_DELETE      = NOT_RUN_WAIT_FACEBOOK_AND_PREDELETE_PARITY
+CUSTOMER_PRODUCTION_RUNBOOK        = PREPARED_NO_REMOTE_PROVISIONING
+FOCUSED_NON_WAIT_TESTS             = PASS_15_OF_15
+FULL_UNIT_TESTS                    = PASS_3030_OF_3030
+WORKERS_RUNTIME_TESTS              = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS           = PASS_105_OF_105
+ARCHITECTURE_HYGIENE               = PASS_775_FILES_2305_DEPENDENCIES_0_CYCLES
+DEPENDENCY_AUDIT                   = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                     = PASS_API_AND_SYNC
+DIFF_CHECK                         = PASS
+```
+
+Exact TikTok alerts `1a2a3464-...` และ `2bec4508-...` มี sync run เดิม `success`, Work `completed`,
+generation ใหม่สำเร็จต่อเนื่องอย่างน้อยสองรอบ, active TikTok lock/DLQ เป็นศูนย์ จึงเปลี่ยนเฉพาะ alert
+สองแถวเป็น `resolved` พร้อม closure reference `resolved_by_new_generation`. Historical Alert/DLQ อื่นคง
+forensic evidence และไม่มี bulk mutation.
+
+D1 capacity audit เป็น SELECT-only และเก็บ evidence private ที่
+`/private/tmp/social-mkt-d1-capacity-audit-20260815.json`. อัตรา 14 วันล่าสุดเป็น projection แบบเส้นตรง
+ไม่ใช่ quota guarantee. Local 10x/100x load test ใช้ Migration 0009 จริง: 100x มี Organic observations
+1,208,200 แถวและ Ads daily 823,800 แถว; indexed 30-day queries ใช้ 873.68 ms และ 162.99 ms,
+`PRAGMA integrity_check=ok`. Backup ก่อน Migration 0020 restore เข้า SQLite local ผ่าน 70 tables แล้ว
+apply Migration 0020 ซ้ำผ่าน; Remote D1 ไม่ถูกแก้.
+
+Lark GET-only retention preview สำรอง `MKT_Content_Daily` 19,840 แถวพร้อม checksum และสร้าง exact key
+list private. นโยบาย max 30 days ถูกลดอัตโนมัติเป็น 4 completed days เพื่อไม่เกิน 10,000 rows โดยเก็บ
+latest row ของ Content ทั้ง 3,008 identities; plan retain 9,038/delete candidate 10,802. ยังห้ามลบจริงก่อน
+Facebook fresh metrics/D1↔Lark/Dashboard parity และ pre-delete readback ผ่าน.
+
+งานที่เหลือซึ่งต้องรอจริง: Facebook token `pages_read_user_content` + fresh run, fresh post-deploy scheduled
+cycles ก่อน RAW retirement, Automatic Weekly วันจันทร์ 08:30, MKT_Content_Daily live retention หลัง
+Facebook parity และ customer-owned Production assets. Runbook อยู่ที่
+`docs/runbooks/customer-owned-production-cutover-v1.md`.
 
 ## Objective
 

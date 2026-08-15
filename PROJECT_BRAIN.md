@@ -1,5 +1,24 @@
 # Project Brain — Social Marketing Data Integration
 
+## Integration non-wait closeout — 2026-08-15
+
+ปิดงานที่ไม่ต้องรอใน worktree แยกจาก Facebook: exact TikTok `SYNC_PARTIAL_WRITE` alerts สองรายการ
+ถูกจัดเป็น `resolved_by_new_generation` หลัง run/work เดิมและอย่างน้อยสอง generation ใหม่สำเร็จ โดยไม่มี
+replay/redrive/Queue/Business mutation. Alert/DLQ เก่าอื่นคง forensic evidence; recent open alert/DLQ
+ตั้งแต่ 2026-08-15 เป็นศูนย์ และ active lock เป็นศูนย์. Meta Ads A22 active Work เป็น exact retained
+forensic identity ที่ Current Task ห้าม terminalize/cleanup จึงไม่ถือเป็น current-actionable incident.
+
+D1 capacity audit พบ 151.74 MiB, 70 tables, 175,855 rows และ 104 reviewed indexes. Linear projection
+จาก 14-day creation rate อยู่ประมาณ 609.35 MiB ที่ 1 ปีและ 1.49 GiB ที่ 3 ปี. Local Storage Foundation
+load test ผ่าน 10x/100x พร้อม indexed query plans และ integrity check. Private pre-0020 D1 backup checksum
+และ 27-table Lark backup revalidate ผ่าน; local restore 70 tables และ re-apply Migration 0020 ผ่าน.
+
+`MKT_Content_Daily` GET-only preview พบ 19,840 rows/3,008 Content identities. Bounded cache planner เก็บ
+latest ของทุก Content และลด window จาก max 30 เป็น 4 completed days เพื่อ cap 10,000 rows: retain 9,038,
+exact delete candidates 10,802. Live deletion ยัง blocked โดย Facebook fresh parity และ pre-delete
+D1/Lark/Dashboard reconciliation. Customer-owned Production runbook พร้อมแล้ว แต่การ provision ยังรอ asset
+ของลูกค้า. รายละเอียดอยู่ที่ `docs/current-task.md`.
+
 ## Chatwoot Daily updated-within incremental — 2026-08-15
 
 Daily ไม่ใช้ full-account stable-ID two-pass discovery อีกต่อไป. Fresh Daily state เรียก Chatwoot
