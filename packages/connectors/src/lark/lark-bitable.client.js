@@ -746,6 +746,35 @@ export class LarkBitableClient {
     return Object.freeze({ updated });
   }
 
+  /** ลบเฉพาะ exact Record IDs แบบ bounded chunks; ไม่มี prefix/filter delete path */
+  async batchDeleteRecords(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const recordIds = requireArray(input?.recordIds, 'recordIds').map((recordId) => (
+      requireText(recordId, 'recordId')
+    ));
+    const beforeChunk = typeof input?.beforeChunk === 'function'
+      ? input.beforeChunk
+      : async () => undefined;
+    let deleted = 0;
+    for (let index = 0; index < recordIds.length; index += DEFAULT_BATCH_SIZE) {
+      const chunk = recordIds.slice(index, index + DEFAULT_BATCH_SIZE);
+      await beforeChunk({ offset: index, size: chunk.length });
+      const response = await this.requestBitableJson(
+        `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_delete`,
+        { method: 'POST', retryMode: 'rate_limit_only', body: { records: chunk } },
+      );
+      const rows = response?.data?.records;
+      if (Array.isArray(rows) && rows.length !== chunk.length) {
+        throw permanentError('Lark batch delete returned an unexpected record count', {
+          code: 'LARK_BATCH_DELETE_COUNT_MISMATCH',
+          details: { expected: chunk.length, actual: rows.length },
+        });
+      }
+      deleted += Array.isArray(rows) ? rows.length : chunk.length;
+    }
+    return Object.freeze({ deleted });
+  }
+
   /**
    * จัดคิว Request ทุกคำขอใน Client instance และเว้นระยะขั้นต่ำระหว่างจุดเริ่ม Request
    */

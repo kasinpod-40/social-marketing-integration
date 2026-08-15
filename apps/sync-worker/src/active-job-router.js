@@ -16,10 +16,12 @@ import { deliverReliabilityMirror } from '../../../packages/application/src/use-
 import { redriveDeadLetterJob } from '../../../packages/application/src/use-cases/redrive-dead-letter-job.js';
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
 import { seedReportSettings } from '../../../packages/application/src/use-cases/seed-report-settings.js';
+import { runMktContentDailyRetention } from '../../../packages/application/src/use-cases/mkt-content-daily-retention.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { syncYouTubeOrganicEndToEnd } from '../../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
+import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import {
   readYouTubeChannelIdFromEnv,
   readYouTubeLarkTableIdsFromEnv,
@@ -74,6 +76,23 @@ export async function processJob(input) {
         return infrastructure.getLarkReliabilityStore(tableIds);
       },
       limit: readPositiveInteger(input.env?.MKT_RELIABILITY_MIRROR_BATCH_SIZE, 25),
+    });
+  }
+
+  if (definition.type === JOB_TYPES.MKT_CONTENT_DAILY_RETENTION) {
+    const storage = readStorageRuntimeConfig(input.env);
+    if (!storage.larkDailyRetentionEnabled) {
+      throw permanentError('MKT_Content_Daily retention is disabled', {
+        code: 'MKT_CONTENT_DAILY_RETENTION_DISABLED',
+      });
+    }
+    const infrastructure = input.getInfrastructure();
+    const tableIds = readLarkTableIdsFromEnv(input.env, ['mktContentDaily']);
+    return runMktContentDailyRetention({
+      client: infrastructure.getLarkBitableClient(),
+      db: infrastructure.getStateDb(),
+      tableId: tableIds.mktContentDaily,
+      deferredPlatforms: input.job.body?.deferredPlatforms ?? [],
     });
   }
 
