@@ -13,11 +13,13 @@ D1 capacity audit พบ 151.74 MiB, 70 tables, 175,855 rows และ 104 revie
 load test ผ่าน 10x/100x พร้อม indexed query plans และ integrity check. Private pre-0020 D1 backup checksum
 และ 27-table Lark backup revalidate ผ่าน; local restore 70 tables และ re-apply Migration 0020 ผ่าน.
 
-`MKT_Content_Daily` GET-only preview พบ 19,840 rows/3,008 Content identities. Bounded cache planner เก็บ
-latest ของทุก Content และลด window จาก max 30 เป็น 4 completed days เพื่อ cap 10,000 rows: retain 9,038,
-exact delete candidates 10,802. Live deletion ยัง blocked โดย Facebook fresh parity และ pre-delete
-D1/Lark/Dashboard reconciliation. Customer-owned Production runbook พร้อมแล้ว แต่การ provision ยังรอ asset
-ของลูกค้า. รายละเอียดอยู่ที่ `docs/current-task.md`.
+`MKT_Content_Daily` capacity incident ปิดโดย defer Facebook แบบ exact: backup/checksum 19,940 rows,
+ลบเฉพาะ TikTok/YouTube 10,649 rows และ readback เหลือ 9,291. Facebook 425/425, Instagram 37/37 และ
+protected TikTok Native RAW คงเดิม. PR #647 เพิ่ม permanent daily retention 08:05 ซึ่ง fail closed เมื่อมี
+active sync lock และตรวจ exact retained identity หลังลบ; Worker version
+`3d9c363d-d1fc-4cfe-b275-9fa75b0a6ca1` รับ traffic 100%. Facebook source/schedule ยังปิดและถูก defer
+จน Token พร้อม. Customer-owned Production runbook พร้อมแล้ว แต่การ provision ยังรอ asset ของลูกค้า.
+รายละเอียดอยู่ที่ `docs/project-brain/mkt-content-daily-retention-live-closeout-2026-08-15.md`.
 
 ## Chatwoot Daily updated-within incremental — 2026-08-15
 

@@ -112,9 +112,10 @@ Manual classification fields และ `manual_tag_note` ต้องมี Fiel
 
 ### `MKT_Content_Daily`
 
-ปัจจุบันยังเป็น cumulative snapshot source ที่ Report Engine อ่านโดยตรง จึงห้ามหยุดเขียน ลบ หรือเปลี่ยน Grain จนกว่า D1 Reader parity และ rollback ผ่าน
-
-Target หลัง Cutover คือ bounded recent/diagnostic compatibility cache
+หลัง D1 Reader cutover เป็น bounded recent/diagnostic compatibility cache. Live retention เริ่ม
+2026-08-15 โดยเก็บ latest ทุก Content, ลด completed-day window ตามเพดาน 10,000 rows และ defer platform
+ที่ยังรอ source parity. Scheduled sweep เวลา 08:05 ต้องหยุดเมื่อมี active sync lock และลบเฉพาะ exact
+Record IDs; D1 historical rows ไม่ถูกลบหรือแก้.
 
 ### `MKT_Ads_Daily`
 

@@ -2,6 +2,19 @@
 
 ## Unreleased — Integration Non-wait Closeout — 2026-08-15
 
+### MKT_Content_Daily live retention closeout
+
+- Added a stable scheduled retention job at 08:05 Asia/Bangkok, before Daily Report materialization at 08:10.
+- Added exact-ID Lark batch deletion with active-lock checks before every chunk and full retained-identity
+  readback; D1 remains historical authority and no D1 row is mutated by retention.
+- Preserved every Facebook row through an explicit deferred-platform contract until customer permission is
+  ready; malformed/unmanaged rows and latest-per-Content rows remain fail-closed retained.
+- Live execution backed up 19,940 rows privately, deleted 10,649 exact TikTok/YouTube rows and converged at
+  9,291 rows. Facebook remained 425/425, Instagram 37/37 and protected TikTok RAW was unchanged.
+- PR #646 delivered the reviewed one-time operator; PR #647 delivered permanent runtime scheduling. Worker
+  version `3d9c363d-d1fc-4cfe-b275-9fa75b0a6ca1` reached 100% traffic with zero immediate new alert, DLQ,
+  active lock or manual retention work.
+
 ### Added
 
 - Added an exact-confirmation TikTok alert closeout operator pinned to two `SYNC_PARTIAL_WRITE` alerts whose
@@ -21,9 +34,8 @@
   Migration-0020 drill passed.
 - 100x load evidence used 1,208,200 Organic observations and 823,800 Ads daily facts; indexed range queries
   completed in 873.68 ms and 162.99 ms with SQLite integrity `ok`.
-- Live Lark preview found 19,840 `MKT_Content_Daily` rows and planned retain 9,038/delete 10,802 using a
-  four-completed-day effective window plus latest-per-Content. Deletion remains blocked until Facebook fresh
-  parity and pre-delete D1/Lark/Dashboard reconciliation.
+- The earlier 19,840-row preview was superseded by the exact live execution above after Facebook was explicitly
+  removed from delete scope; its historical plan remains evidence only.
 - Repository gates passed: focused `15/15`, full unit `3030/3030`, Workers runtime `18/18`, Report
   reliability `105/105`, architecture/hygiene, zero-vulnerability audit, deploy dry-run and diff check.
 

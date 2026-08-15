@@ -25,11 +25,13 @@ AGENTS.md
 
 ## Current closeout — Multichannel Report & Schedule v1
 
-Non-wait readiness work on 2026-08-15 closed two exact TikTok partial-write alerts by verified newer
-generations, completed D1 capacity/10x/100x/restore evidence and prepared a bounded
-`MKT_Content_Daily` retention preview. No Live retention delete has run. Remaining gates are Facebook
-customer permission/fresh parity, fresh scheduled soak, Monday Automatic Weekly evidence and customer-owned
-Production provisioning. See `docs/current-task.md`.
+Non-wait readiness work on 2026-08-15 closed two exact TikTok partial-write alerts, completed D1
+capacity/10x/100x/restore evidence and closed the `MKT_Content_Daily` capacity incident. Exact private backup
+preceded deletion of 10,649 non-Facebook rows; readback retained 9,291 rows with Facebook 425/425 protected.
+Permanent bounded retention now runs at 08:05 before Daily Report and stops around active sync locks. Remaining
+gates are Facebook customer permission/fresh parity, fresh scheduled soak including the first automatic
+retention cycle, Monday Automatic Weekly evidence and customer-owned Production provisioning. See
+`docs/current-task.md`.
 
 Repository runtime รองรับ Shared Report schedule สำหรับ Facebook, Instagram, TikTok, YouTube,
 Meta Ads, Google Ads, WooCommerce และ Chatwoot ที่ `1D/3D/7D/30D`. Daily schedule เวลา 08:10
