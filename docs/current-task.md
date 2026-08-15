@@ -754,3 +754,45 @@ Implementation ใช้ helper ใน write-set เดิมและเส้�
 ผ่านครบตามตัวเลขด้านบน; ขั้นถัดไปคือเปิด reviewed PR และให้ผู้ใช้ rotate/upload สอง secrets จาก token grant ที่มี
 `pages_read_user_content` ก่อน Live deployment. รายละเอียดอยู่ที่
 `docs/project-brain/facebook-reactions-comments-live-2026-08-12.md`.
+
+### Downstream live-evidence override — 2026-08-15
+
+ข้อสรุปว่า Token ยังขาด `pages_read_user_content` ข้างต้นถูกแทนที่ด้วย Business-ingestion evidence
+จาก active Page credential จริง: fresh scheduled operation `facebook-scheduled-20260814` อ่าน Post
+inventory 91/91 สำเร็จและเขียน Views/Likes/Comments/Shares ลง D1 กับ Lark ตรงกันทุก stable key.
+User-token `/me/permissions` จึงไม่ใช่ gate ที่เพียงพอสำหรับตัดสิน Page-token capability และไม่ต้องรบกวน
+ลูกค้าให้ออก Token ใหม่อีกในรอบนี้.
+
+Dashboard materialization หลัง source completion ยังคืน Likes/Comments/Shares เป็น N/A เพราะ generic D1
+report reader รวม stale Facebook identities 3 รายการซึ่งไม่อยู่ใน authoritative `full_inventory` ล่าสุด;
+ค่า null ของรายการเก่าจึงทำให้ strict aggregate เป็น null. การแก้ต้องคง null semantics เดิมและ filter เฉพาะ
+เมื่อ Coverage เป็น `complete`, `full_inventory`, ตรง `period_end`, failed 0 และ entity set ครบเท่านั้น.
+
+#### Implementation result (dashboard regression fix pre-deploy)
+
+```text
+ACTIVE_PAGE_TOKEN_ROTATION           = NOT_REQUIRED_PROVIDER_CAPABILITY_PROVEN
+FRESH_SOURCE_OPERATION               = FACEBOOK_SCHEDULED_20260814_COMPLETED
+CONTENT_COVERAGE                     = COMPLETE_FULL_INVENTORY_91_OF_91_FAILED_0
+D1_LARK_STABLE_KEY_PARITY            = PASS_91_OF_91
+D1_LARK_VIEWS_TOTAL                  = PASS_1584330
+D1_LARK_LIKES_TOTAL                  = PASS_16069
+D1_LARK_COMMENTS_TOTAL               = PASS_70
+D1_LARK_SHARES_TOTAL                 = PASS_2439_63_OBSERVED_ROWS
+SOURCE_ALERT_DLQ                     = ZERO_ZERO
+DASHBOARD_ROOT_CAUSE                 = THREE_STALE_IDENTITIES_OUTSIDE_LATEST_INVENTORY
+STRICT_NULL_SEMANTICS                = PRESERVED
+AUTHORITATIVE_INVENTORY_SCOPING      = IMPLEMENTED_FAIL_CLOSED
+FOCUSED_REGRESSION                   = PASS_18_OF_18
+FULL_UNIT_TESTS                      = PASS_3047_OF_3047
+WORKERS_RUNTIME_TESTS                = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS             = PASS_105_OF_105
+ARCHITECTURE_HYGIENE                 = PASS
+DEPENDENCY_AUDIT                     = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                       = PASS_API_AND_SYNC
+DIFF_CHECK                           = PASS
+REVIEWED_PR_CI                       = PENDING
+LIVE_DASHBOARD_REMATERIALIZATION     = PENDING_AFTER_MERGED_DEPLOY
+FACEBOOK_RETENTION_DEFER_REMOVAL     = PENDING_AFTER_DASHBOARD_PARITY
+RAW_27_TABLE_DELETION                = OUT_OF_SCOPE_WAIT_SCHEDULED_EVIDENCE
+```

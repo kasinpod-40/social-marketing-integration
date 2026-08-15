@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Facebook Authoritative Inventory Dashboard Fix — 2026-08-15
+
+- Proved the active Page credential with a fresh scheduled 91/91 Facebook full-inventory run; D1 and GET-only
+  Lark match exactly for Views 1,584,330, Likes 16,069, Comments 70 and Shares 2,439. No new token is required.
+- Fixed the generic D1 Organic report reader to exclude stale historical identities only when exact same-period
+  complete `full_inventory` Coverage, zero failures and the observed entity count all agree.
+- Preserved fail-closed metric semantics: incomplete or inconsistent Coverage does not filter data and any
+  contributing unknown metric remains null/N/A rather than becoming a fabricated zero.
+- Focused cross-platform regression passed `18/18`; full unit passed `3047/3047`; Workers runtime passed
+  `18/18`; report reliability passed `105/105`; architecture/hygiene, zero-vulnerability audit, deploy dry-run
+  and diff check passed. Reviewed CI/deploy and fresh Dashboard parity remain pending.
+
 ## Unreleased — Integration Non-wait Closeout — 2026-08-15
 
 ### MKT_Content_Daily live retention closeout

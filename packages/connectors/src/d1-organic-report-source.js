@@ -56,9 +56,9 @@ export class D1OrganicReportSource {
       ? this.#first(`
         SELECT * FROM data_coverage_runs
         WHERE customer_key = ? AND platform = ? AND account_key = ?
-          AND dataset_key = ? AND completed_at IS NOT NULL
+          AND dataset_key = ? AND completed_at IS NOT NULL AND period_end <= ?
         ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
-      `, [customerKey, this.platform, accountKey, this.accountDailyDatasetKey])
+      `, [customerKey, this.platform, accountKey, this.accountDailyDatasetKey, periodEnd])
       : Promise.resolve(null);
     const [
       states,
@@ -84,9 +84,9 @@ export class D1OrganicReportSource {
       this.#first(`
         SELECT * FROM data_coverage_runs
         WHERE customer_key = ? AND platform = ? AND account_key = ?
-          AND dataset_key = ? AND completed_at IS NOT NULL
+          AND dataset_key = ? AND completed_at IS NOT NULL AND period_end <= ?
         ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
-      `, [customerKey, this.platform, accountKey, this.datasetKey]),
+      `, [customerKey, this.platform, accountKey, this.datasetKey, periodEnd]),
       accountDailyFactsPromise,
       accountCoveragePromise,
     ]);
@@ -115,12 +115,21 @@ export class D1OrganicReportSource {
       : [];
     assertWithinLimit(coverageEntities.length, limit, 'coverage entity rows', this.platform);
 
+    const authoritativeInventoryIds = authoritativeFullInventoryIds({
+      coverage: contentCoverage,
+      coverageEntities,
+      periodEnd,
+    });
+    const scopedCurrentRows = scopeObservationRows(currentRows, authoritativeInventoryIds);
+    const scopedCompareRows = scopeObservationRows(compareRows, authoritativeInventoryIds);
+    const scopedBaselineRows = scopeObservationRows(baselineRows, authoritativeInventoryIds);
+
     const stateByKey = new Map(states.map((row) => [row.content_key, row]));
-    const contents = currentRows.map((row) => buildContent(
+    const contents = scopedCurrentRows.map((row) => buildContent(
       stateByKey.get(row.content_key), row, accountKey, this.platform, timeZone,
     ));
     const uniqueObservations = new Map();
-    for (const row of [...currentRows, ...compareRows, ...baselineRows]) {
+    for (const row of [...scopedCurrentRows, ...scopedCompareRows, ...scopedBaselineRows]) {
       uniqueObservations.set(row.observation_key, buildObservation(row, accountKey, this.platform));
     }
     const observations = [...uniqueObservations.values()].sort((left, right) => (
@@ -161,6 +170,11 @@ export class D1OrganicReportSource {
         observedEntities: nullableInteger(selectedCoverage?.observed_entities),
         failedRows: nullableInteger(selectedCoverage?.failed_rows) ?? 0,
         coverageEntities: coverageEntities.length,
+        authoritativeInventoryScoped: authoritativeInventoryIds !== null,
+        authoritativeInventoryEntityCount: authoritativeInventoryIds?.size ?? null,
+        excludedStaleContentRecords: currentRows.length - scopedCurrentRows.length,
+        excludedStaleObservationRecords: (currentRows.length + compareRows.length + baselineRows.length)
+          - (scopedCurrentRows.length + scopedCompareRows.length + scopedBaselineRows.length),
         uncoveredContentCount: uncoveredContentIds.length,
         uncoveredContentIds: Object.freeze(uncoveredContentIds.slice(0, 100)),
         sourceWatermark: selectedCoverage?.source_watermark ?? null,
@@ -190,6 +204,31 @@ export class D1OrganicReportSource {
       throw readError(this.platform, cause);
     }
   }
+}
+
+function authoritativeFullInventoryIds(input) {
+  const coverage = input.coverage;
+  if (
+    normalizeCoverageStatus(coverage?.status) !== 'complete'
+    || optionalText(coverage?.scope_mode)?.toLowerCase() !== 'full_inventory'
+    || coverage?.period_end !== input.periodEnd
+    || (nullableInteger(coverage?.failed_rows) ?? 0) !== 0
+  ) return null;
+
+  const expectedEntities = nullableInteger(coverage?.expected_entities);
+  const observedEntities = nullableInteger(coverage?.observed_entities);
+  if (expectedEntities === null || observedEntities === null || expectedEntities !== observedEntities) {
+    return null;
+  }
+  const observedIds = new Set(input.coverageEntities
+    .filter((row) => row.observation_status === 'observed')
+    .map((row) => String(row.external_entity_id)));
+  return observedIds.size === observedEntities ? observedIds : null;
+}
+
+function scopeObservationRows(rows, authoritativeInventoryIds) {
+  if (authoritativeInventoryIds === null) return rows;
+  return rows.filter((row) => authoritativeInventoryIds.has(String(row.external_content_id)));
 }
 
 function latestObservationSql(operator) {
