@@ -12,6 +12,15 @@ const row = (recordId, content, date) => ({
   },
 });
 
+const facebookRow = (recordId, content, date) => ({
+  recordId,
+  fields: {
+    content_daily_key: `facebook:chemistry_k:${content}:${date}`,
+    platform: 'facebook', account_id: 'chemistry_k', external_content_id: content,
+    metric_date: day(date),
+  },
+});
+
 test('keeps thirty completed source days and the latest row for every content', () => {
   const plan = planMktContentDailyRetention({ records: [
     row('old-a', 'a', '2026-06-01'), row('recent-a', 'a', '2026-08-10'),
@@ -62,6 +71,37 @@ test('fails closed when latest-per-content rows alone exceed the reviewed bound'
         row('two', 'two', '2026-08-15'),
         row('three', 'three', '2026-08-15'),
       ],
+      maxRetainedRecords: 2,
+    }),
+    (error) => error?.code === 'MKT_CONTENT_DAILY_RETENTION_BOUND_UNSATISFIABLE',
+  );
+});
+
+test('preserves every row for a deferred platform while deleting eligible rows elsewhere', () => {
+  const plan = planMktContentDailyRetention({
+    records: [
+      facebookRow('facebook-old', 'fb', '2026-06-01'),
+      facebookRow('facebook-new', 'fb', '2026-08-15'),
+      row('tiktok-old', 'tt', '2026-06-01'),
+      row('tiktok-new', 'tt', '2026-08-15'),
+    ],
+    deferredPlatforms: ['Facebook'],
+  });
+  assert.deepEqual(plan.deferredPlatforms, ['facebook']);
+  assert.equal(plan.deferredPlatformPreservedCount, 2);
+  assert.deepEqual(plan.deletes.map((candidate) => candidate.recordId), ['tiktok-old']);
+  assert.equal(plan.deletes.some((candidate) => candidate.platform === 'facebook'), false);
+});
+
+test('fails closed when deferred rows and latest identities exceed the bound', () => {
+  assert.throws(
+    () => planMktContentDailyRetention({
+      records: [
+        facebookRow('facebook-old', 'fb', '2026-06-01'),
+        facebookRow('facebook-new', 'fb', '2026-08-15'),
+        row('tiktok-new', 'tt', '2026-08-15'),
+      ],
+      deferredPlatforms: ['facebook'],
       maxRetainedRecords: 2,
     }),
     (error) => error?.code === 'MKT_CONTENT_DAILY_RETENTION_BOUND_UNSATISFIABLE',

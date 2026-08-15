@@ -7,14 +7,20 @@ import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/
 import { readDevVars } from './lib/dev-vars.js';
 import { planMktContentDailyRetention } from './lib/mkt-content-daily-retention.js';
 
-const inspect = process.argv.slice(2).includes('--inspect');
+const args = process.argv.slice(2);
+const inspect = args.includes('--inspect');
+const deferredPlatforms = args
+  .filter((value) => value.startsWith('--defer-platform='))
+  .map((value) => value.slice('--defer-platform='.length));
 
 try {
-  if (process.argv.slice(2).some((value) => value !== '--inspect')) throw previewError('Unsupported argument', 'MKT_CONTENT_DAILY_RETENTION_ARGUMENT_INVALID');
+  if (args.some((value) => value !== '--inspect' && !value.startsWith('--defer-platform='))) {
+    throw previewError('Unsupported argument', 'MKT_CONTENT_DAILY_RETENTION_ARGUMENT_INVALID');
+  }
   if (!inspect) {
     process.stdout.write(`${JSON.stringify({
       ok: true, mode: 'plan', readOnly: true,
-      nextCommand: 'node scripts/mkt-content-daily-retention-preview.mjs --inspect',
+      nextCommand: 'node scripts/mkt-content-daily-retention-preview.mjs --inspect --defer-platform=facebook',
       larkRecordDeletes: 0, d1Mutations: 0,
     }, null, 2)}\n`);
     process.exit(0);
@@ -28,7 +34,7 @@ try {
   if (matches.length !== 1) throw previewError('Expected one MKT_Content_Daily table', 'MKT_CONTENT_DAILY_TABLE_INVALID', { matchCount: matches.length });
   const tableId = matches[0].tableId;
   const records = await client.listRecords({ tableId, includeRecordMetadata: false });
-  const plan = planMktContentDailyRetention({ records });
+  const plan = planMktContentDailyRetention({ records, deferredPlatforms });
   const evidenceRoot = resolve(process.env.MKT_CONTENT_DAILY_RETENTION_EVIDENCE_DIR
     ?? '/private/tmp/social-mkt-content-daily-retention-20260815');
   const backupJson = `${JSON.stringify({ tableName: 'MKT_Content_Daily', records }, null, 2)}\n`;
@@ -45,6 +51,8 @@ try {
     recordCount: plan.recordCount,
     contentIdentityCount: plan.contentIdentityCount,
     unmanagedPreservedCount: plan.unmanagedPreservedCount,
+    deferredPlatforms: plan.deferredPlatforms,
+    deferredPlatformPreservedCount: plan.deferredPlatformPreservedCount,
     retainedCount: plan.retainedCount,
     deleteCandidateCount: plan.deleteCandidateCount,
     maxMetricDate: plan.maxMetricDate,
@@ -56,7 +64,7 @@ try {
     d1Mutations: 0,
     queueActions: 0,
     production: 'BLOCKED',
-    blockedBy: ['facebook_fresh_metrics_parity', 'pre_delete_d1_lark_dashboard_reconciliation'],
+    blockedBy: ['pre_delete_d1_lark_dashboard_reconciliation'],
   });
   await writePrivate(join(evidenceRoot, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

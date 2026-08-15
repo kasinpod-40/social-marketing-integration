@@ -1,4 +1,4 @@
-export const MKT_CONTENT_DAILY_RETENTION_VERSION = 'mkt-content-daily-retention-preview-v2';
+export const MKT_CONTENT_DAILY_RETENTION_VERSION = 'mkt-content-daily-retention-v3';
 export const MKT_CONTENT_DAILY_RETENTION_DAYS = 30;
 export const MKT_CONTENT_DAILY_MAX_RETAINED_RECORDS = 10000;
 
@@ -9,6 +9,7 @@ export function planMktContentDailyRetention(input = {}) {
     input.maxRetainedRecords ?? MKT_CONTENT_DAILY_MAX_RETAINED_RECORDS,
     'maxRetainedRecords',
   );
+  const deferredPlatforms = normalizeDeferredPlatforms(input.deferredPlatforms ?? []);
   const normalized = records.map(normalizeRecord);
   const stableKeys = new Set();
   for (const row of normalized) {
@@ -27,10 +28,14 @@ export function planMktContentDailyRetention(input = {}) {
     if (!current || compareLatest(current, row) < 0) latestByContent.set(row.contentIdentity, row);
   }
   let effectiveRetentionDays = requestedRetentionDays;
-  let selection = selectRows(normalized, latestByContent, maxMetricDate, effectiveRetentionDays);
+  let selection = selectRows(
+    normalized, latestByContent, maxMetricDate, effectiveRetentionDays, deferredPlatforms,
+  );
   while (effectiveRetentionDays > 1 && selection.retained.length > maxRetainedRecords) {
     effectiveRetentionDays -= 1;
-    selection = selectRows(normalized, latestByContent, maxMetricDate, effectiveRetentionDays);
+    selection = selectRows(
+      normalized, latestByContent, maxMetricDate, effectiveRetentionDays, deferredPlatforms,
+    );
   }
   if (selection.retained.length > maxRetainedRecords) {
     throw retentionError(
@@ -47,6 +52,8 @@ export function planMktContentDailyRetention(input = {}) {
     recordCount: records.length,
     managedRecordCount: managed.length,
     unmanagedPreservedCount: normalized.length - managed.length,
+    deferredPlatforms: Object.freeze([...deferredPlatforms].sort()),
+    deferredPlatformPreservedCount: retained.filter((row) => row.reason === 'deferred_platform').length,
     contentIdentityCount: latestByContent.size,
     maxMetricDate,
     cutoffMetricDate,
@@ -57,7 +64,7 @@ export function planMktContentDailyRetention(input = {}) {
   });
 }
 
-function selectRows(normalized, latestByContent, maxMetricDate, retentionDays) {
+function selectRows(normalized, latestByContent, maxMetricDate, retentionDays, deferredPlatforms) {
   const cutoffMetricDate = maxMetricDate === 0
     ? 0
     : startOfBangkokDay(maxMetricDate) - ((retentionDays - 1) * 86_400_000);
@@ -69,9 +76,17 @@ function selectRows(normalized, latestByContent, maxMetricDate, retentionDays) {
       continue;
     }
     const latest = latestByContent.get(row.contentIdentity);
-    if (row.metricDate >= cutoffMetricDate) retained.push({ ...row, reason: 'within_bounded_completed_days' });
+    if (deferredPlatforms.has(row.platform)) retained.push({ ...row, reason: 'deferred_platform' });
+    else if (row.metricDate >= cutoffMetricDate) retained.push({ ...row, reason: 'within_bounded_completed_days' });
     else if (latest?.recordId === row.recordId) retained.push({ ...row, reason: 'latest_for_content' });
-    else deletes.push({ recordId: row.recordId, stableKey: row.stableKey, metricDate: row.metricDate });
+    else deletes.push({
+      recordId: row.recordId,
+      stableKey: row.stableKey,
+      platform: row.platform,
+      accountId: row.accountId,
+      externalContentId: row.externalContentId,
+      metricDate: row.metricDate,
+    });
   }
   return Object.freeze({ retained: Object.freeze(retained), deletes: Object.freeze(deletes), cutoffMetricDate });
 }
@@ -95,8 +110,11 @@ function normalizeRecord(record) {
     managed: true,
     recordId,
     stableKey,
+    platform: platform.toLowerCase(),
+    accountId,
+    externalContentId,
     metricDate,
-    contentIdentity: `${platform}\u0000${accountId}\u0000${externalContentId}`,
+    contentIdentity: `${platform.toLowerCase()}\u0000${accountId}\u0000${externalContentId}`,
   });
 }
 
@@ -105,10 +123,23 @@ function unmanaged(record, reason) {
     managed: false,
     recordId: optionalText(record?.recordId ?? record?.record_id),
     stableKey: null,
+    platform: null,
+    accountId: null,
+    externalContentId: null,
     metricDate: null,
     contentIdentity: null,
     reason,
   });
+}
+
+function normalizeDeferredPlatforms(values) {
+  if (!Array.isArray(values)) throw new TypeError('deferredPlatforms must be an array');
+  const normalized = values.map((value) => {
+    const platform = optionalText(value)?.toLowerCase();
+    if (!platform) throw new TypeError('deferredPlatforms must contain non-empty strings');
+    return platform;
+  });
+  return new Set(normalized);
 }
 
 function compareLatest(left, right) {
