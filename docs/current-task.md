@@ -96,6 +96,47 @@ Analytics 2,532 rows, missing 0, alert/DLQ ใหม่ 0. D1 fact keys 2,532 �
 reference. Live deletion ยังห้ามทำจน Connector ที่เกี่ยวข้องผ่าน fresh scheduled cycles หลัง deploy;
 manual catch-up ไม่ถูกใช้แทน scheduled evidence และยังไม่มีตารางใดถูกลบ.
 
+### Downstream Chatwoot Daily incremental authority — 2026-08-15
+
+ผู้ใช้อนุมัติให้แก้ Daily ที่เสียเวลาจากการสแกน Conversation ทั้งบัญชีสอง pass. Fresh Daily state ต้องใช้
+bounded Provider `updated_within` query ครั้งเดียวสำหรับ immutable rolling 3-day window แล้วอ่าน detail
+เฉพาะ changed stable IDs. Initial/Reconciliation และ legacy operation ที่เริ่ม full discovery แล้วคง
+stable-ID two-pass path เดิม เพื่อไม่เปลี่ยน continuation contract กลางงาน.
+
+#### Implementation result
+
+```text
+ROOT_CAUSE                          = DAILY_REUSED_FULL_ACCOUNT_TWO_PASS_DISCOVERY
+DAILY_DISCOVERY                     = UPDATED_WITHIN_ONCE_BOUNDED
+INITIAL_RECONCILIATION_DISCOVERY    = STABLE_IDENTITY_TWO_PASS_UNCHANGED
+LATE_MESSAGE_AND_STATE_UPDATES      = INCLUDED_BY_CONVERSATION_UPDATED_AT
+REPORTING_EVENTS                    = EXISTING_SERVER_SIDE_SINCE_UNTIL_UNCHANGED
+LEGACY_IN_PROGRESS_STATE            = PRESERVE_STABLE_TWO_PASS
+PII_IN_DURABLE_STATE                = ZERO
+WEBHOOK_REQUIRED                    = NO
+FOCUSED_TESTS                       = PASS_27_OF_27
+CHATWOOT_REGRESSION                 = PASS_222_OF_222
+FULL_UNIT_TESTS                     = PASS_3015_OF_3015
+WORKERS_RUNTIME_TESTS               = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS            = PASS_105_OF_105
+ARCHITECTURE_HYGIENE                = PASS
+DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                      = PASS_API_AND_SYNC
+DIFF_CHECK                          = PASS
+CURRENT_DAILY_20260814              = COMPLETED_FAILED_0_ALERT_0_DLQ_0_LOCK_0
+REMOTE_PROVIDER_PREFLIGHT           = PASS_GET_ONLY_51_ROWS_51_UNIQUE_ONE_REQUEST
+MERGE_DEPLOY                        = NOT_AUTHORIZED_NOT_RUN
+CURRENT_ACTIVE_CONTINUATION         = TERMINAL_COMPLETED
+PRODUCTION                          = BLOCKED
+```
+
+Exact Chatwoot continuation เดิมจบ `completed` แล้ว โดย failed units, exact open alerts, DLQ และ active
+locks เป็นศูนย์. GET-only tenant preflight ของ rolling 3 days + 5 minutes ผ่านด้วย one request: 51 rows,
+51 unique IDs, duplicate 0 และ `hasMore=false`. ขั้นถัดไปคือ reviewed merge/deploy และตรวจ fresh scheduled
+Daily ว่า list discovery เกิดครั้งเดียว, checkpoint generation ตรง, zero new exact alert/DLQ และ D1/Lark
+parity 15 targets. รายละเอียด:
+`docs/project-brain/chatwoot-daily-updated-within-incremental-2026-08-15.md`.
+
 ## Objective
 
 เปิด Source runtime และ schedules ของ Integration Workspace ทุกช่องทางที่อนุมัติ เปิด Daily/Weekly Shared Report schedules ทำ fresh previous-completed-day catch-up และ materialize 1D/3D/7D/30D ให้ Dashboard พร้อมตรวจ โดยรักษา Notification runtime, automatic weekly notification, DLQ redrive และ Production เป็น OFF/BLOCKED

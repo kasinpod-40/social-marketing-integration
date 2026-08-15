@@ -45,11 +45,14 @@ Manager Script trigger และ signed ingress เพื่อไม่สร�
 Data API counts โดยไม่ round/clamp/fabricate. Reviewed deployment รับ traffic 100% และ fresh catch-up
 ผ่านครบ 837/837 Videos, 1,919 Analytics rows, zero failed/missing rows, D1 checkpoint และ Lark parity
 1,919 unique keys พร้อม signed adjustments จริง 13 cells. YouTube Integration Owner Analytics เป็น Live
-PASS; Production ยัง blocked. Chatwoot stable-identity pagination fix merge/deploy แล้ว
-และอยู่ระหว่าง controlled catch-up/reconciliation. TikTok Ads ยัง `planned`;
+PASS; Production ยัง blocked. Chatwoot stable-identity pagination fix merge/deploy แล้ว และ Repository
+แก้ fresh Daily ให้ใช้ bounded `updated_within` discovery ครั้งเดียวแทน full-account two-pass; Initial และ
+legacy in-progress operations ยังคง stable two-pass. Patch ยังไม่ deploy ระหว่าง controlled continuation.
+TikTok Ads ยัง `planned`;
 Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
 `docs/project-brain/chatwoot-stable-identity-pagination-live-closeout-2026-08-10.md` และ
+`docs/project-brain/chatwoot-daily-updated-within-incremental-2026-08-15.md` และ
 `docs/current-task.md`.
 
 ## Historical TikTok implementation branch — Draft PR #65
@@ -97,7 +100,7 @@ Google Ads actual Script LIVE      pass / six datasets / failed rows 0
 Google Ads Provider schedule       daily 06:00–07:00 / PREVIEW unscheduled
 Google Ads Secret provisioning     completed / route safely closed
 YouTube Owner Analytics            owner consent pass / signed daily-count hotfix gated / live catch-up pending
-Chatwoot pagination                stable-ID cutoff fix gated / live reconciliation pending
+Chatwoot Daily                    updated-within incremental implemented / provider preflight + deploy pending
 ```
 
 ## WooCommerce 2026-only history

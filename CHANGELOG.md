@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — Chatwoot Daily Updated-within Incremental — 2026-08-15
+
+### Changed
+
+- Split Conversation discovery by runtime mode: fresh Daily uses one bounded Provider `updated_within`
+  query, while Initial/Reconciliation keeps stable-ID two-pass discovery.
+- Kept a three-day immutable overlap plus five-minute clock-skew allowance, exact per-ID detail reads,
+  stable D1/Lark keys and existing server-side Reporting Event `since`/`until` pagination.
+- Migrated legacy durable state conservatively: any operation with discovery progress continues under the
+  old two-pass strategy instead of changing source semantics mid-continuation.
+
+### Safety
+
+- Added strict page-1/unpaginated and row/response bounds for updated-within discovery; no Provider payload,
+  Message content or PII is persisted in durable state.
+- No Provider request, Queue send, replay/redrive, D1/Lark mutation, schedule change, deployment or
+  Production action occurred. The active Daily continuation must finish before GET-only preflight/deploy.
+- Focused Chatwoot regression passed `222/222`; full unit passed `3015/3015`; Workers runtime passed
+  `18/18`; report reliability passed `105/105`; architecture/hygiene, zero-vulnerability audit and API/Sync
+  deploy dry-runs passed.
+- The prior Daily operation reached `completed` with zero failed units, exact alerts, DLQ and active locks.
+  A GET-only tenant preflight returned 51/51 unique changed Conversations in one unpaginated request;
+  merge/deployment and fresh scheduled validation remain separately gated.
+
 ## Unreleased — Non-TikTok Lark RAW Retirement — 2026-08-14
 
 ### Changed

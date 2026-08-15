@@ -12,6 +12,7 @@ const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
 const MESSAGE_AFTER_PAGE_SIZE = 100;
 const MESSAGE_BEFORE_PAGE_SIZE = 20;
+const MAX_UPDATED_WITHIN_SECONDS = 366 * 24 * 60 * 60;
 
 /** GET-only Chatwoot Application API client with bounded transport and pagination. */
 export class ChatwootApiClient {
@@ -65,17 +66,47 @@ export class ChatwootApiClient {
 
   async listConversationsPage(input = {}) {
     const page = boundedInteger(input.page ?? 1, 'page', 1, this.maxPages);
+    const updatedWithinSeconds = input.updatedWithinSeconds === null
+      || input.updatedWithinSeconds === undefined
+      ? null
+      : boundedInteger(
+        input.updatedWithinSeconds,
+        'updatedWithinSeconds',
+        1,
+        MAX_UPDATED_WITHIN_SECONDS,
+      );
+    if (updatedWithinSeconds !== null && page !== 1) {
+      throw new TypeError('updatedWithinSeconds is an unpaginated page-1 query');
+    }
     const payload = await this.get(this.#accountPath('conversations'), {
       page,
       status: input.status ?? 'all',
       assignee_type: input.assigneeType ?? 'all',
+      ...(updatedWithinSeconds === null ? {} : {
+        updated_within: updatedWithinSeconds,
+        sort_by: 'last_activity_at_desc',
+      }),
       ...(input.inboxId ? { inbox_id: requirePositiveId(input.inboxId, 'inboxId') } : {}),
       ...(input.teamId ? { team_id: requirePositiveId(input.teamId, 'teamId') } : {}),
     }, { operationName: 'list_conversations' });
     const data = requireObject(payload?.data, 'list_conversations.data');
     const rows = requireArray(data.payload, 'list_conversations.data.payload');
+    if (updatedWithinSeconds !== null && rows.length > this.maxRows) {
+      throw permanentError('Chatwoot recently updated Conversations exceed configured row limit', {
+        code: 'CHATWOOT_ROW_LIMIT_EXCEEDED',
+        details: { maxRows: this.maxRows },
+      });
+    }
     const totalCount = nullableNonNegativeInteger(data?.meta?.all_count, 'list_conversations.meta.all_count');
-    return freezePage({ page, rows, totalCount, hasMore: rows.length > 0 });
+    return freezePage({
+      page,
+      rows,
+      // Chatwoot applies updated_within after its account-level meta count and returns the matching
+      // relation without offset pagination. Expose the bounded result count instead of the unrelated
+      // full-account count, and never request a second page for this source-supported query mode.
+      totalCount: updatedWithinSeconds === null ? totalCount : rows.length,
+      hasMore: updatedWithinSeconds === null ? rows.length > 0 : false,
+    });
   }
 
   async getConversation(conversationId) {

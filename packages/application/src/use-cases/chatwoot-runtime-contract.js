@@ -9,6 +9,11 @@ export const CHATWOOT_RUNTIME_MODES = Object.freeze({
   DAILY_INCREMENTAL: 'daily_incremental',
 });
 
+export const CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES = Object.freeze({
+  STABLE_IDENTITY_TWO_PASS: 'stable_identity_two_pass',
+  UPDATED_WITHIN_ONCE: 'updated_within_once',
+});
+
 export const CHATWOOT_RUNTIME_CONTRACT = Object.freeze({
   initialBackfillDays: 30,
   incrementalOverlapDays: 3,
@@ -109,6 +114,7 @@ export function readChatwootContinuationSequence(value) {
 export function createInitialChatwootDurableState(input = {}) {
   const mode = requireMode(input.mode);
   const window = resolveChatwootRuntimeWindow({ mode, requestedAt: input.requestedAt });
+  const conversationDiscoveryStrategy = defaultConversationDiscoveryStrategy(mode);
   return Object.freeze({
     contractVersion: CHATWOOT_RUNTIME_CONTRACT_VERSION,
     schemaVersion: CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION,
@@ -125,6 +131,9 @@ export function createInitialChatwootDurableState(input = {}) {
     conversationPendingIds: [],
     conversationDiscoveryPass: 1,
     conversationNewIdsInPass: 0,
+    conversationDiscoveryStrategy,
+    conversationDiscoveryComplete: false,
+    conversationUpdatedWithinSeconds: null,
     conversationLegacyDriftRecovered: false,
     conversationPagesProcessed: 0,
     conversationRowsScanned: 0,
@@ -188,6 +197,27 @@ export function assertChatwootDurableState(value, expected = {}) {
   }
   const legacyPartialPage = !hasIdentityDiscoveryState
     && (conversationRowOffset > 0 || conversationPageFingerprint !== null);
+  const hasDiscoveryProgress = legacyPartialPage
+    || conversationSeenIds.length > 0
+    || Number(value.conversationPagesProcessed ?? 0) > 0;
+  const conversationDiscoveryStrategy = value.conversationDiscoveryStrategy
+    ?? (hasDiscoveryProgress
+      ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS
+      : defaultConversationDiscoveryStrategy(mode));
+  assertConversationDiscoveryStrategy(conversationDiscoveryStrategy, mode);
+  const conversationDiscoveryComplete = value.conversationDiscoveryComplete === true;
+  const conversationUpdatedWithinSeconds = nullablePositiveInteger(
+    value.conversationUpdatedWithinSeconds,
+    'conversationUpdatedWithinSeconds',
+  );
+  if (conversationDiscoveryStrategy
+      === CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
+      && conversationDiscoveryComplete
+      && conversationUpdatedWithinSeconds === null) {
+    throw permanentError('Chatwoot updated-within discovery state is incomplete', {
+      code: 'CHATWOOT_DURABLE_STATE_INVALID',
+    });
+  }
   return Object.freeze({
     ...value,
     // Legacy fingerprint/offset state cannot safely resume after mutable provider pagination.
@@ -205,6 +235,9 @@ export function assertChatwootDurableState(value, expected = {}) {
       hasIdentityDiscoveryState ? value.conversationNewIdsInPass ?? 0 : 0,
       'conversationNewIdsInPass',
     ),
+    conversationDiscoveryStrategy,
+    conversationDiscoveryComplete,
+    conversationUpdatedWithinSeconds,
     conversationLegacyDriftRecovered: value.conversationLegacyDriftRecovered === true
       || legacyPartialPage,
     ...(legacyPartialPage ? {
@@ -295,6 +328,26 @@ function requireMode(value) {
   return value;
 }
 
+function defaultConversationDiscoveryStrategy(mode) {
+  return mode === CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL
+    ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
+    : CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS;
+}
+
+function assertConversationDiscoveryStrategy(value, mode) {
+  if (!Object.values(CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES).includes(value)) {
+    throw permanentError('Chatwoot Conversation discovery strategy is invalid', {
+      code: 'CHATWOOT_DURABLE_STATE_INVALID',
+    });
+  }
+  if (mode === CHATWOOT_RUNTIME_MODES.INITIAL_30_DAY_UAT
+      && value !== CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS) {
+    throw permanentError('Chatwoot Initial runtime requires stable two-pass discovery', {
+      code: 'CHATWOOT_DURABLE_STATE_INVALID',
+    });
+  }
+}
+
 function readTimestamp(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number' || /^\d+$/u.test(String(value))) {
@@ -331,6 +384,11 @@ function nonNegativeInteger(value, fieldName) {
     throw new TypeError(`${fieldName} must be a non-negative integer`);
   }
   return number;
+}
+
+function nullablePositiveInteger(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  return positiveInteger(value, fieldName);
 }
 
 function positiveUniqueIds(value, fieldName) {
