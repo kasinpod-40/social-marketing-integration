@@ -96,6 +96,7 @@ test('keeps Meta reach in Raw metrics without mislabeling it as unique viewers',
     contentResources: [{
       id: 'post_fixture_reach',
       created_time: '2026-07-23T17:30:00+0000',
+      shares: null,
     }],
     contentInsights: [{
       contentId: 'post_fixture_reach',
@@ -190,6 +191,7 @@ test('preserves observed zero Facebook reactions/comments and rejects malformed 
   };
 
   const writeSet = buildMetaOrganicWriteSet(input);
+  assert.equal(writeSet.canonical.contentDaily[0].shares, 0);
   assert.equal(writeSet.canonical.contentDaily[0].likes, 0);
   assert.equal(writeSet.canonical.contentDaily[0].comments, 0);
 
@@ -203,6 +205,50 @@ test('preserves observed zero Facebook reactions/comments and rejects malformed 
     }),
     /reactions\.summary\.total_count must be a non-negative integer/u,
   );
+});
+
+test('normalizes an omitted Facebook shares object to observed zero without coercing explicit null', () => {
+  const baseInput = {
+    connectorKey: 'facebook',
+    accountId: 'page_fixture_001',
+    accountKey: 'chemistry_k_facebook',
+    customerProfile: 'integration_workspace',
+    customerKey: 'chemistry_k',
+    fetchedAt: FETCHED_AT,
+    accountResource: { id: 'page_fixture_001', name: 'Fixture Facebook Page' },
+    contentInsights: [],
+    accountInsights: [],
+  };
+  const omitted = buildMetaOrganicWriteSet({
+    ...baseInput,
+    syncRunId: 'sync_meta_shares_omitted',
+    operationId: 'operation_meta_shares_omitted',
+    contentResources: [{
+      id: 'post_fixture_shares_omitted',
+      created_time: '2026-07-23T17:30:00+0000',
+    }],
+  });
+  assert.deepEqual(
+    omitted.raw.organicMetrics.map((row) => [row.metric_name, row.value_number]),
+    [['shares_count', 0]],
+  );
+  assert.equal(omitted.canonical.content[0].latest_shares, 0);
+  assert.equal(omitted.canonical.contentDaily[0].shares, 0);
+  assert.equal(omitted.d1.organicHistoryBatch.dailySnapshotRows[0].shares, 0);
+
+  const explicitNull = buildMetaOrganicWriteSet({
+    ...baseInput,
+    syncRunId: 'sync_meta_shares_explicit_null',
+    operationId: 'operation_meta_shares_explicit_null',
+    contentResources: [{
+      id: 'post_fixture_shares_explicit_null',
+      created_time: '2026-07-23T17:30:00+0000',
+      shares: null,
+    }],
+  });
+  assert.equal(explicitNull.raw.organicMetrics.length, 0);
+  assert.equal(Object.hasOwn(explicitNull.canonical.content[0], 'latest_shares'), false);
+  assert.equal(explicitNull.canonical.contentDaily.length, 0);
 });
 
 test('keeps an explicit Provider shares metric authoritative over the Post field fallback', () => {
