@@ -10,7 +10,8 @@ Storage direction ปัจจุบันคือ API Provider → D1 source/h
 `MKT_Accounts` ใน Integration Workspace มี Organic master ครบ 4 ช่องทางแล้ว: Facebook, Instagram,
 TikTok และ YouTube. TikTok ใช้ stable key `tiktok:${accountId}` และ permanent sync implementation
 เขียน Account หลัง Content/Daily สำเร็จเท่านั้น; Live exact backfill เสร็จแล้ว ส่วน scheduled maintenance
-ของ contract ใหม่นี้ยังรอ reviewed merge/deploy. ดู
+ของ contract ใหม่นี้ merge ผ่าน PR #653 และ deploy รวมกับ Facebook PR #652 บน reviewed Worker แล้ว.
+GET-only post-deploy readback ผ่าน 4/4; fresh scheduled evidence รอบถัดไปยังต้องรอตามเวลาจริง. ดู
 `docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
 
 ## Read first

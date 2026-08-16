@@ -8,9 +8,12 @@
   and writes once after all units, while deterministic metric-date timestamps avoid daily churn.
 - Backfilled exactly one Live `MKT_Accounts` row for `tiktok:chemistry_k`; readback is 4 Organic accounts and
   all 3 prior identities are unchanged. A private 3-row backup and checksum were captured before mutation.
-- Focused TikTok tests passed 25/25, D1-first ordering passed 2/2, full unit passed 3047/3047, Workers runtime
+- Focused TikTok tests passed 25/25, D1-first ordering passed 2/2, full unit passed 3048/3048, Workers runtime
   passed 18/18, Report reliability passed 105/105, architecture/hygiene and zero-vulnerability audit passed,
   and API/Sync Worker deploy dry-runs passed without deployment.
+- PR #653 merged on top of Facebook PR #652. Exact main `dff7c1e6` deployed as Worker version
+  `377bb562-46f0-44af-8aea-13b3e928bcaf` at 100% traffic; immediate new alert/DLQ/lock counts were zero and
+  GET-only `MKT_Accounts` readback remained 4/4.
 
 ## Unreleased — Non-TikTok Lark RAW Live Deletion Closeout — 2026-08-16
 
@@ -32,6 +35,8 @@
 - Add regression coverage across RAW metric, Canonical ContentDaily, and D1 Organic history output.
 - Audit the fresh Lark Base export read-only: current Views/Likes/Comments are complete, and 7-day
   period metrics remain N/A because baseline coverage is incomplete rather than zero.
+- PR #652 passed both CI workflows and merged before PR #653. The combined exact-main Worker release reached
+  100% traffic with zero immediate new alert/DLQ/lock; no manual Facebook source run was used as evidence.
 
 ## Unreleased — Facebook Authoritative Inventory Dashboard Fix — 2026-08-15
 

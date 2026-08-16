@@ -9,9 +9,12 @@ private backup/checksum ก่อน mutation.
 
 Repository implementation เพิ่ม Account plan ใน validation, legacy, staged/D1-first และ history paths;
 ใช้ stable key `tiktok:${accountId}`, source-handle guard, deterministic `last_sync_at` และเขียนหลัง
-Content/Daily สำเร็จเท่านั้น. Focused 25/25, D1-first ordering 2/2, full unit 3047/3047, Workers runtime
+Content/Daily สำเร็จเท่านั้น. Focused 25/25, D1-first ordering 2/2, full unit 3048/3048, Workers runtime
 18/18, report reliability 105/105, architecture/hygiene, audit 0 vulnerabilities และ deploy dry-run ผ่าน.
-Live row ใช้งานได้แล้ว แต่ permanent scheduled maintenance ยังรอ reviewed merge/deploy. รายละเอียดอยู่ที่
+PR #653 merge หลัง PR #652 ที่แก้ Facebook omitted Shares; exact main `dff7c1e6` deploy เป็น Worker
+`377bb562-46f0-44af-8aea-13b3e928bcaf` ที่ traffic 100%. Post-deploy alert/DLQ/lock ใหม่เป็นศูนย์และ
+GET-only Account master readback ผ่าน 4/4. Scheduled evidence รอบถัดไปยังต้องเป็น automatic เท่านั้น.
+รายละเอียดอยู่ที่
 `docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
 
 ## Non-TikTok Lark RAW live retirement closeout — 2026-08-16
