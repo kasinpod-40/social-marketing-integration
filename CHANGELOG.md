@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — TikTok Organic Account Master — 2026-08-16
+
+- Added canonical TikTok Organic Account planning and idempotent upsert to validation, legacy, staged/D1-first
+  and history sync routes using stable key `tiktok:${accountId}`.
+- Account status becomes `connected` only after Content and Daily writes succeed; staged sync preflights once
+  and writes once after all units, while deterministic metric-date timestamps avoid daily churn.
+- Backfilled exactly one Live `MKT_Accounts` row for `tiktok:chemistry_k`; readback is 4 Organic accounts and
+  all 3 prior identities are unchanged. A private 3-row backup and checksum were captured before mutation.
+- Focused TikTok tests passed 25/25, D1-first ordering passed 2/2, full unit passed 3047/3047, Workers runtime
+  passed 18/18, Report reliability passed 105/105, architecture/hygiene and zero-vulnerability audit passed,
+  and API/Sync Worker deploy dry-runs passed without deployment.
+
 ## Unreleased — Non-TikTok Lark RAW Live Deletion Closeout — 2026-08-16
 
 - Verified fresh scheduled cycles after the reviewed Worker for WooCommerce, Instagram, Meta/shared Ads,

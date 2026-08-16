@@ -69,6 +69,45 @@ and Production/DLQ redrive remain blocked. Detailed evidence is in
 `docs/project-brain/lark-automatic-weekly-executive-notification-2026-08-11.md` and
 `docs/tasks/lark-automatic-weekly-executive-notification-v1.md`.
 
+### TikTok MKT_Accounts master completion — 2026-08-16
+
+Live `MKT_Accounts` เดิมมีเฉพาะ YouTube, Facebook และ Instagram เพราะ TikTok Native sync เขียน
+`MKT_Content`/`MKT_Content_Daily` แต่ไม่เคยอ่านหรือเขียน Account master; ไม่เกี่ยวกับการลบ non-TikTok
+RAW tables. Exact live backfill เพิ่มเพียง `tiktok:chemistry_k` หลังสำรอง 3 rows เดิมแบบ private และ
+ตรวจ readback ว่า 3 identities เดิมไม่เปลี่ยน ทำให้ Live master ครบ 4 Organic channels.
+
+Repository implementation เพิ่ม Account master ใน validation, legacy, staged/D1-first และ history routes.
+Stable key คือ `tiktok:${accountId}`; source-handle guard ต้องผ่านก่อน plan และระบบเขียน Account หลัง
+Content/Daily สำเร็จเท่านั้น จึงไม่ประกาศ `connected` เมื่อ Business write ล้ม. Staged path preflight
+Account ครั้งเดียวและเขียนครั้งเดียวหลังทุก unit; retry/rerun ใช้ deterministic `last_sync_at` จาก
+`metricDate` และเป็น idempotent upsert. งานนี้ไม่แก้ Facebook, schedule, secret หรือ Production.
+
+#### Implementation result — TikTok Account master
+
+```text
+ROOT_CAUSE                         = TIKTOK_PIPELINE_OMITTED_MKT_ACCOUNTS
+LIVE_MKT_ACCOUNTS_BEFORE          = 3
+LIVE_MKT_ACCOUNTS_AFTER           = 4
+LIVE_TIKTOK_ACCOUNT_CREATE        = PASS_EXACT_1
+PRIOR_ACCOUNT_IDENTITIES          = PASS_UNCHANGED_3_OF_3
+ACCOUNT_STABLE_KEY                = tiktok:chemistry_k
+PRIVATE_BACKUP                    = PASS_3_ROWS_SHA256_42D849EB
+PERMANENT_PIPELINE                = IMPLEMENTED_NOT_DEPLOYED
+FOCUSED_TIKTOK_TESTS              = PASS_25_OF_25
+D1_FIRST_ORDERING_TESTS           = PASS_2_OF_2
+FULL_UNIT_TESTS                   = PASS_3047_OF_3047
+WORKERS_RUNTIME_TESTS             = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS          = PASS_105_OF_105
+ARCHITECTURE_HYGIENE              = PASS
+DEPENDENCY_AUDIT                  = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                    = PASS_API_AND_SYNC_NO_DEPLOY
+PRODUCTION                        = BLOCKED_UNCHANGED
+```
+
+Permanent maintenance จะเริ่มหลัง reviewed merge/deploy เท่านั้น. แถว Live ที่ backfill แล้วใช้งานได้ทันที
+แต่ scheduled TikTok sync รุ่นปัจจุบันยังไม่อัปเดต Account master จนกว่า implementation นี้จะถูก release.
+รายละเอียดอยู่ที่ `docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
+
 ### Downstream storage authority override — 2026-08-14
 
 ผู้ใช้อนุมัติให้ยกเลิก non-TikTok Lark RAW mirrors แบบถาวรโดยไม่สร้าง feature switch. Active API

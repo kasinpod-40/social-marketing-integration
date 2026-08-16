@@ -27,11 +27,22 @@ test('preflights both tables before writing and then creates content plus daily 
   assert.equal(result.mode, 'write');
   assert.equal(result.content.created, 1);
   assert.equal(result.dailySnapshots.created, 1);
-  assert.equal(writes.length, 2);
+  assert.equal(writes.length, 3);
   assert.equal(writes[0].tableId, 'tbl_mkt_content');
   assert.equal(writes[0].rows[0].content_key, 'tiktok:tt_account_1:video_1');
   assert.equal(writes[1].tableId, 'tbl_mkt_content_daily');
   assert.equal(writes[1].rows[0].completion_rate, 0.5);
+  assert.equal(writes[2].tableId, 'tbl_mkt_accounts');
+  assert.deepEqual(writes[2].rows[0], {
+    account_key: 'tiktok:tt_account_1',
+    platform: 'tiktok',
+    account_id: 'tt_account_1',
+    account_name: '@tt_account_1',
+    account_type: 'profile',
+    connection_status: 'connected',
+    timezone: 'Asia/Bangkok',
+    last_sync_at: writes[2].rows[0].last_sync_at,
+  });
 });
 
 test('does not write content when daily snapshot preflight fails', async () => {
@@ -171,6 +182,7 @@ function dictionaryRow() {
 function tableIds() {
   return {
     rawTikTokCreatorVideos: 'tbl_raw_tiktok_creator',
+    mktAccounts: 'tbl_mkt_accounts',
     mktContent: 'tbl_mkt_content',
     mktContentDaily: 'tbl_mkt_content_daily',
     mktClassificationDictionary: 'tbl_dictionary',
@@ -314,7 +326,7 @@ test('incremental first run saves a full checkpoint and unchanged rerun skips de
   assert.equal(second.processedRawRecords, 0);
   assert.equal(second.content.skipped, 1);
   assert.equal(second.dailySnapshots.skipped, 1);
-  assert.equal(repository.destinationReadCalls.length, destinationCallsBefore);
+  assert.equal(repository.destinationReadCalls.length, destinationCallsBefore + 1);
   assert.equal(repository.writeCalls.length, writesBefore);
   assert.equal(stateStore.saveCalls.length, 2);
   assert.equal(stateStore.saveCalls[1].records.length, 0);
@@ -379,7 +391,9 @@ test('same-day incremental run reads and updates only the changed TikTok record'
   assert.equal(result.dailySnapshots.updated, 1);
   assert.equal(result.dailySnapshots.skipped, 1);
   assert.ok(repository.destinationReadCalls.length > 0);
-  for (const call of repository.destinationReadCalls) {
+  for (const call of repository.destinationReadCalls.filter(
+    (entry) => entry.tableId !== 'tbl_mkt_accounts',
+  )) {
     assert.ok(call.values.every((value) => String(value).includes('video_2')));
   }
   assert.equal(stateStore.saveCalls.at(-1).records.length, 1);
@@ -420,7 +434,7 @@ test('checkpoint write failure happens after Lark writes and remains retryable',
     (cause) => cause === error && cause.retryable === true,
   );
 
-  assert.equal(repository.writeCalls.length, 2);
+  assert.equal(repository.writeCalls.length, 3);
 });
 
 function createIncrementalStateStore() {
@@ -457,6 +471,7 @@ function createIncrementalStateStore() {
 
 function createStatefulRepository(input) {
   const recordsByTable = {
+    tbl_mkt_accounts: [],
     tbl_mkt_content: [],
     tbl_mkt_content_daily: [],
   };
@@ -653,7 +668,7 @@ test('retry after checkpoint success and transient completeWork failure finishes
     () => syncTikTokCreatorNativeToLark({ ...common, syncRunId: 'run-complete-1', now: () => 6_000 }),
     (error) => error?.code === 'D1_SYNC_WORK_COMPLETE_FAILED' && error.retryable === true,
   );
-  assert.equal(repository.writeCalls.length, 2);
+  assert.equal(repository.writeCalls.length, 3);
   assert.equal(stateStore.saveCalls.length, 1);
 
   const result = await syncTikTokCreatorNativeToLark({
@@ -665,6 +680,6 @@ test('retry after checkpoint success and transient completeWork failure finishes
   assert.equal(result.incremental.reason, 'no_source_changes');
   assert.equal(result.content.created, 0);
   assert.equal(result.dailySnapshots.created, 0);
-  assert.equal(repository.writeCalls.length, 2);
+  assert.equal(repository.writeCalls.length, 3);
   assert.equal(baseWorkStore.works.get(common.workKey).lifecycleStatus, 'completed');
 });

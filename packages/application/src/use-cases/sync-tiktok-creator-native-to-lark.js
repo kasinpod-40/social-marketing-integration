@@ -104,12 +104,14 @@ function normalizeAttemptWriteResult(result, beforeState, afterState) {
     subtractTableResult(afterState.dailyResult, beforeState?.dailyResult),
     sourceSkips,
   );
+  const account = subtractTableResult(afterState.accountResult, beforeState?.accountResult);
   const d1History = subtractHistoryResult(afterState.historyResult, beforeState?.historyResult);
 
   return Object.freeze({
     ...result,
     content,
     dailySnapshots,
+    account,
     d1History,
     stagedBusiness: Object.freeze({
       ...(result.stagedBusiness ?? {}),
@@ -124,6 +126,7 @@ function normalizeAttemptWriteResult(result, beforeState, afterState) {
       workTotals: Object.freeze({
         content: addSkipped(normalizeTableResult(afterState.contentResult), sourceSkips),
         dailySnapshots: addSkipped(normalizeTableResult(afterState.dailyResult), sourceSkips),
+        account: normalizeTableResult(afterState.accountResult),
         d1History: normalizeHistoryResult(afterState.historyResult),
         unitsCompleted: nonNegativeInteger(afterState.unitsCompleted ?? 0),
         selectedRecordsCompleted: nonNegativeInteger(
@@ -143,6 +146,7 @@ function normalizeAttemptPartialError(error, beforeState) {
     normalizeTableResult(result?.dailySnapshots),
     sourceSkips,
   );
+  const accountCumulative = normalizeTableResult(result?.account);
   const historyCumulative = normalizeHistoryResult(result?.d1History);
   const normalizedResult = Object.freeze({
     ...result,
@@ -154,12 +158,14 @@ function normalizeAttemptPartialError(error, beforeState) {
       subtractTableResult(dailyCumulative, beforeState?.dailyResult),
       sourceSkips,
     ),
+    account: subtractTableResult(accountCumulative, beforeState?.accountResult),
     d1History: subtractHistoryResult(historyCumulative, beforeState?.historyResult),
     stagedBusiness: Object.freeze({
       ...(result?.stagedBusiness ?? {}),
       workTotals: Object.freeze({
         content: addSkipped(contentCumulative, sourceSkips),
         dailySnapshots: addSkipped(dailyCumulative, sourceSkips),
+        account: accountCumulative,
         d1History: historyCumulative,
       }),
     }),
@@ -212,6 +218,7 @@ function normalizeDurableReplayResult(result) {
     incremental: normalizedIncremental,
     content: emptyResult,
     dailySnapshots: emptyResult,
+    account: Object.freeze({ ...emptyResult, skipped: 0 }),
     d1History: emptyHistoryResult(historyTotals.enabled),
     stagedBusiness: Object.freeze({
       ...(result?.stagedBusiness ?? {}),
@@ -219,6 +226,7 @@ function normalizeDurableReplayResult(result) {
       workTotals: Object.freeze({
         content: normalizeTableResult(result?.content),
         dailySnapshots: normalizeTableResult(result?.dailySnapshots),
+        account: normalizeTableResult(result?.account),
         d1History: historyTotals,
         unitsCompleted: nonNegativeInteger(result?.stagedBusiness?.unitsCompleted ?? 0),
         selectedRecordsCompleted: nonNegativeInteger(

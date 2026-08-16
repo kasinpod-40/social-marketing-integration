@@ -190,6 +190,7 @@ function rawVideo({ handle, id, description = 'video' }) {
 function tableIds() {
   return {
     rawTikTokCreatorVideos: 'tbl_raw',
+    mktAccounts: 'tbl_accounts',
     mktClassificationDictionary: 'tbl_dictionary',
     mktContent: 'tbl_content',
     mktContentDaily: 'tbl_content_daily',

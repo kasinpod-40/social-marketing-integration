@@ -19,6 +19,11 @@ export async function prepareTikTokCreatorLarkSync(input) {
   const accountId = requireText(input?.accountId, 'accountId');
   const expectedSourceHandle = normalizeHandle(requireText(input?.sourceHandle, 'sourceHandle'));
   const metricDate = requireDateOnly(input?.metricDate, { label: 'metricDate' });
+  const lastSyncAt = toTikTokAccountSyncEpoch(input?.lastSyncAt ?? metricDate);
+  const reportingTimezone = requireText(
+    input?.reportingTimezone ?? 'Asia/Bangkok',
+    'reportingTimezone',
+  );
   const progress = readProgress(input?.onProgress);
 
   progress({ stage: 'loading_source_data' });
@@ -92,6 +97,7 @@ export async function prepareTikTokCreatorLarkSync(input) {
       reconciliation: emptyReconciliation(),
       readyToWrite: false,
       plans: Object.freeze({
+        account: blockedPlan(1),
         content: blockedPlan(selectedRows.contentRows.length),
         dailySnapshots: blockedPlan(selectedRows.dailySnapshotRows.length),
       }),
@@ -104,7 +110,17 @@ export async function prepareTikTokCreatorLarkSync(input) {
     dailySnapshotRows: selectedRows.dailySnapshotRows.length,
   });
 
-  const [destination, contentConflicts, dailyConflicts] = await Promise.all([
+  const [accountPlan, destination, contentConflicts, dailyConflicts] = await Promise.all([
+    input?.planAccount === false ? Promise.resolve(notRequestedPlan()) : planTikTokAccountDestination({
+      repository,
+      syncEngine,
+      tableId: tables.mktAccounts,
+      accountId,
+      sourceHandle: expectedSourceHandle,
+      reportingTimezone,
+      lastSyncAt,
+      onProgress: progress,
+    }),
     planOrganicContentDestination({
       repository,
       syncEngine,
@@ -173,8 +189,47 @@ export async function prepareTikTokCreatorLarkSync(input) {
     warnings: Object.freeze(warnings),
     reconciliation,
     readyToWrite,
-    plans: Object.freeze({ content: contentPlan, dailySnapshots: dailyPlan }),
+    plans: Object.freeze({ account: accountPlan, content: contentPlan, dailySnapshots: dailyPlan }),
   });
+}
+
+/** สร้างและ Preflight แถว Account master จาก Identity ที่ผ่าน source guard แล้วเท่านั้น */
+export async function planTikTokAccountDestination(input = {}) {
+  const repository = requireRepository(input.repository);
+  const syncEngine = requireSyncEngine(input.syncEngine);
+  const tableId = requireText(input.tableId, 'tableId');
+  const row = buildTikTokAccountRow(input);
+  const progress = readProgress(input.onProgress);
+  return syncEngine.planByKey({
+    repository,
+    tableId,
+    keyField: 'account_key',
+    rows: [row],
+    onProgress: (event) => progress({ scope: 'account', ...event }),
+  });
+}
+
+/** Canonical TikTok account identity ใช้ configured account key และ handle ที่ล็อกกับ Source */
+export function buildTikTokAccountRow(input = {}) {
+  const accountId = requireText(input.accountId, 'accountId');
+  const sourceHandle = normalizeHandle(requireText(input.sourceHandle, 'sourceHandle'));
+  return Object.freeze({
+    account_key: `tiktok:${accountId}`,
+    platform: 'tiktok',
+    account_id: accountId,
+    account_name: `@${sourceHandle}`,
+    account_type: 'profile',
+    connection_status: 'connected',
+    timezone: requireText(input.reportingTimezone ?? 'Asia/Bangkok', 'reportingTimezone'),
+    last_sync_at: toTikTokAccountSyncEpoch(input.lastSyncAt),
+  });
+}
+
+function toTikTokAccountSyncEpoch(value) {
+  const normalized = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(value)
+    ? `${value}T00:00:00+07:00`
+    : value;
+  return toEpochMilliseconds(normalized, { label: 'lastSyncAt' });
 }
 
 function readProcessedRawRecords(incrementalPlan, selectedRows) {
@@ -229,6 +284,18 @@ function blockedPlan(inputRows) {
     duplicateInputRows: 0,
     existingRecordsRead: 0,
     existingReadStrategy: 'not_evaluated_source_identity_failed',
+  });
+}
+
+function notRequestedPlan() {
+  return Object.freeze({
+    inputRows: 0,
+    createRows: Object.freeze([]),
+    updateRows: Object.freeze([]),
+    skipped: 0,
+    duplicateInputRows: 0,
+    existingRecordsRead: 0,
+    existingReadStrategy: 'not_requested_for_this_unit',
   });
 }
 
@@ -469,6 +536,7 @@ function requireSyncEngine(syncEngine) {
 function requireTables(tables) {
   const required = [
     'rawTikTokCreatorVideos',
+    'mktAccounts',
     'mktContent',
     'mktContentDaily',
     'mktClassificationDictionary',

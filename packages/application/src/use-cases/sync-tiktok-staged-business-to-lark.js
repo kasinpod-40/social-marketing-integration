@@ -128,6 +128,8 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
     accountId,
     sourceHandle,
     metricDate,
+    accountSyncedAt: metricDate,
+    reportingTimezone: input.reportingTimezone ?? 'Asia/Bangkok',
     dictionaryAnalysis,
     incrementalPlan: plan,
     selectedExternalIds,
