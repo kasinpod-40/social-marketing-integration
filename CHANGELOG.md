@@ -13,6 +13,14 @@
 - Confirmed `MKT_Content_Daily` at 9,139/10,000 rows with unmanaged 0 and delete candidates 0 after Facebook.
   No replay, redrive, manual Queue run, bulk/prefix deletion, Worker deploy or Production mutation was used.
 
+## 2026-08-15 — Facebook omitted-share normalization
+
+- Treat an omitted `shares` property on a successful Facebook Page Posts inventory row as an
+  observed zero, while preserving explicit `shares: null` as unavailable.
+- Add regression coverage across RAW metric, Canonical ContentDaily, and D1 Organic history output.
+- Audit the fresh Lark Base export read-only: current Views/Likes/Comments are complete, and 7-day
+  period metrics remain N/A because baseline coverage is incomplete rather than zero.
+
 ## Unreleased — Facebook Authoritative Inventory Dashboard Fix — 2026-08-15
 
 - Proved the active Page credential with a fresh scheduled 91/91 Facebook full-inventory run; D1 and GET-only

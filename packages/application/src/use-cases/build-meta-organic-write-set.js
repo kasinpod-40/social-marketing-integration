@@ -401,12 +401,7 @@ function normalizeInsightEntries(values, fieldName) {
 function contentResourceInsights(connectorKey, resource) {
   if (connectorKey !== 'facebook') return Object.freeze([]);
   const metrics = [];
-  appendFacebookCount(metrics, {
-    value: resource.shares,
-    sourceName: 'shares',
-    countPath: ['count'],
-    metricName: 'shares_count',
-  });
+  appendFacebookSharesCount(metrics, resource);
   appendFacebookCount(metrics, {
     value: resource.reactions,
     sourceName: 'reactions',
@@ -420,6 +415,29 @@ function contentResourceInsights(connectorKey, resource) {
     metricName: 'comments_count',
   });
   return Object.freeze(metrics);
+}
+
+/**
+ * A successful Page Posts inventory request explicitly asks Meta for `shares`. In the observed
+ * Graph response contract, posts with a positive count include `{ shares: { count } }`, while a
+ * post with no shares omits the `shares` object. Only that omitted-property shape is observed zero;
+ * an explicit null remains unavailable so a permission/shape regression cannot become a fake zero.
+ */
+function appendFacebookSharesCount(target, resource) {
+  if (!Object.hasOwn(resource, 'shares')) {
+    target.push(Object.freeze({
+      name: 'shares_count',
+      period: 'lifetime',
+      value: 0,
+    }));
+    return;
+  }
+  appendFacebookCount(target, {
+    value: resource.shares,
+    sourceName: 'shares',
+    countPath: ['count'],
+    metricName: 'shares_count',
+  });
 }
 
 function appendFacebookCount(target, input) {

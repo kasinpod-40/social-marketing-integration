@@ -15,6 +15,47 @@ BASE_NOTIFICATION_AUTOMATION        = DISABLED
 DLQ_REDRIVE                         = BLOCKED_OFF
 ```
 
+### Downstream Facebook Dashboard truth repair — 2026-08-15
+
+ผู้ใช้ส่ง Fresh Lark Base export หลัง Facebook current totals เริ่มขึ้น Dashboard แล้ว และอนุมัติให้แก้
+ค่าที่เหลือซึ่งยังแสดงศูนย์หลอก. Scope นี้แยกจาก Source replay: ห้ามส่ง Queue, fresh run, deploy,
+retention deletion หรือแก้ canonical `current_value` ด้วยมือ. ใช้ Base export เป็น read-only authority,
+แก้เฉพาะ permanent Facebook normalization พร้อม tests และบันทึกข้อจำกัดของ Dashboard presentation.
+
+Fresh export ยืนยัน Facebook ContentDaily 425 แถว. Snapshot ล่าสุดมี 91 Content: Views/Likes/Comments
+ครบ แต่ Graph payload ใส่ `shares.count` เฉพาะ 66 RAW Content และละ `shares` object 27 RAW Content;
+ContentDaily ล่าสุดจึงมี shares จริง 63 แถวและ null 28 แถว. Strict aggregate ปิด Total Shares,
+Total Engagement และ Engagement Rate เป็น N/A. Permanent fix แปลงเฉพาะ omitted `shares` property จาก
+successful Page Posts inventory เป็น observed zero; explicit `shares:null` ยังคง null เพื่อ fail closed.
+
+Dashboard export ยืนยัน Organic KPI 17 blocks ยัง filter ด้วย preserved Display V2 เพียง condition เดียว
+และ Statistics SUM แสดง numeric null เป็น 0. Period 7D ยังเป็น `baseline_incomplete` จริงที่ coverage
+8/91 จึงห้าม fabricate ค่า. Signed `.base` export ไม่ถูกแก้หรือ import กลับ และ Live Dashboard PATCH
+ยังไม่อยู่ใน public verified mutation boundary.
+
+#### Implementation result
+
+```text
+BASE_EXPORT_READ_ONLY_AUDIT          = PASS
+FACEBOOK_CONTENT_DAILY_ROWS          = 425
+LATEST_TRACKED_CONTENT               = 91
+LATEST_VIEWS_LIKES_COMMENTS          = COMPLETE_91_OF_91
+LATEST_SHARES_NON_NULL_NULL          = 63_28
+LATEST_OBSERVED_SHARE_SUM            = 2439
+OMITTED_SHARES_NORMALIZATION         = IMPLEMENTED_ZERO_ONLY_WHEN_PROPERTY_ABSENT
+EXPLICIT_NULL_SHARES                 = PRESERVED_NULL
+PROVIDER_QUEUE_D1_LARK_MUTATIONS     = 0_0_0_0
+LIVE_DEPLOYMENT                      = NOT_RUN
+DASHBOARD_PATCH                      = NOT_RUN_UNSUPPORTED_PUBLIC_BOUNDARY
+PERIOD_7D_BASELINE                   = INCOMPLETE_8_OF_91_NA_NOT_ZERO
+FOCUSED_FACEBOOK_REGRESSION          = PASS_39_OF_39
+ARCHITECTURE_REPOSITORY_HYGIENE      = PASS
+FULL_UNIT_WORKER_TESTS               = PASS_3048_PLUS_18
+REPORT_RELIABILITY_TESTS             = PASS_105_OF_105
+NPM_AUDIT                            = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                       = PASS_BOTH_WORKERS_NO_DEPLOY
+```
+
 ### Downstream authority override — 2026-08-11
 
 The original scope below intentionally kept Notification runtime and Automatic Weekly OFF during the
