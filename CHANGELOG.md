@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — Non-TikTok Lark RAW Live Deletion Closeout — 2026-08-16
+
+- Verified fresh scheduled cycles after the reviewed Worker for WooCommerce, Instagram, Meta/shared Ads,
+  YouTube, Chatwoot and Facebook; Facebook completed full-inventory Coverage 89/89 with failed 0 and exact
+  D1↔Lark current MKT identity/metric parity 89/89.
+- Revalidated all 27 private Lark backup checksums, the D1 backup checksum, YouTube 2,532/2,532 stable-key
+  parity, zero target references across 46 non-target tables/931 fields/139 hydrated views, zero active locks,
+  and zero current alert/DLQ before mutation.
+- Deleted exactly 27 non-TikTok Lark RAW tables one Table ID at a time with per-delete readback. The protected
+  `RAW_TikTok_Creator_Videos` identity remained present and every non-target Table ID/name remained unchanged.
+- Confirmed `MKT_Content_Daily` at 9,139/10,000 rows with unmanaged 0 and delete candidates 0 after Facebook.
+  No replay, redrive, manual Queue run, bulk/prefix deletion, Worker deploy or Production mutation was used.
+
 ## Unreleased — Facebook Authoritative Inventory Dashboard Fix — 2026-08-15
 
 - Proved the active Page credential with a fresh scheduled 91/91 Facebook full-inventory run; D1 and GET-only

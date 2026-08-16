@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                         = FACEBOOK_DEFERRED_TIME_BASED_GATES_REMAIN
-CURRENT_PROGRAM                     = INTEGRATION_FINAL_CLOSEOUT_WITH_FACEBOOK_DEFERRED_20260815
-BRANCH                              = codex/non-facebook-final-closeout-docs
-EXACT_BASE                          = 113503171839917470a2fc496648eea87a7a5248
+TASK_STATUS                         = RAW_RETIREMENT_COMPLETE_WEEKLY_TIME_GATE_REMAINS
+CURRENT_PROGRAM                     = INTEGRATION_FINAL_CLOSEOUT_WAIT_AUTOMATIC_WEEKLY_20260817
+BRANCH                              = codex/non-tiktok-raw-retirement-live-closeout
+EXACT_BASE                          = e465bee49476976def3e07e88bdc790f5be51f8d
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = ENABLED_RUNTIME_FOR_AUTOMATIC_WEEKLY
@@ -52,8 +52,8 @@ YOUTUBE_LARK_RAW_TARGETS          = 0
 YOUTUBE_ANALYTICS_D1_MIGRATION    = APPLIED_REMOTE_2026_08_14
 YOUTUBE_ANALYTICS_D1_STORE        = ADDED_IDEMPOTENT_NEWER_WINS
 TIKTOK_NATIVE_RAW                 = PROTECTED_READ_ONLY_UNCHANGED
-LIVE_TABLE_DELETION               = PENDING_FRESH_SCHEDULED_CYCLES
-DEPLOY_MERGE_REMOTE_MUTATION       = PR_641_MERGED_WORKER_7754BE21_100_PERCENT
+LIVE_TABLE_DELETION               = PASS_EXACT_27_OF_27
+DEPLOY_MERGE_REMOTE_MUTATION       = PR_641_MERGED_CURRENT_WORKER_808FE569_100_PERCENT
 REMOTE_D1_BACKUP                  = PASS_129_MIB_SHA256_7A828BF0
 PRIVATE_LARK_BACKUP               = PASS_27_TABLES_20072_RECORDS
 LARK_BACKUP_MANIFEST              = SHA256_29CC5C19
@@ -63,7 +63,7 @@ YOUTUBE_D1_LARK_STABLE_KEY_PARITY = PASS_2532_OF_2532_HASH_EQUAL
 YOUTUBE_NEW_ALERT_DLQ             = ZERO_ZERO
 LARK_CONSUMER_AUDIT               = PASS_46_TABLES_931_FIELDS_139_VIEWS_0_WORKFLOWS
 LARK_TARGET_REFERENCES            = ZERO
-NEXT_REQUIRED_EVIDENCE            = FRESH_SCHEDULED_CONNECTOR_CYCLES_AFTER_DEPLOY
+NEXT_REQUIRED_EVIDENCE            = AUTOMATIC_WEEKLY_20260817_0830
 CI_INITIAL_RESULT                  = FAILED_STALE_RAW_EXPECTATIONS_24_TESTS
 CI_FIX                             = IMPLEMENTED_OPERATOR_AND_FIXTURE_CONTRACT_ALIGNMENT
 FULL_UNIT_TESTS                    = PASS_NPM_TEST
@@ -93,8 +93,50 @@ Fresh YouTube Owner Analytics catch-up ถูกส่งครั้งเด�
 Analytics 2,532 rows, missing 0, alert/DLQ ใหม่ 0. D1 fact keys 2,532 รายการตรงกับ legacy Lark backup
 ครบทุก key และ SHA-256 เท่ากัน โดย duplicate/missing/extra เป็นศูนย์. Lark GET-only consumer audit ตรวจ
 46 non-target tables, 931 fields, 139 hydrated views และ workflow inventory แล้วไม่พบ target Table ID
-reference. Live deletion ยังห้ามทำจน Connector ที่เกี่ยวข้องผ่าน fresh scheduled cycles หลัง deploy;
-manual catch-up ไม่ถูกใช้แทน scheduled evidence และยังไม่มีตารางใดถูกลบ.
+reference.
+
+Fresh scheduled Connector evidence หลัง reviewed deploy ผ่านครบสำหรับ WooCommerce, Instagram,
+Meta/shared Ads, YouTube และ Chatwoot. Facebook operation `facebook-scheduled-20260815` จบ
+`completed` เวลา `2026-08-16T02:21:13.679Z`; Coverage เป็น `complete/full_inventory` 89/89,
+failed 0 และ D1 ตรงกับ Lark `MKT_Content`/`MKT_Content_Daily` 89/89 ทั้ง identity และ
+Views/Likes/Comments/Shares. Scheduled retention `mkt-content-daily-retention-20260816` ผ่านหนึ่งครั้ง;
+GET-only readback หลัง Facebook จบพบ 9,139/10,000 rows, unmanaged 0 และ delete candidate 0.
+
+ก่อนลบได้ revalidate Lark backup 27/27 files, manifest SHA-256
+`29cc5c19ec33292e0f42d814bcd90b03df465254176473811e010b0c5c1b2eef`, D1 backup SHA-256
+`7a828bf065fbaba843ed88508c1c0d8a3d99773f957ca58beec81def670bd4e6`, YouTube D1↔legacy
+backup 2,532/2,532 hash equal, zero target references, zero active locks และ zero current alert/DLQ.
+Exact operator ลบ 27 ตารางทีละ Table ID สำเร็จ; readback หลังแต่ละรายการยืนยัน target เดียวหาย,
+non-target identities ไม่เปลี่ยน และ protected `RAW_TikTok_Creator_Videos` ยังอยู่. ไม่มี manual
+Queue run, replay, redrive, Worker deploy หรือ bulk mutation. Meta Ads A22 คงเป็น retained forensic
+identity ที่ไม่มี active lock และไม่ใช่ current incident. Remaining Integration gate ที่อาศัยเวลาเหลือ
+เฉพาะ Automatic Weekly วันจันทร์ 2026-08-17 เวลา 08:30 Asia/Bangkok; Production ยังรอ
+customer-owned provisioning/UAT แยกต่างหาก.
+
+#### Implementation result — Live RAW retirement closeout docs
+
+```text
+FACEBOOK_SCHEDULED_OPERATION       = COMPLETED_FULL_INVENTORY_89_OF_89_FAILED_0
+FACEBOOK_D1_LARK_CURRENT_MKT       = PASS_89_OF_89_METRICS_EQUAL
+MKT_CONTENT_DAILY                 = PASS_9139_OF_10000_UNMANAGED_0_DELETE_CANDIDATES_0
+PRIVATE_BACKUP_CHECKSUMS           = PASS_27_OF_27
+YOUTUBE_D1_LEGACY_BACKUP_PARITY    = PASS_2532_OF_2532_HASH_EQUAL
+LARK_TARGET_REFERENCES             = ZERO
+ACTIVE_LOCK_CURRENT_ALERT_DLQ      = ZERO_ZERO_ZERO
+LIVE_LARK_RAW_DELETE               = PASS_EXACT_27_OF_27
+PROTECTED_TIKTOK_NATIVE_RAW        = PASS_PRESENT_UNCHANGED
+NON_TARGET_LARK_TABLES             = PASS_UNCHANGED
+REPLAY_REDRIVE_MANUAL_QUEUE        = ZERO_ZERO_ZERO
+REPOSITORY_CHECK                  = PASS
+FULL_UNIT_TESTS                    = PASS_3047_OF_3047
+WORKERS_RUNTIME_TESTS              = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS           = PASS_105_OF_105
+DEPENDENCY_AUDIT                   = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                     = PASS_API_AND_SYNC
+DIFF_CHECK                         = PASS
+NEXT_TIME_BASED_GATE               = AUTOMATIC_WEEKLY_20260817_0830
+PRODUCTION                         = BLOCKED_CUSTOMER_OWNED_PROVISIONING_UAT
+```
 
 ### Downstream Chatwoot Daily incremental authority — 2026-08-15
 

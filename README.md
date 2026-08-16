@@ -29,9 +29,12 @@ Non-wait readiness work on 2026-08-15 closed two exact TikTok partial-write aler
 capacity/10x/100x/restore evidence and closed the `MKT_Content_Daily` capacity incident. Exact private backup
 preceded deletion of 10,649 non-Facebook rows; readback retained 9,291 rows with Facebook 425/425 protected.
 Permanent bounded retention now runs at 08:05 before Daily Report and stops around active sync locks. Facebook
-Page-token capability and D1/Lark/Dashboard Likes/Comments parity are proven; its 07:30 source schedule is active
-and the retention defer is removed. Remaining gates are the first automatic Facebook/retention cycle,
-Monday Automatic Weekly evidence, RAW retirement and customer-owned Production provisioning. See
+Page-token capability and D1/Lark/Dashboard Likes/Comments parity are proven; its 07:30 source schedule and
+the first non-deferred 08:05 retention cycle passed. Facebook full-inventory Coverage and D1↔Lark current MKT
+parity passed 89/89; `MKT_Content_Daily` readback is 9,139/10,000 rows. After scheduled Connector evidence,
+backup/checksum, YouTube 2,532/2,532 parity and zero-reference/lock checks, the exact operator deleted all
+27 non-TikTok Lark RAW tables while preserving the protected TikTok Native RAW and every non-target table.
+Remaining gates are Monday Automatic Weekly evidence and customer-owned Production provisioning. See
 `docs/current-task.md`.
 
 Repository runtime รองรับ Shared Report schedule สำหรับ Facebook, Instagram, TikTok, YouTube,
