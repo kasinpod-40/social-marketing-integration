@@ -1,5 +1,19 @@
 # Project Brain — Social Marketing Data Integration
 
+## Non-TikTok Lark RAW live retirement closeout — 2026-08-16
+
+Fresh scheduled Connector gates หลัง reviewed Worker `808fe569-8319-469b-b069-2b586642e630` ผ่านครบ.
+Facebook scheduled operation จบ complete/full-inventory 89/89, failed 0 และ D1↔Lark current MKT parity
+89/89. `MKT_Content_Daily` อยู่ที่ 9,139/10,000 rows, unmanaged 0 และไม่มี delete candidate.
+Backup/checksum 27 tables, D1 backup, YouTube 2,532/2,532 stable-key parity, zero consumer reference,
+zero active lock และ zero current alert/DLQ ถูก revalidate ก่อน mutation.
+
+Exact operator ลบ non-TikTok Lark RAW 27 tables ทีละ exact Table ID สำเร็จเมื่อ 2026-08-16;
+หลังทุก delete target หายเพียงรายการเดียว, non-target identities ไม่เปลี่ยน และ protected
+`RAW_TikTok_Creator_Videos` ยังอยู่. ไม่มี bulk/prefix delete, replay, redrive, manual Queue run หรือ
+Worker deploy. Remaining time-based Integration gate เหลือ Automatic Weekly วันจันทร์ 2026-08-17
+08:30 Asia/Bangkok; Production provisioning/UAT เป็นงาน customer-owned แยกต่างหาก.
+
 ## Integration non-wait closeout — 2026-08-15
 
 ปิดงานที่ไม่ต้องรอใน worktree แยกจาก Facebook: exact TikTok `SYNC_PARTIAL_WRITE` alerts สองรายการ
@@ -43,10 +57,11 @@ YouTube, WooCommerce และ Chatwoot เก็บ source facts/history/covera
 `MKT_*` และ Report tables. ไม่มี feature switch สำหรับเปิด RAW mirror กลับมา. ข้อยกเว้นเดียวคือ
 `RAW_TikTok_Creator_Videos` ซึ่งเป็น protected Lark Native source และ Worker อ่านได้อย่างเดียว.
 
-Repository change เพิ่ม D1 `youtube_analytics_daily_facts`, ตัด active writers/preflight/schema ของ
-27 legacy RAW tables และคง exact cleanup metadata. ยังไม่มี Live table deletion/deploy; การลบต้องผ่าน
-backup/checksum, D1 catch-up, stable-key parity, reviewed deploy, scheduled soak และ zero-consumer proof
-ตาม `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
+Repository change เพิ่ม D1 `youtube_analytics_daily_facts` และตัด active writers/preflight/schema ของ
+27 legacy RAW tables. หลัง backup/checksum, D1 catch-up, stable-key parity, reviewed deploy, scheduled
+soak และ zero-consumer proof ผ่านครบ ได้ลบ Live tables 27/27 แบบ exact ID แล้วเมื่อ 2026-08-16;
+TikTok Native RAW คง protected/read-only ตามเดิม. รายละเอียดอยู่ที่
+`docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
 
 ## Multichannel Report & Schedule Final Closure — 2026-08-09
 

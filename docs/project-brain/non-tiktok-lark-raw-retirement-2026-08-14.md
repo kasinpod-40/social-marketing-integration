@@ -124,11 +124,32 @@ YOUTUBE_ANALYTICS_FACTS            = 2532_DISTINCT_KEYS
 D1_LEGACY_LARK_KEY_PARITY          = PASS_2532_OF_2532_SHA256_EQUAL
 NEW_YOUTUBE_ALERT_DLQ              = 0_0
 LARK_ZERO_CONSUMER_AUDIT           = PASS_46_TABLES_931_FIELDS_139_VIEWS_0_WORKFLOWS
-LIVE_TABLE_DELETION                = NOT_RUN_WAITING_FRESH_SCHEDULED_CYCLES
+LIVE_TABLE_DELETION                = PASS_EXACT_27_OF_27_20260816
+POST_DELETE_TIKTOK_PROTECTED       = PASS_PRESENT_EXACT_IDENTITY
+POST_DELETE_NON_TARGET_TABLES      = PASS_UNCHANGED
 ```
 
 Backup เก็บใน private local rollout directory ด้วย permission `0700/0600` และไม่ commit เนื้อหา Records,
 Table IDs หรือ customer data เข้า Repository. Fresh catch-up ไม่ replay/redrive retained Work เก่า.
-Static runtime contract และ Lark metadata/automation audit ผ่านแล้ว แต่ rollout gate ข้อ 5 กำหนดให้รอ
-fresh scheduled cycle หลัง reviewed deploy ของ Connector ที่เกี่ยวข้องก่อน one-by-one deletion; controlled
-YouTube catch-up ไม่ถูกนับแทน scheduled evidence.
+Static runtime contract และ Lark metadata/automation audit ผ่านแล้ว; controlled YouTube catch-up ไม่ถูกนับ
+แทน scheduled evidence.
+
+## Live deletion closeout — 2026-08-16
+
+Fresh scheduled cycles หลัง reviewed Worker version `808fe569-8319-469b-b069-2b586642e630` ผ่านครบ
+สำหรับ WooCommerce, Instagram, Meta/shared Ads, YouTube, Chatwoot และ Facebook. Facebook exact operation
+`facebook-scheduled-20260815` จบ `completed`; Coverage `complete/full_inventory` 89/89, failed 0 และ
+D1↔Lark current MKT identity/metric parity 89/89. `MKT_Content_Daily` readback หลัง operation มี 9,139
+records จากเพดาน 10,000, unmanaged 0 และ retention delete candidate 0.
+
+ก่อน deletion ได้ตรวจซ้ำว่า backup ทั้ง 27 files ตรง checksum, D1 backup checksum ตรง, YouTube D1
+2,532 keys ตรงกับ legacy backup 2,532 keys และ SHA-256 เท่ากัน. Consumer audit รอบสุดท้ายตรวจ 46
+non-target tables, 931 fields, 139 hydrated views และ workflow inventory โดย target reference เป็น 0.
+Active locks, current alert และ current DLQ เป็น 0; Meta Ads A22 เป็น retained forensic identity เดิมและ
+ไม่มี lock.
+
+Exact operator ลบ 27 tables ทีละ exact Table ID ตามลำดับใน manifest และตรวจ readback หลังทุก delete.
+ผลสุดท้าย `deletedCount=27`, protected `RAW_TikTok_Creator_Videos` ยังอยู่ exact identity เดิม และ
+non-target Table IDs/names ไม่เปลี่ยน. ไม่มี prefix/bulk delete, replay, redrive, manual Queue run หรือ
+Worker deploy. Private deletion evidence อยู่ที่ rollout artifact เดิมและไม่ commit customer records,
+Table IDs หรือ credentials เข้า Repository.
