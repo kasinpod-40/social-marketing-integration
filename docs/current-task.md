@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                         = RAW_RETIREMENT_COMPLETE_WEEKLY_TIME_GATE_REMAINS
+TASK_STATUS                         = FACEBOOK_TIKTOK_RELEASED_WEEKLY_TIME_GATE_REMAINS
 CURRENT_PROGRAM                     = INTEGRATION_FINAL_CLOSEOUT_WAIT_AUTOMATIC_WEEKLY_20260817
-BRANCH                              = codex/non-tiktok-raw-retirement-live-closeout
-EXACT_BASE                          = e465bee49476976def3e07e88bdc790f5be51f8d
+BRANCH                              = codex/facebook-tiktok-release-closeout
+EXACT_BASE                          = dff7c1e6cfe78740945f2a7e991ba8cc3a5acab5
 INTEGRATION_WORKSPACE               = AUTHORIZED
 PRODUCTION                          = BLOCKED
 NOTIFICATION_RUNTIME                = ENABLED_RUNTIME_FOR_AUTOMATIC_WEEKLY
@@ -45,7 +45,10 @@ LATEST_OBSERVED_SHARE_SUM            = 2439
 OMITTED_SHARES_NORMALIZATION         = IMPLEMENTED_ZERO_ONLY_WHEN_PROPERTY_ABSENT
 EXPLICIT_NULL_SHARES                 = PRESERVED_NULL
 PROVIDER_QUEUE_D1_LARK_MUTATIONS     = 0_0_0_0
-LIVE_DEPLOYMENT                      = NOT_RUN
+MERGE                                = PR_652_MAIN_2E4336D8
+LIVE_DEPLOYMENT                      = PASS_WORKER_377BB562_100_PERCENT
+POST_DEPLOY_ALERT_DLQ_LOCK           = ZERO_ZERO_ZERO
+FRESH_SCHEDULED_SOURCE_EVIDENCE      = TIME_GATED_20260817_0730
 DASHBOARD_PATCH                      = NOT_RUN_UNSUPPORTED_PUBLIC_BOUNDARY
 PERIOD_7D_BASELINE                   = INCOMPLETE_8_OF_91_NA_NOT_ZERO
 FOCUSED_FACEBOOK_REGRESSION          = PASS_39_OF_39
@@ -55,6 +58,12 @@ REPORT_RELIABILITY_TESTS             = PASS_105_OF_105
 NPM_AUDIT                            = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                       = PASS_BOTH_WORKERS_NO_DEPLOY
 ```
+
+PR #652 ผ่าน Meta End-to-End และ Branch Verification แล้ว merge เข้า `main`. PR #653 ถูก rebase บน
+merge ดังกล่าว จากนั้น Worker version `377bb562-46f0-44af-8aea-13b3e928bcaf` deploy จาก exact main
+`dff7c1e6cfe78740945f2a7e991ba8cc3a5acab5` และรับ traffic 100%. Immediate D1 readback พบ alert ใหม่
+0, DLQ ใหม่ 0 และ active lock 0; Meta Ads A22 เพียงรายการเดียวยังคงเป็น retained forensic work ตาม
+authority เดิม. ไม่มี Queue/manual source run ถูกใช้แทน scheduled evidence.
 
 ### Downstream authority override — 2026-08-11
 
@@ -92,10 +101,14 @@ LIVE_TIKTOK_ACCOUNT_CREATE        = PASS_EXACT_1
 PRIOR_ACCOUNT_IDENTITIES          = PASS_UNCHANGED_3_OF_3
 ACCOUNT_STABLE_KEY                = tiktok:chemistry_k
 PRIVATE_BACKUP                    = PASS_3_ROWS_SHA256_42D849EB
-PERMANENT_PIPELINE                = IMPLEMENTED_NOT_DEPLOYED
+PERMANENT_PIPELINE                = PR_653_MERGED_DEPLOYED
+MAIN_MERGE                        = dff7c1e6cfe78740945f2a7e991ba8cc3a5acab5
+WORKER_VERSION                    = 377bb562_100_PERCENT
+POST_DEPLOY_ALERT_DLQ_LOCK        = ZERO_ZERO_ZERO
+POST_DEPLOY_MKT_ACCOUNTS          = PASS_4_OF_4
 FOCUSED_TIKTOK_TESTS              = PASS_25_OF_25
 D1_FIRST_ORDERING_TESTS           = PASS_2_OF_2
-FULL_UNIT_TESTS                   = PASS_3047_OF_3047
+FULL_UNIT_TESTS                   = PASS_3048_OF_3048
 WORKERS_RUNTIME_TESTS             = PASS_18_OF_18
 REPORT_RELIABILITY_TESTS          = PASS_105_OF_105
 ARCHITECTURE_HYGIENE              = PASS
@@ -104,8 +117,9 @@ DEPLOY_DRY_RUN                    = PASS_API_AND_SYNC_NO_DEPLOY
 PRODUCTION                        = BLOCKED_UNCHANGED
 ```
 
-Permanent maintenance จะเริ่มหลัง reviewed merge/deploy เท่านั้น. แถว Live ที่ backfill แล้วใช้งานได้ทันที
-แต่ scheduled TikTok sync รุ่นปัจจุบันยังไม่อัปเดต Account master จนกว่า implementation นี้จะถูก release.
+Permanent maintenance ถูก merge/deploy แล้วใน Worker รุ่นที่รับ traffic 100%. GET-only readback หลัง deploy
+ยืนยัน `MKT_Accounts` ครบ 4/4 โดย TikTok เป็น `connected`; scheduled source evidence รอบถัดไปยังคงเป็น
+หลักฐานตามเวลาและห้ามใช้ manual run แทน.
 รายละเอียดอยู่ที่ `docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
 
 ### Downstream storage authority override — 2026-08-14

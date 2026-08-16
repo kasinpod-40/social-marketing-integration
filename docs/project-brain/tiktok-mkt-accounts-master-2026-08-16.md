@@ -55,7 +55,7 @@ Production. Backup เป็น local private evidence และห้าม com
 ```text
 Focused TikTok tests             25/25 pass
 D1-first ordering tests           2/2 pass
-Full unit tests                3047/3047 pass
+Full unit tests                3048/3048 pass
 Workers runtime tests            18/18 pass
 Report reliability              105/105 pass
 Architecture/hygiene                  pass
@@ -63,11 +63,14 @@ npm audit                   0 vulnerabilities
 API/Sync deploy dry-run               pass
 ```
 
-Combined `npm test` ใน restricted sandbox จบ unit 3047/3047 แต่ Workers runtime เปิด loopback ไม่ได้;
+Combined `npm test` ใน restricted sandbox จบ unit 3048/3048 แต่ Workers runtime เปิด loopback ไม่ได้;
 เมื่อ rerun Workers runtime ใน approved execution context ผ่าน 18/18. ไม่มี deployment เกิดจาก dry-run.
 
 ## Release state
 
-Live Account master ใช้งานได้ทันที 4 ช่องทาง. Permanent TikTok scheduled maintenance ถูก implement และ
-verify แล้วใน branch แยก แต่ยังไม่ commit/push/merge/deploy. ก่อน release ต้องผ่าน review ตามปกติ;
-Production gate และ Automatic Weekly time gate ไม่เปลี่ยนจาก Current Task.
+Live Account master ใช้งานได้ทันที 4 ช่องทาง. PR #653 ผ่าน CI และ merge หลัง Facebook PR #652; exact main
+`dff7c1e6cfe78740945f2a7e991ba8cc3a5acab5` deploy เป็น Worker version
+`377bb562-46f0-44af-8aea-13b3e928bcaf` ที่ traffic 100%. Immediate post-deploy D1 readback พบ alert ใหม่ 0,
+DLQ ใหม่ 0 และ lock 0; GET-only Lark readback ยังผ่าน 4/4. Meta Ads A22 ที่ยัง active เป็น retained forensic
+identity เดิม ไม่ใช่ regression. ไม่มี manual Queue/source run; fresh scheduled evidence และ Automatic Weekly
+ยังต้องรอตามเวลาจริง. Production gate ไม่เปลี่ยนจาก Current Task.
