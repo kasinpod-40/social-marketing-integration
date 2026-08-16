@@ -37,7 +37,7 @@ test('Lark failure after D1 success retries D1 idempotently and repairs Lark', a
 
   events.length = 0;
   const result = await writeAllUnits(input);
-  assert.deepEqual(events, ['d1', 'lark:content', 'lark:daily']);
+  assert.deepEqual(events, ['d1', 'lark:content', 'lark:daily', 'lark:account']);
   assert.equal(historyHooks.calls, 2);
   assert.equal(result.historyResult.contentRowsDurable, 1);
   assert.equal(result.historyResult.observationRowsDurable, 1);
@@ -55,6 +55,7 @@ function createInput(input) {
     syncEngine: input.syncEngine,
     tables: {
       rawTikTokCreatorVideos: 'raw-tiktok',
+      mktAccounts: 'mkt-accounts',
       mktContent: 'mkt-content',
       mktContentDaily: 'mkt-content-daily',
       mktClassificationDictionary: 'mkt-dictionary',
@@ -62,6 +63,8 @@ function createInput(input) {
     accountId: 'chemistry_k',
     sourceHandle: 'chemistry_k',
     metricDate: '2026-07-23',
+    accountSyncedAt: '2026-07-23',
+    reportingTimezone: 'Asia/Bangkok',
     dictionaryAnalysis: dictionaryAnalysis(),
     incrementalPlan: {
       enabled: false,
@@ -178,7 +181,9 @@ function createSyncEngine(events, input = {}) {
       });
     },
     async executePlan(plan) {
-      const role = plan.tableId === 'mkt-content' ? 'content' : 'daily';
+      const role = plan.tableId === 'mkt-accounts'
+        ? 'account'
+        : plan.tableId === 'mkt-content' ? 'content' : 'daily';
       events.push(`lark:${role}`);
       if (role === 'content') {
         contentAttempts += 1;

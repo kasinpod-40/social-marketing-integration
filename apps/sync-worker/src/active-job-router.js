@@ -216,6 +216,7 @@ export async function processJob(input) {
   if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
     const tableIds = readLarkTableIdsFromEnv(input.env, [
       'rawTikTokCreatorVideos',
+      'mktAccounts',
       'mktContent',
       'mktContentDaily',
       'mktClassificationDictionary',
@@ -280,6 +281,7 @@ export async function processJob(input) {
         ),
         tables: {
           rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
+          mktAccounts: tableIds.mktAccounts,
           mktContent: tableIds.mktContent,
           mktContentDaily: tableIds.mktContentDaily,
           mktClassificationDictionary: tableIds.mktClassificationDictionary,
@@ -293,6 +295,7 @@ export async function processJob(input) {
   if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_VALIDATE) {
     const tableIds = readLarkTableIdsFromEnv(input.env, [
       'rawTikTokCreatorVideos',
+      'mktAccounts',
       'mktClassificationDictionary',
       'mktContent',
       'mktContentDaily',
@@ -306,6 +309,7 @@ export async function processJob(input) {
       sampleLimit: input.job.body?.sampleLimit,
       tables: {
         rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
+        mktAccounts: tableIds.mktAccounts,
         mktClassificationDictionary: tableIds.mktClassificationDictionary,
         mktContent: tableIds.mktContent,
         mktContentDaily: tableIds.mktContentDaily,

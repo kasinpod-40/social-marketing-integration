@@ -286,10 +286,12 @@ function failCompleteWorkOnce(store) {
 
 function createIndexedRepository(input) {
   const recordsByTable = new Map([
+    ['tbl_mkt_accounts', new Map()],
     ['tbl_mkt_content', new Map()],
     ['tbl_mkt_content_daily', new Map()],
   ]);
   const externalIndexByTable = new Map([
+    ['tbl_mkt_accounts', new Map()],
     ['tbl_mkt_content', new Map()],
     ['tbl_mkt_content_daily', new Map()],
   ]);
@@ -355,7 +357,9 @@ function createIndexedRepository(input) {
           });
         }
       }
-      const stableField = tableId === 'tbl_mkt_content' ? 'content_key' : 'content_daily_key';
+      const stableField = tableId === 'tbl_mkt_accounts'
+        ? 'account_key'
+        : tableId === 'tbl_mkt_content' ? 'content_key' : 'content_daily_key';
       const stableIndex = recordsByTable.get(tableId);
       const externalIndex = externalIndexByTable.get(tableId);
       for (const fields of rows) {
@@ -366,13 +370,15 @@ function createIndexedRepository(input) {
         }
         const record = { recordId: `record-${nextRecordId++}`, fields: { ...fields } };
         stableIndex.set(stableKey, record);
-        externalIndex.set(fields.external_content_id, record);
+        if (fields.external_content_id) externalIndex.set(fields.external_content_id, record);
       }
       return { created: rows.length };
     },
     async updateMany(tableId, rows) {
       repository.writeCalls.push({ operation: 'update', tableId, rows: rows.length });
-      const stableField = tableId === 'tbl_mkt_content' ? 'content_key' : 'content_daily_key';
+      const stableField = tableId === 'tbl_mkt_accounts'
+        ? 'account_key'
+        : tableId === 'tbl_mkt_content' ? 'content_key' : 'content_daily_key';
       const stableIndex = recordsByTable.get(tableId);
       const externalIndex = externalIndexByTable.get(tableId);
       for (const update of rows) {
@@ -382,7 +388,9 @@ function createIndexedRepository(input) {
         stableIndex.delete(previousKey);
         record.fields = { ...update.fields };
         stableIndex.set(record.fields[stableField], record);
-        externalIndex.set(record.fields.external_content_id, record);
+        if (record.fields.external_content_id) {
+          externalIndex.set(record.fields.external_content_id, record);
+        }
       }
       return { updated: rows.length };
     },
@@ -459,6 +467,7 @@ function dictionaryRow() {
 function tableIds() {
   return {
     rawTikTokCreatorVideos: 'tbl_raw_tiktok_creator',
+    mktAccounts: 'tbl_mkt_accounts',
     mktContent: 'tbl_mkt_content',
     mktContentDaily: 'tbl_mkt_content_daily',
     mktClassificationDictionary: 'tbl_dictionary',

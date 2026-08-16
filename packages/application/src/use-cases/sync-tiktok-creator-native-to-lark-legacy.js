@@ -37,6 +37,8 @@ export async function syncTikTokCreatorNativeToLark(input) {
     accountId: input?.accountId,
     sourceHandle: input?.sourceHandle,
     metricDate: input?.metricDate,
+    lastSyncAt: input?.lastSyncAt ?? input?.metricDate,
+    reportingTimezone: input?.reportingTimezone,
     syncMode: input?.syncMode,
     incrementalEnabled: input?.incrementalEnabled,
     dryRun: input?.dryRun,
@@ -87,6 +89,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
       incremental: summarizeIncremental(prepared.incremental, false),
       classificationRules: prepared.classificationRules,
       classificationDictionary: prepared.classificationDictionary,
+      account: planSummary(prepared.plans.account, null),
       content: planSummary(prepared.plans.content, prepared.incremental),
       dailySnapshots: planSummary(prepared.plans.dailySnapshots, prepared.incremental),
       reconciliation: prepared.reconciliation,
@@ -123,6 +126,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
       syncRunId,
       prepared,
       failedPhase: 'content',
+      accountResult: plannedOnlyResult(prepared.plans.account),
       contentResult: normalizeTablePartialResult(cause.partialResult, prepared.plans.content),
       dailyResult: plannedOnlyResult(prepared.plans.dailySnapshots),
     });
@@ -153,6 +157,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
       syncRunId,
       prepared,
       failedPhase: 'daily_snapshots',
+      accountResult: plannedOnlyResult(prepared.plans.account),
       contentResult,
       dailyResult: normalizedDaily,
     });
@@ -161,9 +166,38 @@ export async function syncTikTokCreatorNativeToLark(input) {
   progress({ stage: 'daily_snapshots_synced', syncRunId, result: dailyResult });
   await assertWorkActive();
 
+  progress({
+    stage: 'executing_account_plan',
+    syncRunId,
+    createRows: prepared.plans.account.createRows.length,
+    updateRows: prepared.plans.account.updateRows.length,
+  });
+  let accountResult;
+  try {
+    accountResult = await input.syncEngine.executePlan(prepared.plans.account, {
+      beforeWriteChunk: assertWorkActive,
+      onProgress: (event) => progress({ scope: 'account', syncRunId, ...event }),
+    });
+  } catch (cause) {
+    throw buildWholeSyncPartialError({
+      cause,
+      syncRunId,
+      prepared,
+      failedPhase: 'account',
+      accountResult: isPartialSyncError(cause)
+        ? normalizeTablePartialResult(cause.partialResult, prepared.plans.account)
+        : unknownWriteResult(prepared.plans.account),
+      contentResult,
+      dailyResult,
+    });
+  }
+  progress({ stage: 'account_synced', syncRunId, result: accountResult });
+  await assertWorkActive();
+
   let result = buildResult({
     syncRunId,
     prepared,
+    accountResult,
     contentResult,
     dailyResult,
     reconciliationStatus: prepared.reconciliation.required ? 'recovered' : 'not_required',
@@ -199,6 +233,7 @@ function buildWholeSyncPartialError(input) {
   const partialResult = buildResult({
     syncRunId: input.syncRunId,
     prepared: input.prepared,
+    accountResult: input.accountResult,
     contentResult: input.contentResult,
     dailyResult: input.dailyResult,
     reconciliationStatus: 'partial_write_detected',
@@ -211,6 +246,8 @@ function buildWholeSyncPartialError(input) {
     details: {
       syncRunId: input.syncRunId,
       failedPhase: input.failedPhase,
+      accountCreated: input.accountResult?.created ?? 0,
+      accountUpdated: input.accountResult?.updated ?? 0,
       contentCreated: input.contentResult?.created ?? 0,
       contentUpdated: input.contentResult?.updated ?? 0,
       dailyCreated: input.dailyResult?.created ?? 0,
@@ -269,6 +306,7 @@ function buildResult(input) {
     mode: 'write',
     rawRecords: input.prepared.rawRecords,
     processedRawRecords: input.prepared.processedRawRecords,
+    account: input.accountResult,
     incremental: summarizeIncremental(input.prepared.incremental, input.checkpointSaved === true),
     content: withIncrementalSkips(input.contentResult, input.prepared.incremental),
     dailySnapshots: withIncrementalSkips(input.dailyResult, input.prepared.incremental),

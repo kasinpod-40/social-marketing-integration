@@ -7,6 +7,12 @@ Storage direction ปัจจุบันคือ API Provider → D1 source/h
 `RAW_TikTok_Creator_Videos` เป็น protected Lark Native source แบบ read-only. Exact retirement scope
 และ safe deletion gate อยู่ที่ `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
 
+`MKT_Accounts` ใน Integration Workspace มี Organic master ครบ 4 ช่องทางแล้ว: Facebook, Instagram,
+TikTok และ YouTube. TikTok ใช้ stable key `tiktok:${accountId}` และ permanent sync implementation
+เขียน Account หลัง Content/Daily สำเร็จเท่านั้น; Live exact backfill เสร็จแล้ว ส่วน scheduled maintenance
+ของ contract ใหม่นี้ยังรอ reviewed merge/deploy. ดู
+`docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
+
 ## Read first
 
 ```text

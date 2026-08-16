@@ -1,5 +1,6 @@
 import {
   assertTikTokSyncReady,
+  planTikTokAccountDestination,
   prepareTikTokCreatorLarkSync,
 } from './prepare-tiktok-creator-lark-sync.js';
 import { iterateTikTokStagedSourceUnits } from './tiktok-resumable-unit-reader.js';
@@ -39,7 +40,12 @@ export async function preflightAllUnits(input) {
     afterSequence: state.nextSequence,
   })) {
     const selectedIds = selectUnitExternalContentIds(unit.records, input.selectedExternalIds);
-    const prepared = await prepareUnit({ ...input, unit, selectedIds });
+    const prepared = await prepareUnit({
+      ...input,
+      unit,
+      selectedIds,
+      planAccount: state.unitsPreflighted === 0,
+    });
     assertTikTokSyncReady(prepared);
     const historyPlan = input.historyHooks
       ? await input.historyHooks.preflightUnit(prepared)
@@ -51,6 +57,9 @@ export async function preflightAllUnits(input) {
       unitsPreflighted: state.unitsPreflighted + 1,
       recordsPreflighted: state.recordsPreflighted + unit.records.length,
       selectedRowsPreflighted: state.selectedRowsPreflighted + prepared.plans.content.inputRows,
+      accountPlan: state.unitsPreflighted === 0
+        ? mergePlanSummary(state.accountPlan, prepared.plans.account)
+        : state.accountPlan,
       contentPlan: mergePlanSummary(state.contentPlan, prepared.plans.content),
       dailyPlan: mergePlanSummary(state.dailyPlan, prepared.plans.dailySnapshots),
       historyPlan: historyPlan ? mergeHistoryPlan(state.historyPlan, historyPlan) : state.historyPlan,
@@ -121,7 +130,7 @@ export async function writeAllUnits(input) {
     afterSequence: state.nextSequence,
   })) {
     const selectedIds = selectUnitExternalContentIds(unit.records, input.selectedExternalIds);
-    const prepared = await prepareUnit({ ...input, unit, selectedIds });
+    const prepared = await prepareUnit({ ...input, unit, selectedIds, planAccount: false });
     assertTikTokSyncReady(prepared);
     await input.context.assertCurrent();
 
@@ -254,6 +263,46 @@ export async function writeAllUnits(input) {
     });
   }
 
+  const accountPlan = await planTikTokAccountDestination({
+    repository: input.repository,
+    syncEngine: input.syncEngine,
+    tableId: input.tables.mktAccounts,
+    accountId: input.accountId,
+    sourceHandle: input.sourceHandle,
+    reportingTimezone: input.reportingTimezone,
+    lastSyncAt: input.accountSyncedAt,
+    onProgress: input.onProgress,
+  });
+  let accountResult;
+  try {
+    accountResult = await input.syncEngine.executePlan(accountPlan, {
+      beforeWriteChunk: input.context.assertCurrent,
+      onProgress: (event) => input.onProgress({
+        scope: 'account',
+        syncRunId: input.syncRunId,
+        ...event,
+      }),
+    });
+  } catch (cause) {
+    throw buildStagedPartialError({
+      cause,
+      input,
+      state,
+      prepared: {
+        plans: { account: accountPlan, content: emptyPlan(), dailySnapshots: emptyPlan() },
+        reconciliation: emptyReconciliation(),
+      },
+      failedPhase: 'account',
+      accountResult: isPartialSyncError(cause)
+        ? normalizeTablePartialResult(cause.partialResult, accountPlan)
+        : null,
+      historyResult: null,
+      contentResult: emptyResult(),
+      dailyResult: emptyResult(),
+    });
+  }
+  state = Object.freeze({ ...state, accountResult });
+
   const resultDraft = buildWriteResult({
     syncRunId: input.syncRunId,
     sourceSummary: input.sourceSummary,
@@ -265,6 +314,31 @@ export async function writeAllUnits(input) {
   state = Object.freeze({ ...state, resultDraft });
   await saveWriteState({ ...input, state, complete: true });
   return state;
+}
+
+function emptyPlan() {
+  return Object.freeze({
+    inputRows: 0,
+    createRows: Object.freeze([]),
+    updateRows: Object.freeze([]),
+    skipped: 0,
+    duplicateInputRows: 0,
+  });
+}
+
+function emptyResult() {
+  return Object.freeze({ created: 0, updated: 0, skipped: 0, duplicateInputRows: 0 });
+}
+
+function emptyReconciliation() {
+  return Object.freeze({
+    required: false,
+    status: 'consistent',
+    missingContentRows: 0,
+    missingDailySnapshotRows: 0,
+    missingContentIds: Object.freeze([]),
+    missingDailySnapshotIds: Object.freeze([]),
+  });
 }
 
 export async function recordCheckpointAttempt(input) {
@@ -330,10 +404,13 @@ async function prepareUnit(input) {
     accountId: input.accountId,
     sourceHandle: input.sourceHandle,
     metricDate: input.metricDate,
+    lastSyncAt: input.accountSyncedAt,
+    reportingTimezone: input.reportingTimezone,
     rawRecords: input.unit.records,
     dictionaryAnalysis: input.dictionaryAnalysis,
     selectedExternalContentIds: input.selectedIds,
     incrementalPlan: input.incrementalPlan.enabled ? input.incrementalPlan : null,
+    planAccount: input.planAccount,
     onProgress: (event) => input.onProgress({
       unitSequence: input.unit.sequence,
       ...event,

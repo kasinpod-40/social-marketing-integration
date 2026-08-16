@@ -17,6 +17,7 @@ export function normalizePreflightState(value, planFingerprint = null) {
     unitsPreflighted: nonNegativeInteger(state.unitsPreflighted ?? 0),
     recordsPreflighted: nonNegativeInteger(state.recordsPreflighted ?? 0),
     selectedRowsPreflighted: nonNegativeInteger(state.selectedRowsPreflighted ?? 0),
+    accountPlan: normalizePlanSummary(state.accountPlan),
     contentPlan: normalizePlanSummary(state.contentPlan),
     dailyPlan: normalizePlanSummary(state.dailyPlan),
     historyPlan: normalizeHistoryPlan(state.historyPlan),
@@ -33,6 +34,7 @@ export function normalizeWriteState(value, planFingerprint = null) {
     unitsCompleted: nonNegativeInteger(state.unitsCompleted ?? 0),
     sourceRecordsCompleted: nonNegativeInteger(state.sourceRecordsCompleted ?? 0),
     selectedRecordsCompleted: nonNegativeInteger(state.selectedRecordsCompleted ?? 0),
+    accountResult: normalizeTableResult(state.accountResult),
     contentResult: normalizeTableResult(state.contentResult),
     dailyResult: normalizeTableResult(state.dailyResult),
     historyResult: normalizeHistoryResult(state.historyResult),
@@ -267,6 +269,7 @@ export function buildDryRunResult(input) {
     classificationRules: input.dictionaryAnalysis.rules.length,
     classificationDictionary: summarizeDictionary(input.dictionaryAnalysis),
     content: withPlanSourceSkips(input.preflight.contentPlan, input.plan),
+    account: input.preflight.accountPlan,
     dailySnapshots: withPlanSourceSkips(input.preflight.dailyPlan, input.plan),
     d1History: input.preflight.historyPlan,
     reconciliation: input.preflight.reconciliation,
@@ -295,6 +298,7 @@ export function buildWriteResult(input) {
     processedRawRecords: input.plan.selectedRecords,
     incremental: summarizeIncremental(input.plan, input.checkpointSaved),
     content: withTableSourceSkips(input.state.contentResult, input.plan),
+    account: input.state.accountResult,
     dailySnapshots: withTableSourceSkips(input.state.dailyResult, input.plan),
     d1History: input.state.historyResult,
     reconciliation: Object.freeze({
@@ -327,6 +331,11 @@ export function buildStagedPartialError(input) {
     ?? (input.failedPhase === 'daily_snapshots'
       ? unknownTableResult(input.prepared.plans.dailySnapshots)
       : plannedOnlyResult(input.prepared.plans.dailySnapshots));
+  const accountCurrent = input.accountResult
+    ?? (input.failedPhase === 'account'
+      ? unknownTableResult(input.prepared.plans.account)
+      : plannedOnlyResult(input.prepared.plans.account));
+  const accountAggregate = mergeTableResult(input.state.accountResult, accountCurrent);
   const contentAggregate = mergeTableResult(input.state.contentResult, contentCurrent);
   const dailyAggregate = mergeTableResult(input.state.dailyResult, dailyCurrent);
   const historyAggregate = input.historyResult
@@ -334,6 +343,7 @@ export function buildStagedPartialError(input) {
     : normalizeHistoryResult(input.state.historyResult);
   const confirmedWrites = contentAggregate.created + contentAggregate.updated
     + dailyAggregate.created + dailyAggregate.updated
+    + accountAggregate.created + accountAggregate.updated
     + historyAggregate.contentRowsDurable + historyAggregate.observationRowsDurable;
   if (confirmedWrites === 0 && !isPartialSyncError(input.cause)) return input.cause;
 
@@ -341,6 +351,7 @@ export function buildStagedPartialError(input) {
     ...input.state,
     contentResult: contentAggregate,
     dailyResult: dailyAggregate,
+    accountResult: accountAggregate,
     historyResult: historyAggregate,
     reconciliation: mergeReconciliation(input.state.reconciliation, input.prepared.reconciliation),
   });
@@ -366,6 +377,8 @@ export function buildStagedPartialError(input) {
       contentUpdated: contentAggregate.updated,
       dailyCreated: dailyAggregate.created,
       dailyUpdated: dailyAggregate.updated,
+      accountCreated: accountAggregate.created,
+      accountUpdated: accountAggregate.updated,
       causeCode: input.cause?.code ?? null,
       causeMessage: input.cause instanceof Error ? input.cause.message : String(input.cause),
     },

@@ -22,6 +22,8 @@ export async function validateLarkLiveSync(input) {
     accountId: input?.accountId,
     sourceHandle: input?.sourceHandle,
     metricDate: input?.metricDate,
+    lastSyncAt: input?.lastSyncAt,
+    reportingTimezone: input?.reportingTimezone,
     onProgress: input?.onProgress,
   });
   const contentRows = prepared.normalized.contentRows;
@@ -41,10 +43,12 @@ export async function validateLarkLiveSync(input) {
     dailySnapshotRows: dailyRows.length,
     sourceIdentity: prepared.sourceIdentity,
     schemaPreflight: Object.freeze({
+      accountRows: prepared.plans.account.inputRows,
       contentRows: prepared.plans.content.inputRows,
       dailySnapshotRows: prepared.plans.dailySnapshots.inputRows,
     }),
     syncPlan: Object.freeze({
+      account: summarizePlan(prepared.plans.account),
       content: summarizePlan(prepared.plans.content),
       dailySnapshots: summarizePlan(prepared.plans.dailySnapshots),
     }),

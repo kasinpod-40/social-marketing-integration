@@ -251,6 +251,7 @@ async function processD1FirstTikTokSync(input) {
   const infrastructure = input.getInfrastructure();
   const tableIds = readLarkTableIdsFromEnv(input.env, [
     'rawTikTokCreatorVideos',
+    'mktAccounts',
     'mktContent',
     'mktContentDaily',
     'mktClassificationDictionary',
@@ -349,6 +350,7 @@ async function processD1FirstTikTokSync(input) {
         historyHooks,
         tables: {
           rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
+          mktAccounts: tableIds.mktAccounts,
           mktContent: tableIds.mktContent,
           mktContentDaily: tableIds.mktContentDaily,
           mktClassificationDictionary: tableIds.mktClassificationDictionary,

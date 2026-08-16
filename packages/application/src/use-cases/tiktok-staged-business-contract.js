@@ -139,6 +139,7 @@ export function requireIncrementalStateStore(value) {
 export function requireTables(value) {
   return Object.freeze({
     rawTikTokCreatorVideos: requireText(value?.rawTikTokCreatorVideos, 'tables.rawTikTokCreatorVideos'),
+    mktAccounts: requireText(value?.mktAccounts, 'tables.mktAccounts'),
     mktContent: requireText(value?.mktContent, 'tables.mktContent'),
     mktContentDaily: requireText(value?.mktContentDaily, 'tables.mktContentDaily'),
     mktClassificationDictionary: requireText(

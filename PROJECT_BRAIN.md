@@ -1,5 +1,19 @@
 # Project Brain — Social Marketing Data Integration
 
+## TikTok MKT_Accounts master completion — 2026-08-16
+
+Root cause ของ TikTok ที่หายจาก `MKT_Accounts` คือ Native sync contract ไม่เคยส่ง mapping หรือเขียน
+Account master แม้ Content และ Daily ทำงานแล้ว. Live exact backfill เพิ่ม `tiktok:chemistry_k` หนึ่งแถว
+ทำให้ master ครบ YouTube/Facebook/Instagram/TikTok 4 ช่องทาง โดย 3 identities เดิมไม่เปลี่ยนและมี
+private backup/checksum ก่อน mutation.
+
+Repository implementation เพิ่ม Account plan ใน validation, legacy, staged/D1-first และ history paths;
+ใช้ stable key `tiktok:${accountId}`, source-handle guard, deterministic `last_sync_at` และเขียนหลัง
+Content/Daily สำเร็จเท่านั้น. Focused 25/25, D1-first ordering 2/2, full unit 3047/3047, Workers runtime
+18/18, report reliability 105/105, architecture/hygiene, audit 0 vulnerabilities และ deploy dry-run ผ่าน.
+Live row ใช้งานได้แล้ว แต่ permanent scheduled maintenance ยังรอ reviewed merge/deploy. รายละเอียดอยู่ที่
+`docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
+
 ## Non-TikTok Lark RAW live retirement closeout — 2026-08-16
 
 Fresh scheduled Connector gates หลัง reviewed Worker `808fe569-8319-469b-b069-2b586642e630` ผ่านครบ.
