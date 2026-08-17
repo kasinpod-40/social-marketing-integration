@@ -1,73 +1,62 @@
 # Repository Final Closeout — 2026-08-17
 
-## Purpose
+## Result
 
-This record closes repository debt discovered during the full-repository audit without changing Live runtime state. TikTok Ads is intentionally deferred by the user and remains outside this closeout.
+```text
+REPOSITORY_CLOSEOUT                 = COMPLETE
+MERGED_PR                           = 658
+MAIN                                = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
+BRANCH_VERIFICATION_RUN             = 31990567121
+BRANCH_VERIFICATION_JOB             = 95273236886
+BRANCH_VERIFICATION                 = PASS
+OBSOLETE_PRS_CLOSED                 = 11,17,66,249,595
+OPEN_PRS                            = 220_ONLY
+TIKTOK_ADS                          = DEFERRED_BY_USER
+REMOTE_RUNTIME_MUTATIONS            = ZERO
+NEXT_AUTOMATIC_SCHEDULED_EVIDENCE   = 2026-08-24T08:30:00+07:00
+PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
+```
 
-## Verified baseline
+## Completed repository debt
 
-- latest audited `main`: `5fcc0777ea19abf7aee2e42f566f62e44149232c`
-- Weekly v6 Worker: `da0777dc-447b-452b-b86c-3e96637375c8` at 100% traffic
-- v6 controlled recovery: Quality Gate PASS; AI 1; Admission 1; D1 delivery `sent/mirrored` claim 1; Lark Notification Log `sent` 1
-- exact new alert / DLQ / active lock after recovery: `0 / 0 / 0`
-- next eligible scheduled proof: `2026-08-24 08:30 Asia/Bangkok`
-- Production: blocked / customer-owned
+### Lark Number formatter precision
 
-## Repository debt found
+The remaining actionable delta from stale Draft PR #249 was ported minimally onto exact current main. The serializer now normalizes official grouped Lark Number formatter enums through the existing Shared field contract, supports the reviewed fixed precision set, and does not guess unsupported precision. Focused tests cover `1,000`, `1,000.00`, spreadsheet alias normalization and unsupported precision behavior.
 
-### PR #249 — actionable code delta
+The guarded Shared Dimensions Backfill operator identity is `lark-dashboard-shared-dimensions-backfill-v1.3`. No Backfill Apply or Live Lark mutation was run.
 
-Current `main` still used a permissive fixed-number regex and did not normalize official grouped Lark Number formatter enums before precision comparison. The old Draft PR contains the minimal serializer correction and regressions. The affected serializer and focused test files on `main` are byte-identical to PR #249's original base, so the reviewed file delta can be ported without overwriting later edits.
+### Authority cleanup
 
-The closeout ports only:
+The previous large `docs/current-task.md`, `docs/project-brain/00-current-state.md` and `docs/project-brain/10-next-actions.md` were preserved byte-for-byte under archive paths before active authority files were replaced with concise current state.
 
-- official grouped formatter handling through shared `normalizeLarkNumberFormatter`
-- explicit supported precision map
-- unsupported-precision fail-safe behavior
-- focused regression cases
-- Shared Dimensions Backfill operator identity v1.3 + focused identity test
+### Pull-request hygiene
 
-No Backfill Apply is authorized or executed.
+After PR #658 merged and passed Branch Verification, these obsolete Draft PRs were closed with explicit supersession records:
 
-### Obsolete Draft PRs
+- #11 — old Google Ads separate RAW schema architecture
+- #17 — old Google Ads signed-delivery feature branch
+- #66 — old WooCommerce pre-integration branch
+- #249 — formatter follow-up replaced by current-main port
+- #595 — old YouTube `invalid_grant` incident record superseded by later live recovery
 
-The following old Draft PRs are superseded by current `main` and should be closed after the current-main closeout merge:
-
-- #11 — old Google Ads separate RAW schema architecture; superseded by current D1-first/non-TikTok RAW-retirement architecture
-- #17 — old Google Ads signed-delivery feature branch; current Google Ads transport/admission/runtime has later merged/live evidence
-- #66 — old WooCommerce integration branch; current main contains later WooCommerce migration/runtime/report completion
-- #249 — superseded once this minimal current-main port is merged
-- #595 — old YouTube `invalid_grant` incident record; later owner consent/Analytics catch-up and signed daily-count work supersede it
-
-PR #220 is intentionally retained:
+PR #220 remains open intentionally:
 
 ```text
 TIKTOK_ADS = DEFERRED_BY_USER
 ```
 
-## Authority cleanup
+## Verification
 
-The previous large `docs/current-task.md`, `docs/project-brain/00-current-state.md` and `docs/project-brain/10-next-actions.md` contained valuable history but also stale July/August intermediate status. Their exact blobs are preserved under archive paths before the active files are replaced with concise current authority.
-
-This is archival relocation, not deletion of evidence.
+Branch Verification run `31990567121`, job `95273236886`, on exact PR #658 head `b68497fe80d3f27fd3e614800062928130af96d1` completed successfully. The workflow passed install, syntax/architecture/repository hygiene, all configured focused suites, staged TikTok regression, Unit and Workers runtime tests, Report Reliability, dependency audit, Wrangler dry-run, diff whitespace check and diagnostics upload.
 
 ## Runtime safety
 
-This repository closeout must produce zero:
+Repository closeout caused zero Worker deployments, Queue messages/replay, DLQ redrive, Remote D1 mutations/migrations, Lark mutations, Provider calls, Schedule changes, Secret/Binding changes and Production actions.
 
-- Worker deployments
-- Queue messages / replay / DLQ redrive
-- Remote D1 migrations or Business writes
-- Lark mutations
-- Provider calls
-- Schedule changes
-- Secret/Binding changes
-- Production actions
+## Remaining gates
 
-## Remaining non-repository gates
-
-After this closeout, the only current gates are:
+Repository work is closed. The remaining current gates are external/time-based:
 
 1. Automatic Weekly v6 scheduled exactly-once evidence after `2026-08-24 08:30 Asia/Bangkok`.
 2. Customer-owned Production provisioning/UAT when separately authorized.
-3. TikTok Ads only when the user explicitly resumes that deferred workstream.
+3. TikTok Ads only when the user explicitly resumes PR #220/workstream.
