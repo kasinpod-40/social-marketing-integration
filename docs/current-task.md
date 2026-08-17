@@ -29,6 +29,13 @@ Root cause คือ compact per-row `writerContract.weaknesses` บอกเพ
 contract ให้ระบุ channel + metric จาก `ch/m`, คง fallback เมื่อไม่มี negative comparison และ bump Fresh
 Decision identity `v4 -> v5` เพื่อสร้าง immutable identity ใหม่โดยไม่แก้แถวเดิม.
 
+Reviewed v5 deploy `8c615cdd-0686-461d-b583-45e438d947af` และ controlled recovery ใหม่
+`weekly-executive-recovery-20260816-v5` ยืนยันว่า Weaknesses ผ่านกติกาที่แก้แล้ว แต่เปิดเผย failure
+อิสระชั้นที่สอง `insight_missing_business_metric_value`: compact input มีค่าจริงอยู่ใน `m` แต่ไม่มี
+per-row Overview instruction ให้ยก exact channel + metric + value. Quality Gate ปิด v5 แบบ terminal
+ก่อน delivery (`delivery=0`) และเก็บ Alert/DLQ เป็น forensic evidence; ไม่มี replay/redrive. Permanent v6
+จึงเพิ่ม compact Overview contract ดังกล่าวและ bump immutable Decision identity อีกครั้ง.
+
 #### Implementation result — pre-release
 
 ```text
@@ -39,19 +46,21 @@ ORIGINAL_MESSAGE_SEND_COUNT         = 0
 ORIGINAL_DELIVERY_ROWS              = 0
 ORIGINAL_FORENSIC_IDENTITY          = PRESERVED_NO_REPLAY_NO_REDRIVE
 ROOT_CAUSE                          = PER_ROW_WEAKNESSES_CONTRACT_TOO_WEAK_FOR_GATE
-PERMANENT_CONTRACT                  = REQUIRE_EXACT_NEGATIVE_CHANNEL_AND_METRIC
-FRESH_IDENTITY                      = V5_NEW_IMMUTABLE_IDENTITY
-LIVE_V5_READ_ONLY_PREFLIGHT         = PASS_PERIOD_20260810_20260816_CHANNELS_8
-LIVE_V5_INPUT_BUDGET                = PASS_METRIC_2212_STATUS_593
-LIVE_V5_EXISTING_IDENTITY_ROWS      = ZERO
-FOCUSED_TESTS                       = PASS_22_OF_22
+PERMANENT_CONTRACT                  = REQUIRE_EXACT_NEGATIVE_CHANNEL_METRIC_AND_OVERVIEW_VALUE
+FRESH_IDENTITY                      = V6_NEW_IMMUTABLE_IDENTITY
+LIVE_V6_READ_ONLY_PREFLIGHT         = PASS_PERIOD_20260810_20260816_CHANNELS_8
+LIVE_V6_INPUT_BUDGET                = PASS_METRIC_2027_STATUS_593
+LIVE_V6_EXISTING_IDENTITY_ROWS      = ZERO
+V5_CONTROLLED_RECOVERY              = TERMINAL_FAIL_CLOSED_INSIGHT_METRIC_VALUE_MISSING
+V5_CONTROLLED_MESSAGE_DELIVERY      = ZERO_ZERO
+FOCUSED_TESTS                       = PASS_21_OF_21
 ARCHITECTURE_REPOSITORY_HYGIENE    = PASS
 FULL_UNIT_TESTS                     = PASS_3048_OF_3048
 WORKERS_RUNTIME_TESTS               = PASS_18_OF_18
 REPORT_RELIABILITY_TESTS            = PASS_105_OF_105
 DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                      = PASS_API_AND_SYNC_NO_DEPLOY
-QUEUE_DELIVERY_DEPLOYMENT           = PENDING_REVIEWED_RELEASE
+QUEUE_DELIVERY_DEPLOYMENT           = V6_PENDING_REVIEWED_RELEASE
 PRODUCTION                          = BLOCKED_UNCHANGED
 ```
 

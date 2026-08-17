@@ -45,6 +45,6 @@ test('keeps Prompt v3 field isolation while making rb authoritative for Recommen
 test('supersedes the generated missing-negative-channel Fresh identity instead of resetting or retriggering it', () => {
   assert.equal(
     LARK_WEEKLY_7D_EXECUTIVE_DECISION_PREVIEW_CONTRACT_VERSION,
-    'lark_weekly_7d_executive_decision_preview_v5',
+    'lark_weekly_7d_executive_decision_preview_v6',
   );
 });

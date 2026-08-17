@@ -11,6 +11,11 @@ Permanent contract ต้องระบุ exact negative channel + metric จ�
 identity ที่ fail เดิมเป็น immutable forensic evidence ห้าม reset/replay/redrive. GET-only preflight ยืนยัน
 ช่วงข้อมูลถูกต้อง 8 Report channels, input 2,212/593 chars อยู่ใน budget และ v5 identity ยังไม่มี Live row.
 
+หลัง reviewed v5 deploy, controlled recovery ใหม่ (ไม่ใช่ replay) ทำให้ Weaknesses ผ่าน แต่ fail closed ที่
+`insight_missing_business_metric_value`; compact `m` มี Business values แต่ Overview contract ไม่สั่งให้ยก
+exact channel + metric + value. ไม่มี Notification delivery. v5 terminal/Alert/DLQ ต้องคงเป็น forensic
+evidence. Permanent follow-up เพิ่ม Overview rule ภายในงบเดิมและ bump immutable identity เป็น v6.
+
 ## TikTok MKT_Accounts master completion — 2026-08-16
 
 Root cause ของ TikTok ที่หายจาก `MKT_Accounts` คือ Native sync contract ไม่เคยส่ง mapping หรือเขียน
