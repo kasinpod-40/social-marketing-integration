@@ -1,18 +1,18 @@
-# Customer Base Consolidation v1 — 2026-08-17
+# Customer Base Full Parity v1 — 2026-08-17
 
 ## Business target
 
-Customer wants the Social MKT Data Hub tables inside the existing Base `✨Marketing Content Calendar`, grouped
-under the internal Base navigation folder `Setup Phase | Social MKT Data Hub`. A separate duplicated Base is not
-the requested final layout.
+Customer requires the Social MKT Data Hub resources inside the existing Base `✨Marketing Content Calendar`, with the
+final location under `Setup Phase | Social MKT Data Hub`. The latest user requirement supersedes the earlier blank-table
+provisioning plan: **everything must match the Source 100%**, including Views, Filters, Sorts and all other existing
+configuration/data dimensions.
 
-The user has explicitly authorized a temporary staging exception: missing destination tables may be created at the
-Target Base root/default placement through Lark OpenAPI, after which the user will manually move those newly created
-blank tables into `Setup Phase | Social MKT Data Hub` before Consolidation Apply.
+A new Lark-generated resource ID may differ from the Source only when all references are deterministically remapped and
+the resulting UI/behavior is equivalent. Generated IDs are not themselves the business parity target.
 
-## Verified source export
+## Verified source export baseline
 
-Read-only inspection of `Social MKT Data Hub(20260817-033903).base` established:
+Earlier read-only inspection of `Social MKT Data Hub(20260817-033903).base` established:
 
 - 33 unique tables
 - 35,373 unique records
@@ -21,94 +21,115 @@ Read-only inspection of `Social MKT Data Hub(20260817-033903).base` established:
 - 12 relation fields
 - 4 formula fields
 - 6 dashboards
-- 2 automations
+- 2 automations/workflows
 - 4 Advanced Permission roles
-- largest table 9,141 rows, within the customer's Pro row limit
+- largest table 9,141 rows
 
-The export is structurally valid at JSON/base64/gzip level. Cross-Base Data Sync is not used as the final
-migration mechanism because relation/formula semantics are degraded during sync.
+This baseline is not sufficient to claim parity because the live imported Source may also contain detailed View
+properties, Forms, Dashboard block layouts/configs, Workflow steps/states, permission config and attachment-like cells.
+The live GET-only audit is therefore authoritative for the final migration scope.
 
-## Architecture decision
+## Superseded assumptions
 
-The migration reuses the existing central `LarkBitableClient` and the branch's table/field/record/relation/
-formula/view consolidation use case. It does not add another Lark transport, queue, worker or schema engine.
+The following earlier assumptions are no longer valid authority:
 
-Lark OpenAPI can create and edit tables but does not expose the internal Base navigation-folder placement required by
-the customer. The workstream therefore uses two deliberately separated phases:
+- creating 32 blank target tables is sufficient preparation;
+- table/field/record/relation/formula plus only supported View properties is enough for closeout;
+- Dashboard/Automation/Advanced Permission parity can be silently closed as a separate optional workstream;
+- internal Base folder placement is necessarily UI-only.
 
-### Phase A — root/default-placement provisioning
+Current Base v3 resource APIs expose block-tree/folder operations and dedicated View property, Form, Dashboard,
+Workflow and Advanced Permission role operations. They must be audited and used where required by the Source state.
 
-1. `--provision-missing` reads the current Target Base table list first.
-2. Existing expected table names are preserved and never recreated or overwritten.
-3. Duplicate target names or table-limit overflow fail closed before any create call.
-4. Only missing exact expected names are created, each as an empty one-field shell with one default Grid view.
-5. Rerunning after success is idempotent and creates zero additional tables.
-6. This phase requires explicit write confirmations and does not read or mutate the Source Base.
-7. The user manually moves the newly created tables into `Setup Phase | Social MKT Data Hub` in Lark UI.
+The current native table-copy endpoint is not a cross-Base copy primitive: its endpoint operates within one `base_token`.
+It therefore cannot directly move a table from the imported Source Base into `✨Marketing Content Calendar`.
 
-### Phase B — consolidation Apply
+## Full-parity contract
 
-1. all 33 destination tables must already exist in the Target Base;
-2. the Apply path never calls the underlying remote `createTable()`;
-3. a destination table with zero records, one primary field and one view is treated as a safe shell;
-4. the shell is claimed in place by updating its primary field and default view, preserving the existing table ID;
-5. the existing consolidation path then creates the remaining fields, records, relations, formulas and supported
-   views inside that preplaced table;
-6. non-empty/non-shell target tables remain visible to the generic parity preflight and must be exact/reusable
-   or the run fails closed;
-7. Apply requires explicit human confirmation that the tables are inside `Setup Phase | Social MKT Data Hub`, because
-   folder membership itself is not OpenAPI-verifiable.
+The final canonical verifier must cover every dimension present in the Source:
 
-This keeps remote table creation out of the actual migration Apply while allowing the user-authorized root provisioning
-step to eliminate manual creation of dozens of blank tables.
+1. Base block tree and required folder placement.
+2. Exact 33-table business set.
+3. Full Field contract: name, primary state, type, ui-type, description, formatter/property/options and references.
+4. Full Records/cell values.
+5. Relation targets and relation cell references after ID/record remap.
+6. Formula definitions/dependencies after ID remap.
+7. Every View and View type.
+8. View Filter.
+9. View visible-field order/visibility.
+10. View Group.
+11. View Sort.
+12. View Timebar.
+13. View Card configuration.
+14. Forms and form questions/configuration.
+15. Dashboards, themes, blocks, layout and data_config.
+16. Workflows/Automation definitions, steps and enabled/disabled state.
+17. Advanced Permission roles and full role configuration.
+18. Attachment-like cells and any other Source resource discovered by the live audit.
+
+A missing API permission, unsupported Source feature, unresolved destination collision or unverifiable property is a
+blocking condition. The operator must never downgrade it to a warning and claim 100% parity.
+
+## Safety boundary
+
+- Source mutation: 0
+- Customer target provisioning: BLOCKED
+- Customer target Apply: BLOCKED
+- Table/field/record/delete: 0
+- Dashboard/workflow/permission mutation: 0
+- Worker/D1/Queue/schedule mutation: 0
+- Existing unrelated customer content must remain untouched
+- Secrets remain environment-only; logs expose only hashed Base identity
+
+The old `--provision-missing`, `--preview`, `--apply` and `--verify` paths are actively rejected by the customer operator
+while Full-Parity Apply is incomplete.
+
+## Full-Parity Audit implementation
+
+`packages/application/src/use-cases/audit-lark-base-full-parity.js` is the current allowed customer path.
+It performs GET-only inventory of Source and Target:
+
+- Tables / Fields / Records / Views
+- Base v3 block tree
+- View detail plus filter / visible_fields / group / sort / timebar / card subresources
+- Forms and questions
+- Dashboards and dashboard blocks
+- Workflows
+- Advanced Permission roles
+
+The audit records every read failure as a blocker and produces counts/digests instead of dumping raw customer records.
+The audit itself never authorizes Apply; it exists to establish the complete live migration contract first.
 
 ## Existing synced TikTok table
 
-`🎵 RAW_TikTok_Creator_Videos` is already present in the target Base through Cross-Base Data Sync with 2,040
-records. Provisioning does not special-case or recreate it because its exact expected name is already present.
-During consolidation it stays visible to the normal exact/conflict preflight. It may be reused only if its current
-field/record shape passes that preflight; otherwise migration stops instead of overwriting it.
+`🎵 RAW_TikTok_Creator_Videos` was previously observed in the Target Base through Cross-Base Data Sync with 2,040
+records. Under the 100%-parity contract it is not accepted merely because the name/row count exists. Its complete Field,
+Record, View and other attached configuration must pass the same canonical parity verifier or the run must fail closed.
 
-## Safety
-
-- Source mutation: 0
-- Target table create: allowed only in explicit `--provision-missing` mode and only for missing expected names
-- Consolidation Apply remote table create: 0
-- Existing table overwrite/rename during provisioning: 0
-- Table/field/record delete: 0
-- Queue/D1/Worker/schedule/automation mutation: 0
-- Customer live provisioning: not yet run
-- Customer live Apply: not run
-- Secrets remain environment-only; logs expose only hashed Base identity
-
-## Verification state
+## Repository state
 
 Draft PR: `#661`
 
-The previous preplaced-only implementation passed Branch Verification at head
-`8d0412ffbfc75621b3060af56d2730f93c2f77ba`, run `32025415791`.
+The older head `0eb97b56e2fda7356336239f1d0afa2ace6dd1a2` passed Branch Verification run `32037860957`, job `95411744455`,
+but that evidence only covered the superseded partial-parity implementation and **does not satisfy the latest 100%-parity
+requirement**.
 
-The newer user-authorized root-provisioning change requires a fresh exact-head Branch Verification before any live
-`--provision-missing` execution. Customer Lark has not been used as test evidence for this change.
+A new exact-head Branch Verification is required after the Full-Parity audit/write-blocking changes.
 
-## Implementation files
+## Current implementation files
 
-- `packages/application/src/use-cases/consolidate-lark-base.js`
-- `packages/application/src/use-cases/preplaced-lark-base-target.js`
+- `packages/application/src/use-cases/audit-lark-base-full-parity.js`
 - `scripts/customer-base-consolidation-operator.mjs`
-- `tests/application/consolidate-lark-base.test.js`
-- `tests/application/preplaced-lark-base-target.test.js`
+- `tests/application/audit-lark-base-full-parity.test.js`
+- existing consolidation/preplaced modules remain in repository for reuse only after the new full-parity contract is met
 
-## Remaining closeout gates
+## Remaining closure sequence
 
-- exact-head Branch Verification for root provisioning change
-- one controlled customer `--provision-missing`
-- read-back proving all expected table names exist and existing tables were preserved
-- manual move of newly created tables into `Setup Phase | Social MKT Data Hub`
-- customer target GET-only preview with all 33 names present
-- explicit confirmation that all destination tables are under the required internal folder
-- one controlled customer Apply only after ownership/credential verification
-- GET-only post-Apply parity verification
-- separate Dashboard/automation/workflow/Advanced Permission parity closeout
-
-Dashboard, automation/workflow and Advanced Permission parity are not silently treated as completed by table consolidation.
+1. Pass exact-head repository CI.
+2. Run one live GET-only Full-Parity Audit against the actual imported Source Base and customer Target Base.
+3. Resolve all read permission/capability gaps; no hidden/unknown Source dimension is allowed.
+4. Build minimal clone/remap support using existing shared Lark client/contracts plus current Base v3 resource endpoints.
+5. Run dry-run/preview proving every Source dimension is handled and unrelated target resources are untouched.
+6. Execute one controlled target Apply.
+7. Run canonical GET-only post-Apply verifier.
+8. Close only when every required dimension reports parity and no unresolved blocker remains.
