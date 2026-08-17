@@ -137,9 +137,11 @@ Record, View and other attached configuration must pass the same canonical parit
 
 Draft PR: `#661`
 
-Full-Parity head `3afdeadc25ef8de28e31df40e12edeec84d85605` passed Branch Verification run `32038905952`, job `95414637354`.
-That evidence predates the Customer PROD config isolation change, so a fresh exact-head Branch Verification is required
-before the next live audit.
+Customer PROD config isolation was implemented and verified. Exact head `84c1cea8ccee05e04caa5fb061aa21184672d09a`
+passed Branch Verification run `32041774990`, job `95422242257`; locked install, architecture/hygiene, focused channel suites,
+Unit/Workers, Report Reliability, dependency audit, Wrangler dry-run and diff check all passed.
+
+No Customer Lark mutation has been run by this full-parity workstream.
 
 ## Current implementation files
 
@@ -152,12 +154,11 @@ before the next live audit.
 
 ## Remaining closure sequence
 
-1. Pass exact-head repository CI after Customer PROD config isolation.
-2. Create local `.customer.prod.vars` from `.customer.prod.vars.example` and fill the 4 required values.
-3. Run one live GET-only Full-Parity Audit against the actual imported Source Base and customer Target Base.
-4. Resolve all read permission/capability gaps; no hidden/unknown Source dimension is allowed.
-5. Build minimal clone/remap support using existing shared Lark client/contracts plus current Base v3 resource endpoints.
-6. Run dry-run/preview proving every Source dimension is handled and unrelated target resources are untouched.
-7. Execute one controlled target Apply.
-8. Run canonical GET-only post-Apply verifier.
-9. Close only when every required dimension reports parity and no unresolved blocker remains.
+1. Create local `.customer.prod.vars` from `.customer.prod.vars.example` and fill the 4 required values.
+2. Run one live GET-only Full-Parity Audit against the actual imported Source Base and customer Target Base.
+3. Resolve all read permission/capability gaps; no hidden/unknown Source dimension is allowed.
+4. Build minimal clone/remap support using existing shared Lark client/contracts plus current Base v3 resource endpoints.
+5. Run dry-run/preview proving every Source dimension is handled and unrelated target resources are untouched.
+6. Execute one controlled target Apply.
+7. Run canonical GET-only post-Apply verifier.
+8. Close only when every required dimension reports parity and no unresolved blocker remains.
