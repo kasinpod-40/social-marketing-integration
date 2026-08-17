@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS_NO_LIVE_APPLY
+TASK_STATUS                         = REPOSITORY_IMPLEMENTATION_VERIFIED_LIVE_PREVIEW_REMAINS
 CURRENT_PROGRAM                     = CUSTOMER_BASE_CONSOLIDATION_PREPLACED_TABLES_V1
 SOURCE_BASE                         = Social MKT Data Hub
 TARGET_BASE                         = ✨Marketing Content Calendar
@@ -12,6 +12,10 @@ EXPECTED_SOURCE_TABLES              = 33
 REMOTE_TABLE_CREATE                 = BLOCKED
 SOURCE_MUTATION                     = BLOCKED
 CUSTOMER_LARK_APPLY                 = NOT_RUN
+DRAFT_PR                            = 661
+BRANCH_VERIFICATION_RUN             = 32024729912
+BRANCH_VERIFICATION_JOB             = 95371639715
+BRANCH_VERIFICATION                 = PASS
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 AUTOMATIC_WEEKLY_NOTIFICATION       = LIVE_ENABLED_MONDAY_0830_ASIA_BANGKOK
 NEXT_AUTOMATIC_SCHEDULED_EVIDENCE   = 2026-08-24T08:30:00+07:00
@@ -66,13 +70,34 @@ field/record/relation/formula/view fidelity ให้มากที่สุด
 - ordinary fields/records, relation IDs, formula IDs and supported view properties retain existing consolidation coverage
 - focused tests + `npm run check` + `npm test` + `npm run test:report-reliability` + `npm audit` + `npm run deploy:dry-run`
 
+## Implementation result
+
+Repository implementation is complete on Draft PR #661 and has not mutated customer Lark.
+
+- Added `preplaced-lark-base-target` safety adapter. It hides only safe empty destination shells from the generic
+  planner and intercepts its table-provisioning call as an in-place primary-field/default-view update. The
+  underlying real target client's `createTable()` is never called.
+- Customer operator now requires all 33 destination names to already exist in the target Base, reports
+  `remoteTableCreates: 0`, and requires `CONFIRM_TARGET_FOLDER_PLACEMENT=YES` before Apply.
+- Existing non-empty target tables remain visible to the existing exact/conflict preflight. This preserves the
+  already-synced `RAW_TikTok_Creator_Videos` only if parity is acceptable; otherwise the run fails closed.
+- Added focused regression proving missing preplaced table blocking, safe shell claim, underlying create-table
+  call count zero, record copy, and preservation of existing non-empty tables for parity inspection.
+- Branch Verification run `32024729912`, job `95371639715` passed every step: install, syntax/architecture/
+  hygiene, all focused integration suites, full Unit/Workers runtime, Report Reliability, dependency audit,
+  Wrangler dry-run, diff check and diagnostics upload.
+- No customer App token, Lark write, source mutation, Worker deploy, D1/Queue mutation or schedule change was run.
+
 ## Acceptance criteria
 
-- Branch implementation and CI gates pass.
-- Preview on customer target proves all 33 source names and all 33 preplaced target names before any write.
-- `remoteTableCreates = 0` and Apply requires folder-placement confirmation.
-- Customer live Apply is not run until target ownership/credentials and folder placement are explicitly verified.
-- Post-Apply read-only verification must show field/record/view parity with no source mutation and no unexpected target changes.
+Repository implementation/CI criteria are passed. Remaining live closure is deliberately customer-owned:
+
+- run GET-only preview against the actual source/target credentials;
+- prove all 33 source names and all 33 preplaced target names are present;
+- confirm all destination tables are under `Setup Phase | Social MKT Data Hub` in the UI;
+- run one controlled Apply only after target ownership/credential verification;
+- run GET-only post-Apply field/record/view parity verification;
+- close Dashboard/Automation/Advanced Permission parity separately.
 
 Detailed workstream record:
 `docs/project-brain/customer-base-consolidation-v1.md`.
