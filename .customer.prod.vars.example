@@ -1,0 +1,24 @@
+# Customer PROD credentials for Social MKT Data Hub -> customer Base full-parity work.
+#
+# IMPORTANT
+# - Copy this file to `.customer.prod.vars` on the operator Mac.
+# - Put real customer PROD values only in `.customer.prod.vars`.
+# - `.customer.prod.vars` is git-ignored and must never be committed.
+# - Do not paste tenant_access_token here; the operator requests it from Lark using App ID/Secret.
+
+# Customer-owned Lark application credentials with permission to read BOTH Bases.
+LARK_APP_ID=
+LARK_APP_SECRET=
+
+# SOURCE Base: imported `Social MKT Data Hub` used as the 100% parity authority.
+# Use the Base app token only (not the full URL).
+LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN=
+
+# TARGET Base: customer `✨Marketing Content Calendar`.
+# Use the Base app token only (not the full URL).
+LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN=
+
+# Optional read-performance tuning. Leave commented unless needed.
+# LARK_REQUEST_TIMEOUT_MS=30000
+# LARK_MAX_ATTEMPTS=5
+# LARK_MIN_REQUEST_INTERVAL_MS=150
