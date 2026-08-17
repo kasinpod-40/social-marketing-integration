@@ -7,7 +7,10 @@ import {
   previewLarkBaseConsolidation,
   verifyLarkBaseConsolidation,
 } from '../packages/application/src/use-cases/consolidate-lark-base.js';
-import { preparePreplacedLarkBaseTarget } from '../packages/application/src/use-cases/preplaced-lark-base-target.js';
+import {
+  preparePreplacedLarkBaseTarget,
+  provisionMissingLarkBaseTargetTables,
+} from '../packages/application/src/use-cases/preplaced-lark-base-target.js';
 
 const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '🪪 MKT_Accounts',
@@ -68,13 +71,55 @@ async function main() {
   const fileEnv = await readDevVars(devVarsFile);
   const env = { ...fileEnv, ...process.env };
 
-  const sourceAppToken = requireText(
-    env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN,
-    'LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN',
-  );
   const targetAppToken = requireText(
     env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN,
     'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
+  );
+  const rawTargetClient = createLarkBitableClientFromEnv({
+    ...env,
+    LARK_APP_TOKEN: targetAppToken,
+  }, { onRequest: traceIfVerbose });
+
+  if (mode === 'provision') {
+    assertProvisionConfirmations(env);
+    const provisioned = await provisionMissingLarkBaseTargetTables({
+      targetClient: rawTargetClient,
+      expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
+      expectedTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
+    });
+    printJson({
+      ...provisioned,
+      contractVersion: 'customer_base_consolidation_operator_v1',
+      action: 'provision-missing',
+      target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
+      targetFolder: TARGET_FOLDER_LABEL,
+      placement: {
+        folderMembershipApiVerifiable: false,
+        createdAtBaseRootOrDefaultPlacement: true,
+        manualMoveRequiredBeforeApply: true,
+        requiredFolder: TARGET_FOLDER_LABEL,
+      },
+      safety: {
+        createTables: provisioned.createdTables,
+        updateTables: 0,
+        deleteTables: 0,
+        deleteFields: 0,
+        deleteRecords: 0,
+        sourceMutations: 0,
+        scheduleChanges: 0,
+        automationChanges: 0,
+      },
+      nextCommand: provisioned.ok
+        ? 'node scripts/customer-base-consolidation-operator.mjs --preview'
+        : null,
+    });
+    if (!provisioned.ok) process.exitCode = 1;
+    return;
+  }
+
+  const sourceAppToken = requireText(
+    env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN,
+    'LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN',
   );
   if (sourceAppToken === targetAppToken) {
     throw operatorError(
@@ -86,10 +131,6 @@ async function main() {
   const sourceClient = createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: sourceAppToken,
-  }, { onRequest: traceIfVerbose });
-  const rawTargetClient = createLarkBitableClientFromEnv({
-    ...env,
-    LARK_APP_TOKEN: targetAppToken,
   }, { onRequest: traceIfVerbose });
 
   const preparedTarget = await preparePreplacedLarkBaseTarget({
@@ -198,16 +239,36 @@ function resolveMode(args) {
   const apply = args.includes('--apply');
   const verify = args.includes('--verify');
   const preview = args.includes('--preview');
-  const selected = [apply, verify, preview].filter(Boolean).length;
+  const provision = args.includes('--provision-missing');
+  const selected = [apply, verify, preview, provision].filter(Boolean).length;
   if (selected > 1) {
     throw operatorError(
       'CUSTOMER_BASE_CONSOLIDATION_MODE_INVALID',
-      'Choose only one mode: --preview, --apply, or --verify',
+      'Choose only one mode: --provision-missing, --preview, --apply, or --verify',
     );
   }
+  if (provision) return 'provision';
   if (apply) return 'apply';
   if (verify) return 'verify';
   return 'preview';
+}
+
+function assertProvisionConfirmations(env) {
+  const required = {
+    CONFIRM_WRITE: 'YES',
+    CONFIRM_CUSTOMER_BASE_TABLE_PROVISION: 'YES',
+    CONFIRM_TARGET_BASE: 'MARKETING_CONTENT_CALENDAR',
+  };
+  const missing = Object.entries(required)
+    .filter(([name, value]) => env[name] !== value)
+    .map(([name, value]) => `${name}=${value}`);
+  if (missing.length > 0) {
+    throw operatorError(
+      'CUSTOMER_BASE_TABLE_PROVISION_CONFIRMATION_REQUIRED',
+      `Table provisioning requires explicit confirmation: ${missing.join(', ')}`,
+      { missing },
+    );
+  }
 }
 
 function assertApplyConfirmations(env) {
@@ -238,7 +299,8 @@ function placementState(preflight) {
     expectedTargetTables: preflight.expectedTargetTables,
     folderMembershipApiVerifiable: false,
     applyRequiresFolderPlacementConfirmation: true,
-    remoteTableCreateAllowed: false,
+    remoteTableCreateAllowedDuringApply: false,
+    rootProvisioningAvailableSeparately: true,
   });
 }
 
