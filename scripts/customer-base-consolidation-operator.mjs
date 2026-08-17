@@ -2,15 +2,7 @@ import { createHash } from 'node:crypto';
 import { readDevVars } from './lib/dev-vars.js';
 import { printJson } from './lib/lark-runtime.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
-import {
-  applyLarkBaseConsolidation,
-  previewLarkBaseConsolidation,
-  verifyLarkBaseConsolidation,
-} from '../packages/application/src/use-cases/consolidate-lark-base.js';
-import {
-  preparePreplacedLarkBaseTarget,
-  provisionMissingLarkBaseTargetTables,
-} from '../packages/application/src/use-cases/preplaced-lark-base-target.js';
+import { auditLarkBaseFullParity } from '../packages/application/src/use-cases/audit-lark-base-full-parity.js';
 
 const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '🪪 MKT_Accounts',
@@ -57,8 +49,8 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_consolidation_operator_v1',
-    code: error?.code ?? 'CUSTOMER_BASE_CONSOLIDATION_OPERATOR_FAILED',
+    contractVersion: 'customer_base_full_parity_operator_v1',
+    code: error?.code ?? 'CUSTOMER_BASE_FULL_PARITY_OPERATOR_FAILED',
     message: error?.message ?? String(error),
     details: redactDetails(error?.details ?? {}),
   }, null, 2));
@@ -67,59 +59,25 @@ try {
 
 async function main() {
   const mode = resolveMode(process.argv.slice(2));
+  if (mode !== 'full-parity-audit') {
+    throw operatorError(
+      'CUSTOMER_BASE_PARTIAL_PARITY_PATH_BLOCKED',
+      'Customer requires 100% source parity. Legacy provision/preview/apply/verify paths are blocked until full-parity clone and verifier coverage are complete.',
+      { requestedMode: mode, allowedMode: 'full-parity-audit' },
+    );
+  }
+
   const devVarsFile = process.env.DEV_VARS_FILE ?? '.dev.vars';
   const fileEnv = await readDevVars(devVarsFile);
   const env = { ...fileEnv, ...process.env };
 
-  const targetAppToken = requireText(
-    env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN,
-    'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
-  );
-  const rawTargetClient = createLarkBitableClientFromEnv({
-    ...env,
-    LARK_APP_TOKEN: targetAppToken,
-  }, { onRequest: traceIfVerbose });
-
-  if (mode === 'provision') {
-    assertProvisionConfirmations(env);
-    const provisioned = await provisionMissingLarkBaseTargetTables({
-      targetClient: rawTargetClient,
-      expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
-      expectedTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
-    });
-    printJson({
-      ...provisioned,
-      contractVersion: 'customer_base_consolidation_operator_v1',
-      action: 'provision-missing',
-      target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
-      targetFolder: TARGET_FOLDER_LABEL,
-      placement: {
-        folderMembershipApiVerifiable: false,
-        createdAtBaseRootOrDefaultPlacement: true,
-        manualMoveRequiredBeforeApply: true,
-        requiredFolder: TARGET_FOLDER_LABEL,
-      },
-      safety: {
-        createTables: provisioned.createdTables,
-        updateTables: 0,
-        deleteTables: 0,
-        deleteFields: 0,
-        deleteRecords: 0,
-        sourceMutations: 0,
-        scheduleChanges: 0,
-        automationChanges: 0,
-      },
-      nextCommand: provisioned.ok
-        ? 'node scripts/customer-base-consolidation-operator.mjs --preview'
-        : null,
-    });
-    if (!provisioned.ok) process.exitCode = 1;
-    return;
-  }
-
   const sourceAppToken = requireText(
     env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN,
     'LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN',
+  );
+  const targetAppToken = requireText(
+    env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN,
+    'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
   );
   if (sourceAppToken === targetAppToken) {
     throw operatorError(
@@ -132,176 +90,48 @@ async function main() {
     ...env,
     LARK_APP_TOKEN: sourceAppToken,
   }, { onRequest: traceIfVerbose });
+  const targetClient = createLarkBitableClientFromEnv({
+    ...env,
+    LARK_APP_TOKEN: targetAppToken,
+  }, { onRequest: traceIfVerbose });
 
-  const preparedTarget = await preparePreplacedLarkBaseTarget({
-    targetClient: rawTargetClient,
+  const audit = await auditLarkBaseFullParity({
+    sourceClient,
+    targetClient,
     expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
     expectedTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
   });
-  const common = {
-    sourceClient,
-    targetClient: preparedTarget.client,
-    expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
-    expectedSourceTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
-  };
 
-  if (mode === 'verify') {
-    const verification = await verifyLarkBaseConsolidation(common);
-    const ok = preparedTarget.preflight.ok && verification.ok;
-    printJson({
-      ...verification,
-      ok,
-      contractVersion: 'customer_base_consolidation_operator_v1',
-      action: 'verify',
-      source: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
-      target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
-      targetFolder: TARGET_FOLDER_LABEL,
-      targetPlacement: placementState(preparedTarget.preflight),
-      remoteMutationCount: 0,
-    });
-    if (!ok) process.exitCode = 1;
-    return;
-  }
-
-  if (mode === 'preview') {
-    const preview = await previewLarkBaseConsolidation(common);
-    const conflicts = [...preparedTarget.preflight.conflicts, ...preview.conflicts];
-    const readyToApply = preparedTarget.preflight.ok && preview.readyToApply;
-    printJson({
-      ...preview,
-      ok: readyToApply,
-      readyToApply,
-      conflicts,
-      summary: {
-        ...preview.summary,
-        preplacedTargetTables: preparedTarget.preflight.preplacedTargetTables,
-        emptyShellTables: preparedTarget.preflight.emptyShellTables,
-        missingPreplacedTargetTables: preparedTarget.preflight.missingTargetTables.length,
-        conflicts: conflicts.length,
-        remoteTableCreates: 0,
-      },
-      contractVersion: 'customer_base_consolidation_operator_v1',
-      action: 'preview',
-      source: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
-      target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
-      targetFolder: TARGET_FOLDER_LABEL,
-      targetPlacement: placementState(preparedTarget.preflight),
-      remoteMutationCount: 0,
-      nextCommand: readyToApply
-        ? 'CONFIRM_WRITE=YES CONFIRM_CUSTOMER_BASE_CONSOLIDATION=YES CONFIRM_SOURCE_BASE=SOCIAL_MKT_DATA_HUB CONFIRM_TARGET_BASE=MARKETING_CONTENT_CALENDAR CONFIRM_TARGET_FOLDER_PLACEMENT=YES node scripts/customer-base-consolidation-operator.mjs --apply'
-        : null,
-    });
-    if (!readyToApply) process.exitCode = 1;
-    return;
-  }
-
-  assertApplyConfirmations(env);
-  if (!preparedTarget.preflight.ok) {
-    throw operatorError(
-      'CUSTOMER_BASE_CONSOLIDATION_PREPLACED_TARGET_BLOCKED',
-      'Apply requires all 33 destination tables to already exist in the target Base',
-      { conflicts: preparedTarget.preflight.conflicts },
-    );
-  }
-
-  const result = await applyLarkBaseConsolidation({
-    ...common,
-    onProgress: (event) => {
-      if (env.MKT_SCHEMA_VERBOSE === 'true') console.error(JSON.stringify(event));
-    },
-  });
   printJson({
-    ...result,
-    applied: {
-      ...result.applied,
-      claimedPreplacedTables: result.applied.createdTables,
-      remoteCreatedTables: 0,
-    },
-    contractVersion: 'customer_base_consolidation_operator_v1',
-    action: 'apply',
-    source: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
-    target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
+    ...audit,
+    contractVersion: 'customer_base_full_parity_operator_v1',
+    action: 'full-parity-audit',
+    sourceIdentity: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
+    targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
     targetFolder: TARGET_FOLDER_LABEL,
-    targetPlacement: placementState(preparedTarget.preflight),
-    safety: {
-      createTables: 0,
-      deleteTables: 0,
-      deleteFields: 0,
-      deleteRecords: 0,
-      sourceMutations: 0,
-      scheduleChanges: 0,
-      automationChanges: 0,
-    },
+    remoteMutationCount: 0,
+    nextCommand: null,
   });
+  if (!audit.ok) process.exitCode = 1;
 }
 
 function resolveMode(args) {
-  const apply = args.includes('--apply');
-  const verify = args.includes('--verify');
-  const preview = args.includes('--preview');
-  const provision = args.includes('--provision-missing');
-  const selected = [apply, verify, preview, provision].filter(Boolean).length;
-  if (selected > 1) {
+  const known = [
+    ['--full-parity-audit', 'full-parity-audit'],
+    ['--provision-missing', 'provision-missing'],
+    ['--preview', 'preview'],
+    ['--apply', 'apply'],
+    ['--verify', 'verify'],
+  ];
+  const selected = known.filter(([flag]) => args.includes(flag));
+  if (selected.length > 1) {
     throw operatorError(
       'CUSTOMER_BASE_CONSOLIDATION_MODE_INVALID',
-      'Choose only one mode: --provision-missing, --preview, --apply, or --verify',
+      'Choose only one operator mode',
+      { selected: selected.map(([flag]) => flag) },
     );
   }
-  if (provision) return 'provision';
-  if (apply) return 'apply';
-  if (verify) return 'verify';
-  return 'preview';
-}
-
-function assertProvisionConfirmations(env) {
-  const required = {
-    CONFIRM_WRITE: 'YES',
-    CONFIRM_CUSTOMER_BASE_TABLE_PROVISION: 'YES',
-    CONFIRM_TARGET_BASE: 'MARKETING_CONTENT_CALENDAR',
-  };
-  const missing = Object.entries(required)
-    .filter(([name, value]) => env[name] !== value)
-    .map(([name, value]) => `${name}=${value}`);
-  if (missing.length > 0) {
-    throw operatorError(
-      'CUSTOMER_BASE_TABLE_PROVISION_CONFIRMATION_REQUIRED',
-      `Table provisioning requires explicit confirmation: ${missing.join(', ')}`,
-      { missing },
-    );
-  }
-}
-
-function assertApplyConfirmations(env) {
-  const required = {
-    CONFIRM_WRITE: 'YES',
-    CONFIRM_CUSTOMER_BASE_CONSOLIDATION: 'YES',
-    CONFIRM_SOURCE_BASE: 'SOCIAL_MKT_DATA_HUB',
-    CONFIRM_TARGET_BASE: 'MARKETING_CONTENT_CALENDAR',
-    CONFIRM_TARGET_FOLDER_PLACEMENT: 'YES',
-  };
-  const missing = Object.entries(required)
-    .filter(([name, value]) => env[name] !== value)
-    .map(([name, value]) => `${name}=${value}`);
-  if (missing.length > 0) {
-    throw operatorError(
-      'CUSTOMER_BASE_CONSOLIDATION_CONFIRMATION_REQUIRED',
-      `Apply requires explicit confirmation: ${missing.join(', ')}`,
-      { missing },
-    );
-  }
-}
-
-function placementState(preflight) {
-  return Object.freeze({
-    requiredFolder: TARGET_FOLDER_LABEL,
-    allExpectedTablesPresentInBase: preflight.missingTargetTables.length === 0,
-    preplacedTargetTables: preflight.preplacedTargetTables,
-    expectedTargetTables: preflight.expectedTargetTables,
-    folderMembershipApiVerifiable: false,
-    applyRequiresFolderPlacementConfirmation: true,
-    remoteTableCreateAllowedDuringApply: false,
-    rootProvisioningAvailableSeparately: true,
-  });
+  return selected[0]?.[1] ?? 'full-parity-audit';
 }
 
 function safeBaseIdentity(label, appToken) {
