@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — Automatic Weekly negative-channel Quality Gate repair — 2026-08-17
+
+- Preserve the failed scheduled Weekly identity as immutable forensic evidence after
+  `weaknesses_missing_negative_channel`; the fail-closed run created no delivery row and sent no message.
+- Require Fresh Weekly Weaknesses to name the exact negative channel and metric from compact `ch/m`
+  evidence, while preserving the exact no-negative-comparison fallback and missing-data prohibition.
+- Bump the Fresh Executive Decision identity from v4 to v5 instead of resetting or retriggering the
+  generated failed row.
+- GET-only Live preflight selected the exact `2026-08-10..2026-08-16` period and 8 Report channels,
+  remained within the 2,800/700 input budgets at 2,212/593 characters and found zero existing v5 rows.
+- Focused tests passed 22/22, full unit passed 3,048/3,048, Workers runtime passed 18/18, Report reliability
+  passed 105/105, architecture/hygiene and zero-vulnerability audit passed, and API/Sync deploy dry-runs
+  completed without deployment.
+
 ## Unreleased — TikTok Organic Account Master — 2026-08-16
 
 - Added canonical TikTok Organic Account planning and idempotent upsert to validation, legacy, staged/D1-first

@@ -15,6 +15,46 @@ BASE_NOTIFICATION_AUTOMATION        = DISABLED
 DLQ_REDRIVE                         = BLOCKED_OFF
 ```
 
+### Automatic Weekly negative-channel Quality Gate repair — 2026-08-17
+
+Automatic Weekly สำหรับช่วง `2026-08-10..2026-08-16` ทำงานตาม Schedule จริง แต่หยุดแบบ
+fail-closed ก่อน Notification admission ด้วย
+`LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED / weaknesses_missing_negative_channel`.
+Fresh AI row เดิม generated ครบสี่ outputs แต่ Weaknesses กล่าว metric เชิงลบโดยไม่ระบุชื่อช่องทาง
+ตาม Quality Gate. D1 delivery row และ Lark message เป็นศูนย์; terminal work/alert/DLQ เดิมต้องเก็บเป็น
+forensic evidence และห้าม replay/redrive/reset.
+
+Root cause คือ compact per-row `writerContract.weaknesses` บอกเพียงให้ใช้ negative evidence แต่ไม่บังคับ
+ชื่อช่องทาง ขณะที่ Quality Gate ต้องมีทั้ง exact negative channel และ negative metric. Permanent fix ขยาย
+contract ให้ระบุ channel + metric จาก `ch/m`, คง fallback เมื่อไม่มี negative comparison และ bump Fresh
+Decision identity `v4 -> v5` เพื่อสร้าง immutable identity ใหม่โดยไม่แก้แถวเดิม.
+
+#### Implementation result — pre-release
+
+```text
+SCHEDULED_PERIOD                    = 2026-08-10..2026-08-16
+ORIGINAL_WORK                       = TERMINAL_FAIL_CLOSED
+ORIGINAL_FAILURE                    = WEAKNESSES_MISSING_NEGATIVE_CHANNEL
+ORIGINAL_MESSAGE_SEND_COUNT         = 0
+ORIGINAL_DELIVERY_ROWS              = 0
+ORIGINAL_FORENSIC_IDENTITY          = PRESERVED_NO_REPLAY_NO_REDRIVE
+ROOT_CAUSE                          = PER_ROW_WEAKNESSES_CONTRACT_TOO_WEAK_FOR_GATE
+PERMANENT_CONTRACT                  = REQUIRE_EXACT_NEGATIVE_CHANNEL_AND_METRIC
+FRESH_IDENTITY                      = V5_NEW_IMMUTABLE_IDENTITY
+LIVE_V5_READ_ONLY_PREFLIGHT         = PASS_PERIOD_20260810_20260816_CHANNELS_8
+LIVE_V5_INPUT_BUDGET                = PASS_METRIC_2212_STATUS_593
+LIVE_V5_EXISTING_IDENTITY_ROWS      = ZERO
+FOCUSED_TESTS                       = PASS_22_OF_22
+ARCHITECTURE_REPOSITORY_HYGIENE    = PASS
+FULL_UNIT_TESTS                     = PASS_3048_OF_3048
+WORKERS_RUNTIME_TESTS               = PASS_18_OF_18
+REPORT_RELIABILITY_TESTS            = PASS_105_OF_105
+DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
+DEPLOY_DRY_RUN                      = PASS_API_AND_SYNC_NO_DEPLOY
+QUEUE_DELIVERY_DEPLOYMENT           = PENDING_REVIEWED_RELEASE
+PRODUCTION                          = BLOCKED_UNCHANGED
+```
+
 ### Downstream Facebook Dashboard truth repair — 2026-08-15
 
 ผู้ใช้ส่ง Fresh Lark Base export หลัง Facebook current totals เริ่มขึ้น Dashboard แล้ว และอนุมัติให้แก้

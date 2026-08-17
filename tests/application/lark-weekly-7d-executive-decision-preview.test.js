@@ -154,6 +154,10 @@ test('builds a stable fresh synthesis identity and keeps persisted delivery flag
   assert.equal(first.fields.sent_to_group, false);
   assert.equal(first.evidence.evidence.funnelDivergences.length, 1);
   assert.equal(first.evidence.evidence.organicPaidMappingAvailable, false);
+  assert.match(
+    JSON.parse(first.evidence.metricSummaryJson).writerContract.weaknesses,
+    /exact ch\+m/u,
+  );
   assert.deepEqual(source.fields, before);
   assert.equal(assertLarkWeekly7dExecutiveDecisionPrepared(first.fields, first), true);
 });
@@ -197,6 +201,18 @@ test('generated fresh decision passes only with explicit decision-ready actions'
     ...decisionReadyOutputs(),
   }, synthesis);
   assert.equal(accepted.qualityGate.passed, true);
+
+  assert.throws(
+    () => assertLarkWeekly7dExecutiveDecisionGenerated({
+      ...synthesis.fields,
+      generation_status: 'generated',
+      generated_at: NOW,
+      ...decisionReadyOutputs(),
+      weaknesses: 'การคลิกลดลง 20% เมื่อเทียบกับช่วงก่อน',
+    }, synthesis),
+    (error) => error?.code === 'LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED'
+      && error?.details?.violations?.includes('weaknesses_missing_negative_channel'),
+  );
 
   assert.throws(
     () => assertLarkWeekly7dExecutiveDecisionGenerated({
