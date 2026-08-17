@@ -368,7 +368,7 @@ function buildCompactDecisionSummary(input, labelLimit) {
         : '2-4 lines; 1 label/line; real verb+anchor; ตรวจสอบ-only invalid; c=[]=>no CONTENT/Organic filler; a=>name Paid candidate, never CONTENT; c=[]+a+funnel=>paid action + NO-SCALE only; SCALE iff scale=1; no same-creative',
       ...(hasFunnelDivergence ? { funnelDecision: 'NO-SCALE: one line with 1 up + 1 down metric; concrete action only' } : {}),
       strengths: '+ only; spend/budget neutral',
-      weaknesses: '- only; missing data is not weakness',
+      weaknesses: '-=>exact ch+m; none=>fallback; gaps!=weakness',
     }),
     ...(recommendationBlueprints.length > 0 ? { rb: Object.freeze(recommendationBlueprints) } : {}),
     ...(hasFunnelDivergence ? { funnelMetrics: Object.freeze({ up: funnelUp, down: funnelDown }) } : {}),

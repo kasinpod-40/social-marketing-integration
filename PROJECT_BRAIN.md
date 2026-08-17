@@ -1,5 +1,16 @@
 # Project Brain — Social Marketing Data Integration
 
+## Automatic Weekly negative-channel repair — 2026-08-17
+
+รอบ Scheduled จริงช่วง `2026-08-10..2026-08-16` fail closed ก่อนส่งด้วย
+`weaknesses_missing_negative_channel`: Native AI generated ครบ แต่ per-row compact Weaknesses contract
+ไม่บังคับชื่อช่องทางให้ตรงกับ Quality Gate. ไม่มี D1 delivery row และไม่มี Lark message ถูกส่ง.
+
+Permanent contract ต้องระบุ exact negative channel + metric จาก `ch/m`; missing data ไม่ใช่ Weakness และ
+เมื่อไม่มี negative comparison ต้องใช้ fallback เดิม. Fresh Decision identity bump จาก v4 เป็น v5;
+identity ที่ fail เดิมเป็น immutable forensic evidence ห้าม reset/replay/redrive. GET-only preflight ยืนยัน
+ช่วงข้อมูลถูกต้อง 8 Report channels, input 2,212/593 chars อยู่ใน budget และ v5 identity ยังไม่มี Live row.
+
 ## TikTok MKT_Accounts master completion — 2026-08-16
 
 Root cause ของ TikTok ที่หายจาก `MKT_Accounts` คือ Native sync contract ไม่เคยส่ง mapping หรือเขียน
