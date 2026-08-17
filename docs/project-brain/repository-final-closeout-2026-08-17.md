@@ -5,7 +5,7 @@
 ```text
 REPOSITORY_CLOSEOUT                 = COMPLETE
 MERGED_PR                           = 658
-MAIN                                = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
+REPOSITORY_CLOSEOUT_CODE_MERGE      = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
 BRANCH_VERIFICATION_RUN             = 31990567121
 BRANCH_VERIFICATION_JOB             = 95273236886
 BRANCH_VERIFICATION                 = PASS
@@ -16,6 +16,8 @@ REMOTE_RUNTIME_MUTATIONS            = ZERO
 NEXT_AUTOMATIC_SCHEDULED_EVIDENCE   = 2026-08-24T08:30:00+07:00
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 ```
+
+`REPOSITORY_CLOSEOUT_CODE_MERGE` is the stable merge that introduced the code/authority cleanup. Later documentation-only closeout commits may move the branch tip and are intentionally not recorded as a moving `MAIN` value.
 
 ## Completed repository debt
 
