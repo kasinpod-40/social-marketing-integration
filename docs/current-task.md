@@ -86,23 +86,27 @@ Acceptance gate เดียวต้องครอบคลุมทั้ง�
 ## Implementation result
 
 - Added `audit-lark-base-full-parity.js` GET-only inventory.
-- Audit reads Source and Target table/field/record/view state plus Base v3 block tree, full View property endpoints,
-  Forms/Questions, Dashboards/Blocks, Workflows and Advanced Permission roles.
+- Audit reads Source and Target table/field/record/view state plus Base v3 block tree, View detail and
+  filter / visible_fields / group / sort / timebar / card subresources, Forms/Questions, Dashboards/Blocks,
+  Workflows and Advanced Permission roles.
 - Audit emits counts/digests/read failures without exposing Base tokens and always reports remote mutation 0.
 - Customer operator now defaults to Full-Parity audit and actively rejects old partial write/preview/verify modes.
-- Added regressions proving GET-only behavior, fail-closed read coverage and missing-target blocking.
+- Added regressions proving GET-only behavior, fail-closed top-level read coverage and missing-target blocking.
+- Before live audit, View-property subresource failures still need to be promoted into the global read-failure blocker
+  contract and exact-head Branch Verification must pass.
 - No Customer Lark mutation has been run from this full-parity change.
 
 ## Acceptance criteria
 
 Repository work is not complete merely because 33 Tables exist. Final completion requires:
 
-1. exact-head Branch Verification passes;
-2. live GET-only Full-Parity Audit reads Source/Target successfully;
-3. audit proves the actual Source resource inventory and identifies any scope/API gaps;
-4. clone/remap implementation covers every Source dimension present in that audit;
-5. one controlled Apply is allowed only after a dry-run/preview proves zero unhandled dimensions and no collision with unrelated customer content;
-6. post-Apply GET-only canonical verifier reports 100% functional/UI parity across all required dimensions;
-7. only then may PR #661 be considered ready for merge/closeout.
+1. promote every View-property read failure into the global audit blocker set;
+2. exact-head Branch Verification passes;
+3. live GET-only Full-Parity Audit reads Source/Target successfully;
+4. audit proves the actual Source resource inventory and identifies any scope/API gaps;
+5. clone/remap implementation covers every Source dimension present in that audit;
+6. one controlled Apply is allowed only after a dry-run/preview proves zero unhandled dimensions and no collision with unrelated customer content;
+7. post-Apply GET-only canonical verifier reports 100% functional/UI parity across all required dimensions;
+8. only then may PR #661 be considered ready for merge/closeout.
 
 Detailed workstream record: `docs/project-brain/customer-base-consolidation-v1.md`.
