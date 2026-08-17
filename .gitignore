@@ -27,6 +27,9 @@ TestResults.xml
 .env
 .env.*
 !.env.example
+.customer.prod.vars
+.customer.prod.vars.*
+!.customer.prod.vars.example
 
 # Dependency directories
 node_modules/
