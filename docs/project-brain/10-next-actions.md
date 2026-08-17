@@ -21,11 +21,11 @@ Do not merge, deploy, provision credentials, generate invitations, enable schedu
 ## Repository state
 
 ```text
-MAIN                    = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
-REPOSITORY_CLOSEOUT     = COMPLETE
-OBSOLETE_PRS_CLOSED     = 11,17,66,249,595
-OPEN_PRS                = 220_ONLY
-REMOTE_RUNTIME_MUTATION = ZERO_FROM_CLOSEOUT
+REPOSITORY_CLOSEOUT_CODE_MERGE = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
+REPOSITORY_CLOSEOUT            = COMPLETE
+OBSOLETE_PRS_CLOSED            = 11,17,66,249,595
+OPEN_PRS                       = 220_ONLY
+REMOTE_RUNTIME_MUTATION        = ZERO_FROM_CLOSEOUT
 ```
 
 Historical Next Actions before this closeout are preserved byte-for-byte at
