@@ -59,14 +59,30 @@ migration stops instead of overwriting it.
 - Remote target table create: 0
 - Table/field/record delete: 0
 - Queue/D1/Worker/schedule/automation mutation: 0
-- Customer live Apply: not run while implementation/CI and customer-owned credential gates remain open
+- Customer live Apply: not run while customer-owned credential/folder gates remain open
 - Secrets remain environment-only; logs expose only hashed Base identity
 
-## Branch
+## Branch verification
 
-`work/customer-base-consolidation-v1`
+Draft PR: `#661`
 
-Current implementation files:
+Exact verified head: `896d63518ebe44143652a17764abf980b5de982e`
+
+Branch Verification:
+- run `32024949257`
+- job `95372300469`
+- conclusion `success`
+- install / syntax / architecture / hygiene passed
+- focused Report, Meta, Woo, Chatwoot and staged TikTok suites passed
+- Unit and Workers runtime passed
+- Report Reliability passed
+- dependency audit passed
+- Wrangler dry-run passed
+- diff whitespace check and diagnostics upload passed
+
+No customer Lark mutation was used as test evidence.
+
+## Implementation files
 
 - `packages/application/src/use-cases/consolidate-lark-base.js`
 - `packages/application/src/use-cases/preplaced-lark-base-target.js`
@@ -76,12 +92,12 @@ Current implementation files:
 
 ## Remaining closeout gates
 
-- focused tests and repository gates
-- Draft PR review/CI
+Repository implementation and CI are complete. Remaining gates are external/customer-owned only:
+
 - customer target GET-only preview with all 33 names present
 - explicit confirmation that all destination tables are under the required internal folder
 - one controlled customer Apply only after ownership/credential verification
 - GET-only post-Apply parity verification
+- separate Dashboard/automation/workflow/Advanced Permission parity closeout
 
-Dashboard, automation/workflow and Advanced Permission parity remain a separate Base-level closure step and are
-not silently treated as completed by table consolidation.
+Dashboard, automation/workflow and Advanced Permission parity are not silently treated as completed by table consolidation.
