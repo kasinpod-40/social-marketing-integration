@@ -86,24 +86,40 @@ async function main() {
     );
   }
 
-  const sourceClient = createLarkBitableClientFromEnv({
+  const sourceInstrumentation = instrumentStrictReads(createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: sourceAppToken,
-  }, { onRequest: traceIfVerbose });
-  const targetClient = createLarkBitableClientFromEnv({
+  }, { onRequest: traceIfVerbose }), 'source');
+  const targetInstrumentation = instrumentStrictReads(createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: targetAppToken,
-  }, { onRequest: traceIfVerbose });
+  }, { onRequest: traceIfVerbose }), 'target');
 
   const audit = await auditLarkBaseFullParity({
-    sourceClient,
-    targetClient,
+    sourceClient: sourceInstrumentation.client,
+    targetClient: targetInstrumentation.client,
     expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
     expectedTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
   });
 
+  const strictReadFailures = [
+    ...sourceInstrumentation.failures,
+    ...targetInstrumentation.failures,
+  ];
+  const strictBlockers = strictReadFailures.map((failure) => ({
+    code: 'FULL_PARITY_STRICT_READ_FAILED',
+    message: `${failure.side} OpenAPI read failed during full-parity audit`,
+    details: failure,
+  }));
+  const blockers = [...audit.blockers, ...strictBlockers];
+  const ok = audit.ok && strictReadFailures.length === 0;
+
   printJson({
     ...audit,
+    ok,
+    blockers,
+    strictReadFailureCount: strictReadFailures.length,
+    strictReadFailures,
     contractVersion: 'customer_base_full_parity_operator_v1',
     action: 'full-parity-audit',
     sourceIdentity: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
@@ -112,7 +128,32 @@ async function main() {
     remoteMutationCount: 0,
     nextCommand: null,
   });
-  if (!audit.ok) process.exitCode = 1;
+  if (!ok) process.exitCode = 1;
+}
+
+function instrumentStrictReads(client, side) {
+  const failures = [];
+  const original = client.requestBitableJson.bind(client);
+  client.requestBitableJson = async (path, options = {}) => {
+    try {
+      return await original(path, options);
+    } catch (error) {
+      failures.push(Object.freeze({
+        side,
+        resource: sanitizePath(path, client.appToken),
+        code: error?.code ?? error?.details?.code ?? 'UNKNOWN_READ_ERROR',
+        status: error?.details?.status ?? null,
+        larkCode: error?.details?.larkCode ?? null,
+      }));
+      throw error;
+    }
+  };
+  return Object.freeze({ client, failures });
+}
+
+function sanitizePath(path, appToken) {
+  const raw = typeof path === 'string' ? path : String(path ?? '');
+  return raw.split(appToken).join('[BASE]');
 }
 
 function resolveMode(args) {
