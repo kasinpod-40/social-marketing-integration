@@ -14,8 +14,10 @@ PARTIAL_TABLE_MIGRATION             = BLOCKED
 REMOTE_TABLE_PROVISION              = BLOCKED
 CUSTOMER_LARK_APPLY                 = BLOCKED
 SOURCE_MUTATION                     = BLOCKED
+CUSTOMER_PROD_CONFIG_FILE           = .customer.prod.vars
+CUSTOMER_PROD_CONFIG_TEMPLATE       = .customer.prod.vars.example
 DRAFT_PR                            = 661
-BRANCH_VERIFICATION                 = PENDING_EXACT_HEAD
+BRANCH_VERIFICATION                 = PENDING_EXACT_HEAD_AFTER_CONFIG_ISOLATION
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 ```
 
@@ -58,6 +60,23 @@ Acceptance gate เดียวต้องครอบคลุมทั้ง�
   ต้องปิดแยกโดยอัตโนมัติ.
 - Native table-copy endpoint copy ได้เฉพาะภายใน Base เดียวกัน จึงไม่ใช้เป็น cross-Base migration engine.
 - ก่อนเพิ่ม Apply logic ต้องรัน GET-only Full-Parity Audit เพื่อ inventory Source/Target state จริงและ capability/scope gaps.
+- Customer PROD credential ต้องแยกจาก `.dev.vars`: operator อ่าน `.customer.prod.vars` เป็น default และไฟล์จริงต้องถูก Git ignore.
+
+## Customer PROD config contract
+
+ไฟล์จริงบน operator Mac: `.customer.prod.vars`
+
+Template ที่ commit ได้: `.customer.prod.vars.example`
+
+Required keys:
+
+- `LARK_APP_ID`
+- `LARK_APP_SECRET`
+- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN`
+- `LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN`
+
+`LARK_APP_ID`/`LARK_APP_SECRET` ต้องเป็น Customer-owned Lark application ที่มีสิทธิ์อ่านทั้ง Source และ Target Base.
+Secret/token ห้าม commit และห้ามนำค่าจริงลง docs/log.
 
 ## Safety contract
 
@@ -67,7 +86,7 @@ Acceptance gate เดียวต้องครอบคลุมทั้ง�
 4. API/resource ใดอ่านไม่ได้ต้องเป็น blocker; ห้ามตีความว่า resource ไม่มี.
 5. Existing customer tables/folders/content/dashboard/workflow/role ห้าม overwrite/delete เพื่อทำให้ parity ผ่าน.
 6. Source Base mutation = 0.
-7. Secret/token อยู่ environment เท่านั้น; output ใช้ hashed Base identity.
+7. Secret/token อยู่ `.customer.prod.vars`/process environment เท่านั้น; output ใช้ hashed Base identity.
 8. Final verifier ต้อง fail closed เมื่อมี mismatch แม้เพียง dimension เดียว.
 
 ## Required tests
@@ -76,6 +95,7 @@ Acceptance gate เดียวต้องครอบคลุมทั้ง�
 - Read failure on any required resource fails closed.
 - Missing target table never enables partial Apply.
 - Legacy provisioning/apply paths remain blocked while full parity is incomplete.
+- Customer PROD config path defaults to `.customer.prod.vars`; missing required keys fail closed without exposing values.
 - Existing relation/formula/record migration regressions remain passing.
 - `npm run check`
 - `npm test`
@@ -89,19 +109,18 @@ Acceptance gate เดียวต้องครอบคลุมทั้ง�
 - Audit reads Source and Target table/field/record/view state plus Base v3 block tree, View detail and
   filter / visible_fields / group / sort / timebar / card subresources, Forms/Questions, Dashboards/Blocks,
   Workflows and Advanced Permission roles.
-- Audit emits counts/digests/read failures without exposing Base tokens and always reports remote mutation 0.
-- Customer operator now defaults to Full-Parity audit and actively rejects old partial write/preview/verify modes.
-- Added regressions proving GET-only behavior, fail-closed top-level read coverage and missing-target blocking.
-- Before live audit, View-property subresource failures still need to be promoted into the global read-failure blocker
-  contract and exact-head Branch Verification must pass.
+- Strict read interceptor makes any OpenAPI read failure a global blocker; audit emits counts/digests without exposing Base tokens and reports remote mutation 0.
+- Customer operator defaults to Full-Parity audit and actively rejects old partial write/preview/verify modes.
+- Customer credential source is isolated from DEV: `.customer.prod.vars.example` is tracked as template, `.customer.prod.vars` is Git-ignored, and operator reads the customer PROD file by default.
+- Config preflight requires the 4 Customer PROD keys above and reports only missing key names/file guidance, never values.
 - No Customer Lark mutation has been run from this full-parity change.
 
 ## Acceptance criteria
 
 Repository work is not complete merely because 33 Tables exist. Final completion requires:
 
-1. promote every View-property read failure into the global audit blocker set;
-2. exact-head Branch Verification passes;
+1. exact-head Branch Verification passes after Customer PROD config isolation;
+2. create local `.customer.prod.vars` from the tracked template and fill the 4 required values;
 3. live GET-only Full-Parity Audit reads Source/Target successfully;
 4. audit proves the actual Source resource inventory and identifies any scope/API gaps;
 5. clone/remap implementation covers every Source dimension present in that audit;
