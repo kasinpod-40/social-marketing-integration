@@ -14,6 +14,13 @@
   immutable v6 identity instead of mutating or replaying either failed row.
 - GET-only v6 preflight selected the exact period and 8 channels, measured input at 2,027/593 characters,
   and found zero existing v6 rows before release.
+- PR #655 and #656 passed CI and merged. Exact merged v6 deployed as Worker
+  `da0777dc-447b-452b-b86c-3e96637375c8` at 100% traffic without schedule/secret/binding changes.
+- The new v6 controlled recovery completed with the Quality Gate passing, one AI row, one Admission row,
+  one D1 `sent/mirrored` delivery with claim count 1, and one Lark Notification Log row marked `sent`.
+  Exact new alert/DLQ/active-lock counts were zero; retained failed identities were not replayed or redriven.
+- This same-day controlled delivery proves the repair and exactly-once delivery path but does not replace
+  the next scheduled automatic-run evidence.
 - GET-only Live preflight selected the exact `2026-08-10..2026-08-16` period and 8 Report channels,
   remained within the 2,800/700 input budgets at 2,212/593 characters and found zero existing v5 rows.
 - Focused tests passed 22/22, full unit passed 3,048/3,048, Workers runtime passed 18/18, Report reliability
