@@ -1,60 +1,82 @@
-# Current Task — Repository Final Closeout & Weekly Scheduled Evidence v1
+# Current Task — Customer Base Consolidation v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = REPOSITORY_CLOSEOUT_COMPLETE_WEEKLY_TIME_GATE_REMAINS
-CURRENT_PROGRAM                     = WAIT_AUTOMATIC_WEEKLY_V6_SCHEDULED_EVIDENCE_20260824
-REPOSITORY_CLOSEOUT_MERGE            = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
-BRANCH_VERIFICATION_RUN              = 31990567121
-BRANCH_VERIFICATION_JOB              = 95273236886
-BRANCH_VERIFICATION                  = PASS
-INTEGRATION_WORKSPACE               = ACTIVE_VERIFIED
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS_NO_LIVE_APPLY
+CURRENT_PROGRAM                     = CUSTOMER_BASE_CONSOLIDATION_PREPLACED_TABLES_V1
+SOURCE_BASE                         = Social MKT Data Hub
+TARGET_BASE                         = ✨Marketing Content Calendar
+TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
+EXPECTED_SOURCE_TABLES              = 33
+REMOTE_TABLE_CREATE                 = BLOCKED
+SOURCE_MUTATION                     = BLOCKED
+CUSTOMER_LARK_APPLY                 = NOT_RUN
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 AUTOMATIC_WEEKLY_NOTIFICATION       = LIVE_ENABLED_MONDAY_0830_ASIA_BANGKOK
 NEXT_AUTOMATIC_SCHEDULED_EVIDENCE   = 2026-08-24T08:30:00+07:00
 TIKTOK_ADS                          = DEFERRED_NOT_CURRENT_BLOCKER
-OPEN_PULL_REQUESTS                  = PR_220_ONLY
 DLQ_REDRIVE                         = BLOCKED_OFF
 ```
 
 ## Objective
 
-Repository debt ที่ทำได้โดยไม่แตะ Live runtime ปิดแล้ว. งานปัจจุบันเหลือเพียงอ่านหลักฐาน Automatic Weekly v6 ตามเวลาจริงหลัง `2026-08-24 08:30 Asia/Bangkok`. Production/customer-owned provisioning และ TikTok Ads เป็น workstream แยกและไม่ใช่ blocker ของ Integration repository closeout นี้.
+ย้าย Table-level structure/data จาก `Social MKT Data Hub` เข้า Base เดิมของลูกค้า `✨Marketing Content Calendar`
+โดยให้ Table ทั้ง 33 รายการอยู่ใต้ internal Base folder `Setup Phase | Social MKT Data Hub` และรักษา
+field/record/relation/formula/view fidelity ให้มากที่สุดโดยไม่สร้าง Base/engine ใหม่และไม่ใช้ Cross-Base Sync
+เป็นตัวแทนของ schema จริง.
 
-## Completed repository closeout
+## In scope
 
-- PR #658 merge เข้า `main` ที่ `c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe`.
-- Port Lark Number formatter precision fix จาก stale PR #249 แบบ minimal บน current main.
-- Official grouped formatter `1,000` / `1,000.00` และ spreadsheet alias ใช้ Shared normalizer; unsupported precision ไม่ถูกเดา.
-- Shared Dimensions Backfill operator identity เป็น `lark-dashboard-shared-dimensions-backfill-v1.3`; ไม่มี Apply.
-- Authority files รุ่นเก่าถูก archive byte-for-byte ก่อนแทน active files ด้วย current authority.
-- Branch Verification run `31990567121`, job `95273236886` ผ่านทุก step: install, architecture/hygiene, focused suites, staged TikTok, Unit/Workers runtime, Report Reliability, dependency audit, Wrangler dry-run, diff check และ diagnostics upload.
-- Obsolete Draft PR #11, #17, #66, #249 และ #595 ถูกปิดพร้อมบันทึกเหตุผลว่า superseded.
-- PR #220 TikTok Ads ยังคงเปิดตามคำสั่งผู้ใช้และถูกจัดเป็น deferred.
+- Read-only source/target preflight ผ่าน Lark OpenAPI
+- exact contract 33 source table names
+- ใช้ existing central `LarkBitableClient`
+- Table ปลายทางต้องถูก pre-create/move ใน Lark UI ก่อน Apply เพราะ OpenAPI ไม่มี folder-placement primitive
+- operator ห้าม remote `createTable`; empty one-field destination tables เป็น shell ที่ claim ด้วย `updateField`
+  และ `updateView` แล้วค่อยใช้ existing field/record/relation/formula/view migration path
+- reuse existing target table ได้เฉพาะเมื่อ generic parity preflight ยืนยันว่าเข้ากันได้
+- source read-only; ไม่มี delete; ไม่มี schedule/automation/runtime mutation
+- Apply ต้องมี explicit confirmation ว่า Table ทั้งหมดถูกวางใต้ target folder แล้ว
 
-## Locked runtime evidence
+## Out of scope
 
-Weekly v6 controlled recovery ผ่าน Quality Gate และ exactly-once delivery แล้ว: AI/Admission อย่างละ 1, D1 delivery `sent/mirrored` claim 1, Lark Notification Log `sent` 1 และ exact new alert/DLQ/active lock = 0. หลักฐานนี้พิสูจน์ repair path แต่ไม่แทน scheduled automatic proof.
+- สร้าง/ลบ Target Base
+- สร้าง Table ใหม่ผ่าน OpenAPI
+- ย้าย internal Base folder ผ่าน API (API ไม่ expose primitive นี้)
+- Dashboard, Automation/Workflow และ Advanced Permission parity ใน operator นี้
+- Production Worker/D1/Queue deployment หรือ schedule change
+- TikTok Ads
+- Automatic Weekly evidence ซึ่งยังรอตามเวลาจริง 2026-08-24
 
-Automatic Weekly รอบจริงก่อนหน้า fail-closed และ retained identity ต้องคงเป็น forensic evidence ห้าม reset/replay/redrive. หลักฐาน schedule รอบถัดไปต้องอ่านแบบ read-only หลัง `2026-08-24 08:30 Asia/Bangkok` เท่านั้น.
+## Safety contract
 
-## Out of scope / deferred
+1. Preview/Verify = GET-only, remote mutation 0.
+2. Apply fail-closed ถ้า destination table 33 รายการยังมีไม่ครบใน Target Base.
+3. Folder membership ตรวจผ่าน OpenAPI ไม่ได้ จึงต้องใช้ `CONFIRM_TARGET_FOLDER_PLACEMENT=YES` ก่อน Apply.
+4. Underlying Lark client's `createTable()` ต้องไม่ถูกเรียกใน customer operator path.
+5. Source Base mutation = 0; delete table/field/record = 0.
+6. Existing non-empty/non-exact target table ต้อง block แทน overwrite.
+7. Secrets/App tokens อ่านจาก environment เท่านั้นและ output แสดงเฉพาะ SHA-256 identity.
 
-- TikTok Ads implementation, OAuth, deploy หรือ customer onboarding
-- Production provisioning/UAT
-- Worker deployment
-- Queue send/replay/DLQ redrive
-- Remote D1 mutation/migration
-- Lark mutation หรือ Backfill Apply
-- Schedule/Secret/Binding change
-- Manual run ที่ใช้แทน Automatic Weekly evidence
+## Required tests
+
+- missing preplaced destination table blocks
+- empty preplaced shell is claimed without underlying `createTable()`
+- existing non-empty table remains visible for exact/conflict parity preflight
+- ordinary fields/records, relation IDs, formula IDs and supported view properties retain existing consolidation coverage
+- focused tests + `npm run check` + `npm test` + `npm run test:report-reliability` + `npm audit` + `npm run deploy:dry-run`
 
 ## Acceptance criteria
 
-Repository closeout criteria ผ่านแล้ว. Final Integration time gate จะถือว่าปิดเมื่อ Automatic Weekly v6 รอบถัดไปมี scheduled exactly-once evidence ที่ถูกต้องโดยไม่มีการใช้ manual/control run แทน.
+- Branch implementation and CI gates pass.
+- Preview on customer target proves all 33 source names and all 33 preplaced target names before any write.
+- `remoteTableCreates = 0` and Apply requires folder-placement confirmation.
+- Customer live Apply is not run until target ownership/credentials and folder placement are explicitly verified.
+- Post-Apply read-only verification must show field/record/view parity with no source mutation and no unexpected target changes.
 
-Historical current-task ก่อน Repository closeout ถูกเก็บ byte-for-byte ที่
-`docs/archive/current-task-before-repository-final-closeout-2026-08-17.md`.
+Detailed workstream record:
+`docs/project-brain/customer-base-consolidation-v1.md`.
 
-Detailed closeout record: `docs/project-brain/repository-final-closeout-2026-08-17.md`.
+Repository-wide closeout/Weekly scheduled evidence authority before this explicit customer workstream remains archived
+in `docs/project-brain/repository-final-closeout-2026-08-17.md`; this branch does not replay or replace the
+2026-08-24 automatic Weekly evidence gate.
