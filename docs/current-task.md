@@ -17,7 +17,7 @@ SOURCE_MUTATION                     = BLOCKED
 CUSTOMER_PROD_CONFIG_FILE           = .customer.prod.vars
 CUSTOMER_PROD_CONFIG_TEMPLATE       = .customer.prod.vars.example
 DRAFT_PR                            = 661
-BRANCH_VERIFICATION                 = PASS_HEAD_ec96721b94c34678bebcdae6ced7f3f9ada3a3b4_RUN_32041637131_JOB_95421904881
+BRANCH_VERIFICATION                 = PASS_HEAD_717a54b288209a8eacdb5e73fb00ad724db4fb6b_RUN_32041900752_JOB_95422578196
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 ```
 
@@ -113,7 +113,7 @@ Secret/token ห้าม commit และห้ามนำค่าจริ�
 - Customer operator defaults to Full-Parity audit and actively rejects old partial write/preview/verify modes.
 - Customer credential source is isolated from DEV: `.customer.prod.vars.example` is tracked as template, `.customer.prod.vars` is Git-ignored, and operator reads the customer PROD file by default.
 - Config preflight requires the 4 Customer PROD keys above and reports only missing key names/file guidance, never values.
-- Exact head `ec96721b94c34678bebcdae6ced7f3f9ada3a3b4` passed Branch Verification run `32041637131`, job `95421904881`: locked install, architecture/hygiene, focused Report/Meta/Woo/Chatwoot/TikTok, Unit/Workers, Report Reliability, dependency audit, Wrangler dry-run and diff check all passed.
+- Exact head `717a54b288209a8eacdb5e73fb00ad724db4fb6b` passed Branch Verification run `32041900752`, job `95422578196`: locked install, architecture/hygiene, focused Report/Meta/Woo/Chatwoot/TikTok, Unit/Workers, Report Reliability, dependency audit, Wrangler dry-run and diff check all passed.
 - No Customer Lark mutation has been run from this full-parity change.
 
 ## Acceptance criteria
