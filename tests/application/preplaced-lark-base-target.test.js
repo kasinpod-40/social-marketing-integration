@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyLarkBaseConsolidation } from '../../packages/application/src/use-cases/consolidate-lark-base.js';
-import { preparePreplacedLarkBaseTarget } from '../../packages/application/src/use-cases/preplaced-lark-base-target.js';
+import {
+  preparePreplacedLarkBaseTarget,
+  provisionMissingLarkBaseTargetTables,
+} from '../../packages/application/src/use-cases/preplaced-lark-base-target.js';
 
 const text = (fieldId, fieldName, primary = false) => ({
   fieldId,
@@ -60,9 +63,26 @@ class FakeTargetClient {
     return structuredClone(this.table(tableId).views.find((view) => view.viewId === viewId));
   }
 
-  async createTable() {
-    this.calls.push({ kind: 'createTable' });
-    throw new Error('underlying createTable must never be called');
+  async createTable({ name, defaultViewName = 'Grid', fields }) {
+    this.calls.push({ kind: 'createTable', name });
+    const tableId = `target_table_${++this.sequence}`;
+    const table = {
+      tableId,
+      name,
+      fields: fields.map((field, index) => ({
+        fieldId: `target_primary_${++this.sequence}`,
+        fieldName: field.fieldName,
+        type: field.type,
+        uiType: field.uiType ?? 'Text',
+        description: field.description ?? '',
+        isPrimary: index === 0,
+        property: structuredClone(field.property ?? null),
+      })),
+      records: [],
+      views: [grid(`target_view_${++this.sequence}`, defaultViewName)],
+    };
+    this.tables.push(table);
+    return { tableId, name, revision: 1 };
   }
 
   async updateField({ tableId, fieldId, field }) {
@@ -153,6 +173,57 @@ function targetShell() {
     views: [grid('target_view_1', 'Grid')],
   }]);
 }
+
+test('provision creates only missing table shells and rerun is idempotent', async () => {
+  const targetClient = new FakeTargetClient([{
+    tableId: 'existing_accounts',
+    name: 'Accounts',
+    fields: [text('existing_primary', 'Text', true)],
+    records: [],
+    views: [grid('existing_view', 'Grid')],
+  }]);
+
+  const first = await provisionMissingLarkBaseTargetTables({
+    targetClient,
+    expectedTableNames: ['Accounts', 'Orders'],
+    expectedTableCount: 2,
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.createdTables, 1);
+  assert.deepEqual(first.createdTableNames, ['Orders']);
+  assert.equal(targetClient.calls.filter((call) => call.kind === 'createTable').length, 1);
+  assert.equal(targetClient.tables.find((table) => table.name === 'Accounts').tableId, 'existing_accounts');
+
+  const second = await provisionMissingLarkBaseTargetTables({
+    targetClient,
+    expectedTableNames: ['Accounts', 'Orders'],
+    expectedTableCount: 2,
+  });
+
+  assert.equal(second.ok, true);
+  assert.equal(second.createdTables, 0);
+  assert.deepEqual(second.createdTableNames, []);
+  assert.equal(targetClient.calls.filter((call) => call.kind === 'createTable').length, 1);
+});
+
+test('provision fails closed on duplicate destination names before any create call', async () => {
+  const targetClient = new FakeTargetClient([
+    { tableId: 'dup_1', name: 'Accounts', fields: [], records: [], views: [] },
+    { tableId: 'dup_2', name: 'Accounts', fields: [], records: [], views: [] },
+  ]);
+
+  const result = await provisionMissingLarkBaseTargetTables({
+    targetClient,
+    expectedTableNames: ['Accounts', 'Orders'],
+    expectedTableCount: 2,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.createdTables, 0);
+  assert.equal(result.conflicts[0].code, 'PREPLACED_TARGET_TABLE_DUPLICATE');
+  assert.equal(targetClient.calls.some((call) => call.kind === 'createTable'), false);
+});
 
 test('preflight blocks when an expected destination table has not been pre-created', async () => {
   const prepared = await preparePreplacedLarkBaseTarget({
