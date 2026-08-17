@@ -60,9 +60,25 @@ WORKERS_RUNTIME_TESTS               = PASS_18_OF_18
 REPORT_RELIABILITY_TESTS            = PASS_105_OF_105
 DEPENDENCY_AUDIT                    = PASS_0_VULNERABILITIES
 DEPLOY_DRY_RUN                      = PASS_API_AND_SYNC_NO_DEPLOY
-QUEUE_DELIVERY_DEPLOYMENT           = V6_PENDING_REVIEWED_RELEASE
+V5_RELEASE                          = PR_655_MAIN_87A27AA9_WORKER_8C615CDD_100_PERCENT
+V6_RELEASE                          = PR_656_MAIN_D0615193_WORKER_DA0777DC_100_PERCENT
+V6_CONTROLLED_RECOVERY              = COMPLETED_QUALITY_GATE_PASS
+V6_AI_AND_ADMISSION_ROWS            = ONE_ONE
+V6_D1_DELIVERY                      = SENT_MIRRORED_CLAIM_1
+V6_LARK_NOTIFICATION_LOG            = ONE_SENT
+V6_EXACT_ALERT_DLQ_ACTIVE_LOCK      = ZERO_ZERO_ZERO
+CONTROLLED_RECOVERY_QUEUE_POSTS     = ONE
+CONTROLLED_RECOVERY_MESSAGE_SENDS   = ONE
+AUTOMATIC_SCHEDULED_EVIDENCE        = NOT_SUBSTITUTED_NEXT_ELIGIBLE_20260824_0830
 PRODUCTION                          = BLOCKED_UNCHANGED
 ```
+
+PR #655 และ #656 ผ่าน CI แล้ว merge ตามลำดับ. v6 Worker deploy จาก exact merged `main` โดยไม่เปลี่ยน
+schedule, secret หรือ bindings. Controlled recovery ใช้ operation ใหม่หนึ่งครั้ง ไม่ replay/redrive งานเดิม;
+orchestration ใช้ 2 Queue attempts เพื่อรอ Native AI ตาม contract และ delivery operation ใช้ 1 attempt.
+Quality Gate ผ่าน, ส่ง Lark สำเร็จ exactly once และ D1↔Lark delivery parity ผ่าน. อย่างไรก็ดี controlled
+recovery นี้เป็นหลักฐานการแก้และการส่งวันนี้ ไม่แทนหลักฐาน scheduled automatic run; Gate เชิง schedule
+ยังต้องอ่านผลรอบวันจันทร์ถัดไปแบบ read-only.
 
 ### Downstream Facebook Dashboard truth repair — 2026-08-15
 

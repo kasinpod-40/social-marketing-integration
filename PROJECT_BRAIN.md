@@ -16,6 +16,12 @@ identity ที่ fail เดิมเป็น immutable forensic evidence ห
 exact channel + metric + value. ไม่มี Notification delivery. v5 terminal/Alert/DLQ ต้องคงเป็น forensic
 evidence. Permanent follow-up เพิ่ม Overview rule ภายในงบเดิมและ bump immutable identity เป็น v6.
 
+v6 ปิด Business recovery แล้ว: PR #656 merge ที่ `d0615193`, Worker `da0777dc-447b-452b-b86c-3e96637375c8`
+รับ traffic 100%. Exact new operation `weekly-executive-recovery-20260816-v6` completed; AI/Admission อย่างละ
+หนึ่งแถว, Quality Gate ผ่าน, D1 delivery `sent/mirrored` claim 1 และ Lark Notification Log `sent` หนึ่งแถว.
+ไม่มี exact alert/DLQ/active lock ใหม่. Controlled recovery ไม่ใช่ scheduled evidence; retained scheduled/v5
+failures ห้าม replay/redrive และ scheduled exactly-once proof ต้องมาจากรอบอัตโนมัติถัดไปเท่านั้น.
+
 ## TikTok MKT_Accounts master completion — 2026-08-16
 
 Root cause ของ TikTok ที่หายจาก `MKT_Accounts` คือ Native sync contract ไม่เคยส่ง mapping หรือเขียน
