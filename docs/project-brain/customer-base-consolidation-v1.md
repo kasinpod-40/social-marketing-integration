@@ -6,6 +6,10 @@ Customer wants the Social MKT Data Hub tables inside the existing Base `✨Marke
 under the internal Base navigation folder `Setup Phase | Social MKT Data Hub`. A separate duplicated Base is not
 the requested final layout.
 
+The user has explicitly authorized a temporary staging exception: missing destination tables may be created at the
+Target Base root/default placement through Lark OpenAPI, after which the user will manually move those newly created
+blank tables into `Setup Phase | Social MKT Data Hub` before Consolidation Apply.
+
 ## Verified source export
 
 Read-only inspection of `Social MKT Data Hub(20260817-033903).base` established:
@@ -29,58 +33,63 @@ migration mechanism because relation/formula semantics are degraded during sync.
 The migration reuses the existing central `LarkBitableClient` and the branch's table/field/record/relation/
 formula/view consolidation use case. It does not add another Lark transport, queue, worker or schema engine.
 
-Lark OpenAPI can create and edit tables but does not expose the internal Base navigation-folder placement
-required by the customer. Therefore customer consolidation uses a preplaced-table safety boundary:
+Lark OpenAPI can create and edit tables but does not expose the internal Base navigation-folder placement required by
+the customer. The workstream therefore uses two deliberately separated phases:
 
-1. all 33 destination tables must already exist in the target Base;
-2. the operator never calls the underlying remote `createTable()`;
+### Phase A — root/default-placement provisioning
+
+1. `--provision-missing` reads the current Target Base table list first.
+2. Existing expected table names are preserved and never recreated or overwritten.
+3. Duplicate target names or table-limit overflow fail closed before any create call.
+4. Only missing exact expected names are created, each as an empty one-field shell with one default Grid view.
+5. Rerunning after success is idempotent and creates zero additional tables.
+6. This phase requires explicit write confirmations and does not read or mutate the Source Base.
+7. The user manually moves the newly created tables into `Setup Phase | Social MKT Data Hub` in Lark UI.
+
+### Phase B — consolidation Apply
+
+1. all 33 destination tables must already exist in the Target Base;
+2. the Apply path never calls the underlying remote `createTable()`;
 3. a destination table with zero records, one primary field and one view is treated as a safe shell;
 4. the shell is claimed in place by updating its primary field and default view, preserving the existing table ID;
 5. the existing consolidation path then creates the remaining fields, records, relations, formulas and supported
    views inside that preplaced table;
 6. non-empty/non-shell target tables remain visible to the generic parity preflight and must be exact/reusable
    or the run fails closed;
-7. Apply requires explicit human confirmation that the preplaced tables are inside
-   `Setup Phase | Social MKT Data Hub`, because folder membership itself is not OpenAPI-verifiable.
+7. Apply requires explicit human confirmation that the tables are inside `Setup Phase | Social MKT Data Hub`, because
+   folder membership itself is not OpenAPI-verifiable.
 
-This preserves the customer's requested layout and removes remote table creation from the customer operator
-path without duplicating the migration engine.
+This keeps remote table creation out of the actual migration Apply while allowing the user-authorized root provisioning
+step to eliminate manual creation of dozens of blank tables.
 
 ## Existing synced TikTok table
 
 `🎵 RAW_TikTok_Creator_Videos` is already present in the target Base through Cross-Base Data Sync with 2,040
-records. The operator does not special-case it by name. Because it is non-empty, it stays visible to the normal
-exact/conflict preflight. It may be reused only if its current field/record shape passes that preflight; otherwise
-migration stops instead of overwriting it.
+records. Provisioning does not special-case or recreate it because its exact expected name is already present.
+During consolidation it stays visible to the normal exact/conflict preflight. It may be reused only if its current
+field/record shape passes that preflight; otherwise migration stops instead of overwriting it.
 
 ## Safety
 
 - Source mutation: 0
-- Remote target table create: 0
+- Target table create: allowed only in explicit `--provision-missing` mode and only for missing expected names
+- Consolidation Apply remote table create: 0
+- Existing table overwrite/rename during provisioning: 0
 - Table/field/record delete: 0
 - Queue/D1/Worker/schedule/automation mutation: 0
-- Customer live Apply: not run while customer-owned credential/folder gates remain open
+- Customer live provisioning: not yet run
+- Customer live Apply: not run
 - Secrets remain environment-only; logs expose only hashed Base identity
 
-## Branch verification
+## Verification state
 
 Draft PR: `#661`
 
-Exact verified head: `896d63518ebe44143652a17764abf980b5de982e`
+The previous preplaced-only implementation passed Branch Verification at head
+`8d0412ffbfc75621b3060af56d2730f93c2f77ba`, run `32025415791`.
 
-Branch Verification:
-- run `32024949257`
-- job `95372300469`
-- conclusion `success`
-- install / syntax / architecture / hygiene passed
-- focused Report, Meta, Woo, Chatwoot and staged TikTok suites passed
-- Unit and Workers runtime passed
-- Report Reliability passed
-- dependency audit passed
-- Wrangler dry-run passed
-- diff whitespace check and diagnostics upload passed
-
-No customer Lark mutation was used as test evidence.
+The newer user-authorized root-provisioning change requires a fresh exact-head Branch Verification before any live
+`--provision-missing` execution. Customer Lark has not been used as test evidence for this change.
 
 ## Implementation files
 
@@ -92,8 +101,10 @@ No customer Lark mutation was used as test evidence.
 
 ## Remaining closeout gates
 
-Repository implementation and CI are complete. Remaining gates are external/customer-owned only:
-
+- exact-head Branch Verification for root provisioning change
+- one controlled customer `--provision-missing`
+- read-back proving all expected table names exist and existing tables were preserved
+- manual move of newly created tables into `Setup Phase | Social MKT Data Hub`
 - customer target GET-only preview with all 33 names present
 - explicit confirmation that all destination tables are under the required internal folder
 - one controlled customer Apply only after ownership/credential verification
