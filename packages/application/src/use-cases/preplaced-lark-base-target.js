@@ -1,13 +1,89 @@
 const DEFAULT_EXPECTED_TABLE_COUNT = 33;
+const DEFAULT_TABLE_LIMIT = 100;
 
 /**
- * Adapts a real Lark target Base for customer consolidation without ever creating a remote table.
+ * Creates only missing destination-table shells in the target Base.
  *
- * Lark OpenAPI cannot place newly-created tables inside an internal Base navigation folder. The
- * customer therefore pre-creates the destination tables in the required folder. Empty one-field
- * tables are treated as safe shells: the adapter hides them from the generic consolidation planner
- * and intercepts createTable() as an in-place claim that updates only the shell primary field and
- * default view name. The underlying target client's createTable() is never called.
+ * This is intentionally separate from consolidation Apply. It is used when the customer has explicitly
+ * accepted temporary root-level placement and will move the created tables into the required internal folder
+ * before Apply. Existing tables are never renamed, deleted, or overwritten. A rerun is idempotent because the
+ * current target table list is read before every provisioning pass.
+ */
+export async function provisionMissingLarkBaseTargetTables(input) {
+  const targetClient = requireProvisionClient(input?.targetClient, 'targetClient');
+  const expectedTableNames = normalizeExpectedNames(input?.expectedTableNames);
+  const expectedTableCount = input?.expectedTableCount ?? expectedTableNames.length ?? DEFAULT_EXPECTED_TABLE_COUNT;
+  const tableLimit = input?.tableLimit ?? DEFAULT_TABLE_LIMIT;
+
+  const targetTables = await targetClient.listTables();
+  const conflicts = [];
+  const byName = uniqueTableIndex(targetTables, conflicts);
+
+  if (expectedTableNames.length !== expectedTableCount) {
+    conflicts.push(problem(
+      'PROVISION_EXPECTED_TABLE_COUNT_MISMATCH',
+      `Expected-name contract must contain exactly ${expectedTableCount} unique tables; found ${expectedTableNames.length}`,
+      { expected: expectedTableCount, actual: expectedTableNames.length },
+    ));
+  }
+
+  const missingTargetTables = expectedTableNames.filter((name) => !byName.has(name));
+  if (targetTables.length + missingTargetTables.length > tableLimit) {
+    conflicts.push(problem(
+      'PROVISION_TARGET_TABLE_LIMIT_EXCEEDED',
+      `Target Base would exceed the ${tableLimit}-table safety boundary`,
+      {
+        currentTargetTables: targetTables.length,
+        missingTargetTables: missingTargetTables.length,
+        resultingTables: targetTables.length + missingTargetTables.length,
+      },
+    ));
+  }
+
+  if (conflicts.length > 0) {
+    return Object.freeze({
+      ok: false,
+      expectedTargetTables: expectedTableCount,
+      targetTablesBefore: targetTables.length,
+      alreadyPresentTargetTables: expectedTableNames.length - missingTargetTables.length,
+      missingTargetTables: Object.freeze(missingTargetTables),
+      createdTables: 0,
+      createdTableNames: Object.freeze([]),
+      conflicts: Object.freeze(conflicts),
+    });
+  }
+
+  const createdTableNames = [];
+  for (const name of missingTargetTables) {
+    await targetClient.createTable({
+      name,
+      defaultViewName: 'Grid',
+      fields: [{ fieldName: 'Text', type: 1 }],
+    });
+    createdTableNames.push(name);
+  }
+
+  return Object.freeze({
+    ok: true,
+    expectedTargetTables: expectedTableCount,
+    targetTablesBefore: targetTables.length,
+    alreadyPresentTargetTables: expectedTableNames.length - missingTargetTables.length,
+    missingTargetTables: Object.freeze(missingTargetTables),
+    createdTables: createdTableNames.length,
+    createdTableNames: Object.freeze(createdTableNames),
+    targetTablesAfter: targetTables.length + createdTableNames.length,
+    conflicts: Object.freeze([]),
+  });
+}
+
+/**
+ * Adapts a real Lark target Base for customer consolidation without ever creating a remote table during Apply.
+ *
+ * Lark OpenAPI cannot place newly-created tables inside an internal Base navigation folder. The customer therefore
+ * pre-places the destination tables in the required folder before Apply. Empty one-field tables are treated as safe
+ * shells: the adapter hides them from the generic consolidation planner and intercepts createTable() as an in-place
+ * claim that updates only the shell primary field and default view name. The underlying target client's createTable()
+ * is never called from consolidation Apply.
  */
 export async function preparePreplacedLarkBaseTarget(input) {
   const targetClient = requireClient(input?.targetClient, 'targetClient');
@@ -76,7 +152,7 @@ export async function preparePreplacedLarkBaseTarget(input) {
           if (!shell) {
             throw codedError(
               'PREPLACED_TARGET_SHELL_REQUIRED',
-              `Refusing remote table creation; pre-create an empty target table first: ${name}`,
+              `Refusing remote table creation during Apply; pre-place an empty target table first: ${name}`,
               { name },
             );
           }
@@ -170,6 +246,16 @@ function normalizeExpectedNames(value) {
     throw new TypeError('expectedTableNames must be a non-empty array');
   }
   return [...new Set(value.map((name) => requireText(name, 'expectedTableName')))];
+}
+
+function requireProvisionClient(client, name) {
+  const methods = ['listTables', 'createTable'];
+  for (const method of methods) {
+    if (!client || typeof client[method] !== 'function') {
+      throw new TypeError(`${name} must implement ${method}()`);
+    }
+  }
+  return client;
 }
 
 function requireClient(client, name) {
