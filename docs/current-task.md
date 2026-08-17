@@ -17,7 +17,7 @@ SOURCE_MUTATION                     = BLOCKED
 CUSTOMER_PROD_CONFIG_FILE           = .customer.prod.vars
 CUSTOMER_PROD_CONFIG_TEMPLATE       = .customer.prod.vars.example
 DRAFT_PR                            = 661
-BRANCH_VERIFICATION                 = PENDING_EXACT_HEAD_AFTER_CONFIG_ISOLATION
+BRANCH_VERIFICATION                 = PASS_HEAD_ec96721b94c34678bebcdae6ced7f3f9ada3a3b4_RUN_32041637131_JOB_95421904881
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 ```
 
@@ -113,19 +113,19 @@ Secret/token ห้าม commit และห้ามนำค่าจริ�
 - Customer operator defaults to Full-Parity audit and actively rejects old partial write/preview/verify modes.
 - Customer credential source is isolated from DEV: `.customer.prod.vars.example` is tracked as template, `.customer.prod.vars` is Git-ignored, and operator reads the customer PROD file by default.
 - Config preflight requires the 4 Customer PROD keys above and reports only missing key names/file guidance, never values.
+- Exact head `ec96721b94c34678bebcdae6ced7f3f9ada3a3b4` passed Branch Verification run `32041637131`, job `95421904881`: locked install, architecture/hygiene, focused Report/Meta/Woo/Chatwoot/TikTok, Unit/Workers, Report Reliability, dependency audit, Wrangler dry-run and diff check all passed.
 - No Customer Lark mutation has been run from this full-parity change.
 
 ## Acceptance criteria
 
 Repository work is not complete merely because 33 Tables exist. Final completion requires:
 
-1. exact-head Branch Verification passes after Customer PROD config isolation;
-2. create local `.customer.prod.vars` from the tracked template and fill the 4 required values;
-3. live GET-only Full-Parity Audit reads Source/Target successfully;
-4. audit proves the actual Source resource inventory and identifies any scope/API gaps;
-5. clone/remap implementation covers every Source dimension present in that audit;
-6. one controlled Apply is allowed only after a dry-run/preview proves zero unhandled dimensions and no collision with unrelated customer content;
-7. post-Apply GET-only canonical verifier reports 100% functional/UI parity across all required dimensions;
-8. only then may PR #661 be considered ready for merge/closeout.
+1. create local `.customer.prod.vars` from the tracked template and fill the 4 required values;
+2. live GET-only Full-Parity Audit reads Source/Target successfully;
+3. audit proves the actual Source resource inventory and identifies any scope/API gaps;
+4. clone/remap implementation covers every Source dimension present in that audit;
+5. one controlled Apply is allowed only after a dry-run/preview proves zero unhandled dimensions and no collision with unrelated customer content;
+6. post-Apply GET-only canonical verifier reports 100% functional/UI parity across all required dimensions;
+7. only then may PR #661 be considered ready for merge/closeout.
 
 Detailed workstream record: `docs/project-brain/customer-base-consolidation-v1.md`.
