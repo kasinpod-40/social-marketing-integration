@@ -14,10 +14,10 @@ const promptSource = await readFile(
 test('compact Weekly evidence writer contract stays aligned with Prompt v3 recommendation semantics', () => {
   assert.match(evidenceSource, /1 label\/line/u);
   assert.match(evidenceSource, /ตรวจสอบ-only invalid/u);
-  assert.match(evidenceSource, /c=\[\]=>no CONTENT\/Organic filler/u);
-  assert.match(evidenceSource, /a=>name Paid candidate, never CONTENT/u);
-  assert.match(evidenceSource, /c=\[\]\+a\+funnel=>paid action \+ NO-SCALE only/u);
-  assert.match(evidenceSource, /NO-SCALE: one line with 1 up \+ 1 down metric; concrete action only/u);
+  assert.match(evidenceSource, /c=\[\]=>no CONTENT\/Organic/u);
+  assert.match(evidenceSource, /a=>Paid name,never CONTENT/u);
+  assert.match(evidenceSource, /c=\[\]\+a\+funnel=>paid\+NO-SCALE only/u);
+  assert.match(evidenceSource, /NO-SCALE:1 line;1 up\+1 down metric;concrete action/u);
 
   assert.doesNotMatch(evidenceSource, /funnel => NO-SCALE broad budget/u);
   assert.doesNotMatch(evidenceSource, /Organic no Paid=>TEST/u);

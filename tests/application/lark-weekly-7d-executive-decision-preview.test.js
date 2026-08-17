@@ -158,6 +158,10 @@ test('builds a stable fresh synthesis identity and keeps persisted delivery flag
     JSON.parse(first.evidence.metricSummaryJson).writerContract.weaknesses,
     /exact ch\+m/u,
   );
+  assert.match(
+    JSON.parse(first.evidence.metricSummaryJson).writerContract.overview,
+    /exact ch\+m\+value/u,
+  );
   assert.deepEqual(source.fields, before);
   assert.equal(assertLarkWeekly7dExecutiveDecisionPrepared(first.fields, first), true);
 });

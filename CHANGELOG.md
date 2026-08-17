@@ -8,6 +8,12 @@
   evidence, while preserving the exact no-negative-comparison fallback and missing-data prohibition.
 - Bump the Fresh Executive Decision identity from v4 to v5 instead of resetting or retriggering the
   generated failed row.
+- A reviewed v5 controlled recovery passed the negative-channel requirement but exposed the independent
+  `insight_missing_business_metric_value` gate; it stopped before delivery and its Alert/DLQ remain forensic.
+- Require compact Overview output to cite an exact channel, metric and observed value, then bump to a new
+  immutable v6 identity instead of mutating or replaying either failed row.
+- GET-only v6 preflight selected the exact period and 8 channels, measured input at 2,027/593 characters,
+  and found zero existing v6 rows before release.
 - GET-only Live preflight selected the exact `2026-08-10..2026-08-16` period and 8 Report channels,
   remained within the 2,800/700 input budgets at 2,212/593 characters and found zero existing v5 rows.
 - Focused tests passed 22/22, full unit passed 3,048/3,048, Workers runtime passed 18/18, Report reliability

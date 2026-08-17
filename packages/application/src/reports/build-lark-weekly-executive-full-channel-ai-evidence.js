@@ -361,14 +361,15 @@ function buildCompactDecisionSummary(input, labelLimit) {
   return Object.freeze({
     evidenceShape: 'executive_decision_compact_v1',
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
-    legend: 'ch=[name,m,c,a]; m=[name,value,changePct,+/-/0]; c=[name,rank,views,eng,ER]; a=[name,rank,spend,clicks,CTR,conv,value,ROAS,scale]',
+    legend: 'm=[n,v,%,sig];c=[n,r,v,e,ER];a=[n,r,s,cl,CTR,cv,val,ROAS,S]',
     writerContract: Object.freeze({
+      overview: '2-4s; exact ch+m+value from m; 2+ ch; no action',
       recommendations: recommendationBlueprints.length > 0
         ? 'COPY rb exactly as separate lines; no rewrite; no extra labels/text'
-        : '2-4 lines; 1 label/line; real verb+anchor; ตรวจสอบ-only invalid; c=[]=>no CONTENT/Organic filler; a=>name Paid candidate, never CONTENT; c=[]+a+funnel=>paid action + NO-SCALE only; SCALE iff scale=1; no same-creative',
-      ...(hasFunnelDivergence ? { funnelDecision: 'NO-SCALE: one line with 1 up + 1 down metric; concrete action only' } : {}),
-      strengths: '+ only; spend/budget neutral',
-      weaknesses: '-=>exact ch+m; none=>fallback; gaps!=weakness',
+        : '2-4 lines;1 label/line;verb+anchor;ตรวจสอบ-only invalid;c=[]=>no CONTENT/Organic;a=>Paid name,never CONTENT;c=[]+a+funnel=>paid+NO-SCALE only;SCALE iff scale=1;no same-creative',
+      ...(hasFunnelDivergence ? { funnelDecision: 'NO-SCALE:1 line;1 up+1 down metric;concrete action' } : {}),
+      strengths: '+ only;spend neutral',
+      weaknesses: '-:exact ch+m;none=fallback;gaps!=weak',
     }),
     ...(recommendationBlueprints.length > 0 ? { rb: Object.freeze(recommendationBlueprints) } : {}),
     ...(hasFunnelDivergence ? { funnelMetrics: Object.freeze({ up: funnelUp, down: funnelDown }) } : {}),
