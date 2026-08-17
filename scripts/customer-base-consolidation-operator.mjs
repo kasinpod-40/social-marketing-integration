@@ -7,6 +7,7 @@ import {
   previewLarkBaseConsolidation,
   verifyLarkBaseConsolidation,
 } from '../packages/application/src/use-cases/consolidate-lark-base.js';
+import { preparePreplacedLarkBaseTarget } from '../packages/application/src/use-cases/preplaced-lark-base-target.js';
 
 const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '🪪 MKT_Accounts',
@@ -86,52 +87,82 @@ async function main() {
     ...env,
     LARK_APP_TOKEN: sourceAppToken,
   }, { onRequest: traceIfVerbose });
-  const targetClient = createLarkBitableClientFromEnv({
+  const rawTargetClient = createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: targetAppToken,
   }, { onRequest: traceIfVerbose });
 
+  const preparedTarget = await preparePreplacedLarkBaseTarget({
+    targetClient: rawTargetClient,
+    expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
+    expectedTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
+  });
   const common = {
     sourceClient,
-    targetClient,
+    targetClient: preparedTarget.client,
     expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
     expectedSourceTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
   };
 
   if (mode === 'verify') {
     const verification = await verifyLarkBaseConsolidation(common);
+    const ok = preparedTarget.preflight.ok && verification.ok;
     printJson({
       ...verification,
+      ok,
       contractVersion: 'customer_base_consolidation_operator_v1',
       action: 'verify',
       source: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
       target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
       targetFolder: TARGET_FOLDER_LABEL,
+      targetPlacement: placementState(preparedTarget.preflight),
       remoteMutationCount: 0,
     });
-    if (!verification.ok) process.exitCode = 1;
+    if (!ok) process.exitCode = 1;
     return;
   }
 
   if (mode === 'preview') {
     const preview = await previewLarkBaseConsolidation(common);
+    const conflicts = [...preparedTarget.preflight.conflicts, ...preview.conflicts];
+    const readyToApply = preparedTarget.preflight.ok && preview.readyToApply;
     printJson({
       ...preview,
+      ok: readyToApply,
+      readyToApply,
+      conflicts,
+      summary: {
+        ...preview.summary,
+        preplacedTargetTables: preparedTarget.preflight.preplacedTargetTables,
+        emptyShellTables: preparedTarget.preflight.emptyShellTables,
+        missingPreplacedTargetTables: preparedTarget.preflight.missingTargetTables.length,
+        conflicts: conflicts.length,
+        remoteTableCreates: 0,
+      },
       contractVersion: 'customer_base_consolidation_operator_v1',
       action: 'preview',
       source: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
       target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
       targetFolder: TARGET_FOLDER_LABEL,
+      targetPlacement: placementState(preparedTarget.preflight),
       remoteMutationCount: 0,
-      nextCommand: preview.readyToApply
-        ? 'CONFIRM_WRITE=YES CONFIRM_CUSTOMER_BASE_CONSOLIDATION=YES CONFIRM_SOURCE_BASE=SOCIAL_MKT_DATA_HUB CONFIRM_TARGET_BASE=MARKETING_CONTENT_CALENDAR node scripts/customer-base-consolidation-operator.mjs --apply'
+      nextCommand: readyToApply
+        ? 'CONFIRM_WRITE=YES CONFIRM_CUSTOMER_BASE_CONSOLIDATION=YES CONFIRM_SOURCE_BASE=SOCIAL_MKT_DATA_HUB CONFIRM_TARGET_BASE=MARKETING_CONTENT_CALENDAR CONFIRM_TARGET_FOLDER_PLACEMENT=YES node scripts/customer-base-consolidation-operator.mjs --apply'
         : null,
     });
-    if (!preview.readyToApply) process.exitCode = 1;
+    if (!readyToApply) process.exitCode = 1;
     return;
   }
 
   assertApplyConfirmations(env);
+  if (!preparedTarget.preflight.ok) {
+    throw operatorError(
+      'CUSTOMER_BASE_CONSOLIDATION_PREPLACED_TARGET_BLOCKED',
+      'Apply requires all 33 destination tables to already exist in the target Base',
+      { conflicts: preparedTarget.preflight.conflicts },
+    );
+  }
+
   const result = await applyLarkBaseConsolidation({
     ...common,
     onProgress: (event) => {
@@ -140,12 +171,19 @@ async function main() {
   });
   printJson({
     ...result,
+    applied: {
+      ...result.applied,
+      claimedPreplacedTables: result.applied.createdTables,
+      remoteCreatedTables: 0,
+    },
     contractVersion: 'customer_base_consolidation_operator_v1',
     action: 'apply',
     source: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
     target: safeBaseIdentity(TARGET_LABEL, targetAppToken),
     targetFolder: TARGET_FOLDER_LABEL,
+    targetPlacement: placementState(preparedTarget.preflight),
     safety: {
+      createTables: 0,
       deleteTables: 0,
       deleteFields: 0,
       deleteRecords: 0,
@@ -178,6 +216,7 @@ function assertApplyConfirmations(env) {
     CONFIRM_CUSTOMER_BASE_CONSOLIDATION: 'YES',
     CONFIRM_SOURCE_BASE: 'SOCIAL_MKT_DATA_HUB',
     CONFIRM_TARGET_BASE: 'MARKETING_CONTENT_CALENDAR',
+    CONFIRM_TARGET_FOLDER_PLACEMENT: 'YES',
   };
   const missing = Object.entries(required)
     .filter(([name, value]) => env[name] !== value)
@@ -189,6 +228,18 @@ function assertApplyConfirmations(env) {
       { missing },
     );
   }
+}
+
+function placementState(preflight) {
+  return Object.freeze({
+    requiredFolder: TARGET_FOLDER_LABEL,
+    allExpectedTablesPresentInBase: preflight.missingTargetTables.length === 0,
+    preplacedTargetTables: preflight.preplacedTargetTables,
+    expectedTargetTables: preflight.expectedTargetTables,
+    folderMembershipApiVerifiable: false,
+    applyRequiresFolderPlacementConfirmation: true,
+    remoteTableCreateAllowed: false,
+  });
 }
 
 function safeBaseIdentity(label, appToken) {
