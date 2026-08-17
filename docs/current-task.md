@@ -13,8 +13,8 @@ REMOTE_TABLE_CREATE                 = BLOCKED
 SOURCE_MUTATION                     = BLOCKED
 CUSTOMER_LARK_APPLY                 = NOT_RUN
 DRAFT_PR                            = 661
-BRANCH_VERIFICATION_RUN             = 32024729912
-BRANCH_VERIFICATION_JOB             = 95371639715
+BRANCH_VERIFICATION_RUN             = 32024949257
+BRANCH_VERIFICATION_JOB             = 95372300469
 BRANCH_VERIFICATION                 = PASS
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 AUTOMATIC_WEEKLY_NOTIFICATION       = LIVE_ENABLED_MONDAY_0830_ASIA_BANGKOK
@@ -83,8 +83,9 @@ Repository implementation is complete on Draft PR #661 and has not mutated custo
   already-synced `RAW_TikTok_Creator_Videos` only if parity is acceptable; otherwise the run fails closed.
 - Added focused regression proving missing preplaced table blocking, safe shell claim, underlying create-table
   call count zero, record copy, and preservation of existing non-empty tables for parity inspection.
-- Branch Verification run `32024729912`, job `95371639715` passed every step: install, syntax/architecture/
-  hygiene, all focused integration suites, full Unit/Workers runtime, Report Reliability, dependency audit,
+- Exact Branch Verification run `32024949257`, job `95372300469`, head
+  `896d63518ebe44143652a17764abf980b5de982e` passed every step: install, syntax/architecture/hygiene,
+  all focused integration suites, full Unit/Workers runtime, Report Reliability, dependency audit,
   Wrangler dry-run, diff check and diagnostics upload.
 - No customer App token, Lark write, source mutation, Worker deploy, D1/Queue mutation or schedule change was run.
 
