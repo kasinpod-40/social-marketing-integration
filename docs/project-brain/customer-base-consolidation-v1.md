@@ -44,6 +44,32 @@ Workflow and Advanced Permission role operations. They must be audited and used 
 The current native table-copy endpoint is not a cross-Base copy primitive: its endpoint operates within one `base_token`.
 It therefore cannot directly move a table from the imported Source Base into `✨Marketing Content Calendar`.
 
+## Customer PROD credential isolation
+
+Customer-owned PROD credentials are intentionally separated from integration/development runtime configuration.
+
+Tracked template:
+
+`/.customer.prod.vars.example`
+
+Local secret file on the operator Mac:
+
+`/.customer.prod.vars`
+
+The local secret file is Git-ignored. The customer consolidation operator now reads it by default; `CUSTOMER_PROD_VARS_FILE`
+may override the path only when an explicit alternate local file is required.
+
+Required values are:
+
+- `LARK_APP_ID`
+- `LARK_APP_SECRET`
+- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN`
+- `LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN`
+
+The Lark App ID/Secret must belong to the customer PROD application and be authorized to read both Source and Target Base.
+The file must not contain a tenant access token because the shared Lark client obtains and refreshes that token itself.
+Real credential values must never be committed, copied into docs, or emitted in logs.
+
 ## Full-parity contract
 
 The final canonical verifier must cover every dimension present in the Source:
@@ -79,7 +105,7 @@ blocking condition. The operator must never downgrade it to a warning and claim 
 - Dashboard/workflow/permission mutation: 0
 - Worker/D1/Queue/schedule mutation: 0
 - Existing unrelated customer content must remain untouched
-- Secrets remain environment-only; logs expose only hashed Base identity
+- Secrets remain in `.customer.prod.vars`/process environment only; logs expose only hashed Base identity
 
 The old `--provision-missing`, `--preview`, `--apply` and `--verify` paths are actively rejected by the customer operator
 while Full-Parity Apply is incomplete.
@@ -98,6 +124,7 @@ It performs GET-only inventory of Source and Target:
 - Advanced Permission roles
 
 The audit records every read failure as a blocker and produces counts/digests instead of dumping raw customer records.
+A strict read interceptor also makes subresource failures (including View property reads) global blockers.
 The audit itself never authorizes Apply; it exists to establish the complete live migration contract first.
 
 ## Existing synced TikTok table
@@ -110,14 +137,14 @@ Record, View and other attached configuration must pass the same canonical parit
 
 Draft PR: `#661`
 
-The older head `0eb97b56e2fda7356336239f1d0afa2ace6dd1a2` passed Branch Verification run `32037860957`, job `95411744455`,
-but that evidence only covered the superseded partial-parity implementation and **does not satisfy the latest 100%-parity
-requirement**.
-
-A new exact-head Branch Verification is required after the Full-Parity audit/write-blocking changes.
+Full-Parity head `3afdeadc25ef8de28e31df40e12edeec84d85605` passed Branch Verification run `32038905952`, job `95414637354`.
+That evidence predates the Customer PROD config isolation change, so a fresh exact-head Branch Verification is required
+before the next live audit.
 
 ## Current implementation files
 
+- `.customer.prod.vars.example`
+- `.gitignore`
 - `packages/application/src/use-cases/audit-lark-base-full-parity.js`
 - `scripts/customer-base-consolidation-operator.mjs`
 - `tests/application/audit-lark-base-full-parity.test.js`
@@ -125,11 +152,12 @@ A new exact-head Branch Verification is required after the Full-Parity audit/wri
 
 ## Remaining closure sequence
 
-1. Pass exact-head repository CI.
-2. Run one live GET-only Full-Parity Audit against the actual imported Source Base and customer Target Base.
-3. Resolve all read permission/capability gaps; no hidden/unknown Source dimension is allowed.
-4. Build minimal clone/remap support using existing shared Lark client/contracts plus current Base v3 resource endpoints.
-5. Run dry-run/preview proving every Source dimension is handled and unrelated target resources are untouched.
-6. Execute one controlled target Apply.
-7. Run canonical GET-only post-Apply verifier.
-8. Close only when every required dimension reports parity and no unresolved blocker remains.
+1. Pass exact-head repository CI after Customer PROD config isolation.
+2. Create local `.customer.prod.vars` from `.customer.prod.vars.example` and fill the 4 required values.
+3. Run one live GET-only Full-Parity Audit against the actual imported Source Base and customer Target Base.
+4. Resolve all read permission/capability gaps; no hidden/unknown Source dimension is allowed.
+5. Build minimal clone/remap support using existing shared Lark client/contracts plus current Base v3 resource endpoints.
+6. Run dry-run/preview proving every Source dimension is handled and unrelated target resources are untouched.
+7. Execute one controlled target Apply.
+8. Run canonical GET-only post-Apply verifier.
+9. Close only when every required dimension reports parity and no unresolved blocker remains.
