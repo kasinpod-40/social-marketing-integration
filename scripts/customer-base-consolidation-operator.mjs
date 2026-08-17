@@ -43,6 +43,14 @@ const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
 const SOURCE_LABEL = 'Social MKT Data Hub';
 const TARGET_LABEL = '✨Marketing Content Calendar';
 const TARGET_FOLDER_LABEL = 'Setup Phase | Social MKT Data Hub';
+const DEFAULT_CUSTOMER_PROD_VARS_FILE = '.customer.prod.vars';
+const CUSTOMER_PROD_VARS_TEMPLATE_FILE = '.customer.prod.vars.example';
+const REQUIRED_CUSTOMER_PROD_KEYS = Object.freeze([
+  'LARK_APP_ID',
+  'LARK_APP_SECRET',
+  'LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN',
+  'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
+]);
 
 try {
   await main();
@@ -67,9 +75,10 @@ async function main() {
     );
   }
 
-  const devVarsFile = process.env.DEV_VARS_FILE ?? '.dev.vars';
-  const fileEnv = await readDevVars(devVarsFile);
+  const customerProdVarsFile = process.env.CUSTOMER_PROD_VARS_FILE ?? DEFAULT_CUSTOMER_PROD_VARS_FILE;
+  const fileEnv = await readDevVars(customerProdVarsFile);
   const env = { ...fileEnv, ...process.env };
+  assertCustomerProdConfig(env, customerProdVarsFile);
 
   const sourceAppToken = requireText(
     env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN,
@@ -122,6 +131,11 @@ async function main() {
     strictReadFailures,
     contractVersion: 'customer_base_full_parity_operator_v1',
     action: 'full-parity-audit',
+    configSource: {
+      mode: 'customer-prod-file',
+      file: customerProdVarsFile,
+      template: CUSTOMER_PROD_VARS_TEMPLATE_FILE,
+    },
     sourceIdentity: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
     targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
     targetFolder: TARGET_FOLDER_LABEL,
@@ -129,6 +143,24 @@ async function main() {
     nextCommand: null,
   });
   if (!ok) process.exitCode = 1;
+}
+
+function assertCustomerProdConfig(env, customerProdVarsFile) {
+  const missing = REQUIRED_CUSTOMER_PROD_KEYS.filter((key) => (
+    typeof env?.[key] !== 'string' || env[key].trim() === ''
+  ));
+  if (missing.length === 0) return;
+
+  throw operatorError(
+    'CUSTOMER_BASE_CONSOLIDATION_CONFIG_MISSING',
+    `Customer PROD Lark config is incomplete: ${missing.join(', ')}`,
+    {
+      missing,
+      configFile: customerProdVarsFile,
+      templateFile: CUSTOMER_PROD_VARS_TEMPLATE_FILE,
+      hint: `Copy ${CUSTOMER_PROD_VARS_TEMPLATE_FILE} to ${customerProdVarsFile} and fill the required values locally.`,
+    },
+  );
 }
 
 function instrumentStrictReads(client, side) {
