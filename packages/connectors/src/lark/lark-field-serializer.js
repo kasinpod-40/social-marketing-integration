@@ -2,6 +2,7 @@ import { toEpochMilliseconds } from '../shared/date-time.js';
 import { readLarkNumber, readLarkText, readLarkUrl } from '../shared/lark-cell-value.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 import { toFiniteNumber } from '../../../shared/src/number/strict-number.js';
+import { normalizeLarkNumberFormatter } from '../../../shared/src/lark/lark-field-contract.js';
 
 const LARK_FIELD_TYPES = Object.freeze({
   TEXT: 1,
@@ -14,8 +15,15 @@ const LARK_FIELD_TYPES = Object.freeze({
 });
 
 const OMIT_FIELD = Symbol('omit-field');
-const FIXED_NUMBER_FORMATTER_PATTERN = /^(?:#,##)?0(?:\.(0+))?$/;
-const MAX_FIXED_NUMBER_PRECISION = 15;
+const FIXED_NUMBER_FORMATTER_PRECISIONS = Object.freeze({
+  0: 0,
+  '0.0': 1,
+  '0.00': 2,
+  '0.000': 3,
+  '0.0000': 4,
+  '1,000': 0,
+  '1,000.00': 2,
+});
 
 /**
  * Serialize แถว Domain ทั้งชุดตาม Schema จริงของ Lark ก่อนเริ่ม Write
@@ -200,7 +208,8 @@ function serializeNumber(value, field, context) {
 }
 
 /**
- * Canonicalize Number เฉพาะ formatter แบบ fixed decimal ที่ระบุแน่ชัด เช่น 0, 0.0000, #,##0.00
+ * Canonicalize Number เฉพาะ formatter แบบ fixed decimal ที่ Lark contract รองรับ
+ * เช่น 0, 0.0000, 1,000.00 และ spreadsheet alias ที่ Shared Field contract normalize ได้
  * Formatter อื่นคงค่า exact เดิมเพื่อไม่เดา precision หรือ semantic ของ Lark.
  */
 export function canonicalizeNumberForLarkFormatter(value, field = {}) {
@@ -219,11 +228,10 @@ export function canonicalizeNumberForLarkFormatter(value, field = {}) {
 /** คืนจำนวนทศนิยมของ fixed formatter ที่รองรับ หรือ null เมื่อไม่ควรเดา */
 export function readFixedNumberFormatterPrecision(formatter) {
   if (typeof formatter !== 'string') return null;
-  const normalized = formatter.trim();
-  const match = FIXED_NUMBER_FORMATTER_PATTERN.exec(normalized);
-  if (!match) return null;
-  const precision = match[1]?.length ?? 0;
-  return precision <= MAX_FIXED_NUMBER_PRECISION ? precision : null;
+  const normalized = normalizeLarkNumberFormatter(formatter);
+  return Object.hasOwn(FIXED_NUMBER_FORMATTER_PRECISIONS, normalized)
+    ? FIXED_NUMBER_FORMATTER_PRECISIONS[normalized]
+    : null;
 }
 
 /** ป้องกัน -0 ทำให้ Object.is มองว่าต่างจาก 0 ทั้งที่ Lark เก็บเป็นศูนย์เดียวกัน */

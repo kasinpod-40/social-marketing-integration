@@ -16,8 +16,12 @@ const fields = Object.freeze([
 test('parses only explicit fixed-decimal Lark number formatters', () => {
   assert.equal(readFixedNumberFormatterPrecision('0'), 0);
   assert.equal(readFixedNumberFormatterPrecision('0.0000'), 4);
+  assert.equal(readFixedNumberFormatterPrecision('1,000'), 0);
+  assert.equal(readFixedNumberFormatterPrecision('1,000.00'), 2);
   assert.equal(readFixedNumberFormatterPrecision('#,##0.00'), 2);
   assert.equal(readFixedNumberFormatterPrecision('0.0%'), null);
+  assert.equal(readFixedNumberFormatterPrecision('0.00000'), null);
+  assert.equal(readFixedNumberFormatterPrecision('1,000.000'), null);
   assert.equal(readFixedNumberFormatterPrecision('currency'), null);
   assert.equal(readFixedNumberFormatterPrecision(undefined), null);
 });
@@ -29,8 +33,11 @@ test('canonicalizes incoming and existing numbers with the same formatter precis
   assert.equal(canonicalizeNumberForLarkFormatter(1.6, {
     fieldName: 'window_days', type: 2, property: { formatter: '0' },
   }), 2);
+  assert.equal(canonicalizeNumberForLarkFormatter(1.6, {
+    fieldName: 'grouped_count', type: 2, property: { formatter: '1,000' },
+  }), 2);
   assert.equal(canonicalizeNumberForLarkFormatter(1234.567, {
-    fieldName: 'amount', type: 2, property: { formatter: '#,##0.00' },
+    fieldName: 'amount', type: 2, property: { formatter: '1,000.00' },
   }), 1234.57);
 
   const [incoming] = serializeRowsForLark([
@@ -51,6 +58,9 @@ test('canonicalizes incoming and existing numbers with the same formatter precis
 test('preserves exact behavior for unsupported formatters and rejects invalid numbers', () => {
   const unsupported = { fieldName: 'ratio', type: 2, property: { formatter: '0.0%' } };
   assert.equal(canonicalizeNumberForLarkFormatter(0.833333333333, unsupported), 0.833333333333);
+  assert.equal(canonicalizeNumberForLarkFormatter(1.234567, {
+    fieldName: 'unknown_precision', type: 2, property: { formatter: '0.00000' },
+  }), 1.234567);
   assert.throws(() => canonicalizeNumberForLarkFormatter(Number.NaN, fields[1]), /finite/);
   assert.throws(() => canonicalizeNumberForLarkFormatter(Number.POSITIVE_INFINITY, fields[1]), /finite/);
 });
