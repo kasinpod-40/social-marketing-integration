@@ -103,6 +103,200 @@ export async function buildLarkBaseViewManualParityManifest(input) {
   });
 }
 
+/**
+ * Reduces a full manual manifest to the dimensions that are actually owned by
+ * the post-Apply UI procedure. Hidden state is deliberately excluded because it
+ * belongs to the automatic hidden-fields mutation + canonical verifier.
+ */
+export function buildLarkBaseViewManualParityExecutionPlan(manifest) {
+  const source = requireManifest(manifest, 'manifest');
+  const counts = {
+    fieldOrderViews: 0,
+    sortViews: 0,
+    groupViews: 0,
+    columnWidthViews: 0,
+    columnWidthAssignments: 0,
+    rowHeightViews: 0,
+    frozenColumnViews: 0,
+  };
+  let hiddenFieldViews = 0;
+  let hiddenFieldAssignments = 0;
+  const rowHeights = new Set();
+  const frozenCounts = new Set();
+
+  for (const table of source.tables) {
+    for (const view of requireArray(table?.views, `${table?.tableName ?? 'table'} views`)) {
+      const manual = plainObject(view?.manual) ? view.manual : {};
+      if (Array.isArray(manual.fieldOrder) && manual.fieldOrder.length > 0) counts.fieldOrderViews += 1;
+      if (Array.isArray(manual.sortInfo) && manual.sortInfo.length > 0) counts.sortViews += 1;
+      if (Array.isArray(manual.group) && manual.group.length > 0) counts.groupViews += 1;
+      const widths = explicitColumnWidths(manual.colInfos);
+      if (Object.keys(widths).length > 0) {
+        counts.columnWidthViews += 1;
+        counts.columnWidthAssignments += Object.keys(widths).length;
+      }
+      const hidden = explicitHiddenFields(manual.colInfos);
+      if (hidden.length > 0) {
+        hiddenFieldViews += 1;
+        hiddenFieldAssignments += hidden.length;
+      }
+      if (manual.rowHeightLevel !== null && manual.rowHeightLevel !== undefined) {
+        counts.rowHeightViews += 1;
+        rowHeights.add(manual.rowHeightLevel);
+      }
+      if (manual.frozenColCount !== null && manual.frozenColCount !== undefined) {
+        counts.frozenColumnViews += 1;
+        frozenCounts.add(manual.frozenColCount);
+      }
+    }
+  }
+
+  return deepFreeze({
+    ok: true,
+    contractVersion: 'customer_base_view_manual_parity_execution_plan_v1',
+    mode: 'local-read-only-id-redacted',
+    manualOwned: counts,
+    automaticExcluded: {
+      hiddenFieldViews,
+      hiddenFieldAssignments,
+      reason: 'hidden fields are owned by the automatic View hidden-fields mutation and canonical verifier',
+    },
+    commonValues: {
+      rowHeightLevel: singletonOrNull(rowHeights),
+      frozenColCount: singletonOrNull(frozenCounts),
+    },
+    remoteRequestCount: 0,
+    remoteMutationCount: 0,
+  });
+}
+
+/**
+ * Local manifest-to-manifest verification for the UI-only dimensions. It ignores
+ * unrelated Target tables and does not compare hidden/default colInfo metadata.
+ * Only explicit non-null widths are manual-owned.
+ */
+export function verifyLarkBaseViewManualParityManifests(input) {
+  const source = requireManifest(input?.sourceManifest, 'sourceManifest');
+  const target = requireManifest(input?.targetManifest, 'targetManifest');
+  const targetTables = uniqueNamedIndex(target.tables, 'target table', (item) => item?.tableName);
+  const mismatches = [];
+  let comparedViews = 0;
+
+  for (const sourceTable of source.tables) {
+    const tableName = requireText(sourceTable?.tableName, 'source tableName');
+    const targetTable = targetTables.get(tableName);
+    if (!targetTable) {
+      mismatches.push(problem('VIEW_MANUAL_PARITY_TABLE_MISSING', `Target manifest is missing clone Table: ${tableName}`, { tableName }));
+      continue;
+    }
+    const targetViews = uniqueNamedIndex(targetTable.views, `target View in ${tableName}`, (item) => item?.viewName);
+    for (const sourceView of requireArray(sourceTable?.views, `${tableName} source views`)) {
+      const viewName = requireText(sourceView?.viewName, `${tableName} source viewName`);
+      const targetView = targetViews.get(viewName);
+      if (!targetView) {
+        mismatches.push(problem('VIEW_MANUAL_PARITY_VIEW_MISSING', `Target manifest is missing clone View: ${tableName}.${viewName}`, { tableName, viewName }));
+        continue;
+      }
+      comparedViews += 1;
+      const sourceState = manualOwnedState(sourceView?.manual);
+      const targetState = manualOwnedState(targetView?.manual);
+      for (const dimension of Object.keys(sourceState)) {
+        if (stableJson(sourceState[dimension]) === stableJson(targetState[dimension])) continue;
+        mismatches.push(problem(
+          `VIEW_MANUAL_PARITY_${camelToUpperSnake(dimension)}_MISMATCH`,
+          `Manual View parity mismatch: ${tableName}.${viewName}.${dimension}`,
+          { tableName, viewName, dimension, expected: sourceState[dimension], actual: targetState[dimension] },
+        ));
+      }
+    }
+  }
+
+  return deepFreeze({
+    ok: mismatches.length === 0,
+    contractVersion: 'customer_base_view_manual_parity_verifier_v1',
+    mode: 'local-read-only-id-redacted',
+    summary: {
+      expectedTables: source.tables.length,
+      expectedViews: source.tables.reduce((sum, table) => sum + requireArray(table?.views, 'source views').length, 0),
+      comparedViews,
+      mismatches: mismatches.length,
+    },
+    executionPlan: buildLarkBaseViewManualParityExecutionPlan(source),
+    mismatches: Object.freeze(mismatches),
+    remoteRequestCount: 0,
+    remoteMutationCount: 0,
+  });
+}
+
+function manualOwnedState(value) {
+  const manual = plainObject(value) ? value : {};
+  return deepFreeze({
+    fieldOrder: Array.isArray(manual.fieldOrder) ? structuredClone(manual.fieldOrder) : [],
+    sortInfo: Array.isArray(manual.sortInfo) ? structuredClone(manual.sortInfo) : [],
+    group: Array.isArray(manual.group) ? structuredClone(manual.group) : [],
+    columnWidths: explicitColumnWidths(manual.colInfos),
+    rowHeightLevel: manual.rowHeightLevel ?? null,
+    frozenColCount: manual.frozenColCount ?? null,
+  });
+}
+
+function explicitColumnWidths(value) {
+  if (!plainObject(value)) return {};
+  return Object.fromEntries(Object.entries(value)
+    .filter(([, info]) => plainObject(info) && info.width !== null && info.width !== undefined)
+    .map(([fieldName, info]) => [requireText(fieldName, 'column width field name'), safePrimitive(info.width, `column width ${fieldName}`)])
+    .sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function explicitHiddenFields(value) {
+  if (!plainObject(value)) return [];
+  return Object.entries(value)
+    .filter(([, info]) => plainObject(info) && info.hidden === true)
+    .map(([fieldName]) => requireText(fieldName, 'hidden field name'))
+    .sort();
+}
+
+function singletonOrNull(values) {
+  return values.size === 1 ? [...values][0] : null;
+}
+
+function uniqueNamedIndex(items, label, getName) {
+  const result = new Map();
+  for (const item of requireArray(items, `${label}s`)) {
+    const name = requireText(getName(item), `${label} name`);
+    if (result.has(name)) throw new TypeError(`duplicate ${label} name: ${name}`);
+    result.set(name, item);
+  }
+  return result;
+}
+
+function requireManifest(value, name) {
+  if (!plainObject(value)) throw new TypeError(`${name} must be an object`);
+  if (value.contractVersion !== 'customer_base_view_manual_parity_manifest_v1') {
+    throw new TypeError(`${name} must use customer_base_view_manual_parity_manifest_v1`);
+  }
+  requireArray(value.tables, `${name}.tables`);
+  return value;
+}
+
+function stableJson(value) {
+  return JSON.stringify(sortJson(value));
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (!plainObject(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortJson(value[key])]));
+}
+
+function camelToUpperSnake(value) {
+  return String(value).replace(/([a-z0-9])([A-Z])/gu, '$1_$2').toUpperCase();
+}
+
+function problem(code, message, details = {}) {
+  return deepFreeze({ code, message, details: structuredClone(details) });
+}
+
 function sanitizeFieldReferencedValue(value, fieldNameById, tableName, viewName, path) {
   if (value === null || value === undefined) return value ?? null;
   if (Array.isArray(value)) {
