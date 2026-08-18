@@ -32,36 +32,30 @@ Direct inspection of the real export envelope establishes:
 - 2 automations/workflows
 - 4 Advanced Permission roles
 
-The file contains top-level `gzipSnapshot`, `gzipExtraInfo`, `gzipBaseRole`, `gzipAccessConfig`, `gzipDashboard`,
-`gzipAutomation`, and `sign`. Each `gzip*` value is base64-encoded gzip JSON.
-
 `gzipSnapshot` contains 34 snapshot entries but only 33 unique table IDs because `📣 MKT_Report_Top_Ads` appears in two
-snapshot entries. Counts must therefore dedupe exported stable IDs. The earlier 35,373-record baseline is superseded by this
-latest export's 35,528 unique records.
+snapshot chunks. Counts dedupe stable IDs. The earlier 35,373-record baseline is superseded by this export's 35,528 rows.
 
-The Live `Social MKT Data Hub` app token that exposes only 17 tables is not migration authority and cannot block creation.
-It remains optional diagnostic evidence only.
+The Live `Social MKT Data Hub` app token exposing only 17 tables is diagnostic only and cannot block creation.
 
 ## Customer PROD configuration
 
-`.customer.prod.vars` remains Git-ignored.
-
-Target read/write modes require:
+`.customer.prod.vars` is Git-ignored. Target read/write modes require:
 
 - `LARK_APP_ID`
 - `LARK_APP_SECRET`
 - `LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN`
 
-Local Source export path defaults to:
+Exact local Source path used by the operator Mac:
 
-`/Users/wasanjantawong/Downloads/Social MKT Data Hub(20260818-030125).base`
+`/Users/wasanjantawong/Desktop/Social MKT Data Hub.base`
 
 Optional overrides/diagnostics:
 
 - `LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE`
 - `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN` (diagnostic only)
 
-`--source-export-audit` requires no Lark credential and performs zero remote request.
+`--source-export-audit` requires no Lark credential and performs zero remote request. The exact user-run audit passed the
+pinned SHA and all 33/723/35,528/111/12/4/6/2/4 counts with `blockers=[]`.
 
 ## Full-parity contract
 
@@ -85,115 +79,107 @@ Final verifier must cover every dimension represented by the Source export:
 16. Advanced Permission role configuration represented in export.
 17. Attachment-like cells when included.
 
-A missing target API permission, unsupported write operation, unresolved reference, collision with unrelated customer content,
-or unverifiable exported property is blocking. No warning may be downgraded into a fake 100% result.
+Any unhandled exported property, target API permission gap, unresolved reference, or collision with customer content is a blocker.
 
-## Protected existing TikTok table
+## Immutable pre-existing Target policy
 
-`🎵 RAW_TikTok_Creator_Videos` in the customer Target is explicitly protected by user instruction and is outside the
-mutation surface of this migration.
+User instruction is now broader than the original TikTok-only protection: **do not touch anything that already exists in
+`✨Marketing Content Calendar`**.
 
-Required behavior:
+Therefore every Table present in the Target snapshot before migration starts is immutable/read-only for this workstream.
+Latest observed set:
 
-- never create another table with the same name;
-- never overwrite/rename/delete the existing table;
-- never mutate its Fields, Records, Views, Filters or other view properties;
-- never remove or alter its existing Cross-Base Sync configuration;
-- Preview may accept it only as `reuse_exact` after read-only parity proof;
-- any mismatch, missing protected table, or non-reuse plan blocks the whole Apply instead of repairing the existing table;
-- the protected-table write fence must reject before any OpenAPI write request occurs.
+- `🎵 RAW_TikTok_Creator_Videos`
+- `(VDO) Content Creator`
+- `(Graphic) Content Creator`
+- `คำถามจาก Sale & Support`
 
-`packages/application/src/use-cases/protect-customer-lark-target.js` implements the fail-closed client fence and protected
-plan assertion. Regression tests cover create-by-name plus Field/Record/View mutations and prove zero underlying write calls.
+The rule is dynamic: if more Tables exist when the real Preview/Apply starts, those IDs are also automatically protected.
 
-This protection is required because the existing consolidator's historical View loop can attempt `createView/updateView`
-on reused tables. Final Preview/Apply must therefore pass through the protected client wrapper before write modes are enabled.
+Forbidden operations on any pre-existing Table:
 
-## Export reader implementation
+- duplicate/recreate by name;
+- rename/delete;
+- create/update Field;
+- create/update Record;
+- create/update View/Filter/Sort/Group/view property;
+- alter Cross-Base Sync or other customer configuration.
 
-`scripts/lib/lark-base-export.js` v2 parses the real canonical export format:
+`protect-customer-lark-target.js` v2 snapshots all existing Table IDs/names, blocks their write methods before the underlying
+OpenAPI request, and allows writes only to Tables created after that snapshot.
 
-- validates required gzip envelope members;
-- gzip/base64-decodes each JSON payload locally;
-- inventories Tables from `schema.tableMap`;
-- inventories Fields/Views from `schema.data.table.fieldMap/viewMap`;
-- inventories Records from `schema.data.recordMap`;
-- dedupes every entity by stable exported ID across snapshot chunks;
-- detects relation type 18 and formula type 20;
-- inventories Dashboard/Automation/Role payloads;
-- emits SHA-256, exact counts, table/role names and duplicate-snapshot diagnostics;
-- performs zero remote calls.
+`🎵 RAW_TikTok_Creator_Videos` is a Source-overlap special case: it must exist and Preview can accept it only as
+`reuse_exact`. Any mismatch or create/repair plan blocks Apply; migration must not modify the existing TikTok table to make
+it match.
 
-## Operator v4
+Unrelated existing Tables require no Source plan entry but remain fully protected by the client fence.
 
-`customer_base_full_parity_operator_v4` uses:
+The historical consolidator still contains a View loop that can write views on reused tables. Apply must remain disabled
+until that behavior is changed so `reuse_exact` tables receive zero writes even without relying on the outer fence.
 
-```text
-exact local .base export
-→ exact SHA + structure/count/table-set preflight
-→ optional GET-only customer Target inspection
-→ full clone/remap implementation (blocked until coverage complete)
-→ protected Target client + protected reuse_exact plan gate
-→ controlled Apply
-→ GET-only canonical verifier
-```
+## Export implementation
 
-Read-only modes:
+`scripts/lib/lark-base-export.js` parses the actual canonical export envelope and validates exact SHA/count/table-set
+identity with zero remote calls.
 
-- `--source-export-audit`: local-only, no Lark config required
-- `--full-parity-audit`: local Source export + GET-only Target inspection
+`scripts/lib/lark-base-export-source-client.js` is the read-only adapter into the existing consolidator interface. It:
 
-Legacy `--provision-missing`, `--preview`, `--apply`, and `--verify` remain blocked until full clone/remap coverage exists.
+- dedupes snapshot chunks;
+- exposes `listTables/listFields/listRecords/listViews/getView`;
+- normalizes Text, Number, Date, Select, MultiSelect, URL and relation cells into OpenAPI-write-compatible values;
+- preserves exported Relation/Formula properties;
+- retains raw field/view metadata for later full-fidelity remapping;
+- exposes Dashboard/Workflow/Role/Access payloads for later parity phases;
+- creates no new transport and performs zero remote requests.
 
-## Existing Target evidence
+Regression coverage includes Select/MultiSelect/URL values, duplicate snapshots, relations/formulas and View metadata
+(filter/sort/group/hidden/order).
 
-Latest Target inspection showed 4 tables total:
+## Existing consolidator reuse
 
-- protected existing `🎵 RAW_TikTok_Creator_Videos`
-- unrelated `(VDO) Content Creator`
-- unrelated `(Graphic) Content Creator`
-- unrelated `คำถามจาก Sale & Support`
+`packages/application/src/use-cases/consolidate-lark-base.js` remains the shared migration engine. It already implements:
 
-The three unrelated customer tables are immutable/protected from this migration. The TikTok table is stricter: it may only
-be reused exact and is never a migration write target.
+- createTable;
+- ordinary Fields;
+- relation/formula ID remap;
+- record copy and relation-record remap;
+- basic View creation/update;
+- table/field/record/view verification.
 
-## Reuse requirement
+It must be extended, not replaced. Current gaps before 100% Apply:
 
-The repository already contains `packages/application/src/use-cases/consolidate-lark-base.js`, which implements reusable
-core createTable, field, relation/formula remap, record copy/relation rewrite, view creation and verification mechanics.
-This engine must be extended rather than replaced.
-
-Remaining gaps before 100% Apply:
-
-- normalized local-export Source adapter into the existing consolidator
-- full Field property fidelity
-- complete View visible/filter/group/sort/timebar/card fidelity
-- forms/questions when present
-- dashboards/blocks/layout/data_config
-- workflows/automation
-- Advanced Permission role config
-- attachment handling if present
-- canonical verifier across all export dimensions
-- wire protected client/plan guard into the only enabled Preview/Apply path
+- remove all write behavior for `reuse_exact` tables;
+- full Field-property fidelity;
+- full View visible/filter/group/sort/timebar/card fidelity;
+- forms/questions when present;
+- dashboards/blocks/layout/data_config;
+- workflows/automation;
+- Advanced Permission role config;
+- attachment handling if present;
+- canonical verifier across every export dimension;
+- protected Target policy wired into the only enabled Preview/Apply path.
 
 ## Safety boundary
 
 - Source mutation: 0
-- Local export audit remote request: 0
+- Local export remote request: 0
 - Live Source dependency: optional diagnostic only
-- Target write: blocked until full clone coverage
-- `🎵 RAW_TikTok_Creator_Videos`: immutable; reuse_exact read-only or block
-- Existing unrelated customer content: immutable/protected
-- Deletes: 0 unless separately approved
+- Every pre-existing Target Table: immutable/read-only
+- TikTok overlap: `reuse_exact` or block
+- Writes allowed only to migration-created post-snapshot Tables
+- Deletes: 0
 - Worker/D1/Queue/schedule changes: 0
 - Secrets stay local/environment only
+- Apply remains blocked until full clone/remap/verifier coverage is complete
 
 ## Remaining closure sequence
 
-1. Pass exact-head CI for protected-table guard.
-2. Feed normalized export into existing consolidation engine and implement all remaining parity dimensions.
-3. Wire protected client + `reuse_exact` assertion into Preview/Apply.
-4. Dry-run/preview Target with zero unhandled dimensions, zero unrelated-content collisions, and zero protected TikTok mutations.
-5. One controlled Apply.
-6. GET-only canonical verifier proves 100% parity for every export-represented dimension while protected TikTok remains unchanged.
-7. Only then may PR #661 be ready for merge/closeout.
+1. Exact-head CI for export Source adapter + all-existing Target fence.
+2. Wire the adapter into GET-only consolidator Preview.
+3. Snapshot/protect all pre-existing Target tables; require TikTok/source overlaps to be `reuse_exact`.
+4. Remove historical reused-table View writes from the consolidator.
+5. Implement every remaining export-represented parity dimension.
+6. GET-only Preview must prove zero unhandled dimensions and zero mutation surface against existing customer resources.
+7. One controlled Apply may write only newly-created migration Tables.
+8. GET-only canonical verifier proves 100% parity while every pre-existing Target resource remains unchanged.
+9. Only then may PR #661 be ready for merge/closeout.
