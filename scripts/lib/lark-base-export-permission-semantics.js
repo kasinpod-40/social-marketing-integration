@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const SAFE_ROLE_KEYS = Object.freeze(new Set([
   'name',
   'members',
@@ -14,6 +16,11 @@ const SAFE_ROLE_KEYS = Object.freeze(new Set([
  * table names, numeric permission enums/schema versions, null/presence state for
  * field/record rules, member counts, dashboard-rule count, and the export numeric
  * base-rule map. It never emits role/member/base/table IDs or member identities.
+ *
+ * Exported role rules may retain references to tables that no longer exist in the
+ * current snapshot. Those references are diagnostic evidence, not an automatic
+ * replay target. They are therefore retained as redacted fingerprints and keep
+ * mappingReady=false without aborting the inventory.
  */
 export function inspectLarkBaseExportPermissionSemantics(input) {
   const roles = requireArray(input?.roles, 'roles');
@@ -27,18 +34,33 @@ export function inspectLarkBaseExportPermissionSemantics(input) {
     roleNames.add(role.roleName);
   }
 
+  const unresolvedTableRoles = result.flatMap((role) => role.unresolvedTableRoles);
+  const mappingReady = unresolvedTableRoles.length === 0;
+
   return deepFreeze({
     ok: true,
-    contractVersion: 'lark_base_export_permission_semantics_v1',
+    contractVersion: 'lark_base_export_permission_semantics_v2',
     mode: 'local-read-only-id-redacted',
+    status: mappingReady
+      ? 'semantic_inventory_complete_mapping_ready'
+      : 'semantic_inventory_complete_unresolved_source_refs',
+    mappingReady,
     roles: result,
     summary: {
       roleCount: result.length,
       memberCount: result.reduce((sum, role) => sum + role.memberCount, 0),
       tableRoleCount: result.reduce((sum, role) => sum + role.tableRoles.length, 0),
+      unresolvedTableRoleCount: unresolvedTableRoles.length,
+      unresolvedTableReferenceCount: new Set(unresolvedTableRoles.map((entry) => entry.referenceFingerprint)).size,
       dashboardRoleCount: result.reduce((sum, role) => sum + role.dashboardRoleCount, 0),
-      tablePermValues: uniqueSortedNumbers(result.flatMap((role) => role.tableRoles.map((entry) => entry.perm))),
-      schemaVersionValues: uniqueSortedNumbers(result.flatMap((role) => role.tableRoles.map((entry) => entry.schemaVersion).filter(Number.isFinite))),
+      tablePermValues: uniqueSortedNumbers(result.flatMap((role) => [
+        ...role.tableRoles.map((entry) => entry.perm),
+        ...role.unresolvedTableRoles.map((entry) => entry.perm),
+      ])),
+      schemaVersionValues: uniqueSortedNumbers(result.flatMap((role) => [
+        ...role.tableRoles.map((entry) => entry.schemaVersion).filter(Number.isFinite),
+        ...role.unresolvedTableRoles.map((entry) => entry.schemaVersion).filter(Number.isFinite),
+      ])),
       baseRuleKeys: [...new Set(result.flatMap((role) => Object.keys(role.baseRule)))].sort(numericStringCompare),
     },
     remoteRequestCount: 0,
@@ -59,24 +81,37 @@ function inspectRole(value, index, tableNameById) {
   const blockRoleMap = requireObject(role.blockRoleMap ?? {}, `roles[${index}].blockRoleMap`);
   const baseRule = normalizeNumericMap(role.baseRule ?? {}, `roles[${index}].baseRule`);
 
-  const tableRoles = Object.entries(tableRoleMap).map(([mapTableId, rawRule]) => {
+  const tableRoles = [];
+  const unresolvedTableRoles = [];
+  for (const [mapTableId, rawRule] of Object.entries(tableRoleMap)) {
     const rule = requireObject(rawRule, `roles[${index}].tableRoleMap.${mapTableId}`);
     const tableId = optionalText(rule.tableId) ?? mapTableId;
     if (tableId !== mapTableId) throw new TypeError(`tableRoleMap key/tableId mismatch for role ${roleName}`);
-    const tableName = tableNameById.get(tableId);
-    if (!tableName) throw new TypeError(`role ${roleName} references unknown source table`);
-    const perm = requireFiniteNumber(rule.perm, `role ${roleName} table ${tableName} perm`);
+    const perm = requireFiniteNumber(rule.perm, `role ${roleName} table permission`);
     const schemaVersion = optionalFiniteNumber(rule.schemaVersion);
-
-    return {
-      tableName,
+    const semanticRule = {
       perm,
       schemaVersion,
       fieldPerm: presenceKind(rule.fieldPerm),
       fieldPermV2: presenceKind(rule.fieldPermV2),
       recRule: presenceKind(rule.recRule),
     };
-  }).sort((left, right) => left.tableName.localeCompare(right.tableName));
+    const tableName = tableNameById.get(tableId);
+    if (!tableName) {
+      unresolvedTableRoles.push({
+        referenceFingerprint: fingerprint(tableId),
+        ...semanticRule,
+      });
+      continue;
+    }
+    tableRoles.push({
+      tableName,
+      ...semanticRule,
+    });
+  }
+
+  tableRoles.sort((left, right) => left.tableName.localeCompare(right.tableName));
+  unresolvedTableRoles.sort((left, right) => left.referenceFingerprint.localeCompare(right.referenceFingerprint));
 
   return {
     roleName,
@@ -84,6 +119,7 @@ function inspectRole(value, index, tableNameById) {
     dashboardRoleCount: Object.keys(blockRoleMap).length,
     baseRule,
     tableRoles,
+    unresolvedTableRoles,
   };
 }
 
@@ -100,6 +136,10 @@ function uniqueTableNameById(tables) {
     names.add(name);
   }
   return result;
+}
+
+function fingerprint(value) {
+  return createHash('sha256').update(requireText(value, 'reference')).digest('hex').slice(0, 16);
 }
 
 function normalizeNumericMap(value, name) {
