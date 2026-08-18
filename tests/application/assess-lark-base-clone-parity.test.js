@@ -50,6 +50,7 @@ test('parity coverage reports represented rich View and exported resource gaps w
 
   assert.equal(result.ok, false);
   assert.equal(result.remoteMutationCount, 0);
+  assert.equal(result.contractVersion, 'customer_base_clone_parity_coverage_v3');
   assert.equal(result.source.tables, 1);
   assert.equal(result.source.views, 1);
   assert.equal(result.source.viewTypes.grid, 1);
@@ -59,7 +60,12 @@ test('parity coverage reports represented rich View and exported resource gaps w
   assert.equal(result.source.viewFeatureCounts.hierarchyConfig, 1);
   assert.equal(result.source.viewFeatureCounts.cardViewSetting, 1);
   assert.equal(result.source.exportResourceCounts.dashboards, 6);
-  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_VIEW_FIELD_ORDER_UNIMPLEMENTED'));
+  assert.equal(
+    result.documentedViewParity.implementationStatus,
+    'hierarchy_config_implemented_ci_verified_apply_wiring_pending',
+  );
+  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_VIEW_FIELD_ORDER_DOCUMENTED_WRITE_CONTRACT_NOT_PROVEN'));
+  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_VIEW_HIERARCHY_CONFIG_WIRING_PENDING'));
   assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_DASHBOARD_UNIMPLEMENTED'));
   assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_WORKFLOW_UNIMPLEMENTED'));
   assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_ADVANCED_PERMISSION_UNIMPLEMENTED'));
@@ -83,11 +89,13 @@ test('parity coverage treats absent optional resources as not represented', asyn
   const workflows = result.dimensions.find((item) => item.dimension === 'workflows');
   const permissions = result.dimensions.find((item) => item.dimension === 'advanced_permissions');
   const forms = result.dimensions.find((item) => item.dimension === 'forms_questions');
+  const hierarchy = result.dimensions.find((item) => item.dimension === 'view_hierarchyConfig');
 
   assert.equal(dashboards.status, 'not_represented');
   assert.equal(workflows.status, 'not_represented');
   assert.equal(permissions.status, 'not_represented');
   assert.equal(forms.status, 'not_represented');
+  assert.equal(hierarchy.status, 'not_represented');
 });
 
 test('parity coverage blocks Form parity only when a Form view is represented', async () => {
