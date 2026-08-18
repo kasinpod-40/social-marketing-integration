@@ -13,6 +13,8 @@ TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
 EXPECTED_SOURCE_TABLES              = 33
 FULL_PARITY_REQUIRED                = TRUE
 SOURCE_LIVE_33_OF_33_GATE           = REMOVED_NOT_AUTHORITY
+PROTECTED_TARGET_TABLE              = 🎵 RAW_TikTok_Creator_Videos
+PROTECTED_TARGET_TABLE_POLICY       = REUSE_EXACT_READ_ONLY_OR_BLOCK
 CUSTOMER_LARK_APPLY                 = BLOCKED_UNTIL_FULL_CLONE_COVERAGE
 SOURCE_MUTATION                     = ZERO
 DRAFT_PR                            = 661
@@ -51,6 +53,23 @@ Direct inspection ของไฟล์ล่าสุดยืนยัน:
 
 Live `Social MKT Data Hub` ที่ credential ปัจจุบันอ่านได้ 17 tables เป็น diagnostic evidence เท่านั้นและไม่สามารถ block
 การสร้างจากไฟล์ export ได้อีก. `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN` เป็น optional diagnostic.
+
+## Protected Target table contract
+
+`🎵 RAW_TikTok_Creator_Videos` ที่มีอยู่ใน Target เป็น Protected Existing Table.
+
+กฎบังคับ:
+
+- ห้าม create table ชื่อนี้ซ้ำ/ทับ
+- ห้าม rename table นี้
+- ห้าม create/update Field
+- ห้าม batch create/update Record
+- ห้าม create/update View, Filter หรือ View property
+- ห้ามลบหรือเปลี่ยน Cross-Base Sync configuration
+- Preview ต้องพิสูจน์ได้เฉพาะ action `reuse_exact`; ถ้าไม่ exact ให้ block ทั้ง Apply โดยห้ามแก้ของเดิมให้เข้ากับ Source
+- protected write fence ต้อง reject ก่อน OpenAPI request เพื่อให้ remote mutation = 0 สำหรับ Table นี้แม้ logic ชั้นบนพลาด
+
+Implementation guard: `packages/application/src/use-cases/protect-customer-lark-target.js`.
 
 ## Customer PROD config contract
 
@@ -102,18 +121,20 @@ Final acceptance ต้องตรวจทุก dimension ที่มีอ�
 
 ## Implementation result
 
-- `scripts/lib/lark-base-export.js` now parses the actual export envelope directly: `gzipSnapshot`, `gzipExtraInfo`,
+- `scripts/lib/lark-base-export.js` parses the actual export envelope directly: `gzipSnapshot`, `gzipExtraInfo`,
   `gzipBaseRole`, `gzipAccessConfig`, `gzipDashboard`, `gzipAutomation`.
 - All compressed payloads are gzip/base64 JSON decoded locally.
 - Table/Field/Record/View counts are deduped by exported stable IDs; chunked duplicate snapshot entries cannot inflate parity counts.
-- Operator contract bumped to `customer_base_full_parity_operator_v4`.
+- Operator contract is `customer_base_full_parity_operator_v4`.
 - Exact latest export file name/SHA-256 and structural counts are pinned as the authority.
 - `--source-export-audit` no longer asserts Lark/Target config and defaults to the latest Downloads file path when no env path is set.
 - `--full-parity-audit` uses local export Source + GET-only Target inspection.
 - Live Source 33/33 gate remains removed.
+- Added `protect-customer-lark-target.js` hard write fence for `🎵 RAW_TikTok_Creator_Videos`.
+- Added regression proving create-by-name and Field/Record/View mutations on the protected table are rejected before remote call.
+- Added protected-plan gate requiring `reuse_exact`; any create/conflict/missing plan is blocking.
 - Write/apply modes remain blocked.
-- Regression fixture now matches the real Lark `.base` envelope and proves duplicate snapshot dedupe.
-- No Customer Lark mutation has been enabled or executed.
+- No Customer Lark mutation has been enabled or executed by these changes.
 
 ## Safety contract
 
@@ -121,10 +142,11 @@ Final acceptance ต้องตรวจทุก dimension ที่มีอ�
 2. Exact SHA mismatch is blocking before Target mutation.
 3. Full parity audit = local Source file + GET-only Target inspection.
 4. Existing unrelated customer tables must never be overwritten/deleted.
-5. Existing `🎵 RAW_TikTok_Creator_Videos` must pass final canonical parity; name alone is insufficient.
-6. No Worker/D1/Queue/schedule mutation.
-7. No Source mutation.
-8. Apply remains blocked until every exported dimension has clone/remap/verify coverage.
+5. Existing `🎵 RAW_TikTok_Creator_Videos` is immutable to this migration: `reuse_exact` read-only or block.
+6. Protected table writes must be rejected before OpenAPI request.
+7. No Worker/D1/Queue/schedule mutation.
+8. No Source mutation.
+9. Apply remains blocked until every exported dimension has clone/remap/verify coverage and the protected-table policy is wired into the final Apply path.
 
 ## Required tests / gates
 
@@ -134,6 +156,7 @@ Final acceptance ต้องตรวจทุก dimension ที่มีอ�
 - malformed/missing payload fail closed
 - local audit requires no Lark credentials
 - unrelated Target tables preserved
+- protected TikTok target table write fence + `reuse_exact` plan gate
 - full clone/remap regressions for fields, records, relations, formulas and views
 - Filter/Sort/Group/visible fields/timebar/card/forms/dashboards/workflows/roles coverage before Apply
 - `npm ci`
@@ -145,13 +168,13 @@ Final acceptance ต้องตรวจทุก dimension ที่มีอ�
 
 ## Next closure sequence
 
-1. Exact-head CI.
-2. Run local `--source-export-audit`; it must match exact SHA and latest 33/723/35,528/111/... authority without any Lark credential.
-3. Adapt normalized local export into existing `consolidate-lark-base.js`; do not build a parallel transport.
+1. Exact-head CI after protected-table guard.
+2. Adapt normalized local export into existing `consolidate-lark-base.js`; do not build a parallel transport.
+3. Wire `protectCustomerLarkTarget` and `assertProtectedTargetTablePlan` into Preview/Apply so `🎵 RAW_TikTok_Creator_Videos` can only be reused exact and never mutated.
 4. Add clone/remap coverage for every exported dimension.
 5. Preview Target with zero unhandled dimensions and unrelated customer content untouched.
 6. One controlled Apply.
-7. GET-only canonical Target verifier reports 100% parity for every export-represented dimension.
+7. GET-only canonical Target verifier reports 100% parity for every export-represented dimension while the protected TikTok table remains unchanged.
 8. Only then may PR #661 be ready for merge/closeout.
 
 Detailed workstream record: `docs/project-brain/customer-base-consolidation-v1.md`.
