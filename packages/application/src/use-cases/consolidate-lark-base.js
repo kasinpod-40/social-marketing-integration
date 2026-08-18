@@ -91,7 +91,7 @@ export async function previewLarkBaseConsolidation(input) {
       conflicts.push(problem(
         'TARGET_TABLE_CONFLICT',
         `Target Base already contains non-identical table: ${sourceTable.name}`,
-        { name: sourceTable.name, reasons: reuse.reasons },
+        { name: sourceTable.name, reasons: reuse.reasons, diagnostics: reuse.diagnostics },
       ));
       continue;
     }
@@ -494,10 +494,11 @@ async function loadTableSnapshot(client, table) {
 
 async function inspectExistingTargetTable(input) {
   const targetSnapshot = await loadTableSnapshot(input.targetClient, input.targetTable);
+  const diagnostics = [];
   const reasons = [
     ...compareFieldShape(input.sourceSnapshot.fields, targetSnapshot.fields),
-    ...compareReusableFieldConfig(input.sourceSnapshot.fields, targetSnapshot.fields),
-    ...compareReusableViewConfig(input.sourceSnapshot, targetSnapshot),
+    ...compareReusableFieldConfig(input.sourceSnapshot.fields, targetSnapshot.fields, diagnostics),
+    ...compareReusableViewConfig(input.sourceSnapshot, targetSnapshot, diagnostics),
   ];
   const sourceHasSpecial = input.sourceSnapshot.fields.some((field) => SPECIAL_FIELD_TYPES.has(Number(field.type)));
   if (sourceHasSpecial) reasons.push('pre-existing target table contains relation/formula fields and is not eligible for automatic reuse');
@@ -520,7 +521,7 @@ async function inspectExistingTargetTable(input) {
       reasons.push(error.message);
     }
   }
-  return { ok: reasons.length === 0, reasons };
+  return { ok: reasons.length === 0, reasons, diagnostics };
 }
 
 function validatePrimary(snapshot, conflicts) {
@@ -667,7 +668,7 @@ function compareFieldShape(sourceFields, targetFields) {
   return reasons;
 }
 
-function compareReusableFieldConfig(sourceFields, targetFields) {
+function compareReusableFieldConfig(sourceFields, targetFields, diagnostics = []) {
   const reasons = [];
   const targetByName = new Map(targetFields.map((field) => [field.fieldName, field]));
   for (const source of sourceFields) {
@@ -679,14 +680,21 @@ function compareReusableFieldConfig(sourceFields, targetFields) {
     if (normalizeDescription(target.description) !== normalizeDescription(source.description)) {
       reasons.push(`field description mismatch ${source.fieldName}`);
     }
-    if (canonicalReusableFieldProperty(target.property) !== canonicalReusableFieldProperty(source.property)) {
+    const sourceProperty = comparableReusableFieldProperty(source.property);
+    const targetProperty = comparableReusableFieldProperty(target.property);
+    if (stableJson(targetProperty) !== stableJson(sourceProperty)) {
       reasons.push(`field property mismatch ${source.fieldName}`);
+      diagnostics.push({
+        kind: 'field_property',
+        fieldName: source.fieldName,
+        differencePaths: collectDifferencePaths(sourceProperty, targetProperty).slice(0, 24),
+      });
     }
   }
   return reasons;
 }
 
-function compareReusableViewConfig(sourceSnapshot, targetSnapshot) {
+function compareReusableViewConfig(sourceSnapshot, targetSnapshot, diagnostics = []) {
   const reasons = [];
   const sourceViews = sourceSnapshot.views ?? [];
   const targetViews = targetSnapshot.views ?? [];
@@ -714,6 +722,11 @@ function compareReusableViewConfig(sourceSnapshot, targetSnapshot) {
     const targetComparable = canonicalReusableView(targetView);
     if (stableJson(sourceComparable) !== stableJson(targetComparable)) {
       reasons.push(`view configuration mismatch ${sourceView.viewName}`);
+      diagnostics.push({
+        kind: 'view_configuration',
+        viewName: sourceView.viewName,
+        differencePaths: collectDifferencePaths(sourceComparable, targetComparable).slice(0, 24),
+      });
     }
   }
   return reasons;
@@ -729,8 +742,8 @@ function sourceToTargetFieldIdMap(sourceFields, targetFields) {
   return result;
 }
 
-function canonicalReusableFieldProperty(property) {
-  if (!property || typeof property !== 'object' || Array.isArray(property)) return 'null';
+function comparableReusableFieldProperty(property) {
+  if (!property || typeof property !== 'object' || Array.isArray(property)) return null;
   const result = structuredClone(property);
   if (Array.isArray(result.options)) {
     result.options = result.options.map((option) => {
@@ -740,7 +753,11 @@ function canonicalReusableFieldProperty(property) {
       return clone;
     });
   }
-  return stableJson(sortObject(result));
+  return sortObject(result);
+}
+
+function canonicalReusableFieldProperty(property) {
+  return stableJson(comparableReusableFieldProperty(property));
 }
 
 function canonicalReusableView(view, sourceFieldIdToTargetFieldId = null) {
@@ -819,6 +836,43 @@ function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
   return JSON.stringify(value);
+}
+
+function collectDifferencePaths(left, right, path = '$', result = []) {
+  if (Object.is(left, right)) return result;
+  const leftArray = Array.isArray(left);
+  const rightArray = Array.isArray(right);
+  if (leftArray || rightArray) {
+    if (!(leftArray && rightArray)) {
+      result.push(path);
+      return result;
+    }
+    if (left.length !== right.length) result.push(`${path}.length`);
+    const length = Math.min(left.length, right.length);
+    for (let index = 0; index < length; index += 1) {
+      collectDifferencePaths(left[index], right[index], `${path}[${index}]`, result);
+    }
+    return result;
+  }
+  const leftObject = left !== null && typeof left === 'object';
+  const rightObject = right !== null && typeof right === 'object';
+  if (leftObject || rightObject) {
+    if (!(leftObject && rightObject)) {
+      result.push(path);
+      return result;
+    }
+    const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+    for (const key of keys) {
+      if (!(key in left) || !(key in right)) {
+        result.push(`${path}.${key}`);
+        continue;
+      }
+      collectDifferencePaths(left[key], right[key], `${path}.${key}`, result);
+    }
+    return result;
+  }
+  result.push(path);
+  return result;
 }
 
 function extractFormulaTableIds(expression) {
