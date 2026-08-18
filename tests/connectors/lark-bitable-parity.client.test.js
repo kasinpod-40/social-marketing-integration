@@ -31,6 +31,34 @@ class FakeTransport {
   }
 }
 
+class FakeRoleTransport {
+  constructor() {
+    this.appToken = 'app_target';
+    this.calls = [];
+  }
+
+  async requestBitableJson(path, options = {}) {
+    this.calls.push({ path, options: structuredClone(options) });
+    if (options.method === 'GET' && path.startsWith('/open-apis/bitable/v1/apps/app_target/roles?')) {
+      return {
+        code: 0,
+        data: {
+          items: [{
+            role_id: 'rol_reader',
+            role_name: 'Reader',
+            table_roles: [{ table_id: 'tbl_orders', table_name: 'Orders', table_perm: 1 }],
+          }],
+          has_more: false,
+        },
+      };
+    }
+    if (options.method === 'POST' && path === '/open-apis/base/v2/apps/app_target/roles') {
+      return { code: 0, data: { role: { role_id: 'rol_created', role_name: options.body.role_name } } };
+    }
+    throw new Error(`unexpected role request ${options.method} ${path}`);
+  }
+}
+
 test('parity decorator reads hierarchy_config through the shared transport', async () => {
   const transport = new FakeTransport();
   const client = withLarkBaseParityCapabilities(transport);
@@ -75,6 +103,51 @@ test('parity decorator writes only the documented hierarchy_config request shape
       },
     },
   });
+});
+
+test('parity decorator lists existing roles through documented v1 read endpoint', async () => {
+  const transport = new FakeRoleTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.listAdvancedPermissionRoles();
+
+  assert.deepEqual(result, [{
+    roleId: 'rol_reader',
+    roleName: 'Reader',
+    tableRoles: [{ tableId: 'tbl_orders', tableName: 'Orders', tablePerm: 1 }],
+  }]);
+  assert.equal(transport.calls.length, 1);
+  assert.match(transport.calls[0].path, /^\/open-apis\/bitable\/v1\/apps\/app_target\/roles\?page_size=30$/u);
+  assert.deepEqual(transport.calls[0].options, { method: 'GET' });
+});
+
+test('parity decorator creates roles only through documented v2 request fields', async () => {
+  const transport = new FakeRoleTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.createAdvancedPermissionRole({
+    roleName: 'Reader',
+    tableRoles: [
+      { tableId: 'tbl_orders', tablePerm: 1 },
+      { tableId: 'tbl_items', tablePerm: 2 },
+    ],
+  });
+
+  assert.deepEqual(result, { roleId: 'rol_created', roleName: 'Reader', responseCode: 0 });
+  assert.deepEqual(transport.calls[0], {
+    path: '/open-apis/base/v2/apps/app_target/roles',
+    options: {
+      method: 'POST',
+      body: {
+        role_name: 'Reader',
+        table_roles: [
+          { table_id: 'tbl_orders', table_perm: 1 },
+          { table_id: 'tbl_items', table_perm: 2 },
+        ],
+      },
+    },
+  });
+  assert.equal('base_rule' in transport.calls[0].options.body, false);
 });
 
 test('parity decorator fails before transport when identifiers are missing', async () => {
