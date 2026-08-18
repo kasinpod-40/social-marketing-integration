@@ -38,7 +38,7 @@ try {
 
   printJson({
     ok: true,
-    contractVersion: 'customer_base_export_resource_shape_operator_v2',
+    contractVersion: 'customer_base_export_resource_shape_operator_v3',
     action: 'source-resource-shape-audit',
     stage: 'exact-export-local-resource-schema-and-permission-semantics',
     mode: 'local-read-only-sensitive-id-redacted',
@@ -49,6 +49,7 @@ try {
     },
     resourceShapes,
     permissionSemantics,
+    permissionMappingReady: permissionSemantics.mappingReady,
     remoteRequestCount: 0,
     remoteMutationCount: 0,
     targetReadExecuted: false,
@@ -58,7 +59,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_export_resource_shape_operator_v2',
+    contractVersion: 'customer_base_export_resource_shape_operator_v3',
     code: error?.code ?? 'CUSTOMER_BASE_EXPORT_RESOURCE_SHAPE_AUDIT_FAILED',
     message: error?.message ?? String(error),
     details: error?.details ?? {},
