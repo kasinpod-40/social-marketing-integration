@@ -50,6 +50,12 @@ const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
 const REQUIRED_PROTECTED_TABLE_NAMES = Object.freeze([
   '🎵 RAW_TikTok_Creator_Videos',
 ]);
+const PROTECTED_EXTERNAL_TABLE_NAMES = Object.freeze([
+  '🎵 RAW_TikTok_Creator_Videos',
+]);
+const CLONE_SOURCE_TABLE_NAMES = Object.freeze(
+  EXPECTED_SOURCE_TABLE_NAMES.filter((name) => !PROTECTED_EXTERNAL_TABLE_NAMES.includes(name)),
+);
 
 const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
 const SOURCE_EXPORT_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
@@ -81,7 +87,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_full_parity_operator_v4',
+    contractVersion: 'customer_base_full_parity_operator_v5',
     code: error?.code ?? 'CUSTOMER_BASE_FULL_PARITY_OPERATOR_FAILED',
     message: error?.message ?? String(error),
     details: redactDetails(error?.details ?? {}),
@@ -94,7 +100,7 @@ async function main() {
   if (!new Set(['full-parity-audit', 'source-export-audit']).has(mode)) {
     throw operatorError(
       'CUSTOMER_BASE_PARTIAL_PARITY_PATH_BLOCKED',
-      'Customer requires 100% source parity. Write/apply paths remain blocked until every exported dimension has clone/remap/verify coverage.',
+      'Customer requires full clone-scope parity plus immutable protected-external reuse. Write/apply paths remain blocked until every clone-scope dimension has clone/remap/verify coverage.',
       { requestedMode: mode, allowedModes: ['full-parity-audit', 'source-export-audit'] },
     );
   }
@@ -105,17 +111,19 @@ async function main() {
   const sourceExportFile = resolveSourceExportFile(env);
   const exportInspection = await inspectLarkBaseExport(sourceExportFile);
   const exportAuthority = compareExportAuthority(exportInspection);
+  const migrationScope = describeMigrationScope();
 
   if (mode === 'source-export-audit') {
     printJson({
       ok: exportAuthority.ok,
-      contractVersion: 'customer_base_full_parity_operator_v4',
+      contractVersion: 'customer_base_full_parity_operator_v5',
       action: 'source-export-audit',
       stage: 'local-export-authority-preflight',
       mode: 'local-read-only',
       sourceAuthority: safeExportIdentity(exportInspection),
       exportInspection,
       exportAuthority,
+      migrationScope,
       configSource: configSource(customerProdVarsFile, sourceExportFile),
       targetFolder: TARGET_FOLDER_LABEL,
       remoteMutationCount: 0,
@@ -152,23 +160,26 @@ async function main() {
   let protectedPlan = null;
   if (exportAuthority.ok && targetIdentityMatches) {
     try {
-      const sourceClient = await createLarkBaseExportSourceClient(sourceExportFile);
+      const sourceClient = await createLarkBaseExportSourceClient(sourceExportFile, {
+        excludedTableNames: PROTECTED_EXTERNAL_TABLE_NAMES,
+      });
       const protection = await protectCustomerLarkTarget({
         client: targetClient,
         requiredProtectedTableNames: REQUIRED_PROTECTED_TABLE_NAMES,
+        protectedExternalTableNames: PROTECTED_EXTERNAL_TABLE_NAMES,
       });
       targetProtection = protection.policy;
       consolidationPreview = await previewLarkBaseConsolidation({
         sourceClient,
         targetClient: protection.client,
-        expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
-        expectedSourceTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
+        expectedTableNames: CLONE_SOURCE_TABLE_NAMES,
+        expectedSourceTableCount: CLONE_SOURCE_TABLE_NAMES.length,
       });
 
       if (!consolidationPreview.ok) {
         blockers.push(problem(
           'CUSTOMER_BASE_CONSOLIDATION_PREVIEW_BLOCKED',
-          'GET-only consolidation preview found source/target conflicts',
+          'GET-only consolidation preview found clone-scope source/target conflicts',
           { conflicts: consolidationPreview.conflicts },
         ));
       }
@@ -177,6 +188,7 @@ async function main() {
         preview: consolidationPreview,
         existingTablesProtected: protection.policy.existingTablesProtected,
         requiredProtectedTableNames: protection.policy.requiredProtectedTableNames,
+        protectedExternalTableNames: protection.policy.protectedExternalTableNames,
       });
     } catch (error) {
       blockers.push(problem(
@@ -192,13 +204,14 @@ async function main() {
     && protectedPlan?.ok === true;
   printJson({
     ok,
-    contractVersion: 'customer_base_full_parity_operator_v4',
+    contractVersion: 'customer_base_full_parity_operator_v5',
     action: 'full-parity-audit',
-    stage: 'local-export-authority-target-and-consolidation-preview',
+    stage: 'local-export-authority-target-and-clone-scope-preview',
     mode: 'read-only',
     sourceAuthority: safeExportIdentity(exportInspection),
     exportInspection,
     exportAuthority,
+    migrationScope,
     target: targetInspection,
     targetProtection,
     consolidationPreview,
@@ -234,6 +247,8 @@ async function inspectTarget(client) {
   const app = metadataResponse?.data?.app ?? metadataResponse?.data ?? {};
   const names = tables.map((table) => optionalText(table?.name)).filter(Boolean);
   const expectedPresent = EXPECTED_SOURCE_TABLE_NAMES.filter((name) => names.includes(name));
+  const clonePresent = CLONE_SOURCE_TABLE_NAMES.filter((name) => names.includes(name));
+  const protectedExternalPresent = PROTECTED_EXTERNAL_TABLE_NAMES.filter((name) => names.includes(name));
   return {
     metadata: {
       name: requireText(app?.name, 'target base.name'),
@@ -248,6 +263,10 @@ async function inspectTarget(client) {
     expectedMigrationTablesPresent: expectedPresent,
     expectedMigrationTableCount: expectedPresent.length,
     missingExpectedMigrationTables: EXPECTED_SOURCE_TABLE_NAMES.filter((name) => !names.includes(name)),
+    cloneScopeTablesPresent: clonePresent,
+    cloneScopeTableCount: clonePresent.length,
+    missingCloneScopeTables: CLONE_SOURCE_TABLE_NAMES.filter((name) => !names.includes(name)),
+    protectedExternalTablesPresent: protectedExternalPresent,
     unrelatedTables: names.filter((name) => !EXPECTED_SOURCE_TABLE_NAMES.includes(name)),
   };
 }
@@ -279,7 +298,7 @@ function compareExportAuthority(inspection) {
   if (missing.length > 0 || unexpected.length > 0) {
     blockers.push(problem(
       'CUSTOMER_BASE_SOURCE_EXPORT_TABLE_SET_MISMATCH',
-      'Source .base export table names do not match the approved 33-table migration set',
+      'Source .base export table names do not match the approved 33-table authority set',
       { missingExpectedTables: missing, unexpectedTables: unexpected },
     ));
   }
@@ -293,6 +312,19 @@ function compareExportAuthority(inspection) {
     expected: EXPECTED_EXPORT_BASELINE,
     actual: inspection.counts,
     blockers: Object.freeze(blockers),
+  });
+}
+
+function describeMigrationScope() {
+  return Object.freeze({
+    contractVersion: 'customer_base_clone_scope_with_protected_external_v1',
+    sourceAuthorityTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
+    cloneParityTableCount: CLONE_SOURCE_TABLE_NAMES.length,
+    protectedExternalTableCount: PROTECTED_EXTERNAL_TABLE_NAMES.length,
+    protectedExternalTables: PROTECTED_EXTERNAL_TABLE_NAMES,
+    protectedExternalAction: 'protected_external_reuse',
+    protectedExternalRule: 'target-live-authoritative-zero-write-excluded-from-clone-parity',
+    cloneSourceTableNames: CLONE_SOURCE_TABLE_NAMES,
   });
 }
 
