@@ -1,4 +1,12 @@
 const IMPLEMENTED_VIEW_MUTATIONS = Object.freeze(new Set(['hiddenFields', 'filterInfo']));
+const MANUAL_VIEW_PARITY_FEATURES = Object.freeze(new Set([
+  'fieldOrder',
+  'sortInfo',
+  'group',
+  'colInfos',
+  'rowHeightLevel',
+  'frozenColCount',
+]));
 
 /**
  * Read-only classification of clone-scope parity coverage.
@@ -6,7 +14,7 @@ const IMPLEMENTED_VIEW_MUTATIONS = Object.freeze(new Set(['hiddenFields', 'filte
  * This use case does not call remote APIs by itself and exposes no mutation path.
  * It inspects the Source adapter contract that will feed the shared consolidator
  * and reports every represented dimension that is not yet covered by deterministic
- * clone + canonical verification logic.
+ * clone + canonical verification logic or an explicit verified manual parity path.
  */
 export async function assessLarkBaseCloneParityCoverage(input) {
   const sourceClient = requireSourceClient(input?.sourceClient);
@@ -74,12 +82,21 @@ export async function assessLarkBaseCloneParityCoverage(input) {
   ]);
   for (const [feature, label] of unsupportedViewFeatures) {
     const count = viewFeatureCounts[feature];
+    const manualParityImplemented = MANUAL_VIEW_PARITY_FEATURES.has(feature);
     addDimension(dimensions, blockers, {
       dimension: `view_${feature}`,
       represented: count > 0,
-      status: IMPLEMENTED_VIEW_MUTATIONS.has(feature) ? 'implemented_verify_incomplete' : 'documented_write_contract_not_proven',
-      blockerCode: `CLONE_PARITY_VIEW_${camelToUpperSnake(feature)}_DOCUMENTED_WRITE_CONTRACT_NOT_PROVEN`,
-      message: `Source clone scope contains ${count} View(s) with ${label}; no safe documented write contract has been proven for this exported property, so automatic parity remains fail-closed.`,
+      status: IMPLEMENTED_VIEW_MUTATIONS.has(feature)
+        ? 'implemented_verify_incomplete'
+        : manualParityImplemented
+          ? 'manual_manifest_verifier_implemented_execution_pending'
+          : 'documented_write_contract_not_proven',
+      blockerCode: manualParityImplemented
+        ? `CLONE_PARITY_VIEW_${camelToUpperSnake(feature)}_MANUAL_EXECUTION_PENDING`
+        : `CLONE_PARITY_VIEW_${camelToUpperSnake(feature)}_DOCUMENTED_WRITE_CONTRACT_NOT_PROVEN`,
+      message: manualParityImplemented
+        ? `Source clone scope contains ${count} View(s) with ${label}; no safe documented automatic write contract is proven, but an exact ID-redacted manual manifest and local manifest verifier are implemented and CI-verified. Post-Apply manual execution remains pending.`
+        : `Source clone scope contains ${count} View(s) with ${label}; no safe documented write contract or verified manual parity path has been proven, so parity remains fail-closed.`,
       details: { views: count },
     });
   }
@@ -124,15 +141,15 @@ export async function assessLarkBaseCloneParityCoverage(input) {
   addDimension(dimensions, blockers, {
     dimension: 'advanced_permissions',
     represented: exportCounts.advancedPermissionRoles > 0,
-    status: 'official_capability_requires_implementation',
-    blockerCode: 'CLONE_PARITY_ADVANCED_PERMISSION_UNIMPLEMENTED',
-    message: 'The approved export contains Advanced Permission roles, but v2 role/member remap and canonical verification are not implemented.',
+    status: 'documented_plan_fence_transport_verifier_implemented_apply_wiring_pending',
+    blockerCode: 'CLONE_PARITY_ADVANCED_PERMISSION_WIRING_PENDING',
+    message: 'Advanced Permission semantic planning, orphan-reference handling, pre-existing Target role fencing, documented role transport and GET-only verifier are implemented and CI-verified; controlled Apply wiring and partial-write recovery remain pending.',
     details: { advancedPermissionRoles: exportCounts.advancedPermissionRoles },
   });
 
   return deepFreeze({
     ok: blockers.length === 0,
-    contractVersion: 'customer_base_clone_parity_coverage_v3',
+    contractVersion: 'customer_base_clone_parity_coverage_v4',
     mode: 'read-only',
     source: {
       tables: tables.length,
@@ -157,6 +174,17 @@ export async function assessLarkBaseCloneParityCoverage(input) {
       contractVersion: 'customer_base_documented_view_parity_v1',
       implementationStatus: 'hierarchy_config_implemented_ci_verified_apply_wiring_pending',
       hierarchyConfig: 'documented-field-id-remap-patch-readback',
+    },
+    manualViewParity: {
+      manifestContractVersion: 'customer_base_view_manual_parity_manifest_v1',
+      executionPlanContractVersion: 'customer_base_view_manual_parity_execution_plan_v1',
+      verifierContractVersion: 'customer_base_view_manual_parity_verifier_v1',
+      implementationStatus: 'implemented_ci_verified_post_apply_execution_pending',
+      automaticExcluded: ['hidden fields', 'filters', 'hierarchy'],
+      manualOwned: ['field order', 'sort', 'group', 'explicit non-null column widths', 'row height', 'frozen columns'],
+    },
+    advancedPermissionParity: {
+      implementationStatus: 'plan_fence_transport_verifier_implemented_ci_verified_apply_wiring_pending',
     },
     dimensions,
     blockers,
