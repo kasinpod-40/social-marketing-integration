@@ -3,7 +3,8 @@
  *
  * This is a decorator over the existing authenticated/retried request transport, not a
  * second HTTP client. Only request contracts explicitly documented by Lark/Feishu are
- * allowed here. Unsupported View UI properties remain fail-closed in the parity planner.
+ * allowed here. Unsupported View UI properties and unsupported Base-resource fields
+ * remain fail-closed in the parity planner.
  */
 export function withLarkBaseParityCapabilities(client) {
   requireTransport(client);
@@ -48,12 +49,73 @@ export function withLarkBaseParityCapabilities(client) {
     });
   };
 
+  wrapped.listAdvancedPermissionRoles = async () => {
+    const items = [];
+    let pageToken = null;
+    do {
+      const query = new URLSearchParams({ page_size: '30' });
+      if (pageToken) query.set('page_token', pageToken);
+      const response = await client.requestBitableJson(
+        `${legacyRolePath(client.appToken)}?${query.toString()}`,
+        { method: 'GET' },
+      );
+      const data = response?.data ?? {};
+      const pageItems = Array.isArray(data?.items) ? data.items : [];
+      items.push(...pageItems.map(normalizeAdvancedPermissionRole));
+      pageToken = data?.has_more === true ? optionalText(data?.page_token) : null;
+    } while (pageToken);
+    return Object.freeze(items);
+  };
+
+  wrapped.createAdvancedPermissionRole = async (input) => {
+    const roleName = requireText(input?.roleName, 'roleName');
+    const tableRoles = requireArray(input?.tableRoles, 'tableRoles').map((entry, index) => ({
+      table_id: requireText(entry?.tableId, `tableRoles[${index}].tableId`),
+      table_perm: requireFiniteNumber(entry?.tablePerm, `tableRoles[${index}].tablePerm`),
+    }));
+    const body = {
+      role_name: roleName,
+      table_roles: tableRoles,
+    };
+    const response = await client.requestBitableJson(modernRolePath(client.appToken), {
+      method: 'POST',
+      body,
+    });
+    const role = response?.data?.role ?? response?.data ?? {};
+    return Object.freeze({
+      roleId: optionalText(role?.role_id ?? role?.roleId),
+      roleName: optionalText(role?.role_name ?? role?.roleName) ?? roleName,
+      responseCode: Number(response?.code ?? 0),
+    });
+  };
+
   return wrapped;
+}
+
+function normalizeAdvancedPermissionRole(role) {
+  const tableRoles = Array.isArray(role?.table_roles) ? role.table_roles : [];
+  return Object.freeze({
+    roleId: requireText(role?.role_id ?? role?.roleId, 'roleId'),
+    roleName: requireText(role?.role_name ?? role?.roleName, 'roleName'),
+    tableRoles: Object.freeze(tableRoles.map((entry, index) => Object.freeze({
+      tableId: requireText(entry?.table_id ?? entry?.tableId, `tableRoles[${index}].tableId`),
+      tableName: optionalText(entry?.table_name ?? entry?.tableName),
+      tablePerm: requireFiniteNumber(entry?.table_perm ?? entry?.tablePerm, `tableRoles[${index}].tablePerm`),
+    }))),
+  });
 }
 
 function viewPath(appToken, tableId, viewId) {
   return `/open-apis/bitable/v1/apps/${encodeURIComponent(requireText(appToken, 'appToken'))}`
     + `/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`;
+}
+
+function legacyRolePath(appToken) {
+  return `/open-apis/bitable/v1/apps/${encodeURIComponent(requireText(appToken, 'appToken'))}/roles`;
+}
+
+function modernRolePath(appToken) {
+  return `/open-apis/base/v2/apps/${encodeURIComponent(requireText(appToken, 'appToken'))}/roles`;
 }
 
 function requireTransport(client) {
@@ -72,4 +134,15 @@ function requireText(value, name) {
   const normalized = optionalText(value);
   if (!normalized) throw new TypeError(`${name} is required`);
   return normalized;
+}
+
+function requireArray(value, name) {
+  if (!Array.isArray(value)) throw new TypeError(`${name} must be an array`);
+  return value;
+}
+
+function requireFiniteNumber(value, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new TypeError(`${name} must be a finite number`);
+  return number;
 }
