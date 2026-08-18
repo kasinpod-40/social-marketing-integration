@@ -70,7 +70,6 @@ export async function assessLarkBaseCloneParityCoverage(input) {
     ['rowHeightLevel', 'row-height'],
     ['frozenColCount', 'frozen columns'],
     ['cardViewSetting', 'card configuration'],
-    ['hierarchyConfig', 'hierarchy/timebar configuration'],
     ['colorInfo', 'color configuration'],
   ]);
   for (const [feature, label] of unsupportedViewFeatures) {
@@ -78,12 +77,21 @@ export async function assessLarkBaseCloneParityCoverage(input) {
     addDimension(dimensions, blockers, {
       dimension: `view_${feature}`,
       represented: count > 0,
-      status: IMPLEMENTED_VIEW_MUTATIONS.has(feature) ? 'implemented_verify_incomplete' : 'clone_not_implemented',
-      blockerCode: `CLONE_PARITY_VIEW_${camelToUpperSnake(feature)}_UNIMPLEMENTED`,
-      message: `Source clone scope contains ${count} View(s) with ${label}, but deterministic clone/remap/verify support is not implemented yet.`,
+      status: IMPLEMENTED_VIEW_MUTATIONS.has(feature) ? 'implemented_verify_incomplete' : 'documented_write_contract_not_proven',
+      blockerCode: `CLONE_PARITY_VIEW_${camelToUpperSnake(feature)}_DOCUMENTED_WRITE_CONTRACT_NOT_PROVEN`,
+      message: `Source clone scope contains ${count} View(s) with ${label}; no safe documented write contract has been proven for this exported property, so automatic parity remains fail-closed.`,
       details: { views: count },
     });
   }
+
+  addDimension(dimensions, blockers, {
+    dimension: 'view_hierarchyConfig',
+    represented: viewFeatureCounts.hierarchyConfig > 0,
+    status: 'documented_implementation_ci_verified_apply_wiring_pending',
+    blockerCode: 'CLONE_PARITY_VIEW_HIERARCHY_CONFIG_WIRING_PENDING',
+    message: 'Documented hierarchy_config Field-ID remap, idempotent PATCH and GET read-back are implemented and CI-verified, but the phase is not yet wired into the only controlled Apply path.',
+    details: { views: viewFeatureCounts.hierarchyConfig },
+  });
 
   const formViews = viewTypes.get('form') ?? 0;
   addDimension(dimensions, blockers, {
@@ -124,7 +132,7 @@ export async function assessLarkBaseCloneParityCoverage(input) {
 
   return deepFreeze({
     ok: blockers.length === 0,
-    contractVersion: 'customer_base_clone_parity_coverage_v2',
+    contractVersion: 'customer_base_clone_parity_coverage_v3',
     mode: 'read-only',
     source: {
       tables: tables.length,
@@ -144,6 +152,11 @@ export async function assessLarkBaseCloneParityCoverage(input) {
         'Relation record ID remap',
         'View type/public/hidden/filter with Field ID remap',
       ],
+    },
+    documentedViewParity: {
+      contractVersion: 'customer_base_documented_view_parity_v1',
+      implementationStatus: 'hierarchy_config_implemented_ci_verified_apply_wiring_pending',
+      hierarchyConfig: 'documented-field-id-remap-patch-readback',
     },
     dimensions,
     blockers,
