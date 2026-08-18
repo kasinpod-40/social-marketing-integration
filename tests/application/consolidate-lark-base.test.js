@@ -288,6 +288,61 @@ test('preview reuses an exact existing simple table and verify remains read-only
   assert.equal(targetClient.calls.length, 0);
 });
 
+test('preview blocks reuse_exact when readable field configuration differs', async () => {
+  const sourceClient = simpleSource();
+  sourceClient.tables[0].fields[1] = number('src_score', 'score');
+  sourceClient.tables[0].records[0].fields = { account_key: 'a1', score: 1 };
+  const targetScore = number('target_score', 'score');
+  targetScore.property.formatter = '0.00';
+  const targetClient = new FakeLarkClient([{
+    tableId: 'target_accounts',
+    name: 'Accounts',
+    fields: [text('target_account_key', 'account_key', true), targetScore],
+    records: [record('target_rec', { account_key: 'a1', score: 1 })],
+    views: [grid('target_view', 'All Records')],
+  }]);
+
+  const result = await previewLarkBaseConsolidation({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts'],
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.summary.reuseExactTables, 0);
+  assert.equal(result.conflicts[0].details.reasons.includes('field property mismatch score'), true);
+  assert.deepEqual(targetClient.calls, []);
+});
+
+test('preview blocks reuse_exact when readable view configuration differs after field ID remap', async () => {
+  const sourceClient = simpleSource();
+  sourceClient.tables[0].views = [grid('src_view_1', 'All Records', {
+    hiddenFields: ['src_name'],
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [{ fieldId: 'src_account_key', fieldType: 1, operator: 'isNotEmpty', value: null }],
+    },
+  })];
+  const targetClient = new FakeLarkClient([{
+    tableId: 'target_accounts',
+    name: 'Accounts',
+    fields: [text('target_account_key', 'account_key', true), text('target_name', 'name')],
+    records: [record('target_rec', { account_key: 'a1', name: 'One' })],
+    views: [grid('target_view', 'All Records')],
+  }]);
+
+  const result = await previewLarkBaseConsolidation({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts'],
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.summary.reuseExactTables, 0);
+  assert.equal(result.conflicts[0].details.reasons.includes('view configuration mismatch All Records'), true);
+  assert.deepEqual(targetClient.calls, []);
+});
+
 test('apply keeps reuse_exact tables strictly zero-write including view configuration', async () => {
   const sourceClient = simpleSource();
   sourceClient.tables[0].views = [grid('src_view_1', 'All Records', {
