@@ -50,7 +50,7 @@ test('parity coverage reports represented rich View and exported resource gaps w
 
   assert.equal(result.ok, false);
   assert.equal(result.remoteMutationCount, 0);
-  assert.equal(result.contractVersion, 'customer_base_clone_parity_coverage_v3');
+  assert.equal(result.contractVersion, 'customer_base_clone_parity_coverage_v4');
   assert.equal(result.source.tables, 1);
   assert.equal(result.source.views, 1);
   assert.equal(result.source.viewTypes.grid, 1);
@@ -64,11 +64,20 @@ test('parity coverage reports represented rich View and exported resource gaps w
     result.documentedViewParity.implementationStatus,
     'hierarchy_config_implemented_ci_verified_apply_wiring_pending',
   );
-  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_VIEW_FIELD_ORDER_DOCUMENTED_WRITE_CONTRACT_NOT_PROVEN'));
+  assert.equal(
+    result.manualViewParity.implementationStatus,
+    'implemented_ci_verified_post_apply_execution_pending',
+  );
+  assert.equal(
+    result.advancedPermissionParity.implementationStatus,
+    'plan_fence_transport_verifier_implemented_ci_verified_apply_wiring_pending',
+  );
+  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_VIEW_FIELD_ORDER_MANUAL_EXECUTION_PENDING'));
   assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_VIEW_HIERARCHY_CONFIG_WIRING_PENDING'));
+  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_VIEW_CARD_VIEW_SETTING_DOCUMENTED_WRITE_CONTRACT_NOT_PROVEN'));
   assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_DASHBOARD_UNIMPLEMENTED'));
   assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_WORKFLOW_UNIMPLEMENTED'));
-  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_ADVANCED_PERMISSION_UNIMPLEMENTED'));
+  assert.ok(result.blockers.some((item) => item.code === 'CLONE_PARITY_ADVANCED_PERMISSION_WIRING_PENDING'));
   assert.ok(!result.blockers.some((item) => item.code === 'CLONE_PARITY_FORMS_QUESTIONS_UNIMPLEMENTED'));
 });
 
