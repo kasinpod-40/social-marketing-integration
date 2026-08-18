@@ -89,6 +89,7 @@ async function loadCanonicalExportModel(filePath) {
     hierarchy: 0,
     cardSetting: 0,
   };
+  const countedViewFeatureIds = new Set();
 
   for (const [snapshotIndex, entry] of snapshots.entries()) {
     const schema = requireObject(entry?.schema, `gzipSnapshot[${snapshotIndex}].schema`);
@@ -143,7 +144,10 @@ async function loadCanonicalExportModel(filePath) {
     }
     table.viewOrder = stableOrderedIds(preferredViewOrder, table.views.keys());
 
-    for (const rawView of Object.values(viewMap)) {
+    for (const [viewId, rawView] of Object.entries(viewMap)) {
+      const featureIdentity = `${tableId}:${viewId}`;
+      if (countedViewFeatureIds.has(featureIdentity)) continue;
+      countedViewFeatureIds.add(featureIdentity);
       const property = rawView?.property ?? {};
       if (property?.filterInfo) rawViewFeatureCounts.filtered += 1;
       if (Array.isArray(property?.sortInfo) && property.sortInfo.length > 0) rawViewFeatureCounts.sorted += 1;
