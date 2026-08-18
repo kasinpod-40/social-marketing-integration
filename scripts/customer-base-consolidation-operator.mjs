@@ -3,6 +3,7 @@ import { readDevVars } from './lib/dev-vars.js';
 import { printJson } from './lib/lark-runtime.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { auditLarkBaseFullParity } from '../packages/application/src/use-cases/audit-lark-base-full-parity.js';
+import { preflightCustomerBaseFullParity } from '../packages/application/src/use-cases/preflight-customer-base-full-parity.js';
 
 const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '🪪 MKT_Accounts',
@@ -57,7 +58,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_full_parity_operator_v1',
+    contractVersion: 'customer_base_full_parity_operator_v2',
     code: error?.code ?? 'CUSTOMER_BASE_FULL_PARITY_OPERATOR_FAILED',
     message: error?.message ?? String(error),
     details: redactDetails(error?.details ?? {}),
@@ -95,14 +96,45 @@ async function main() {
     );
   }
 
-  const sourceInstrumentation = instrumentStrictReads(createLarkBitableClientFromEnv({
+  const sourceClient = createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: sourceAppToken,
-  }, { onRequest: traceIfVerbose }), 'source');
-  const targetInstrumentation = instrumentStrictReads(createLarkBitableClientFromEnv({
+  }, { onRequest: traceIfVerbose });
+  const targetClient = createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: targetAppToken,
-  }, { onRequest: traceIfVerbose }), 'target');
+  }, { onRequest: traceIfVerbose });
+
+  const identityPreflight = await preflightCustomerBaseFullParity({
+    sourceClient,
+    targetClient,
+    expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
+    expectedSourceLabel: SOURCE_LABEL,
+    expectedTargetLabel: TARGET_LABEL,
+  });
+
+  if (!identityPreflight.ok) {
+    printJson({
+      ok: false,
+      contractVersion: 'customer_base_full_parity_operator_v2',
+      action: 'full-parity-audit',
+      stage: 'identity-and-source-authority-preflight',
+      mode: 'read-only',
+      identityPreflight,
+      configSource: configSource(customerProdVarsFile),
+      sourceIdentity: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
+      targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
+      targetFolder: TARGET_FOLDER_LABEL,
+      remoteMutationCount: 0,
+      deepAuditExecuted: false,
+      nextCommand: null,
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const sourceInstrumentation = instrumentStrictReads(sourceClient, 'source');
+  const targetInstrumentation = instrumentStrictReads(targetClient, 'target');
 
   const audit = await auditLarkBaseFullParity({
     sourceClient: sourceInstrumentation.client,
@@ -129,20 +161,27 @@ async function main() {
     blockers,
     strictReadFailureCount: strictReadFailures.length,
     strictReadFailures,
-    contractVersion: 'customer_base_full_parity_operator_v1',
+    contractVersion: 'customer_base_full_parity_operator_v2',
     action: 'full-parity-audit',
-    configSource: {
-      mode: 'customer-prod-file',
-      file: customerProdVarsFile,
-      template: CUSTOMER_PROD_VARS_TEMPLATE_FILE,
-    },
+    stage: 'deep-full-parity-audit',
+    identityPreflight,
+    configSource: configSource(customerProdVarsFile),
     sourceIdentity: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
     targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
     targetFolder: TARGET_FOLDER_LABEL,
     remoteMutationCount: 0,
+    deepAuditExecuted: true,
     nextCommand: null,
   });
   if (!ok) process.exitCode = 1;
+}
+
+function configSource(customerProdVarsFile) {
+  return {
+    mode: 'customer-prod-file',
+    file: customerProdVarsFile,
+    template: CUSTOMER_PROD_VARS_TEMPLATE_FILE,
+  };
 }
 
 function assertCustomerProdConfig(env, customerProdVarsFile) {
@@ -167,20 +206,68 @@ function instrumentStrictReads(client, side) {
   const failures = [];
   const original = client.requestBitableJson.bind(client);
   client.requestBitableJson = async (path, options = {}) => {
+    const request = normalizeFullParityReadRequest(path, options);
     try {
-      return await original(path, options);
+      return await original(request.path, request.options);
     } catch (error) {
-      failures.push(Object.freeze({
+      failures.push(Object.freeze(decorateReadFailure({
         side,
-        resource: sanitizePath(path, client.appToken),
+        resource: sanitizePath(request.path, client.appToken),
         code: error?.code ?? error?.details?.code ?? 'UNKNOWN_READ_ERROR',
         status: error?.details?.status ?? null,
         larkCode: error?.details?.larkCode ?? null,
-      }));
+      })));
       throw error;
     }
   };
   return Object.freeze({ client, failures });
+}
+
+function normalizeFullParityReadRequest(path, options) {
+  const rawPath = typeof path === 'string' ? path : String(path ?? '');
+  const [pathname, query = ''] = rawPath.split('?', 2);
+  const method = String(options?.method ?? 'GET').toUpperCase();
+
+  // Official Base v3 Workflow list contract is POST .../workflows/list with pagination in the body.
+  // Keep this compatibility shim until the audit module itself no longer calls the superseded guessed GET path.
+  if (method === 'GET' && pathname.endsWith('/workflows')) {
+    const params = new URLSearchParams(query);
+    const body = {};
+    const pageSize = Number(params.get('page_size'));
+    if (Number.isInteger(pageSize) && pageSize > 0) body.page_size = pageSize;
+    const pageToken = params.get('page_token');
+    if (pageToken) body.page_token = pageToken;
+    return {
+      path: `${pathname}/list`,
+      options: { ...options, method: 'POST', body },
+    };
+  }
+
+  return { path: rawPath, options };
+}
+
+function decorateReadFailure(failure) {
+  const resource = failure.resource;
+  if (resource.includes('/blocks/')) {
+    return { ...failure, requiredScope: 'base:block:read' };
+  }
+  if (resource.includes('/forms')) {
+    return { ...failure, requiredScope: 'base:form:read' };
+  }
+  if (resource.includes('/workflows')) {
+    return { ...failure, requiredScope: 'base:workflow:read' };
+  }
+  if (resource.endsWith('/roles')) {
+    return {
+      ...failure,
+      requiredScope: 'base:role:read',
+      additionalRequirement: 'Advanced Permission must be enabled and the caller must be a Base admin.',
+    };
+  }
+  if (resource.includes('/views/')) {
+    return { ...failure, requiredScope: 'base:view:read' };
+  }
+  return failure;
 }
 
 function sanitizePath(path, appToken) {
