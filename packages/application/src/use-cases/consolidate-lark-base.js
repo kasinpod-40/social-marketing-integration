@@ -369,6 +369,7 @@ export async function applyLarkBaseConsolidation(input) {
   for (const sourceTable of sourceTables) {
     const snapshot = sourceSnapshots.get(sourceTable.tableId);
     const targetTableId = targetTableIdBySourceId.get(sourceTable.tableId);
+    if (!createdTargetTableIds.has(targetTableId)) continue;
     const targetFieldMap = fieldIdMaps.get(sourceTable.tableId);
     const targetViews = await targetClient.listViews({ tableId: targetTableId });
     const targetViewsByName = new Map(targetViews.map((view) => [view.viewName, view]));
