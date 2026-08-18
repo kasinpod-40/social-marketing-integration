@@ -10,12 +10,11 @@
 LARK_APP_ID=
 LARK_APP_SECRET=
 
-# SOURCE authority = local Lark Base export, not a live Source Base token.
-# This must point to the exact exported file that represents the approved 100% structure/data source.
-LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE=/Users/wasanjantawong/Downloads/Social MKT Data Hub(20260817-033903).base
+# SOURCE authority = exact local Lark Base export approved for this migration.
+# Optional for --source-export-audit because the operator defaults to this Downloads path.
+LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE=/Users/wasanjantawong/Downloads/Social MKT Data Hub(20260818-030125).base
 
-# Optional only: a live Social MKT Data Hub token may be kept for diagnostics/comparison,
-# but it is NOT an authority gate for creating the customer Base.
+# Optional diagnostic only; never used as the migration authority gate.
 # LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN=
 
 # TARGET Base: customer `✨Marketing Content Calendar`.
