@@ -3,159 +3,149 @@
 ## Status
 
 ```text
-TASK_STATUS                         = LIVE_IDENTITY_PREFLIGHT_FIX_IMPLEMENTED_WRITES_BLOCKED
+TASK_STATUS                         = LOCAL_BASE_EXPORT_AUTHORITY_IMPLEMENTED_WRITES_BLOCKED
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
-SOURCE_BASE                         = Social MKT Data Hub
+SOURCE_AUTHORITY                    = LOCAL_LARK_BASE_EXPORT
+SOURCE_EXPORT_FILE                  = Social MKT Data Hub(20260817-033903).base
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
 EXPECTED_SOURCE_TABLES              = 33
 FULL_PARITY_REQUIRED                = TRUE
-PARTIAL_TABLE_MIGRATION             = BLOCKED
-REMOTE_TABLE_PROVISION              = BLOCKED
-CUSTOMER_LARK_APPLY                 = BLOCKED
-SOURCE_MUTATION                     = BLOCKED
-CUSTOMER_PROD_CONFIG_FILE           = .customer.prod.vars
-CUSTOMER_PROD_CONFIG_TEMPLATE       = .customer.prod.vars.example
+SOURCE_LIVE_33_OF_33_GATE           = REMOVED_NOT_AUTHORITY
+CUSTOMER_LARK_APPLY                 = BLOCKED_UNTIL_EXPORT_NORMALIZATION_AND_FULL_CLONE_COVERAGE
+SOURCE_MUTATION                     = ZERO
 DRAFT_PR                            = 661
-BRANCH_VERIFICATION                 = PENDING_EXACT_HEAD_AFTER_LIVE_AUDIT_DIAGNOSIS
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 ```
 
 ## Objective
 
-ทำให้ทรัพยากร Social MKT Data Hub ที่ย้ายเข้า Base ลูกค้า `✨Marketing Content Calendar` มี functional/UI parity
-กับ Source 100% โดยปลายทางสุดท้ายอยู่ใต้ `Setup Phase | Social MKT Data Hub` และไม่กระทบทรัพยากรอื่นของลูกค้า.
+สร้างทรัพยากร Social MKT Data Hub ใน Base ลูกค้า `✨Marketing Content Calendar` ให้ functional/UI parity 100%
+กับไฟล์ export `Social MKT Data Hub(20260817-033903).base` แล้วให้ผู้ใช้ย้ายตารางเข้าภายใน
+`Setup Phase | Social MKT Data Hub` ได้ภายหลังหาก API สร้างไว้ที่ root.
 
-คำว่า 100% ใน workstream นี้หมายถึง configuration/data parity หลัง remap Lark-generated IDs ใหม่อย่าง deterministic;
-ไม่บังคับให้ `tbl...`, `fld...`, `vew...`, `wkf...` และ generated IDs อื่นมีค่า byte-identical กับ Source.
+Generated IDs เช่น `tbl...`, `fld...`, `vew...`, `wkf...` เปลี่ยนได้เฉพาะเมื่อ references ถูก remap แบบ deterministic
+และผลลัพธ์เชิงข้อมูล/พฤติกรรม/UI เทียบเท่า Source.
 
-## Full-parity dimensions
+## Source authority decision
 
-Acceptance gate เดียวต้องครอบคลุมทั้งหมด:
+ไฟล์ `.base` เป็น Source authority ของ workstream นี้โดยตรง ไม่ใช่ Live Source Base token.
 
-- Base block tree / folder placement
-- 33 Tables และชื่อ
-- Fields ทุก field: type, ui-type, description, property, formatter/options และ dependency
-- Records และ cell values ทั้งหมด
-- Relations และ Formula references หลัง ID remap
-- Views ทุกตัวและ view type
-- View visible-field order / hidden state
-- View Filter
-- View Group
-- View Sort
-- View Timebar
-- View Card configuration
-- Forms และ Questions
-- Dashboards: theme, blocks, layout และ data_config
-- Workflows/Automation: definition, steps และ enabled/disabled state
-- Advanced Permission roles และ full role configuration
-- Attachment-like cells ต้องถูกตรวจและมี copy contract ก่อน Apply
+Verified export baseline จากการตรวจไฟล์ก่อนหน้า:
 
-## Architecture decision
+- 33 tables
+- 35,373 records
+- 723 fields
+- 111 views
+- 12 relation fields
+- 4 formula fields
+- 6 dashboards
+- 2 automations/workflows
+- 4 Advanced Permission roles
+- largest table 9,141 rows
 
-- ใช้ existing `LarkBitableClient`/existing repository contracts เป็นฐาน; ไม่สร้าง transport/queue/worker ใหม่.
-- Existing table/field/record consolidator ถือเป็น implementation บางส่วนเท่านั้นและห้ามใช้เป็น final Apply จน coverage ครบ.
-- Current Base v3 APIs มี resource-specific read/write สำหรับ block tree/folder, view property subresources,
-  forms, dashboards, workflows และ advanced-permission roles; การเรียกต้องยึด official request contract จริง.
-- Native table-copy endpoint copy ได้เฉพาะภายใน Base เดียวกัน จึงไม่ใช้เป็น cross-Base migration engine.
-- ก่อน Deep Full-Parity Audit ต้องผ่าน GET-only Base identity + exact Source table-set preflight ก่อนเสมอ.
-- Customer PROD credential แยกจาก `.dev.vars`: operator อ่าน `.customer.prod.vars` เป็น default และไฟล์จริงถูก Git ignore.
+Live `Social MKT Data Hub` ที่ credential ปัจจุบันอ่านได้ 17 tables ยังคงเป็น diagnostic evidence เท่านั้นและไม่สามารถ
+block การสร้างจากไฟล์ export ได้อีก. `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN` จึงเป็น optional diagnostic,
+ไม่ใช่ required migration input.
+
+Official Lark/Feishu Base export contract ระบุว่า `.base` เป็น JSON export และสามารถเก็บโครงสร้างทั้งหมด รวม Tables,
+Views, Fields, Dashboards, Automations/Workflows และ Advanced Permission; เมื่อ export แบบ structure+data จะรวม records ด้วย.
+สิ่งที่ export format ไม่เก็บ เช่น role member assignments, cloud-doc base permissions/history/comments, share-enabled state
+และ third-party plugin credentials ไม่ถือว่าเป็นข้อมูลที่ parser สามารถสร้างกลับจากไฟล์ได้.
 
 ## Customer PROD config contract
 
-ไฟล์จริงบน operator Mac: `.customer.prod.vars`
+ไฟล์จริง: `.customer.prod.vars` (Git-ignored)
 
-Template ที่ commit ได้: `.customer.prod.vars.example`
+Template: `.customer.prod.vars.example`
 
-Required keys:
+Required:
 
 - `LARK_APP_ID`
 - `LARK_APP_SECRET`
-- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN`
+- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE`
 - `LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN`
 
-`LARK_APP_ID`/`LARK_APP_SECRET` ต้องเป็น Customer-owned Lark application ที่มีสิทธิ์อ่านทั้ง Source และ Target Base.
-Secret/token ห้าม commit และห้ามนำค่าจริงลง docs/log.
+Optional diagnostic only:
 
-## Live audit evidence — 2026-08-18
+- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN`
 
-รอบ GET-only แรกจบ fail closed โดย `remoteMutationCount = 0`.
+Default documented Source path:
 
-Source ที่ credential ปัจจุบันมองเห็นมีเพียง:
+`/Users/wasanjantawong/Downloads/Social MKT Data Hub(20260817-033903).base`
 
-- 17 tables
-- 367 fields
-- 22,901 records
-- 87 views
-- 8 relation fields
-- 4 formula fields
+## Full-parity dimensions
 
-จึงไม่ตรงกับ authority contract 33 tables และขาด 16 expected tables. ผลนี้ยังไม่พิสูจน์ว่า token ผิดตัวเพียงสาเหตุเดียว;
-เป็น Source identity/table-set mismatch ที่ต้องยืนยันด้วย Base metadata + exact table-set preflight ก่อน Deep Audit รอบถัดไป.
+Final acceptance ต้องตรวจทุก dimension ที่มีอยู่ใน export:
 
-Target ปัจจุบันมี 4 tables: customer content 3 tables และ protected `🎵 RAW_TikTok_Creator_Videos` 1 table.
-Customer content ทั้ง 3 table ไม่ถูกแก้ไข และไม่มี Remote mutation จาก audit.
+- table set / names
+- full Field type/ui-type/description/property/formatter/options
+- records and cell values
+- relations + record/table ID remap
+- formulas + field/table ID remap
+- every View + type
+- visible-field order / hidden state
+- Filter
+- Group
+- Sort
+- Timebar
+- Card configuration
+- Forms / Questions
+- Dashboards / themes / blocks / layout / data_config
+- Workflows/Automation definitions + steps + enabled/disabled state represented in export
+- Advanced Permission roles/config represented in export
+- attachment-like cells when included
 
-Read diagnostics แยกเป็นสองกลุ่ม:
+## Implementation result
 
-1. Official endpoint path ถูก แต่ caller capability/scope ยังไม่พอใน Live tenant เช่น Base blocks, Forms และ Roles.
-   Operator รอบใหม่จะ annotate required scopes (`base:block:read`, `base:form:read`, `base:role:read`) และ Role requirement.
-2. Workflow list path ใน audit เดิมผิด contract: เดิมใช้ GET `/workflows`; official contract ใช้ POST `/workflows/list`.
-   Operator v2 มี compatibility correction ก่อนส่ง request.
-
-View property code `800010502` ยังไม่ถูกประกาศ Root cause; ต้องตรวจ applicability/capability หลัง Source authority ผ่านก่อน.
+- Added `scripts/lib/lark-base-export.js` local read-only export reader.
+- Reader parses the `.base` JSON container and expands nested gzip+base64 JSON payloads when present.
+- Reader inventories tables/fields/records/views/relation/formula/dashboard/workflow/role resources and emits SHA-256,
+  counts, names and bounded structural collection diagnostics without making any Lark request.
+- Operator contract bumped to `customer_base_full_parity_operator_v3`.
+- `--full-parity-audit` now uses the local `.base` export as Source authority and reads only the Target live Base.
+- Added `--source-export-audit` for fully local/read-only inspection with `remoteMutationCount=0`.
+- Removed live Source 33/33 identity/table-set gate from the migration authority path.
+- `.customer.prod.vars.example` now requires `LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE`; Source app token is optional.
+- Added regression for plain JSON + nested gzip/base64 JSON and invalid export fail-closed behavior.
+- No Customer Lark mutation has been enabled or executed by this change.
 
 ## Safety contract
 
-1. `node scripts/customer-base-consolidation-operator.mjs` และ `--full-parity-audit` = GET-only เท่านั้น.
-2. Legacy `--provision-missing`, `--preview`, `--apply`, `--verify` ถูก operator block โดยตรง.
-3. Deep audit ห้ามเริ่มถ้า Source Base metadata/table set ยังไม่ตรง exact 33-table authority.
-4. Remote mutation count ต้องเป็น 0 จน Full-Parity clone/remap/verifier contract ครบทุก dimension.
-5. API/resource ใดอ่านไม่ได้ต้องเป็น blocker; ห้ามตีความว่า resource ไม่มี.
-6. Existing customer tables/folders/content/dashboard/workflow/role ห้าม overwrite/delete เพื่อทำให้ parity ผ่าน.
-7. Source Base mutation = 0.
-8. Secret/token อยู่ `.customer.prod.vars`/process environment เท่านั้น; output ใช้ hashed Base identity.
-9. Final verifier ต้อง fail closed เมื่อมี mismatch แม้เพียง dimension เดียว.
+1. Local export audit = local read-only, zero remote request.
+2. Full parity audit = local Source file + GET-only Target inspection.
+3. Export must match approved baseline before any write mode may be enabled.
+4. Existing unrelated customer tables must never be overwritten/deleted.
+5. Existing `🎵 RAW_TikTok_Creator_Videos` must pass the same final parity verifier; name alone is insufficient.
+6. No Worker/D1/Queue/schedule mutation.
+7. No Source mutation.
+8. Apply remains blocked until every exported dimension has clone/remap/verify coverage.
 
-## Required tests
+## Required tests / gates
 
-- Customer Base identity preflight uses canonical GET Base metadata and exact table-set comparison.
-- A 17/33 Source table subset fails before Deep Audit.
-- Source/Target Base name mismatch fails closed.
-- Full-Parity audit inventory covers table/field/record/view/filter/sort/group/visible/timebar/card/forms/dashboard/workflow/role dimensions.
-- Read failure on any required resource fails closed.
-- Missing target table never enables partial Apply.
-- Legacy provisioning/apply paths remain blocked while full parity is incomplete.
-- Customer PROD config path defaults to `.customer.prod.vars`; missing required keys fail closed without exposing values.
-- Existing relation/formula/record migration regressions remain passing.
+- local `.base` JSON parsing
+- nested gzip/base64 JSON expansion
+- exact export-baseline comparison
+- fail closed on malformed/unrecognized export
+- unrelated Target tables preserved
+- full clone/remap regressions for fields, records, relations, formulas and views
+- new coverage for Filter/Sort/Group/visible fields/timebar/card/forms/dashboards/workflows/roles before Apply is enabled
+- `npm ci`
 - `npm run check`
 - `npm test`
 - `npm run test:report-reliability`
 - `npm audit`
 - `npm run deploy:dry-run`
 
-## Implementation result
+## Next closure sequence
 
-- Added `preflight-customer-base-full-parity.js` as GET-only identity/table-set gate using canonical Bitable v1 Base metadata plus existing `listTables()`.
-- Operator v2 stops before Deep Audit when Source name/table set is not the exact 33-table authority, eliminating noisy hundreds-of-subresource reads on a known-invalid Source identity.
-- Operator v2 preserves target read-only inspection and emits safe Base metadata without exposing app tokens/secrets.
-- Corrected the Deep Audit Workflow list request through a compatibility shim to official `POST .../workflows/list` semantics.
-- Strict read diagnostics now annotate known required scopes for Base block, Form, Workflow, Role and View resources; Role also notes Advanced Permission/Base-admin requirement.
-- View-property `800010502` remains fail-closed evidence and is not reclassified until a valid 33-table Source reaches that stage.
-- Added unit regression for exact authority success, 17/33 Source subset failure, and Source/Target Base name mismatch.
-- No Customer Lark mutation has been run from this full-parity change.
-
-## Acceptance criteria
-
-Repository work is not complete merely because Tables exist. Final completion requires:
-
-1. exact-head CI passes for the identity-preflight repair;
-2. rerun GET-only operator with current `.customer.prod.vars` and use the new metadata/table-set output to prove whether configured Source is the imported 33-table authority;
-3. if Source is not 33/33, set only `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN` to the actual imported 33-table Source Base and rerun;
-4. Deep Full-Parity Audit reads Source/Target successfully or reports exact capability/scope blockers;
-5. clone/remap implementation covers every Source dimension present in the valid audit;
-6. one controlled Apply is allowed only after a dry-run/preview proves zero unhandled dimensions and no collision with unrelated customer content;
-7. post-Apply GET-only canonical verifier reports 100% functional/UI parity across all required dimensions;
-8. only then may PR #661 be considered ready for merge/closeout.
+1. Run local `--source-export-audit` on the exact `.base` file and require baseline match.
+2. If parser recognition differs from the known baseline, use bounded `candidateCollections` diagnostics to align the reader to the real export schema; do not fall back to Live Source 17 tables.
+3. Extend the existing `consolidate-lark-base.js` engine instead of building a new transport: Source becomes normalized local-export adapter; Target remains existing `LarkBitableClient`.
+4. Add clone/remap coverage for every exported dimension listed above.
+5. Run dry-run/preview against Target proving unrelated customer content untouched and all exported resources handled.
+6. One controlled Apply.
+7. GET-only canonical Target readback verifier must report 100% parity for all export-represented dimensions.
+8. Only then may PR #661 be considered ready for merge/closeout.
 
 Detailed workstream record: `docs/project-brain/customer-base-consolidation-v1.md`.
