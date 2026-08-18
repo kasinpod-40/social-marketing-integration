@@ -11,18 +11,14 @@ Customer Base consolidation workstream ปัจจุบันใช้ exact l
 แทน Live Source token: `Social MKT Data Hub(20260818-030125).base`, SHA-256
 `c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643`. Direct inspection ยืนยัน
 33 Tables, 723 Fields, 35,528 unique Records, 111 Views, 12 Relations, 4 Formulas, 6 Dashboards,
-2 Automations และ 4 Advanced Permission roles. `--source-export-audit` เป็น local-only/zero remote request;
-Target Apply ยัง blocked จน full clone/remap/verifier coverage ครบทุก export-represented dimension.
-Target `🎵 RAW_TikTok_Creator_Videos` เป็น Protected Existing Table: migration นี้ห้าม create ทับหรือแก้
-Field/Record/View/Sync config และยอมรับได้เฉพาะ read-only `reuse_exact`; mismatch ต้อง block Apply.
+2 Automations และ 4 Advanced Permission roles. Policy B ล็อก clone parity ที่ 32 Tables และให้ Target
+`🎵 RAW_TikTok_Creator_Videos` เป็น `protected_external_reuse`: live Target เป็น authority, migration ห้าม
+clone/compare/apply/verify/repair ตารางนี้และยังอยู่ใต้ immutable pre-existing Target write fence เต็มรูปแบบ.
+GET-only v6 customer audit ผ่าน `policyBPreviewReady=true`, `remoteMutationCount=0`; Apply ยังปิดเพราะ
+full parity ของ clone scope ยังไม่ครบ. Canonical Field/Record/Relation/Formula/basic View verifier และ documented
+View `hierarchy_config` parity phase ถูกเพิ่มแบบ fail-closed; View properties ที่ยังไม่มี documented write contract,
+Dashboard/Workflow materialization และ Advanced Permission remap ยังคง block จนพิสูจน์ coverage ได้ครบ.
 รายละเอียดอยู่ที่ `docs/project-brain/customer-base-consolidation-v1.md`.
-
-`MKT_Accounts` ใน Integration Workspace มี Organic master ครบ 4 ช่องทางแล้ว: Facebook, Instagram,
-TikTok และ YouTube. TikTok ใช้ stable key `tiktok:${accountId}` และ permanent sync implementation
-เขียน Account หลัง Content/Daily สำเร็จเท่านั้น; Live exact backfill เสร็จแล้ว ส่วน scheduled maintenance
-ของ contract ใหม่นี้ merge ผ่าน PR #653 และ deploy รวมกับ Facebook PR #652 บน reviewed Worker แล้ว.
-GET-only post-deploy readback ผ่าน 4/4; fresh scheduled evidence รอบถัดไปยังต้องรอตามเวลาจริง. ดู
-`docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
 
 ## Read first
 
