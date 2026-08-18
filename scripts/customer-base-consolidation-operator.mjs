@@ -6,6 +6,7 @@ import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
 import { printJson } from './lib/lark-runtime.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
+import { assessLarkBaseCloneParityCoverage } from '../packages/application/src/use-cases/assess-lark-base-clone-parity.js';
 import { previewLarkBaseConsolidation } from '../packages/application/src/use-cases/consolidate-lark-base.js';
 import {
   assertProtectedTargetTablePlan,
@@ -87,7 +88,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_full_parity_operator_v5',
+    contractVersion: 'customer_base_full_parity_operator_v6',
     code: error?.code ?? 'CUSTOMER_BASE_FULL_PARITY_OPERATOR_FAILED',
     message: error?.message ?? String(error),
     details: redactDetails(error?.details ?? {}),
@@ -113,22 +114,36 @@ async function main() {
   const exportAuthority = compareExportAuthority(exportInspection);
   const migrationScope = describeMigrationScope();
 
+  let sourceClient = null;
+  let cloneParityCoverage = null;
+  if (exportAuthority.ok) {
+    sourceClient = await createLarkBaseExportSourceClient(sourceExportFile, {
+      excludedTableNames: PROTECTED_EXTERNAL_TABLE_NAMES,
+    });
+    cloneParityCoverage = await assessLarkBaseCloneParityCoverage({
+      sourceClient,
+      exportCounts: exportInspection.counts,
+    });
+  }
+
   if (mode === 'source-export-audit') {
     printJson({
       ok: exportAuthority.ok,
-      contractVersion: 'customer_base_full_parity_operator_v5',
+      contractVersion: 'customer_base_full_parity_operator_v6',
       action: 'source-export-audit',
-      stage: 'local-export-authority-preflight',
+      stage: 'local-export-authority-and-clone-parity-coverage',
       mode: 'local-read-only',
       sourceAuthority: safeExportIdentity(exportInspection),
       exportInspection,
       exportAuthority,
       migrationScope,
+      cloneParityCoverage,
       configSource: configSource(customerProdVarsFile, sourceExportFile),
       targetFolder: TARGET_FOLDER_LABEL,
       remoteMutationCount: 0,
       remoteRequestCount: 0,
       targetReadExecuted: false,
+      cloneApplyEnabled: false,
       nextCommand: null,
     });
     if (!exportAuthority.ok) process.exitCode = 1;
@@ -160,9 +175,7 @@ async function main() {
   let protectedPlan = null;
   if (exportAuthority.ok && targetIdentityMatches) {
     try {
-      const sourceClient = await createLarkBaseExportSourceClient(sourceExportFile, {
-        excludedTableNames: PROTECTED_EXTERNAL_TABLE_NAMES,
-      });
+      if (!sourceClient) throw operatorError('CUSTOMER_BASE_SOURCE_CLIENT_MISSING', 'Clone-scope Source client is unavailable');
       const protection = await protectCustomerLarkTarget({
         client: targetClient,
         requiredProtectedTableNames: REQUIRED_PROTECTED_TABLE_NAMES,
@@ -199,24 +212,28 @@ async function main() {
     }
   }
 
-  const ok = blockers.length === 0
+  const policyBPreviewReady = blockers.length === 0
     && consolidationPreview?.readyToApply === true
     && protectedPlan?.ok === true;
+  const fullParityReady = policyBPreviewReady && cloneParityCoverage?.ok === true;
   printJson({
-    ok,
-    contractVersion: 'customer_base_full_parity_operator_v5',
+    ok: policyBPreviewReady,
+    contractVersion: 'customer_base_full_parity_operator_v6',
     action: 'full-parity-audit',
-    stage: 'local-export-authority-target-and-clone-scope-preview',
+    stage: 'local-export-authority-target-clone-preview-and-parity-coverage',
     mode: 'read-only',
     sourceAuthority: safeExportIdentity(exportInspection),
     exportInspection,
     exportAuthority,
     migrationScope,
+    cloneParityCoverage,
     target: targetInspection,
     targetProtection,
     consolidationPreview,
     protectedPlan,
     blockers,
+    policyBPreviewReady,
+    fullParityReady,
     configSource: configSource(customerProdVarsFile, sourceExportFile),
     targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
     targetFolder: TARGET_FOLDER_LABEL,
@@ -227,7 +244,7 @@ async function main() {
     cloneApplyEnabled: false,
     nextCommand: null,
   });
-  if (!ok) process.exitCode = 1;
+  if (!policyBPreviewReady) process.exitCode = 1;
 }
 
 function resolveSourceExportFile(env) {
