@@ -7,6 +7,7 @@
 - Added canonical `.base` envelope parsing for `gzipSnapshot`, `gzipExtraInfo`, `gzipBaseRole`, `gzipAccessConfig`, `gzipDashboard` and `gzipAutomation`; resource counts dedupe stable IDs across snapshot chunks.
 - `--source-export-audit` is now fully local, performs zero remote request, requires no Lark credential and defaults to the exact latest export in the operator Mac Downloads folder when no override path is configured.
 - Existing unrelated customer Target tables remain protected and all write/apply modes remain blocked until full clone/remap/verify coverage exists for every export-represented dimension.
+- Locked existing `🎵 RAW_TikTok_Creator_Videos` as a Protected Existing Table: only read-only `reuse_exact` is allowed; create-by-name and Field/Record/View mutations are fenced before any OpenAPI write request, and any mismatch must block Apply rather than repair/overwrite the table.
 
 ## Unreleased — Automatic Weekly negative-channel Quality Gate repair — 2026-08-17
 
@@ -118,11 +119,3 @@
 - Added a local Storage Foundation 10x/100x load test and a customer-owned Production cutover runbook.
 
 ### Evidence and safety
-
-- Closed exactly two TikTok partial-write alerts as `resolved_by_new_generation`; Queue, replay, redrive, DLQ,
-  Worker, schedule and Business-data actions were zero. Recent open alert/DLQ since 2026-08-15 are zero.
-- D1 is 151.74 MiB across 70 tables/175,855 rows; linear 14-day-rate estimates are 609.35 MiB at one year and
-  1.49 GiB at three years. The existing private D1/Lark backups revalidated and a local restore/integrity/
-  Migration-0020 drill passed.
-- 100x load evidence used 1,208,200 Organic observations and 823,800 Ads daily facts; indexed range queries
-  completed in 873.68 ms and 162.99 ms with SQLite integrity `ok`.
