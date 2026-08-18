@@ -88,11 +88,32 @@ Final verifier must cover every dimension represented by the Source export:
 A missing target API permission, unsupported write operation, unresolved reference, collision with unrelated customer content,
 or unverifiable exported property is blocking. No warning may be downgraded into a fake 100% result.
 
+## Protected existing TikTok table
+
+`🎵 RAW_TikTok_Creator_Videos` in the customer Target is explicitly protected by user instruction and is outside the
+mutation surface of this migration.
+
+Required behavior:
+
+- never create another table with the same name;
+- never overwrite/rename/delete the existing table;
+- never mutate its Fields, Records, Views, Filters or other view properties;
+- never remove or alter its existing Cross-Base Sync configuration;
+- Preview may accept it only as `reuse_exact` after read-only parity proof;
+- any mismatch, missing protected table, or non-reuse plan blocks the whole Apply instead of repairing the existing table;
+- the protected-table write fence must reject before any OpenAPI write request occurs.
+
+`packages/application/src/use-cases/protect-customer-lark-target.js` implements the fail-closed client fence and protected
+plan assertion. Regression tests cover create-by-name plus Field/Record/View mutations and prove zero underlying write calls.
+
+This protection is required because the existing consolidator's historical View loop can attempt `createView/updateView`
+on reused tables. Final Preview/Apply must therefore pass through the protected client wrapper before write modes are enabled.
+
 ## Export reader implementation
 
-`scripts/lib/lark-base-export.js` v2 now parses the real canonical export format instead of a guessed generic schema:
+`scripts/lib/lark-base-export.js` v2 parses the real canonical export format:
 
-- validates the required gzip envelope members;
+- validates required gzip envelope members;
 - gzip/base64-decodes each JSON payload locally;
 - inventories Tables from `schema.tableMap`;
 - inventories Fields/Views from `schema.data.table.fieldMap/viewMap`;
@@ -112,28 +133,29 @@ exact local .base export
 → exact SHA + structure/count/table-set preflight
 → optional GET-only customer Target inspection
 → full clone/remap implementation (blocked until coverage complete)
+→ protected Target client + protected reuse_exact plan gate
 → controlled Apply
 → GET-only canonical verifier
 ```
 
 Read-only modes:
 
-- `--source-export-audit`: local-only, defaults to the pinned Downloads file, no Lark config required
+- `--source-export-audit`: local-only, no Lark config required
 - `--full-parity-audit`: local Source export + GET-only Target inspection
 
-Legacy `--provision-missing`, `--preview`, `--apply`, `--verify` remain blocked until full clone/remap coverage exists.
+Legacy `--provision-missing`, `--preview`, `--apply`, and `--verify` remain blocked until full clone/remap coverage exists.
 
 ## Existing Target evidence
 
 Latest Target inspection showed 4 tables total:
 
-- expected existing `🎵 RAW_TikTok_Creator_Videos`
+- protected existing `🎵 RAW_TikTok_Creator_Videos`
 - unrelated `(VDO) Content Creator`
 - unrelated `(Graphic) Content Creator`
 - unrelated `คำถามจาก Sale & Support`
 
-Unrelated customer tables are protected and must not be overwritten/deleted. Existing TikTok table may be reused only if
-final canonical parity passes.
+The three unrelated customer tables are immutable/protected from this migration. The TikTok table is stricter: it may only
+be reused exact and is never a migration write target.
 
 ## Reuse requirement
 
@@ -152,6 +174,7 @@ Remaining gaps before 100% Apply:
 - Advanced Permission role config
 - attachment handling if present
 - canonical verifier across all export dimensions
+- wire protected client/plan guard into the only enabled Preview/Apply path
 
 ## Safety boundary
 
@@ -159,6 +182,7 @@ Remaining gaps before 100% Apply:
 - Local export audit remote request: 0
 - Live Source dependency: optional diagnostic only
 - Target write: blocked until full clone coverage
+- `🎵 RAW_TikTok_Creator_Videos`: immutable; reuse_exact read-only or block
 - Existing unrelated customer content: immutable/protected
 - Deletes: 0 unless separately approved
 - Worker/D1/Queue/schedule changes: 0
@@ -166,10 +190,10 @@ Remaining gaps before 100% Apply:
 
 ## Remaining closure sequence
 
-1. Pass exact-head CI for operator v4 + actual export parser.
-2. Run local `--source-export-audit`; exact SHA and latest counts must pass without Lark credentials.
-3. Feed normalized export into existing consolidation engine and implement all remaining parity dimensions.
-4. Dry-run/preview Target with zero unhandled dimensions and zero unrelated-content collisions.
+1. Pass exact-head CI for protected-table guard.
+2. Feed normalized export into existing consolidation engine and implement all remaining parity dimensions.
+3. Wire protected client + `reuse_exact` assertion into Preview/Apply.
+4. Dry-run/preview Target with zero unhandled dimensions, zero unrelated-content collisions, and zero protected TikTok mutations.
 5. One controlled Apply.
-6. GET-only canonical verifier proves 100% parity for every export-represented dimension.
+6. GET-only canonical verifier proves 100% parity for every export-represented dimension while protected TikTok remains unchanged.
 7. Only then may PR #661 be ready for merge/closeout.
