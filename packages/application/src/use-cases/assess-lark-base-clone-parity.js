@@ -33,17 +33,17 @@ export async function assessLarkBaseCloneParityCoverage(input) {
   addDimension(dimensions, blockers, {
     dimension: 'table_field_record_clone',
     represented: tables.length > 0,
-    status: 'implemented_verify_incomplete',
-    blockerCode: 'CLONE_PARITY_CANONICAL_TABLE_FIELD_RECORD_VERIFY_INCOMPLETE',
-    message: 'Table/Field/Record clone exists, but the canonical verifier does not yet compare full Field configuration and complete record payload semantics.',
+    status: 'canonical_verifier_implemented_apply_wiring_pending',
+    blockerCode: 'CLONE_PARITY_CANONICAL_TABLE_FIELD_RECORD_VERIFY_WIRING_PENDING',
+    message: 'Canonical full-readable Field/Record verification is implemented and CI-verified, but it is not yet wired into the only controlled post-Apply verification path.',
   });
 
   addDimension(dimensions, blockers, {
     dimension: 'relation_formula_remap',
     represented: exportCounts.relationFields > 0 || exportCounts.formulaFields > 0,
-    status: 'implemented_verify_incomplete',
-    blockerCode: 'CLONE_PARITY_RELATION_FORMULA_VERIFY_INCOMPLETE',
-    message: 'Relation/Formula remap exists, but canonical post-Apply verification is not yet complete.',
+    status: 'canonical_verifier_implemented_apply_wiring_pending',
+    blockerCode: 'CLONE_PARITY_RELATION_FORMULA_VERIFY_WIRING_PENDING',
+    message: 'Canonical Relation/Formula ID-remap verification is implemented and CI-verified, but it is not yet wired into the only controlled post-Apply verification path.',
     details: {
       relationFields: exportCounts.relationFields,
       formulaFields: exportCounts.formulaFields,
@@ -53,9 +53,9 @@ export async function assessLarkBaseCloneParityCoverage(input) {
   addDimension(dimensions, blockers, {
     dimension: 'view_hidden_filter',
     represented: viewFeatureCounts.hiddenFields > 0 || viewFeatureCounts.filterInfo > 0,
-    status: 'implemented_verify_incomplete',
-    blockerCode: 'CLONE_PARITY_VIEW_CANONICAL_VERIFY_INCOMPLETE',
-    message: 'Hidden-field and Filter mutations exist, but full View canonical verification is incomplete.',
+    status: 'canonical_verifier_implemented_apply_wiring_pending',
+    blockerCode: 'CLONE_PARITY_VIEW_CANONICAL_VERIFY_WIRING_PENDING',
+    message: 'Canonical View type/public/hidden/filter verification is implemented and CI-verified, but it is not yet wired into the only controlled post-Apply verification path.',
     details: {
       hiddenFieldViews: viewFeatureCounts.hiddenFields,
       filteredViews: viewFeatureCounts.filterInfo,
@@ -124,7 +124,7 @@ export async function assessLarkBaseCloneParityCoverage(input) {
 
   return deepFreeze({
     ok: blockers.length === 0,
-    contractVersion: 'customer_base_clone_parity_coverage_v1',
+    contractVersion: 'customer_base_clone_parity_coverage_v2',
     mode: 'read-only',
     source: {
       tables: tables.length,
@@ -132,6 +132,18 @@ export async function assessLarkBaseCloneParityCoverage(input) {
       viewTypes: Object.fromEntries([...viewTypes.entries()].sort(([left], [right]) => left.localeCompare(right))),
       viewFeatureCounts,
       exportResourceCounts: exportCounts,
+    },
+    canonicalVerifier: {
+      contractVersion: 'customer_base_clone_canonical_verifier_v1',
+      implementationStatus: 'implemented_ci_verified_apply_wiring_pending',
+      coverage: [
+        'full-readable Field configuration',
+        'Relation table ID remap',
+        'Formula table/field ID remap',
+        'all readable Record field values',
+        'Relation record ID remap',
+        'View type/public/hidden/filter with Field ID remap',
+      ],
     },
     dimensions,
     blockers,
