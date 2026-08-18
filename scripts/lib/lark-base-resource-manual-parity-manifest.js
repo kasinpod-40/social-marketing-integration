@@ -144,8 +144,8 @@ function sanitizeValue(value, path, key, references, diagnostics, depth) {
       return redactedReference(value, diagnostics);
     }
     if (looksLikeInternalIdentity(value)) return redactedIdentityString(value, diagnostics);
-    if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
     if (isStructuredStringKey(key)) return sanitizeStructuredString(value, path, references, diagnostics);
+    if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
     if (value.length > LARGE_OPAQUE_THRESHOLD) return opaqueSummary(value, diagnostics, 'large-string');
     return replaceEmbeddedKnownReferences(value, path, references, diagnostics);
   }
@@ -164,7 +164,6 @@ function sanitizeStructuredString(value, path, references, diagnostics) {
     return redactedReference(value, diagnostics);
   }
   if (looksLikeInternalIdentity(value)) return redactedIdentityString(value, diagnostics);
-  if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
   try {
     const parsed = JSON.parse(value);
     diagnostics.parsedJsonStrings += 1;
@@ -173,6 +172,7 @@ function sanitizeStructuredString(value, path, references, diagnostics) {
       value: sanitizeValue(parsed, `${path}.$json`, 'json', references, diagnostics, 0),
     };
   } catch {
+    if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
     return opaqueSummary(value, diagnostics, 'opaque-string');
   }
 }
