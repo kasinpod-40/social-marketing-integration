@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Customer Base Policy B parity hardening — 2026-08-18
+
+- Locked customer consolidation Policy B: exact 33-table export remains authority, 32 Tables are clone scope, and live Target `🎵 RAW_TikTok_Creator_Videos` is immutable `protected_external_reuse` outside clone/apply/verify traversal.
+- Real GET-only v6 Target audit passed `policyBPreviewReady=true` with 32 create plans, zero conflicts/warnings and `remoteMutationCount=0`; `fullParityReady=false` and Apply remain fail-closed.
+- Added clone-scope feature inventory proving 110 grid Views with 11 hidden-field Views, 78 filters, 110 field orders, 41 sorts, 4 groups, 94 column configs, 110 row-height configs, 110 frozen-column configs and one hierarchy config; card/color/Form are not represented.
+- Added `customer_base_clone_canonical_verifier_v1` for full readable Field config, Relation/Formula table/field remap, every readable Record value, Relation record remap and basic View type/public/hidden/filter parity. The verifier is GET-only and not yet wired to an enabled Apply path.
+- Added documented View hierarchy parity using the existing Lark Bitable transport only: Source Field-ID → Target Field-ID remap, idempotent `hierarchy_config.field_id` PATCH and GET readback. `updateViewHierarchy` is fenced against every pre-existing customer Table.
+- Classified field-order/sort/group/column/row-height/frozen-column writes as `documented_write_contract_not_proven`; no exported response property is sent back to Lark without a documented request contract.
+- Official capability review found Dashboard List + Copy-by-existing-`block_id`, Workflow List plus workflow permission scopes, and Advanced Permission v2 role creation via `/open-apis/base/v2/apps/:app_token/roles`. Dashboard/export and Workflow-definition materialization remain fail-closed; Advanced Permission requires exact export-resource remap and Base-level resource protection before writes.
+- Added a local-only value-redacted export-resource shape audit for dashboards/workflows/roles/access/extra info. It pins the exact export SHA/counts, emits only structural paths/types/array lengths/reference-key counts, and performs zero remote requests/mutations.
+- Refreshed README, `docs/current-task.md` and the customer Base Project Brain to the same Policy-B/full-parity state. PR #661 remains Draft; customer Apply is still disabled.
+
 ## Unreleased — Customer Base latest export authority — 2026-08-18
 
 - Replaced the live 17-table `Social MKT Data Hub` Source gate with the exact latest local export `Social MKT Data Hub(20260818-030125).base` as customer migration authority.
@@ -7,7 +19,7 @@
 - Added canonical `.base` envelope parsing for `gzipSnapshot`, `gzipExtraInfo`, `gzipBaseRole`, `gzipAccessConfig`, `gzipDashboard` and `gzipAutomation`; resource counts dedupe stable IDs across snapshot chunks.
 - `--source-export-audit` is now fully local, performs zero remote request, requires no Lark credential and defaults to the exact latest export in the operator Mac Downloads folder when no override path is configured.
 - Existing unrelated customer Target tables remain protected and all write/apply modes remain blocked until full clone/remap/verify coverage exists for every export-represented dimension.
-- Locked existing `🎵 RAW_TikTok_Creator_Videos` as a Protected Existing Table: only read-only `reuse_exact` is allowed; create-by-name and Field/Record/View mutations are fenced before any OpenAPI write request, and any mismatch must block Apply rather than repair/overwrite the table.
+- Initial strict-overlap policy required `🎵 RAW_TikTok_Creator_Videos` as `reuse_exact`; subsequent real GET-only evidence proved legitimate live drift and the user selected Policy B above, superseding strict TikTok export parity without weakening its zero-write protection.
 
 ## Unreleased — Automatic Weekly negative-channel Quality Gate repair — 2026-08-17
 
@@ -66,13 +78,10 @@
 
 ## 2026-08-15 — Facebook omitted-share normalization
 
-- Treat an omitted `shares` property on a successful Facebook Page Posts inventory row as an
-  observed zero, while preserving explicit `shares: null` as unavailable.
+- Treat an omitted `shares` property on a successful Facebook Page Posts inventory row as an observed zero, while preserving explicit `shares: null` as unavailable.
 - Add regression coverage across RAW metric, Canonical ContentDaily, and D1 Organic history output.
-- Audit the fresh Lark Base export read-only: current Views/Likes/Comments are complete, and 7-day
-  period metrics remain N/A because baseline coverage is incomplete rather than zero.
-- PR #652 passed both CI workflows and merged before PR #653. The combined exact-main Worker release reached
-  100% traffic with zero immediate new alert/DLQ/lock; no manual Facebook source run was used as evidence.
+- Audit the fresh Lark Base export read-only: current Views/Likes/Comments are complete, and 7-day period metrics remain N/A because baseline coverage is incomplete rather than zero.
+- PR #652 passed both CI workflows and merged before PR #653. The combined exact-main Worker release reached 100% traffic with zero immediate new alert/DLQ/lock; no manual Facebook source run was used as evidence.
 
 ## Unreleased — Facebook Authoritative Inventory Dashboard Fix — 2026-08-15
 
