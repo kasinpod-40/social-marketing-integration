@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 
 const SENSITIVE_KEY = /(?:token|secret|credential|password|authorization|webhook|cookie|signature|sign)$/iu;
-const IDENTITY_KEY = /(?:^|_)(?:id|ids|creator|editor|member|owner|user|chat|department|base_id|dashboardid|chartid)(?:$|_)/iu
-  || /(?:Id|Ids|Creator|Editor|Member|Owner|User|Chat|Department|DashboardID|ChartID)$/u;
+const IDENTITY_KEY = /(?:(?:^|_)(?:id|ids|creator|editor|member|owner|user|chat|department|base_id|dashboardid|chartid)(?:$|_))|(?:Id|Ids|Creator|Editor|Member|Owner|User|Chat|Department|TableID|FieldID|ViewID|TableId|FieldId|ViewId|DashboardID|ChartID)$/iu;
 const RAW_REFERENCE = /^(?:tbl|fld|vew|rec|rol)[A-Za-z0-9_-]{4,}$/u;
 const LARGE_OPAQUE_THRESHOLD = 12_000;
 const MAX_DEPTH = 18;
@@ -187,7 +186,8 @@ function sanitizeObjectKey(key, references, diagnostics) {
   }
   if (references.fieldById.has(key)) {
     diagnostics.mappedFieldReferences += 1;
-    return `field:${references.fieldById.get(key)}`;
+    const [tableName, fieldName] = references.fieldById.get(key).split('\u0000');
+    return `field:${tableName}.${fieldName}`;
   }
   for (const [tableId, tableName] of references.tableById) {
     if (key.includes(tableId)) {
@@ -195,10 +195,11 @@ function sanitizeObjectKey(key, references, diagnostics) {
       return key.replaceAll(tableId, `table:${tableName}`);
     }
   }
-  for (const [fieldId, fieldName] of references.fieldById) {
+  for (const [fieldId, combined] of references.fieldById) {
     if (key.includes(fieldId)) {
       diagnostics.mappedFieldReferences += 1;
-      return key.replaceAll(fieldId, `field:${fieldName}`);
+      const [tableName, fieldName] = combined.split('\u0000');
+      return key.replaceAll(fieldId, `field:${tableName}.${fieldName}`);
     }
   }
   return key;
