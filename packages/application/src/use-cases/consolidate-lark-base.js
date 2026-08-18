@@ -484,12 +484,32 @@ async function loadTableSnapshot(client, table) {
   const records = await client.listRecords({ tableId: table.tableId });
   const listedViews = await client.listViews({ tableId: table.tableId });
   const views = [];
-  for (const view of listedViews) {
-    views.push(typeof client.getView === 'function'
-      ? await client.getView({ tableId: table.tableId, viewId: view.viewId })
-      : view);
+  for (const listedView of listedViews) {
+    if (typeof client.getView !== 'function') {
+      views.push(listedView);
+      continue;
+    }
+    const detailedView = await client.getView({ tableId: table.tableId, viewId: listedView.viewId });
+    views.push(mergeListedAndDetailedView(listedView, detailedView));
   }
   return deepFreeze({ table, fields, records, views });
+}
+
+function mergeListedAndDetailedView(listedView, detailedView) {
+  const listed = structuredClone(listedView ?? {});
+  const detailed = structuredClone(detailedView ?? {});
+  return {
+    ...listed,
+    ...detailed,
+    viewId: detailed.viewId ?? listed.viewId ?? null,
+    viewName: detailed.viewName ?? listed.viewName ?? null,
+    viewType: detailed.viewType ?? listed.viewType ?? null,
+    publicLevel: detailed.publicLevel ?? listed.publicLevel ?? null,
+    property: {
+      ...(listed.property && typeof listed.property === 'object' ? listed.property : {}),
+      ...(detailed.property && typeof detailed.property === 'object' ? detailed.property : {}),
+    },
+  };
 }
 
 async function inspectExistingTargetTable(input) {
@@ -680,8 +700,8 @@ function compareReusableFieldConfig(sourceFields, targetFields, diagnostics = []
     if (normalizeDescription(target.description) !== normalizeDescription(source.description)) {
       reasons.push(`field description mismatch ${source.fieldName}`);
     }
-    const sourceProperty = comparableReusableFieldProperty(source.property);
-    const targetProperty = comparableReusableFieldProperty(target.property);
+    const sourceProperty = comparableReusableFieldProperty(source.property, source.type);
+    const targetProperty = comparableReusableFieldProperty(target.property, target.type);
     if (stableJson(targetProperty) !== stableJson(sourceProperty)) {
       reasons.push(`field property mismatch ${source.fieldName}`);
       diagnostics.push({
@@ -742,9 +762,14 @@ function sourceToTargetFieldIdMap(sourceFields, targetFields) {
   return result;
 }
 
-function comparableReusableFieldProperty(property) {
-  if (!property || typeof property !== 'object' || Array.isArray(property)) return null;
-  const result = structuredClone(property);
+function comparableReusableFieldProperty(property, type = null) {
+  const result = property && typeof property === 'object' && !Array.isArray(property)
+    ? structuredClone(property)
+    : {};
+  if (Number(type) === 5) {
+    result.date_formatter = normalizeOptionalText(result.date_formatter) ?? 'yyyy/MM/dd';
+    result.auto_fill = result.auto_fill === true;
+  }
   if (Array.isArray(result.options)) {
     result.options = result.options.map((option) => {
       if (!option || typeof option !== 'object' || Array.isArray(option)) return option;
@@ -753,11 +778,11 @@ function comparableReusableFieldProperty(property) {
       return clone;
     });
   }
-  return sortObject(result);
+  return Object.keys(result).length > 0 ? sortObject(result) : null;
 }
 
-function canonicalReusableFieldProperty(property) {
-  return stableJson(comparableReusableFieldProperty(property));
+function canonicalReusableFieldProperty(property, type = null) {
+  return stableJson(comparableReusableFieldProperty(property, type));
 }
 
 function canonicalReusableView(view, sourceFieldIdToTargetFieldId = null) {
@@ -781,10 +806,21 @@ function canonicalReusableView(view, sourceFieldIdToTargetFieldId = null) {
     : null;
   return sortObject({
     viewType: normalizeOptionalText(view?.viewType),
-    publicLevel: view?.publicLevel ?? null,
+    publicLevel: normalizeReusablePublicLevel(view?.publicLevel),
     hiddenFields,
     filterInfo,
   });
+}
+
+function normalizeReusablePublicLevel(value) {
+  if (value === 0 || value === '0') return 'Public';
+  const normalized = normalizeOptionalText(value);
+  if (normalized === null) return null;
+  const lower = normalized.toLowerCase();
+  if (lower === 'public') return 'Public';
+  if (lower === 'locked') return 'Locked';
+  if (lower === 'private') return 'Private';
+  return normalized;
 }
 
 function normalizeDescription(value) {
