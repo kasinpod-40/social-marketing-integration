@@ -33,7 +33,7 @@ try {
 
   printJson({
     ok: true,
-    contractVersion: 'customer_base_resource_manual_parity_operator_v1',
+    contractVersion: 'customer_base_resource_manual_parity_operator_v2',
     action: 'build-base-resource-manual-parity-manifest',
     stage: 'exact-export-dashboard-workflow-manual-parity-inventory',
     mode: 'local-read-only-sensitive-values-redacted',
@@ -52,7 +52,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_resource_manual_parity_operator_v1',
+    contractVersion: 'customer_base_resource_manual_parity_operator_v2',
     code: error?.code ?? 'CUSTOMER_BASE_RESOURCE_MANUAL_PARITY_MANIFEST_FAILED',
     message: error?.message ?? String(error),
     details: error?.details ?? {},
