@@ -23,6 +23,11 @@ class TargetClient {
     this.calls.push({ method: 'updateField', input });
     return {};
   }
+
+  async updateViewHierarchy(input) {
+    this.calls.push({ method: 'updateViewHierarchy', input });
+    return {};
+  }
 }
 
 test('protected external table may be absent from clone plan and is reported as protected_external_reuse', async () => {
@@ -53,6 +58,16 @@ test('protected external table may be absent from clone plan and is reported as 
     () => protection.client.updateField({ tableId: 'tblTikTok', fieldId: 'fldDate', field: {} }),
     (error) => {
       assert.equal(error.code, 'CUSTOMER_BASE_PROTECTED_TABLE_WRITE_BLOCKED');
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => protection.client.updateViewHierarchy({
+      tableId: 'tblTikTok', viewId: 'vewAll', fieldId: 'fldParent',
+    }),
+    (error) => {
+      assert.equal(error.code, 'CUSTOMER_BASE_PROTECTED_TABLE_WRITE_BLOCKED');
+      assert.equal(error.details.operation, 'updateViewHierarchy');
       return true;
     },
   );
