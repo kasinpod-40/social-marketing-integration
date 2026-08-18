@@ -376,7 +376,6 @@ function normalizeFilterInfo(value) {
       fieldType: Number(condition?.fieldType),
       operator: requireText(condition?.operator, 'view filter operator'),
       value: condition?.value === undefined ? null : structuredClone(condition.value),
-      exportConditionId: optionalText(condition?.conditionId),
     })),
   });
 }
@@ -428,8 +427,50 @@ function mergeEntity(map, order, id, value, label, appendOrder = true) {
     return;
   }
   if (stableJson(existing) !== stableJson(value)) {
-    throw codedError('LARK_BASE_EXPORT_DUPLICATE_ENTITY_CONFLICT', `Duplicate export entity differs: ${label}`);
+    const differencePaths = collectDifferencePaths(existing, value);
+    throw codedError(
+      'LARK_BASE_EXPORT_DUPLICATE_ENTITY_CONFLICT',
+      `Duplicate export entity differs: ${label}`,
+      { differenceCount: differencePaths.length, differencePaths: differencePaths.slice(0, 24) },
+    );
   }
+}
+
+function collectDifferencePaths(left, right, path = '$', result = []) {
+  if (Object.is(left, right)) return result;
+  const leftArray = Array.isArray(left);
+  const rightArray = Array.isArray(right);
+  if (leftArray || rightArray) {
+    if (!(leftArray && rightArray)) {
+      result.push(path);
+      return result;
+    }
+    if (left.length !== right.length) result.push(`${path}.length`);
+    const length = Math.min(left.length, right.length);
+    for (let index = 0; index < length; index += 1) {
+      collectDifferencePaths(left[index], right[index], `${path}[${index}]`, result);
+    }
+    return result;
+  }
+  const leftObject = left !== null && typeof left === 'object';
+  const rightObject = right !== null && typeof right === 'object';
+  if (leftObject || rightObject) {
+    if (!(leftObject && rightObject)) {
+      result.push(path);
+      return result;
+    }
+    const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+    for (const key of keys) {
+      if (!(key in left) || !(key in right)) {
+        result.push(`${path}.${key}`);
+        continue;
+      }
+      collectDifferencePaths(left[key], right[key], `${path}.${key}`, result);
+    }
+    return result;
+  }
+  result.push(path);
+  return result;
 }
 
 function mergeStableValue(map, id, value, label) {
