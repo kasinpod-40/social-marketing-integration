@@ -14,6 +14,14 @@ export async function protectCustomerLarkTarget(input) {
   const requiredProtectedNames = normalizeNames(
     input?.requiredProtectedTableNames ?? DEFAULT_REQUIRED_PROTECTED_NAMES,
   );
+  const protectedExternalNames = normalizeOptionalNames(input?.protectedExternalTableNames);
+  const requiredNameSet = new Set(requiredProtectedNames);
+  for (const name of protectedExternalNames) {
+    if (!requiredNameSet.has(name)) {
+      throw new TypeError(`protectedExternalTableNames must be a subset of requiredProtectedTableNames: ${name}`);
+    }
+  }
+
   const tables = await client.listTables();
   const existingByName = uniqueTableMap(tables);
   const protectedIds = new Set();
@@ -79,9 +87,10 @@ export async function protectCustomerLarkTarget(input) {
   return Object.freeze({
     client: wrapped,
     policy: Object.freeze({
-      contractVersion: 'customer_lark_target_protection_v2',
+      contractVersion: 'customer_lark_target_protection_v3',
       existingTablesProtected: Object.freeze(existingTables),
       requiredProtectedTableNames: Object.freeze([...requiredProtectedNames]),
+      protectedExternalTableNames: Object.freeze([...protectedExternalNames]),
       rule: 'all-preexisting-target-tables-read-only',
     }),
   });
@@ -89,8 +98,10 @@ export async function protectCustomerLarkTarget(input) {
 
 /**
  * Ensures that any pre-existing Target table which also appears in the Source
- * migration plan is read-only exact reuse. Unrelated customer tables do not need
- * a Source plan entry; the client fence still keeps them immutable.
+ * migration plan is read-only exact reuse. Tables explicitly declared as protected
+ * external sources are kept live/authoritative in Target and must be absent from the
+ * clone plan; they are reported as protected_external_reuse instead. Unrelated
+ * customer tables do not need a Source plan entry; the client fence still keeps them immutable.
  */
 export function assertProtectedTargetTablePlan(input) {
   const preview = input?.preview;
@@ -101,9 +112,17 @@ export function assertProtectedTargetTablePlan(input) {
   const requiredProtectedNames = normalizeNames(
     input?.requiredProtectedTableNames ?? DEFAULT_REQUIRED_PROTECTED_NAMES,
   );
+  const protectedExternalNames = normalizeOptionalNames(input?.protectedExternalTableNames);
   const existingNames = new Set(existingTables.map((table) => requireText(table?.name, 'existing protected table name')));
   const requiredNameSet = new Set(requiredProtectedNames);
+  const protectedExternalNameSet = new Set(protectedExternalNames);
   const violations = [];
+
+  for (const name of protectedExternalNames) {
+    if (!requiredNameSet.has(name)) {
+      violations.push({ name, reason: 'protected external table must also be a required protected table' });
+    }
+  }
 
   for (const requiredName of requiredProtectedNames) {
     if (!existingNames.has(requiredName)) {
@@ -111,6 +130,15 @@ export function assertProtectedTargetTablePlan(input) {
       continue;
     }
     const plan = plans.find((entry) => entry?.name === requiredName) ?? null;
+    if (protectedExternalNameSet.has(requiredName)) {
+      if (plan) {
+        violations.push({
+          name: requiredName,
+          reason: `protected external table must be excluded from clone plan, found ${String(plan.action)}`,
+        });
+      }
+      continue;
+    }
     if (!plan) {
       violations.push({
         name: requiredName,
@@ -136,21 +164,25 @@ export function assertProtectedTargetTablePlan(input) {
   if (violations.length > 0) {
     throw codedError(
       'CUSTOMER_BASE_PROTECTED_TABLE_PLAN_BLOCKED',
-      'Pre-existing customer table is not proven exact/reusable; consolidation must stop without mutating existing resources',
+      'Pre-existing customer table is not proven safe for the selected reuse policy; consolidation must stop without mutating existing resources',
       { violations },
     );
   }
 
+  const sourceOverlaps = [
+    ...protectedExternalNames.map((name) => Object.freeze({ name, action: 'protected_external_reuse' })),
+    ...plans
+      .filter((plan) => existingNames.has(plan?.name) && !protectedExternalNameSet.has(plan?.name))
+      .map((plan) => Object.freeze({ name: plan.name, action: plan.action })),
+  ].sort((left, right) => left.name.localeCompare(right.name));
+
   return Object.freeze({
     ok: true,
-    contractVersion: 'customer_lark_target_protected_plan_v2',
+    contractVersion: 'customer_lark_target_protected_plan_v3',
     rule: 'all-preexisting-target-tables-read-only',
     existingTablesProtected: Object.freeze(existingTables.map((table) => Object.freeze(structuredClone(table)))),
-    sourceOverlaps: Object.freeze(
-      plans
-        .filter((plan) => existingNames.has(plan?.name))
-        .map((plan) => Object.freeze({ name: plan.name, action: plan.action })),
-    ),
+    protectedExternalTableNames: Object.freeze([...protectedExternalNames]),
+    sourceOverlaps: Object.freeze(sourceOverlaps),
   });
 }
 
@@ -183,6 +215,12 @@ function normalizeNames(value) {
     throw new TypeError('requiredProtectedTableNames must be a non-empty array');
   }
   return Object.freeze([...new Set(value.map((name) => requireText(name, 'requiredProtectedTableName')))]);
+}
+
+function normalizeOptionalNames(value) {
+  if (value === undefined || value === null) return Object.freeze([]);
+  if (!Array.isArray(value)) throw new TypeError('protectedExternalTableNames must be an array');
+  return Object.freeze([...new Set(value.map((name) => requireText(name, 'protectedExternalTableName')))]);
 }
 
 function requireClient(client) {
