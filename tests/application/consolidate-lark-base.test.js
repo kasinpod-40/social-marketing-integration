@@ -287,3 +287,42 @@ test('preview reuses an exact existing simple table and verify remains read-only
   assert.equal(verification.ok, true);
   assert.equal(targetClient.calls.length, 0);
 });
+
+test('apply keeps reuse_exact tables strictly zero-write including view configuration', async () => {
+  const sourceClient = simpleSource();
+  sourceClient.tables[0].views = [grid('src_view_1', 'All Records', {
+    hiddenFields: ['src_name'],
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [{ fieldId: 'src_account_key', fieldType: 1, operator: 'isNotEmpty', value: null }],
+    },
+  })];
+  const targetClient = new FakeLarkClient([{
+    tableId: 'target_accounts',
+    name: 'Accounts',
+    fields: [text('target_account_key', 'account_key', true), text('target_name', 'name')],
+    records: [record('target_rec', { account_key: 'a1', name: 'One' })],
+    views: [grid('target_view', 'All Records', {
+      hiddenFields: ['target_name'],
+      filterInfo: {
+        conjunction: 'and',
+        conditions: [{ fieldId: 'target_account_key', fieldType: 1, operator: 'isNotEmpty', value: null }],
+      },
+    })],
+  }]);
+
+  const result = await applyLarkBaseConsolidation({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts'],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.applied.createdTables, 0);
+  assert.equal(result.applied.createdFields, 0);
+  assert.equal(result.applied.createdRecords, 0);
+  assert.equal(result.applied.updatedRelationRecords, 0);
+  assert.equal(result.applied.createdViews, 0);
+  assert.equal(result.applied.updatedViews, 0);
+  assert.deepEqual(targetClient.calls, []);
+});
