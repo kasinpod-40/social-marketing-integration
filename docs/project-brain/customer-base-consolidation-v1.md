@@ -3,17 +3,22 @@
 ## Business target
 
 Customer requires the Social MKT Data Hub resources inside the existing Base `✨Marketing Content Calendar`, with the
-final location under `Setup Phase | Social MKT Data Hub`. Completion requires **100% functional/UI parity** with the
-valid imported Source authority, including Tables, full Field configuration, Records, Relations, Formulas, every View
-and view type, visible-field order, Filter, Group, Sort, Timebar, Card configuration, Forms/Questions, Dashboards,
-Workflows/Automation and Advanced Permission role configuration.
+final location under `Setup Phase | Social MKT Data Hub`. User explicitly accepts temporary creation outside that folder
+and will move the created tables afterward if needed. Completion still requires **100% functional/UI parity** with the
+approved Source export for every configuration/data dimension actually represented in that export.
 
-A new Lark-generated resource ID may differ from the Source only when all references are deterministically remapped and
-the resulting UI/behavior is equivalent. Generated IDs are not themselves the business parity target.
+Generated Lark IDs may differ only when all references are deterministically remapped and resulting behavior/UI remains equivalent.
 
-## Verified source export baseline
+## Authoritative Source
 
-Earlier read-only inspection of `Social MKT Data Hub(20260817-033903).base` established:
+The migration authority is now the local Lark Base export:
+
+`Social MKT Data Hub(20260817-033903).base`
+
+The Live `Social MKT Data Hub` app token that currently exposes only 17 tables is not the migration authority and must not
+block table creation. It remains optional diagnostic evidence only.
+
+Earlier read-only inspection of this exact export established:
 
 - 33 unique tables
 - 35,373 unique records
@@ -26,166 +31,153 @@ Earlier read-only inspection of `Social MKT Data Hub(20260817-033903).base` esta
 - 4 Advanced Permission roles
 - largest table 9,141 rows
 
-This export baseline remains the expected Source authority shape. Live OpenAPI identity must prove it is reading the
-corresponding imported Base before Deep Full-Parity Audit output can be treated as authoritative.
+Official Lark/Feishu documentation states that `.base` exports are JSON and preserve Base structure including tables,
+views, fields, dashboards, automations/workflows and Advanced Permission configuration; exports made with structure+data
+also include row data. The format intentionally does not preserve some external identity/security state such as role member
+assignments, cloud-document permission/history/comments, share-enabled states, or third-party plugin credentials. Those are
+not reconstructable from the export itself and must not be falsely claimed as copied.
 
-## Customer PROD credential isolation
+## Customer PROD configuration
 
-Customer-owned PROD credentials are separated from integration/development runtime configuration.
+Customer-owned PROD config is isolated in `.customer.prod.vars` and Git-ignored.
 
-Tracked template: `/.customer.prod.vars.example`
-
-Local secret file on the operator Mac: `/.customer.prod.vars`
-
-The local secret file is Git-ignored. Required values:
+Required:
 
 - `LARK_APP_ID`
 - `LARK_APP_SECRET`
-- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN`
+- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE`
 - `LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN`
 
-The Lark App ID/Secret must belong to the customer PROD application and be authorized to read both Source and Target Base.
-Real credential values must never be committed, copied into docs, or emitted in logs.
+Documented default Source path:
+
+`/Users/wasanjantawong/Downloads/Social MKT Data Hub(20260817-033903).base`
+
+Optional diagnostic only:
+
+- `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN`
+
+The Lark App credentials need Target read/write scopes. Source live read permission is no longer a prerequisite for clone authority.
 
 ## Full-parity contract
 
-The final canonical verifier must cover every dimension present in the Source:
+Final verifier must cover every dimension represented by the Source export:
 
-1. Base block tree and required folder placement.
-2. Exact 33-table business set.
-3. Full Field contract: name, primary state, type, ui-type, description, formatter/property/options and references.
-4. Full Records/cell values.
-5. Relation targets and relation cell references after ID/record remap.
-6. Formula definitions/dependencies after ID remap.
-7. Every View and View type.
+1. 33-table business set and names.
+2. Full Field contracts: primary state, type, ui-type, descriptions, properties, formatters and options.
+3. All exported Records/cell values.
+4. Relations with target table/record ID remap.
+5. Formula definitions/dependencies with field/table ID remap.
+6. Every View and View type.
+7. Visible-field order/visibility.
 8. View Filter.
-9. View visible-field order/visibility.
-10. View Group.
-11. View Sort.
-12. View Timebar.
-13. View Card configuration.
-14. Forms and form questions/configuration.
-15. Dashboards, themes, blocks, layout and data_config.
-16. Workflows/Automation definitions, steps and enabled/disabled state.
-17. Advanced Permission roles and full role configuration.
-18. Attachment-like cells and any other Source resource discovered by the valid live audit.
+9. View Group.
+10. View Sort.
+11. View Timebar.
+12. View Card configuration.
+13. Forms and Questions.
+14. Dashboards/themes/blocks/layout/data_config.
+15. Workflows/Automation definitions, steps and exported state.
+16. Advanced Permission role configuration represented in the export.
+17. Attachment-like cells when included.
 
-A missing API permission, unsupported Source feature, unresolved destination collision or unverifiable property is a
-blocking condition. The operator must never downgrade it to a warning and claim 100% parity.
+A missing target API permission, unsupported write operation, unresolved reference, collision with unrelated customer content,
+or unverifiable exported property is blocking. No warning may be downgraded into a fake 100% result.
 
-## First live GET-only audit — 2026-08-18
+## Why the previous path was wrong
 
-The first customer-credential audit safely completed with `ok=false` and `remoteMutationCount=0`.
+The previous operator required the Live Source Base to prove exact 33/33 before Deep Audit. The actual configured Source
+returned 17 tables, so the gate stopped before any creation even though the approved `.base` export already existed and
+had previously been inspected as 33-table authority.
 
-Configured Source readback:
+That gate was an unnecessary dependency and contradicted the desired migration model. It is now superseded.
 
-- 17 tables
-- 367 fields
-- 22,901 records
-- 87 views
-- 8 relation fields
-- 4 formula fields
-- 16 expected tables missing
-- 0 unexpected tables
+## Local export reader
 
-This is a material mismatch against the 33-table imported-source baseline. The evidence does **not** yet prove one single
-root cause such as a wrong token. Plausible identity causes include pointing at the current Integration Base instead of
-the imported 33-table Source, an incomplete imported Source, or data-access visibility differences. The next operator
-must prove Base metadata and exact table set before Deep Audit.
+`scripts/lib/lark-base-export.js` is a local-only Source authority reader:
 
-Configured Target readback:
+- reads the `.base` file from disk;
+- parses the JSON container;
+- expands nested gzip+base64 JSON payloads when present;
+- calculates file SHA-256 and size;
+- inventories candidate tables, fields, records, views, relations, formulas, dashboards, workflows and permission roles;
+- emits bounded structural diagnostics when the real export schema needs normalization adjustment;
+- performs zero Lark/Provider/Worker/D1/Queue calls.
 
-- 4 tables
-- 81 fields
-- 2,210 records
-- 20 views
-- 1 dashboard with 4 dashboard blocks
-- existing expected `🎵 RAW_TikTok_Creator_Videos` with 2,040 records
-- unrelated customer tables `(VDO) Content Creator`, `(Graphic) Content Creator`, and `คำถามจาก Sale & Support`
+The approved baseline is enforced by `customer-base-consolidation-operator.mjs` before future write mode may be enabled.
 
-The three unrelated customer tables are not migration targets and were not mutated. Attachment-like cells observed in
-customer content remain protected evidence only.
+## Operator v3
 
-## API contract diagnosis from official Lark CLI
+`customer_base_full_parity_operator_v3` uses:
 
-The first audit also exposed a distinction between real capability gaps and one incorrect request contract:
+```text
+local .base export (Source authority)
+→ local baseline/structure preflight
+→ customer Target Base GET-only identity/table inspection
+→ full clone/remap implementation (still blocked)
+→ controlled Apply (still blocked)
+→ GET-only canonical verifier
+```
 
-- Base block list path `POST /open-apis/base/v3/bases/:base_token/blocks/list` is correct; official required scope is
-  `base:block:read`.
-- Form list path `GET /open-apis/base/v3/bases/:base_token/tables/:table_id/forms` is correct; official required scope is
-  `base:form:read`.
-- Advanced Permission role list path `GET /open-apis/base/v3/bases/:base_token/roles` is correct; official scope is
-  `base:role:read`, Advanced Permission must be enabled, and caller must be a Base admin.
-- Workflow list in the first audit was wrong: it called GET `/workflows`; official contract is
-  `POST /open-apis/base/v3/bases/:base_token/workflows/list` with `base:workflow:read`.
-- View property routes are official Base v3 routes with `base:view:read`, but Live `800010502` responses have not yet
-  been proven to mean unsupported/not-applicable versus another capability condition. They remain fail-closed evidence.
+Supported read-only modes now include:
 
-Therefore the repository fix must not suppress `99991672` or `800010502` globally. It must first prove the Source identity,
-then annotate exact required scopes/capabilities and continue only on the valid Source authority.
+- `--source-export-audit`: local-only, no remote request
+- `--full-parity-audit`: local Source export + GET-only Target inspection
 
-## Identity-preflight repair
+Legacy `--provision-missing`, `--preview`, `--apply`, and `--verify` remain blocked until full clone/remap coverage exists.
 
-`packages/application/src/use-cases/preflight-customer-base-full-parity.js` now performs a GET-only gate before the
-expensive deep audit:
+## Existing Target evidence
 
-- canonical Base metadata GET `/open-apis/bitable/v1/apps/:app_token`
-- existing shared `listTables()`
-- exact Source name check
-- exact Target name check
-- exact Source 33-table set check
+Latest Target inspection before this architecture correction showed:
 
-If Source is not the exact authority, operator v2 prints safe metadata/table-set diagnostics and stops with
-`deepAuditExecuted=false`, `remoteMutationCount=0`.
+- 4 tables total
+- expected existing `🎵 RAW_TikTok_Creator_Videos`
+- unrelated customer tables `(VDO) Content Creator`, `(Graphic) Content Creator`, `คำถามจาก Sale & Support`
 
-The operator also includes a compatibility correction for the old audit Workflow list call, translating the old GET
-shape to official POST `.../workflows/list` semantics. Strict read failures now annotate required scopes for block, form,
-workflow, role and view paths; Role additionally records the Advanced Permission/Base-admin condition.
+These unrelated customer tables are protected and must not be overwritten/deleted. Existing TikTok table may be reused only
+if final canonical parity passes.
+
+## Reuse requirement
+
+The repository already contains `packages/application/src/use-cases/consolidate-lark-base.js`, which implements reusable
+core mechanics for createTable, ordinary fields, relation/formula ID remap, record copy/relation rewrite, view creation and
+verification. This existing engine must be extended, not replaced with a parallel migration framework.
+
+Current gaps that must be added before 100% Apply:
+
+- robust normalized local-export Source adapter
+- full field-property fidelity beyond current minimal mutation shape
+- complete view visible/filter/group/sort/timebar/card contracts
+- forms/questions
+- dashboards/blocks/layout/data_config
+- workflows/automation
+- Advanced Permission role config
+- attachment handling if present
+- canonical verifier across all dimensions
 
 ## Safety boundary
 
 - Source mutation: 0
-- Customer target provisioning: BLOCKED
-- Customer target Apply: BLOCKED
-- Table/field/record/delete: 0
-- Dashboard/workflow/permission mutation: 0
-- Worker/D1/Queue/schedule mutation: 0
-- Existing unrelated customer content must remain untouched
-- Secrets remain in `.customer.prod.vars`/process environment only; logs expose only hashed Base identity
-
-The old `--provision-missing`, `--preview`, `--apply` and `--verify` paths remain actively rejected while Full-Parity
-Apply is incomplete.
+- Live Source dependency: optional diagnostic only
+- Target write: blocked until export baseline + full clone coverage
+- Existing unrelated customer content: immutable/protected
+- Deletes: 0 unless separately approved in a future explicit scope
+- Worker/D1/Queue/schedule changes: 0
+- Secrets stay in `.customer.prod.vars`/process environment only
 
 ## Repository state
 
 Draft PR: `#661`
 
-Latest implementation after the first Live audit adds Source identity/table-set preflight and Workflow request contract
-correction. Exact-head Branch Verification is pending for this new repair.
-
-No Customer Lark mutation has been run by this full-parity workstream.
-
-## Current implementation files
-
-- `.customer.prod.vars.example`
-- `.gitignore`
-- `packages/application/src/use-cases/preflight-customer-base-full-parity.js`
-- `packages/application/src/use-cases/audit-lark-base-full-parity.js`
-- `scripts/customer-base-consolidation-operator.mjs`
-- `tests/application/preflight-customer-base-full-parity.test.js`
-- `tests/application/audit-lark-base-full-parity.test.js`
-- existing consolidation/preplaced modules remain for reuse only after the new full-parity contract is met
+Latest change replaces the Live Source 33/33 authority gate with the local `.base` export authority, adds the local export
+reader and changes Customer PROD config accordingly. Exact-head Branch Verification must pass before the next local run.
 
 ## Remaining closure sequence
 
-1. Pass exact-head repository CI for the Live-audit diagnosis repair.
-2. Rerun the GET-only operator; inspect the new Source/Target metadata and table-set preflight only.
-3. If Source remains 17/33, replace only `LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN` with the actual imported
-   33-table Source Base token and rerun; do not mutate either Base.
-4. Once Source preflight is exact 33/33, Deep Full-Parity Audit may run.
-5. Resolve exact scope/capability blockers using official contracts; do not suppress unknown read errors.
-6. Build minimal clone/remap support using existing shared Lark client/contracts.
-7. Run dry-run/preview proving every Source dimension is handled and unrelated target resources are untouched.
-8. Execute one controlled target Apply.
-9. Run canonical GET-only post-Apply verifier.
-10. Close only when every required dimension reports parity and no unresolved blocker remains.
+1. Run exact-head CI.
+2. Run `--source-export-audit` against the exact local file and compare to approved baseline.
+3. Align the normalized reader to the real export structure if any inventory recognition differs; do not fall back to the 17-table Live Source.
+4. Adapt the local export into the existing consolidation engine and extend all missing parity dimensions.
+5. Dry-run/preview against Target with zero unrelated-content collisions and zero unhandled exported dimensions.
+6. One controlled Apply.
+7. GET-only canonical verifier proves 100% parity for every export-represented dimension.
+8. Only then may PR #661 be considered ready for merge/closeout.
