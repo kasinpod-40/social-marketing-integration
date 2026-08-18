@@ -2,13 +2,12 @@
 
 ## Business target
 
-Migrate `Social MKT Data Hub` resources into the existing customer Base `✨Marketing Content Calendar` with exact
-functional/UI parity for the **32 clone-scope Tables**, while preserving every resource that existed in the customer Base
-before migration.
+Migrate the exact approved `Social MKT Data Hub` export into existing customer Base `✨Marketing Content Calendar` with
+functional/UI parity for 32 clone-scope Tables while preserving every resource that already existed in Target.
 
-The exact local `.base` export is the migration authority. TikTok Native is intentionally not cloned.
+Target internal folder remains `Setup Phase | Social MKT Data Hub`.
 
-## Authority
+## Exact authority
 
 ```text
 file                        Social MKT Data Hub(20260818-030125).base
@@ -25,19 +24,16 @@ Workflows                   2
 Advanced Permission roles   4
 ```
 
-`📣 MKT_Report_Top_Ads` appears in two snapshot chunks but one stable exported Table identity; parsers dedupe it.
+`📣 MKT_Report_Top_Ads` appears in two snapshot chunks but has one stable exported Table identity; parsers dedupe it.
 
-## Policy B — immutable protected external TikTok
-
-User-selected contract:
+## Policy B
 
 - clone scope = 32 Tables;
-- `🎵 RAW_TikTok_Creator_Videos` = `protected_external_reuse`;
-- Target live TikTok is authoritative for its current state;
-- TikTok is excluded from clone comparison, plan, Apply and clone verification;
-- TikTok still remains under the pre-existing customer write fence;
-- every other Table already in Target is also immutable;
-- no historical-export repair of pre-existing customer resources.
+- `🎵 RAW_TikTok_Creator_Videos` = immutable `protected_external_reuse`;
+- Target live TikTok is authoritative only for its current Table state;
+- TikTok is excluded from clone comparison, plan, Apply and clone verifier traversal;
+- all pre-existing Target Tables/resources are immutable;
+- no historical-export repair of customer-owned resources.
 
 Latest observed pre-existing Target set:
 
@@ -46,209 +42,183 @@ Latest observed pre-existing Target set:
 - `(Graphic) Content Creator`
 - `คำถามจาก Sale & Support`
 
-## Live evidence
+## Real Target GET-only evidence
 
-GET-only v6 customer audit on the real Target:
+v6 passed Policy-B Preview:
 
-```text
-ok                               true
-policyBPreviewReady              true
-fullParityReady                  false
-remoteMutationCount              0
-cloneApplyEnabled                false
-Target Tables before             4
-clone-scope Tables present       0
-createTables                     32
-reuseExactTables                 0
-conflicts                        0
-warnings                         0
-clone Fields                     705
-clone Records                    33,488
-clone Views                      110
-```
+- clone Source: 32 Tables / 705 Fields / 33,488 Records / 110 Views;
+- Target before: 4 Tables;
+- clone-scope present: 0;
+- create plan: 32;
+- conflicts/warnings: 0/0;
+- remote mutation: 0;
+- Apply disabled.
 
-The Policy-B live Preview gate is closed. Full parity remains blocked by represented UI/Base resources.
+Do not rerun unchanged v6.
 
-## Actual clone-scope View inventory
+## Automatic parity implementation
 
-All 110 clone Views are grid Views.
+`consolidate-lark-base.js` remains the only clone engine.
 
-```text
-hidden fields       11
-filters             78
-field order        110
-sort                 41
-group                 4
-column config        94
-row height          110
-frozen columns      110
-hierarchy             1
-card                  0
-color                 0
-forms                 0
-public level        110
-```
+Implemented / CI-verified components:
 
-Only represented dimensions may block this export; card/color/Form work is not required for this authority artifact.
+- Table/Field/Record clone;
+- Relation/Formula deterministic remap;
+- Relation record remap;
+- basic Views, hidden fields, filters;
+- documented View hierarchy phase;
+- canonical GET-only clone verifier;
+- immutable pre-existing Target Table fence;
+- Advanced Permission planner/fence/transport/verifier.
 
-## Existing shared engine reuse
+No parallel migration framework is allowed.
 
-`packages/application/src/use-cases/consolidate-lark-base.js` remains the only table migration engine.
+## View manual parity
 
-It already handles:
-
-- Table creation
-- Fields
-- Relation and Formula dependency remap
-- Records and Relation record remap
-- basic Views
-- hidden fields
-- View filters
-- creation-only writes for missing Tables
-
-No new parallel migration engine was introduced.
-
-## Canonical clone verifier
-
-Added `verify-lark-base-clone-canonical-parity.js`.
-
-Contract: `customer_base_clone_canonical_verifier_v1`.
-
-Coverage:
-
-- full readable Field configuration
-- generated Select option ID canonicalization
-- Date defaults
-- Relation Table-ID remap
-- Formula Table/Field-ID remap
-- every readable Record field value
-- Relation record-ID remap
-- View name/type/public/hidden/filter with Field-ID remap
-- unrelated customer Tables ignored
-
-The verifier is GET-only. Focused/full Branch Verification passed after implementation. It is intentionally not connected to an
-enabled customer Apply path yet.
-
-## Documented View hierarchy parity
-
-Official Feishu/Lark documentation explicitly demonstrates PATCHing a View with:
-
-```json
-{
-  "property": {
-    "hierarchy_config": {
-      "field_id": "..."
-    }
-  },
-  "view_name": "..."
-}
-```
-
-Implementation therefore adds only this proven contract:
-
-- `withLarkBaseParityCapabilities` decorator reuses existing `requestBitableJson` transport;
-- GET current hierarchy;
-- Source field ID → field name → Target field ID remap;
-- PATCH only when different;
-- GET readback after update;
-- hierarchy mutation is inside `protectCustomerLarkTarget` write fence;
-- `applyLarkBaseDocumentedViewParity` is a post-consolidation phase but is not exposed through the customer operator.
-
-No request body for other rich View metadata is inferred from export/response properties.
-
-## View properties without proven write contracts
-
-Represented but still blocked:
-
-- field order — 110 Views
-- sort — 41 Views
-- group — 4 Views
-- column config — 94 Views
-- row height — 110 Views
-- frozen columns — 110 Views
-
-The official surface confirms generic View CRUD and the concrete hierarchy request above, but this workstream has not found a
-safe documented write payload for these six properties. They are classified as
-`documented_write_contract_not_proven`, not merely “code not written”.
-
-## Dashboard capability
-
-The approved export contains 6 Dashboards.
-
-Official Bitable public surface found for dashboards:
-
-- List Dashboards
-- Copy Dashboard by an existing `block_id`
-
-No documented local-export-payload → create Dashboard inside the existing Target Base contract has been proven. Whole-Base copy
-creates a separate Base and does not satisfy the customer destination requirement. Therefore Dashboard parity remains fail-closed.
-
-## Workflow capability
-
-The export contains 2 Workflows/Automations.
-
-Official public evidence confirms:
-
-- List Workflows API;
-- permission scopes for workflow create/update/delete/status;
-- status update capability.
-
-A complete documented workflow-definition replay request contract from local export payload has not been proven. Do not guess endpoint
-paths or bodies.
-
-## Advanced Permission v2 capability
-
-The Target reports Advanced Permission v2.
-
-Official v2 create-role contract exists:
+Retained safe manifest:
 
 ```text
-POST /open-apis/base/v2/apps/:app_token/roles
+file        customer-base-view-manual-parity.json
+sha256      7dabe74dd30291623e1620127f49f31fb2bb5d8131b36fcffe1884b5b089dc10
+Tables      32
+Views       110
 ```
 
-with:
+Automatic-owned:
 
-- `role_name`
-- `table_roles`
-- optional `block_roles`
-- optional `base_rule`
+- hidden: 11 Views / 85 assignments;
+- filters: 78 Views;
+- hierarchy: 1 View.
 
-This makes role materialization potentially automatable, but it is not safe to implement until exact current export `gzipBaseRole`
-shape and its Source Table/Dashboard references are known and pre-existing Target roles/resources have their own ownership fence.
+Manual-owned:
 
-## Value-redacted local resource shape audit
+- field order: 110 Views;
+- sort: 41 Views;
+- group: 4 Views;
+- explicit widths: 70 Views / 898 assignments;
+- row height: 110 Views, all level 1;
+- frozen columns: 110 Views, all count 1.
 
-Added:
+Manual state has an execution plan and a local semantic verifier. Unrelated Target Tables and automatic-owned hidden/default-width
+metadata are excluded from manual verification.
 
-- `scripts/lib/lark-base-export-resource-shape.js`
-- `scripts/customer-base-export-resource-shape-audit.mjs`
+## Advanced Permission evidence
 
-The operator reads only the exact pinned local export and emits structural metadata for:
+Exact role semantics:
 
-- dashboards
-- workflows
-- roles
-- accessConfig
-- extraInfo
+- Reader / General / Editor / Client;
+- zero members;
+- zero dashboard role rules;
+- no field/record fine-grained rules;
+- 17 current Source Table rules per role = 68;
+- 6 historical orphan Table refs repeated across four roles = 24 forensic-only entries;
+- permission values 0/1/2/4;
+- schemaVersion 2;
+- exported baseRule values 1.
 
-Output contains property paths, primitive **types**, array lengths and reference-key counts only. Primitive values are never emitted,
-so IDs/tokens/member identities/workflow text are not leaked.
+Only current Source Table references are materializable. Historical orphan refs are never written.
 
-Authority SHA/count mismatch blocks the local audit.
+Remaining permission blocker is controlled Apply wiring with explicit partial-role recovery.
 
-Remote request count and mutation count are always zero.
+## Dashboard / Workflow local evidence
 
-## Resource ownership safety gap
+A user-run v1 resource manifest matched the exact Source authority and performed zero remote requests/mutations. Uploaded v1 output
+SHA-256: `ef1b84d6a3e9a5da35c3b586a7685d67b2bd62efc0209a1ab1007c4484940d40`.
 
-The existing Target fence is Table-oriented. Before any Base-level Dashboard/Workflow/Role write can be enabled, the migration must:
+### Safe structural findings
 
-1. snapshot pre-existing Target Base-level resource identities;
-2. protect those resources from update/delete;
-3. permit only migration-created resources;
-4. reject same-name/same-identity ambiguity before mutation;
-5. canonical-readback every created resource.
+```text
+Dashboards                         6
+Dashboard charts                  75
+Per-dashboard chart counts        13 / 10 / 11 / 8 / 11 / 22
+Advanced-perm enabled             false on all 6
+Dashboard snapshots               6 opaque
+Chart snapshots                   75 opaque
+Workflows                         2
+Mapped Table references           26
+Mapped Field references           131
+Parsed JSON strings               4
+Opaque string fingerprints        81
+Unresolved reference-like values  0
+Remote request/mutation           0 / 0
+Target read/write                 false / false
+```
 
-This is required even if the API itself supports creation.
+Dashboard chart subtype distribution by source ordinal:
+
+1. 13 charts: subtype 0×8, 7×3, 14×2
+2. 10 charts: subtype 0×6, 7×3, 14×1
+3. 11 charts: subtype 0×7, 7×3, 14×1
+4. 8 charts: subtype 0×3, 7×3, 11×2
+5. 11 charts: subtype 0×7, 7×3, 14×1
+6. 22 charts: subtype 0×17, 7×3, 14×2
+
+All Dashboard snapshots remain opaque; do not infer or replay their internal JSON/string payloads.
+
+### Workflow semantics
+
+Workflow 1:
+
+- title: `AI Materialization → MKT_AI_Report_Runs`;
+- trigger: `setRecord`;
+- export status: `1`;
+- flow: `SetRecordTrigger` → four `GenerateAiTextWithSkyLarkAction` → `SetRecordAction`.
+
+Workflow 2:
+
+- title: `Eligible AI Run → Lark Group Notification`;
+- trigger: `addRecordV2`;
+- export status: `0`;
+- exported Draft flow: `AddRecordTrigger` → `Delay` of 1 minute.
+
+The parsed Workflow definitions resolve current Table/Field references with zero unresolved references. They are sufficient to drive a
+manual semantic checklist but are **not** a documented OpenAPI request body.
+
+## v1 resource-manifest redaction defect
+
+The structural evidence is valid, but the v1 output is not retained-safe because review found raw internal identifier classes that the
+sanitizer contract intended to redact. The repository does not store those raw values.
+
+Root cause classes:
+
+- auth-key field not classified sensitive;
+- tenant/user/base tag values not classified identity;
+- generated Workflow state/step identifiers embedded in keys/expressions;
+- Select option generated IDs not semantically remapped;
+- broad ID-prefix matching risked ordinary words.
+
+Repository repair upgrades to:
+
+- `customer_base_resource_manual_parity_manifest_v2`;
+- `customer_base_resource_manual_parity_operator_v2`.
+
+v2 behavior:
+
+- redact auth-key values;
+- redact tenant/user/base tags;
+- redact generated Workflow state/step IDs including embedded expressions;
+- map known Select option IDs → Table/Field/option names;
+- unknown generated refs → fingerprint only;
+- require generated-ID signals so normal words such as `recommendations` / `trigger_name` survive;
+- regression tests assert representative leaked identifiers never survive serialized output.
+
+The user does not need to rerun v1 merely to recover structural facts. v2 must pass exact-head CI before future use.
+
+## Manual capability boundary
+
+Dashboards:
+
+- public list/copy capability does not prove cross-Base export-definition replay;
+- exact snapshots are opaque;
+- recreate/verify through supported UI/source reference after clone resources exist;
+- never send opaque snapshot/token material as guessed payload.
+
+Workflows:
+
+- current export is semantically rich enough for a deterministic manual checklist;
+- generic workflow scopes do not prove arbitrary definition-write payloads;
+- recreate through supported UI unless a documented definition-write contract is proven;
+- preserve exported enabled/disabled state.
 
 ## Apply state
 
@@ -257,19 +227,22 @@ Customer Apply               disabled
 Target mutation              0 to date
 Source mutation              0
 Worker/D1/Queue/Schedule     untouched
-PR #661                      Draft / Open / not merged
+PR #661                      Draft / Open / unmerged
 ```
 
-`cloneApplyEnabled` must not change until every represented dimension is closed by automated parity or explicit verified manual parity.
+## Required controlled sequence
 
-## Remaining sequence
+1. exact-head CI for resource-manifest v2;
+2. freeze manual Dashboard/Workflow procedures and verification criteria;
+3. implement/test one resumable controlled Apply orchestration around existing components only;
+4. snapshot/protect pre-existing Target resources;
+5. shared consolidation;
+6. documented hierarchy parity;
+7. Advanced Permission phase with partial-role recovery;
+8. canonical GET-only verifier;
+9. manual View/Dashboard/Workflow UI parity;
+10. post-configuration verification/export evidence;
+11. manual folder placement if no supported folder API exists;
+12. Ready/Merge PR #661 only after all gates pass.
 
-1. Pass exact-head Branch Verification for canonical verifier + hierarchy parity + value-redacted shape audit + docs.
-2. Run one local-only resource-shape audit on the exact approved `.base` file.
-3. Use actual resource structure to implement only documented/provable Dashboard/Workflow/Advanced Permission handling.
-4. Add Base-level resource ownership/protection fence before any such write path exists.
-5. Resolve fieldOrder/sort/group/colInfos/rowHeight/frozen through documented API or explicit manual verification; do not invent payloads.
-6. Build one controlled orchestration around existing consolidator → documented parity phases → canonical verifier.
-7. Enable exactly one controlled Apply only after `fullParityReady=true` by contract.
-8. GET-only canonical verification plus UI/manual evidence for API-unexposed dimensions.
-9. Only then mark PR #661 Ready and merge.
+No Customer Apply is authorized before these gates close.
