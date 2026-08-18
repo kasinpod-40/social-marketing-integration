@@ -22,11 +22,23 @@ export async function buildLarkBaseResourceManualParityManifest(input) {
   const diagnostics = createDiagnostics();
 
   const dashboards = requireArray(resources.dashboards ?? [], 'dashboards').map((dashboard, index) => (
-    sanitizeDashboard(dashboard, index, references, diagnostics)
+    scrubResidualKnownReferences(
+      sanitizeDashboard(dashboard, index, references, diagnostics),
+      references,
+      diagnostics,
+      `dashboard[${index}]`,
+    )
   ));
   const workflows = requireArray(resources.workflows ?? [], 'workflows').map((workflow, index) => (
-    sanitizeWorkflow(workflow, index, references, diagnostics)
+    scrubResidualKnownReferences(
+      sanitizeWorkflow(workflow, index, references, diagnostics),
+      references,
+      diagnostics,
+      `workflow[${index}]`,
+    )
   ));
+
+  assertNoKnownSourceIdentifiers({ dashboards, workflows }, references);
 
   return deepFreeze({
     ok: true,
@@ -247,6 +259,46 @@ function replaceKnownReferencesInText(value, references, diagnostics, bracketed)
     result = result.replaceAll(optionId, formatSemanticRef(`option:${tableName}.${fieldName}=${optionName}`, bracketed));
   }
   return result;
+}
+
+function scrubResidualKnownReferences(value, references, diagnostics, path) {
+  if (value === null || value === undefined) return value ?? null;
+  if (Array.isArray(value)) {
+    return value.map((item, index) => scrubResidualKnownReferences(item, references, diagnostics, `${path}[${index}]`));
+  }
+  if (plainObject(value)) {
+    const result = {};
+    for (const [key, nested] of Object.entries(value)) {
+      const safeKey = replaceKnownReferencesInText(key, references, diagnostics, false);
+      if (Object.prototype.hasOwnProperty.call(result, safeKey)) {
+        const error = new Error('Residual identifier scrub produced a duplicate semantic key');
+        error.code = 'CUSTOMER_BASE_RESOURCE_MANIFEST_SEMANTIC_KEY_COLLISION';
+        error.details = { path, keyFingerprint: fingerprint(key) };
+        throw error;
+      }
+      result[safeKey] = scrubResidualKnownReferences(nested, references, diagnostics, `${path}.${safeKey}`);
+    }
+    return result;
+  }
+  if (typeof value !== 'string') return value;
+  return replaceKnownReferencesInText(value, references, diagnostics, true);
+}
+
+function assertNoKnownSourceIdentifiers(value, references) {
+  const serialized = JSON.stringify(value);
+  for (const [kind, ids] of [
+    ['table', references.tableById.keys()],
+    ['field', references.fieldById.keys()],
+    ['select-option', references.optionById.keys()],
+  ]) {
+    for (const id of ids) {
+      if (!serialized.includes(id)) continue;
+      const error = new Error('Sanitized Base resource manifest still contains a known Source identifier');
+      error.code = 'CUSTOMER_BASE_RESOURCE_MANIFEST_IDENTIFIER_LEAK';
+      error.details = { kind, fingerprint: fingerprint(id) };
+      throw error;
+    }
+  }
 }
 
 function formatSemanticRef(value, bracketed) {
