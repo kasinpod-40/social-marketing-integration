@@ -4,6 +4,7 @@ import { readDevVars } from './lib/dev-vars.js';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
 import { inspectLarkBaseExportResourceShapes } from './lib/lark-base-export-resource-shape.js';
+import { inspectLarkBaseExportPermissionSemantics } from './lib/lark-base-export-permission-semantics.js';
 import { printJson } from './lib/lark-runtime.js';
 
 const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
@@ -28,20 +29,26 @@ try {
   const inspection = await inspectLarkBaseExport(sourceExportFile);
   assertAuthority(inspection);
   const sourceClient = await createLarkBaseExportSourceClient(sourceExportFile);
-  const resourceShapes = inspectLarkBaseExportResourceShapes(sourceClient.getExportResources());
+  const resources = sourceClient.getExportResources();
+  const resourceShapes = inspectLarkBaseExportResourceShapes(resources);
+  const permissionSemantics = inspectLarkBaseExportPermissionSemantics({
+    roles: resources.roles,
+    sourceTables: await sourceClient.listTables(),
+  });
 
   printJson({
     ok: true,
-    contractVersion: 'customer_base_export_resource_shape_operator_v1',
+    contractVersion: 'customer_base_export_resource_shape_operator_v2',
     action: 'source-resource-shape-audit',
-    stage: 'exact-export-local-resource-schema-inventory',
-    mode: 'local-read-only-value-redacted',
+    stage: 'exact-export-local-resource-schema-and-permission-semantics',
+    mode: 'local-read-only-sensitive-id-redacted',
     sourceAuthority: {
       fileSha256: inspection.file.sha256,
       fileSizeBytes: inspection.file.sizeBytes,
       counts: inspection.counts,
     },
     resourceShapes,
+    permissionSemantics,
     remoteRequestCount: 0,
     remoteMutationCount: 0,
     targetReadExecuted: false,
@@ -51,7 +58,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_export_resource_shape_operator_v1',
+    contractVersion: 'customer_base_export_resource_shape_operator_v2',
     code: error?.code ?? 'CUSTOMER_BASE_EXPORT_RESOURCE_SHAPE_AUDIT_FAILED',
     message: error?.message ?? String(error),
     details: error?.details ?? {},
