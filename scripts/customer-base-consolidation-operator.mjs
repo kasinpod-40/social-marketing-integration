@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { basename } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, join } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { printJson } from './lib/lark-runtime.js';
@@ -41,10 +42,12 @@ const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '📣 MKT_Report_Top_Ads',
 ]);
 
+const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
+const SOURCE_EXPORT_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
 const EXPECTED_EXPORT_BASELINE = Object.freeze({
   tables: 33,
   fields: 723,
-  records: 35_373,
+  records: 35_528,
   views: 111,
   relationFields: 12,
   formulaFields: 4,
@@ -58,10 +61,9 @@ const TARGET_LABEL = '✨Marketing Content Calendar';
 const TARGET_FOLDER_LABEL = 'Setup Phase | Social MKT Data Hub';
 const DEFAULT_CUSTOMER_PROD_VARS_FILE = '.customer.prod.vars';
 const CUSTOMER_PROD_VARS_TEMPLATE_FILE = '.customer.prod.vars.example';
-const REQUIRED_CUSTOMER_PROD_KEYS = Object.freeze([
+const TARGET_REQUIRED_KEYS = Object.freeze([
   'LARK_APP_ID',
   'LARK_APP_SECRET',
-  'LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE',
   'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
 ]);
 
@@ -70,7 +72,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_full_parity_operator_v3',
+    contractVersion: 'customer_base_full_parity_operator_v4',
     code: error?.code ?? 'CUSTOMER_BASE_FULL_PARITY_OPERATOR_FAILED',
     message: error?.message ?? String(error),
     details: redactDetails(error?.details ?? {}),
@@ -83,7 +85,7 @@ async function main() {
   if (!new Set(['full-parity-audit', 'source-export-audit']).has(mode)) {
     throw operatorError(
       'CUSTOMER_BASE_PARTIAL_PARITY_PATH_BLOCKED',
-      'Customer requires 100% source parity. Write/apply paths remain blocked until the local .base export is normalized and every exported dimension has clone/remap/verify coverage.',
+      'Customer requires 100% source parity. Write/apply paths remain blocked until every exported dimension has clone/remap/verify coverage.',
       { requestedMode: mode, allowedModes: ['full-parity-audit', 'source-export-audit'] },
     );
   }
@@ -91,33 +93,24 @@ async function main() {
   const customerProdVarsFile = process.env.CUSTOMER_PROD_VARS_FILE ?? DEFAULT_CUSTOMER_PROD_VARS_FILE;
   const fileEnv = await readDevVars(customerProdVarsFile);
   const env = { ...fileEnv, ...process.env };
-  assertCustomerProdConfig(env, customerProdVarsFile);
-
-  const sourceExportFile = requireText(
-    env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE,
-    'LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE',
-  );
-  const targetAppToken = requireText(
-    env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN,
-    'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
-  );
-
+  const sourceExportFile = resolveSourceExportFile(env);
   const exportInspection = await inspectLarkBaseExport(sourceExportFile);
   const exportAuthority = compareExportAuthority(exportInspection);
 
   if (mode === 'source-export-audit') {
     printJson({
       ok: exportAuthority.ok,
-      contractVersion: 'customer_base_full_parity_operator_v3',
+      contractVersion: 'customer_base_full_parity_operator_v4',
       action: 'source-export-audit',
       stage: 'local-export-authority-preflight',
       mode: 'local-read-only',
       sourceAuthority: safeExportIdentity(exportInspection),
       exportInspection,
       exportAuthority,
-      configSource: configSource(customerProdVarsFile),
+      configSource: configSource(customerProdVarsFile, sourceExportFile),
       targetFolder: TARGET_FOLDER_LABEL,
       remoteMutationCount: 0,
+      remoteRequestCount: 0,
       targetReadExecuted: false,
       nextCommand: null,
     });
@@ -125,6 +118,11 @@ async function main() {
     return;
   }
 
+  assertTargetConfig(env, customerProdVarsFile);
+  const targetAppToken = requireText(
+    env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN,
+    'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
+  );
   const targetClient = createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: targetAppToken,
@@ -142,7 +140,7 @@ async function main() {
   const ok = blockers.length === 0;
   printJson({
     ok,
-    contractVersion: 'customer_base_full_parity_operator_v3',
+    contractVersion: 'customer_base_full_parity_operator_v4',
     action: 'full-parity-audit',
     stage: 'local-export-authority-and-target-preflight',
     mode: 'read-only',
@@ -151,7 +149,7 @@ async function main() {
     exportAuthority,
     target: targetInspection,
     blockers,
-    configSource: configSource(customerProdVarsFile),
+    configSource: configSource(customerProdVarsFile, sourceExportFile),
     targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
     targetFolder: TARGET_FOLDER_LABEL,
     remoteMutationCount: 0,
@@ -161,6 +159,12 @@ async function main() {
     nextCommand: null,
   });
   if (!ok) process.exitCode = 1;
+}
+
+function resolveSourceExportFile(env) {
+  const configured = optionalText(env?.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE);
+  if (configured) return configured;
+  return join(homedir(), 'Downloads', SOURCE_EXPORT_FILENAME);
 }
 
 async function inspectTarget(client) {
@@ -194,6 +198,14 @@ async function inspectTarget(client) {
 
 function compareExportAuthority(inspection) {
   const blockers = [];
+  if (inspection?.file?.sha256 !== SOURCE_EXPORT_SHA256) {
+    blockers.push(problem(
+      'CUSTOMER_BASE_SOURCE_EXPORT_SHA256_MISMATCH',
+      'Source .base file is not the exact approved export uploaded for this migration',
+      { expectedSha256: SOURCE_EXPORT_SHA256, actualSha256: inspection?.file?.sha256 ?? null },
+    ));
+  }
+
   for (const [key, expected] of Object.entries(EXPECTED_EXPORT_BASELINE)) {
     const actual = inspection?.counts?.[key];
     if (actual !== expected) {
@@ -206,49 +218,53 @@ function compareExportAuthority(inspection) {
   }
 
   const tableNames = inspection?.names?.tables ?? [];
-  if (tableNames.length > 0) {
-    const missing = EXPECTED_SOURCE_TABLE_NAMES.filter((name) => !tableNames.includes(name));
-    const unexpected = tableNames.filter((name) => !EXPECTED_SOURCE_TABLE_NAMES.includes(name));
-    if (missing.length > 0 || unexpected.length > 0) {
-      blockers.push(problem(
-        'CUSTOMER_BASE_SOURCE_EXPORT_TABLE_SET_MISMATCH',
-        'Source .base export table names do not match the approved 33-table migration set',
-        { missingExpectedTables: missing, unexpectedTables: unexpected },
-      ));
-    }
+  const missing = EXPECTED_SOURCE_TABLE_NAMES.filter((name) => !tableNames.includes(name));
+  const unexpected = tableNames.filter((name) => !EXPECTED_SOURCE_TABLE_NAMES.includes(name));
+  if (missing.length > 0 || unexpected.length > 0) {
+    blockers.push(problem(
+      'CUSTOMER_BASE_SOURCE_EXPORT_TABLE_SET_MISMATCH',
+      'Source .base export table names do not match the approved 33-table migration set',
+      { missingExpectedTables: missing, unexpectedTables: unexpected },
+    ));
   }
 
   return Object.freeze({
     ok: blockers.length === 0,
+    approvedFile: {
+      fileName: SOURCE_EXPORT_FILENAME,
+      sha256: SOURCE_EXPORT_SHA256,
+    },
     expected: EXPECTED_EXPORT_BASELINE,
     actual: inspection.counts,
     blockers: Object.freeze(blockers),
   });
 }
 
-function configSource(customerProdVarsFile) {
+function configSource(customerProdVarsFile, sourceExportFile) {
   return {
-    mode: 'customer-prod-file',
+    mode: 'customer-prod-file-with-export-default',
     file: customerProdVarsFile,
     template: CUSTOMER_PROD_VARS_TEMPLATE_FILE,
     sourceAuthority: 'local-lark-base-export',
+    sourceExportFile,
+    sourceExportDefaultUsed: !process.env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE,
   };
 }
 
-function assertCustomerProdConfig(env, customerProdVarsFile) {
-  const missing = REQUIRED_CUSTOMER_PROD_KEYS.filter((key) => (
+function assertTargetConfig(env, customerProdVarsFile) {
+  const missing = TARGET_REQUIRED_KEYS.filter((key) => (
     typeof env?.[key] !== 'string' || env[key].trim() === ''
   ));
   if (missing.length === 0) return;
 
   throw operatorError(
     'CUSTOMER_BASE_CONSOLIDATION_CONFIG_MISSING',
-    `Customer PROD Lark/export config is incomplete: ${missing.join(', ')}`,
+    `Customer PROD Target Lark config is incomplete: ${missing.join(', ')}`,
     {
       missing,
       configFile: customerProdVarsFile,
       templateFile: CUSTOMER_PROD_VARS_TEMPLATE_FILE,
-      hint: `Copy ${CUSTOMER_PROD_VARS_TEMPLATE_FILE} to ${customerProdVarsFile} and fill the required values locally.`,
+      hint: 'Local --source-export-audit needs no Lark credentials. Target credentials are required only for Target read/apply modes.',
     },
   );
 }
