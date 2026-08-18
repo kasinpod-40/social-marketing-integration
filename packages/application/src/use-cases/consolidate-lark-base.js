@@ -494,7 +494,11 @@ async function loadTableSnapshot(client, table) {
 
 async function inspectExistingTargetTable(input) {
   const targetSnapshot = await loadTableSnapshot(input.targetClient, input.targetTable);
-  const reasons = compareFieldShape(input.sourceSnapshot.fields, targetSnapshot.fields);
+  const reasons = [
+    ...compareFieldShape(input.sourceSnapshot.fields, targetSnapshot.fields),
+    ...compareReusableFieldConfig(input.sourceSnapshot.fields, targetSnapshot.fields),
+    ...compareReusableViewConfig(input.sourceSnapshot, targetSnapshot),
+  ];
   const sourceHasSpecial = input.sourceSnapshot.fields.some((field) => SPECIAL_FIELD_TYPES.has(Number(field.type)));
   if (sourceHasSpecial) reasons.push('pre-existing target table contains relation/formula fields and is not eligible for automatic reuse');
   if (input.primary) {
@@ -663,6 +667,117 @@ function compareFieldShape(sourceFields, targetFields) {
   return reasons;
 }
 
+function compareReusableFieldConfig(sourceFields, targetFields) {
+  const reasons = [];
+  const targetByName = new Map(targetFields.map((field) => [field.fieldName, field]));
+  for (const source of sourceFields) {
+    const target = targetByName.get(source.fieldName);
+    if (!target) continue;
+    if (normalizeOptionalText(target.uiType) !== normalizeOptionalText(source.uiType)) {
+      reasons.push(`field uiType mismatch ${source.fieldName}: ${String(target.uiType)} != ${String(source.uiType)}`);
+    }
+    if (normalizeDescription(target.description) !== normalizeDescription(source.description)) {
+      reasons.push(`field description mismatch ${source.fieldName}`);
+    }
+    if (canonicalReusableFieldProperty(target.property) !== canonicalReusableFieldProperty(source.property)) {
+      reasons.push(`field property mismatch ${source.fieldName}`);
+    }
+  }
+  return reasons;
+}
+
+function compareReusableViewConfig(sourceSnapshot, targetSnapshot) {
+  const reasons = [];
+  const sourceViews = sourceSnapshot.views ?? [];
+  const targetViews = targetSnapshot.views ?? [];
+  if (sourceViews.length !== targetViews.length) {
+    reasons.push(`view count ${targetViews.length} != ${sourceViews.length}`);
+  }
+
+  const targetByName = new Map();
+  for (const view of targetViews) {
+    if (targetByName.has(view.viewName)) {
+      reasons.push(`duplicate target view ${view.viewName}`);
+      continue;
+    }
+    targetByName.set(view.viewName, view);
+  }
+
+  const sourceFieldIdToTargetFieldId = sourceToTargetFieldIdMap(sourceSnapshot.fields, targetSnapshot.fields);
+  for (const sourceView of sourceViews) {
+    const targetView = targetByName.get(sourceView.viewName);
+    if (!targetView) {
+      reasons.push(`missing view ${sourceView.viewName}`);
+      continue;
+    }
+    const sourceComparable = canonicalReusableView(sourceView, sourceFieldIdToTargetFieldId);
+    const targetComparable = canonicalReusableView(targetView);
+    if (stableJson(sourceComparable) !== stableJson(targetComparable)) {
+      reasons.push(`view configuration mismatch ${sourceView.viewName}`);
+    }
+  }
+  return reasons;
+}
+
+function sourceToTargetFieldIdMap(sourceFields, targetFields) {
+  const targetByName = new Map(targetFields.map((field) => [field.fieldName, field]));
+  const result = new Map();
+  for (const sourceField of sourceFields) {
+    const targetField = targetByName.get(sourceField.fieldName);
+    if (targetField?.fieldId) result.set(sourceField.fieldId, targetField.fieldId);
+  }
+  return result;
+}
+
+function canonicalReusableFieldProperty(property) {
+  if (!property || typeof property !== 'object' || Array.isArray(property)) return 'null';
+  const result = structuredClone(property);
+  if (Array.isArray(result.options)) {
+    result.options = result.options.map((option) => {
+      if (!option || typeof option !== 'object' || Array.isArray(option)) return option;
+      const clone = { ...option };
+      delete clone.id;
+      return clone;
+    });
+  }
+  return stableJson(sortObject(result));
+}
+
+function canonicalReusableView(view, sourceFieldIdToTargetFieldId = null) {
+  const mapFieldId = (fieldId) => sourceFieldIdToTargetFieldId
+    ? (sourceFieldIdToTargetFieldId.get(fieldId) ?? `__unmapped__:${fieldId}`)
+    : fieldId;
+  const property = view?.property ?? {};
+  const hiddenFields = (Array.isArray(property.hiddenFields) ? property.hiddenFields : [])
+    .map(mapFieldId)
+    .sort();
+  const filterInfo = property.filterInfo
+    ? {
+        conjunction: property.filterInfo.conjunction === 'or' ? 'or' : 'and',
+        conditions: (Array.isArray(property.filterInfo.conditions) ? property.filterInfo.conditions : []).map((condition) => ({
+          fieldId: mapFieldId(condition.fieldId),
+          fieldType: Number(condition.fieldType),
+          operator: condition.operator,
+          value: condition.value === undefined ? null : structuredClone(condition.value),
+        })),
+      }
+    : null;
+  return sortObject({
+    viewType: normalizeOptionalText(view?.viewType),
+    publicLevel: view?.publicLevel ?? null,
+    hiddenFields,
+    filterInfo,
+  });
+}
+
+function normalizeDescription(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeOptionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
 function indexRecordsByPrimary(records, fieldName, label) {
   const result = new Map();
   for (const record of records) {
@@ -698,6 +813,12 @@ function sortObject(value) {
     return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortObject(value[key])]));
   }
   return value;
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
 }
 
 function extractFormulaTableIds(expression) {
