@@ -6,13 +6,17 @@
 # - `.customer.prod.vars` is git-ignored and must never be committed.
 # - Do not paste tenant_access_token here; the operator requests it from Lark using App ID/Secret.
 
-# Customer-owned Lark application credentials with permission to read BOTH Bases.
+# Customer-owned Lark application credentials with permission to write/read TARGET Base.
 LARK_APP_ID=
 LARK_APP_SECRET=
 
-# SOURCE Base: imported `Social MKT Data Hub` used as the 100% parity authority.
-# Use the Base app token only (not the full URL).
-LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN=
+# SOURCE authority = local Lark Base export, not a live Source Base token.
+# This must point to the exact exported file that represents the approved 100% structure/data source.
+LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE=/Users/wasanjantawong/Downloads/Social MKT Data Hub(20260817-033903).base
+
+# Optional only: a live Social MKT Data Hub token may be kept for diagnostics/comparison,
+# but it is NOT an authority gate for creating the customer Base.
+# LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN=
 
 # TARGET Base: customer `✨Marketing Content Calendar`.
 # Use the Base app token only (not the full URL).
