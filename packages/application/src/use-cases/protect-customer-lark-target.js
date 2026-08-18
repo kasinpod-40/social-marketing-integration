@@ -15,6 +15,7 @@ export async function protectCustomerLarkTarget(input) {
     input?.requiredProtectedTableNames ?? DEFAULT_REQUIRED_PROTECTED_NAMES,
   );
   const protectedExternalNames = normalizeOptionalNames(input?.protectedExternalTableNames);
+  const externalPolicyEnabled = protectedExternalNames.length > 0;
   const requiredNameSet = new Set(requiredProtectedNames);
   for (const name of protectedExternalNames) {
     if (!requiredNameSet.has(name)) {
@@ -84,15 +85,21 @@ export async function protectCustomerLarkTarget(input) {
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
 
+  const policy = {
+    contractVersion: externalPolicyEnabled
+      ? 'customer_lark_target_protection_v3'
+      : 'customer_lark_target_protection_v2',
+    existingTablesProtected: Object.freeze(existingTables),
+    requiredProtectedTableNames: Object.freeze([...requiredProtectedNames]),
+    ...(externalPolicyEnabled
+      ? { protectedExternalTableNames: Object.freeze([...protectedExternalNames]) }
+      : {}),
+    rule: 'all-preexisting-target-tables-read-only',
+  };
+
   return Object.freeze({
     client: wrapped,
-    policy: Object.freeze({
-      contractVersion: 'customer_lark_target_protection_v3',
-      existingTablesProtected: Object.freeze(existingTables),
-      requiredProtectedTableNames: Object.freeze([...requiredProtectedNames]),
-      protectedExternalTableNames: Object.freeze([...protectedExternalNames]),
-      rule: 'all-preexisting-target-tables-read-only',
-    }),
+    policy: Object.freeze(policy),
   });
 }
 
@@ -113,6 +120,7 @@ export function assertProtectedTargetTablePlan(input) {
     input?.requiredProtectedTableNames ?? DEFAULT_REQUIRED_PROTECTED_NAMES,
   );
   const protectedExternalNames = normalizeOptionalNames(input?.protectedExternalTableNames);
+  const externalPolicyEnabled = protectedExternalNames.length > 0;
   const existingNames = new Set(existingTables.map((table) => requireText(table?.name, 'existing protected table name')));
   const requiredNameSet = new Set(requiredProtectedNames);
   const protectedExternalNameSet = new Set(protectedExternalNames);
@@ -164,9 +172,25 @@ export function assertProtectedTargetTablePlan(input) {
   if (violations.length > 0) {
     throw codedError(
       'CUSTOMER_BASE_PROTECTED_TABLE_PLAN_BLOCKED',
-      'Pre-existing customer table is not proven safe for the selected reuse policy; consolidation must stop without mutating existing resources',
+      externalPolicyEnabled
+        ? 'Pre-existing customer table is not proven safe for the selected reuse policy; consolidation must stop without mutating existing resources'
+        : 'Pre-existing customer table is not proven exact/reusable; consolidation must stop without mutating existing resources',
       { violations },
     );
+  }
+
+  if (!externalPolicyEnabled) {
+    return Object.freeze({
+      ok: true,
+      contractVersion: 'customer_lark_target_protected_plan_v2',
+      rule: 'all-preexisting-target-tables-read-only',
+      existingTablesProtected: Object.freeze(existingTables.map((table) => Object.freeze(structuredClone(table)))),
+      sourceOverlaps: Object.freeze(
+        plans
+          .filter((plan) => existingNames.has(plan?.name))
+          .map((plan) => Object.freeze({ name: plan.name, action: plan.action })),
+      ),
+    });
   }
 
   const sourceOverlaps = [
