@@ -62,6 +62,7 @@ export async function protectCustomerLarkTarget(input) {
     'batchUpdateRecords',
     'createView',
     'updateView',
+    'updateViewHierarchy',
   ]) {
     if (typeof client[method] !== 'function') continue;
     wrapped[method] = async (request) => {
