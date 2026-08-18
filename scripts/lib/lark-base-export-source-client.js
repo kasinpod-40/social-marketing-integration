@@ -16,30 +16,38 @@ const MAX_EXPANDED_STRING_BYTES = 256 * 1024 * 1024;
  * Exposes the canonical local `.base` export through the read methods consumed by
  * `consolidate-lark-base.js`. This is a local source adapter, not another Lark
  * transport: it performs zero remote requests and exposes no mutation methods.
+ *
+ * `excludedTableNames` creates a deterministic clone-scope projection while the
+ * underlying export remains the exact immutable authority inspected separately.
  */
-export async function createLarkBaseExportSourceClient(filePath) {
+export async function createLarkBaseExportSourceClient(filePath, options = {}) {
   const model = await loadCanonicalExportModel(filePath);
+  const excludedTableNames = normalizeOptionalNameSet(options?.excludedTableNames, 'excludedTableNames');
+  const scopedTableOrder = model.tableOrder.filter((tableId) => (
+    !excludedTableNames.has(model.tables.get(tableId).table.name)
+  ));
+  const scopedTableIds = new Set(scopedTableOrder);
 
   return Object.freeze({
     sourceKind: 'local-lark-base-export',
     appToken: 'LOCAL_EXPORT_SOURCE',
     async listTables() {
-      return model.tableOrder.map((tableId) => structuredClone(model.tables.get(tableId).table));
+      return scopedTableOrder.map((tableId) => structuredClone(model.tables.get(tableId).table));
     },
     async listFields(input) {
-      const table = requireTable(model, input?.tableId);
+      const table = requireScopedTable(model, scopedTableIds, input?.tableId);
       return table.fieldOrder.map((fieldId) => structuredClone(table.fields.get(fieldId)));
     },
     async listRecords(input) {
-      const table = requireTable(model, input?.tableId);
+      const table = requireScopedTable(model, scopedTableIds, input?.tableId);
       return table.recordOrder.map((recordId) => structuredClone(table.records.get(recordId)));
     },
     async listViews(input) {
-      const table = requireTable(model, input?.tableId);
+      const table = requireScopedTable(model, scopedTableIds, input?.tableId);
       return table.viewOrder.map((viewId) => structuredClone(table.views.get(viewId)));
     },
     async getView(input) {
-      const table = requireTable(model, input?.tableId);
+      const table = requireScopedTable(model, scopedTableIds, input?.tableId);
       const viewId = requireText(input?.viewId, 'viewId');
       const view = table.views.get(viewId);
       if (!view) throw codedError('LARK_BASE_EXPORT_VIEW_MISSING', `Export view not found: ${viewId}`, { tableId: table.table.tableId, viewId });
@@ -49,7 +57,11 @@ export async function createLarkBaseExportSourceClient(filePath) {
       return structuredClone(model.resources);
     },
     getExportDiagnostics() {
-      return structuredClone(model.diagnostics);
+      return {
+        ...structuredClone(model.diagnostics),
+        excludedTableNames: Object.freeze([...excludedTableNames].sort()),
+        scopedTableCount: scopedTableOrder.length,
+      };
     },
   });
 }
@@ -511,6 +523,24 @@ function requireTable(model, tableIdValue) {
   const table = model.tables.get(tableId);
   if (!table) throw codedError('LARK_BASE_EXPORT_TABLE_MISSING', `Export table not found: ${tableId}`);
   return table;
+}
+
+function requireScopedTable(model, scopedTableIds, tableIdValue) {
+  const table = requireTable(model, tableIdValue);
+  if (!scopedTableIds.has(table.table.tableId)) {
+    throw codedError(
+      'LARK_BASE_EXPORT_TABLE_OUTSIDE_SCOPE',
+      `Export table is outside the selected clone scope: ${table.table.name}`,
+      { tableId: table.table.tableId, name: table.table.name },
+    );
+  }
+  return table;
+}
+
+function normalizeOptionalNameSet(value, name) {
+  if (value === undefined || value === null) return new Set();
+  if (!Array.isArray(value)) throw new TypeError(`${name} must be an array`);
+  return new Set(value.map((item) => requireText(item, `${name} item`)));
 }
 
 function stableJson(value) {
