@@ -3,8 +3,14 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
+import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
 import { printJson } from './lib/lark-runtime.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
+import { previewLarkBaseConsolidation } from '../packages/application/src/use-cases/consolidate-lark-base.js';
+import {
+  assertProtectedTargetTablePlan,
+  protectCustomerLarkTarget,
+} from '../packages/application/src/use-cases/protect-customer-lark-target.js';
 
 const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '🪪 MKT_Accounts',
@@ -40,6 +46,9 @@ const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '📊 MKT_Report_Metric_Values',
   '🏆 MKT_Report_Top_Content',
   '📣 MKT_Report_Top_Ads',
+]);
+const REQUIRED_PROTECTED_TABLE_NAMES = Object.freeze([
+  '🎵 RAW_TikTok_Creator_Videos',
 ]);
 
 const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
@@ -129,7 +138,8 @@ async function main() {
   }, { onRequest: traceIfVerbose });
   const targetInspection = await inspectTarget(targetClient);
   const blockers = [...exportAuthority.blockers];
-  if (targetInspection.metadata.name !== TARGET_LABEL) {
+  const targetIdentityMatches = targetInspection.metadata.name === TARGET_LABEL;
+  if (!targetIdentityMatches) {
     blockers.push(problem(
       'CUSTOMER_BASE_TARGET_IDENTITY_NAME_MISMATCH',
       'Configured Target Base name does not match the customer destination',
@@ -137,17 +147,62 @@ async function main() {
     ));
   }
 
-  const ok = blockers.length === 0;
+  let consolidationPreview = null;
+  let targetProtection = null;
+  let protectedPlan = null;
+  if (exportAuthority.ok && targetIdentityMatches) {
+    try {
+      const sourceClient = await createLarkBaseExportSourceClient(sourceExportFile);
+      const protection = await protectCustomerLarkTarget({
+        client: targetClient,
+        requiredProtectedTableNames: REQUIRED_PROTECTED_TABLE_NAMES,
+      });
+      targetProtection = protection.policy;
+      consolidationPreview = await previewLarkBaseConsolidation({
+        sourceClient,
+        targetClient: protection.client,
+        expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
+        expectedSourceTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
+      });
+
+      if (!consolidationPreview.ok) {
+        blockers.push(problem(
+          'CUSTOMER_BASE_CONSOLIDATION_PREVIEW_BLOCKED',
+          'GET-only consolidation preview found source/target conflicts',
+          { conflicts: consolidationPreview.conflicts },
+        ));
+      }
+
+      protectedPlan = assertProtectedTargetTablePlan({
+        preview: consolidationPreview,
+        existingTablesProtected: protection.policy.existingTablesProtected,
+        requiredProtectedTableNames: protection.policy.requiredProtectedTableNames,
+      });
+    } catch (error) {
+      blockers.push(problem(
+        error?.code ?? 'CUSTOMER_BASE_CONSOLIDATION_PREVIEW_FAILED',
+        error?.message ?? 'GET-only consolidation preview failed',
+        redactDetails(error?.details ?? {}),
+      ));
+    }
+  }
+
+  const ok = blockers.length === 0
+    && consolidationPreview?.readyToApply === true
+    && protectedPlan?.ok === true;
   printJson({
     ok,
     contractVersion: 'customer_base_full_parity_operator_v4',
     action: 'full-parity-audit',
-    stage: 'local-export-authority-and-target-preflight',
+    stage: 'local-export-authority-target-and-consolidation-preview',
     mode: 'read-only',
     sourceAuthority: safeExportIdentity(exportInspection),
     exportInspection,
     exportAuthority,
     target: targetInspection,
+    targetProtection,
+    consolidationPreview,
+    protectedPlan,
     blockers,
     configSource: configSource(customerProdVarsFile, sourceExportFile),
     targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
@@ -155,6 +210,7 @@ async function main() {
     remoteMutationCount: 0,
     sourceLiveReadExecuted: false,
     sourceLiveAuthorityRequired: false,
+    consolidationPreviewExecuted: consolidationPreview !== null,
     cloneApplyEnabled: false,
     nextCommand: null,
   });
