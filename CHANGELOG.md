@@ -119,3 +119,11 @@
 - Added a local Storage Foundation 10x/100x load test and a customer-owned Production cutover runbook.
 
 ### Evidence and safety
+
+- Closed exactly two TikTok partial-write alerts as `resolved_by_new_generation`; Queue, replay, redrive, DLQ,
+  Worker, schedule and Business-data actions were zero. Recent open alert/DLQ since 2026-08-15 are zero.
+- D1 is 151.74 MiB across 70 tables/175,855 rows; linear 14-day-rate estimates are 609.35 MiB at one year and
+  1.49 GiB at three years. The existing private D1/Lark backups revalidated and a local restore/integrity/
+  Migration-0020 drill passed.
+- 100x load evidence used 1,208,200 Organic observations and 823,800 Ads daily facts; indexed range queries
+  completed in 873.68 ms and 162.99 ms with SQLite integrity `ok`.
