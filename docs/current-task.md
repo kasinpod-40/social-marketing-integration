@@ -13,9 +13,6 @@ TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
 SOURCE_AUTHORITY_TABLES             = 33
 CLONE_PARITY_TABLES                 = 32
 PROTECTED_EXTERNAL_TABLES           = 1
-PREEXISTING_TARGET_TABLE_POLICY     = ALL_READ_ONLY_IMMUTABLE
-REQUIRED_PROTECTED_TARGET_TABLE     = 🎵 RAW_TikTok_Creator_Videos
-REQUIRED_PROTECTED_ACTION           = PROTECTED_EXTERNAL_REUSE
 POLICY_B_PREVIEW_READY              = TRUE
 FULL_PARITY_READY                   = FALSE
 CUSTOMER_LARK_APPLY                 = DISABLED
@@ -25,45 +22,18 @@ DRAFT_PR                            = 661
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 ```
 
-## Objective
+## Objective and authority
 
-สร้างทรัพยากร `Social MKT Data Hub` ใน Base ลูกค้า `✨Marketing Content Calendar` ให้ functional/UI parity
-สำหรับ **32 clone-scope Tables** จาก exact approved local export โดยไม่แตะ resource ที่มีอยู่ก่อน migration.
+Create exact functional/UI parity for the 32 clone-scope Tables from the approved local `.base` export inside customer Base
+`✨Marketing Content Calendar`, preserving every resource that existed in Target before migration.
 
-`🎵 RAW_TikTok_Creator_Videos` เป็น protected live external source ของลูกค้าและอยู่นอก clone parity. Generated
-Table/Field/Record/View IDs เปลี่ยนได้เฉพาะเมื่อ references ถูก remap แบบ deterministic และ verifier ยืนยัน semantic parity.
+Exact authority:
 
-## Source authority
-
-Exact approved export:
-
-- file: `Social MKT Data Hub(20260818-030125).base`
-- SHA-256: `c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643`
-- size: 13,331,288 bytes
-- 33 Tables
-- 723 Fields
-- 35,528 Records
-- 111 Views
-- 12 Relations
-- 4 Formulas
-- 6 Dashboards
-- 2 Workflows/Automations
-- 4 Advanced Permission roles
-- `📣 MKT_Report_Top_Ads` มี duplicate snapshot chunk แต่ stable exported Table ID เดียว; parser dedupe แล้ว
-
-Live Source Base token ไม่ใช่ authority ของ migration นี้.
-
-## Policy B — Protected External Source
-
-Policy ที่ผู้ใช้เลือกและล็อกแล้ว:
-
-- clone parity scope = 32 Source Tables ที่ยังไม่มีใน Target;
-- `🎵 RAW_TikTok_Creator_Videos` = `protected_external_reuse`;
-- Target live TikTok เป็น authority สำหรับ current records/schema/UI ของ Table นี้;
-- TikTok ถูก exclude จาก clone comparison, plan, Apply traversal และ clone verifier traversal;
-- TikTok และ Table ลูกค้าที่มีอยู่ก่อน migration ทุกตัวอยู่ใต้ write fence แบบ zero-write;
-- migration ห้าม repair/overwrite existing customer resources ให้ตรง historical export;
-- legacy caller ที่ไม่เปิด protected-external policy ยังคง v2 `reuse_exact` contract เดิม.
+- SHA-256 `c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643`
+- 33 Tables / 723 Fields / 35,528 Records / 111 Views
+- 12 Relations / 4 Formulas / 6 Dashboards / 2 Workflows / 4 Advanced Permission roles
+- clone scope = 32 Tables / 705 Fields / 33,488 Records / 110 Views
+- `🎵 RAW_TikTok_Creator_Videos` = immutable `protected_external_reuse`; Target live state is authoritative for this Table only
 
 Latest observed immutable Target set:
 
@@ -72,233 +42,203 @@ Latest observed immutable Target set:
 - `(Graphic) Content Creator`
 - `คำถามจาก Sale & Support`
 
-Forbidden against every pre-existing Target Table:
+## Closed read-only evidence
 
-- create duplicate by name
-- rename/delete
-- create/update Field
-- create/update Record
-- create/update View or View property
-- alter Sync/customer configuration
+Do **not** rerun unchanged v6, permission semantic audit, or View manifest.
 
-Only resources created by this migration after the protected snapshot may eventually be writable.
+Real Target GET-only v6 proved:
 
-## Real Target evidence — v6 GET-only PASS
+- Policy-B preview ready
+- Target before = 4 Tables
+- clone-scope Target present = 0
+- plan create = 32 / reuse = 0 / conflicts = 0 / warnings = 0
+- remote mutation = 0
+- Apply disabled
 
-User-run audit on exact verified v6 baseline proved:
+## Implemented automatic parity
 
-```text
-operator                         customer_base_full_parity_operator_v6
-ok                               true
-policyBPreviewReady              true
-fullParityReady                  false
-remoteMutationCount              0
-cloneApplyEnabled                false
-source authority                 33 Tables
-clone scope                      32 Tables
-protected external              1 Table
-Target before                    4 Tables
-clone-scope Target present       0
-plan createTables                32
-plan reuseExactTables            0
-conflicts                        0
-warnings                         0
-clone Source Fields              705
-clone Source Records             33,488
-clone Source Views               110
-```
+Existing `consolidate-lark-base.js` remains the only Table migration engine. No parallel clone engine is allowed.
 
-View features represented in the **32-table clone scope**:
+Implemented and CI-verified:
 
-```text
-view type                        grid 110/110
-hiddenFields                     11 Views
-filterInfo                       78 Views
-fieldOrder                       110 Views
-sortInfo                         41 Views
-group                            4 Views
-colInfos                         94 Views
-rowHeightLevel                   110 Views
-frozenColCount                   110 Views
-hierarchyConfig                  1 View
-cardViewSetting                  0 Views
-colorInfo                        0 Views
-Form Views                       0
-```
-
-Do not rerun this unchanged Target audit merely to reproduce the same Policy-B evidence.
-
-## Implemented parity coverage
-
-### Shared clone path
-
-Existing `consolidate-lark-base.js` remains the only table migration engine. It already covers:
-
-- create clone-scope Tables
-- ordinary Fields
-- deterministic Relation/Formula remap
-- Records and Relation record-ID remap
-- basic View creation
-- supported hidden/filter View mutation
-- no View write to reused/existing protected Tables
-
-### Canonical verifier
-
-`verify-lark-base-clone-canonical-parity.js`
-
-Contract: `customer_base_clone_canonical_verifier_v1`
-
-Implemented and CI-verified coverage:
-
-- full readable Field config
-- Select option generated-ID canonicalization
-- Date default canonicalization
-- Relation target Table-ID remap
-- Formula Table/Field-ID remap
-- all readable Record field values
+- Table / Field / Record clone
+- deterministic Relation / Formula remap
 - Relation record-ID remap
-- View name/type/public/hidden/filter with Field-ID remap
-- unrelated customer Target Tables ignored
-- GET-only / zero mutation
+- basic Views
+- hidden fields + filters
+- documented View `hierarchy_config.field_id` phase
+- canonical GET-only Field/Record/Relation/Formula/View verifier
+- immutable pre-existing Target Table write fence
 
-The verifier is **not yet wired into an enabled controlled Apply path**, so these dimensions remain wiring blockers rather than readiness passes.
+Automatic parity still needs controlled Apply wiring; implementation itself is not the blocker.
 
-### Documented View hierarchy parity
+## View manual parity — procedure + verifier implemented
 
-Official Lark/Feishu OpenAPI explicitly documents updating a View with:
+Retained safe View manifest evidence:
 
-`property.hierarchy_config.field_id`
+- file `customer-base-view-manual-parity.json`
+- SHA-256 `7dabe74dd30291623e1620127f49f31fb2bb5d8131b36fcffe1884b5b089dc10`
+- 32 Tables / 110 Views
+- 0 remote request / 0 mutation
 
-Implemented components:
+Ownership:
 
-- connector decorator reusing existing authenticated/retried Bitable transport;
-- exact hierarchy GET/readback;
-- idempotent PATCH only when Target differs;
-- Source Field-ID → Source field name → Target Field-ID remap;
-- post-write GET verification;
-- `updateViewHierarchy` added to immutable pre-existing Target write fence;
-- post-consolidation phase exists but is not wired to the customer operator.
+- automatic-owned: hidden fields 11 Views / 85 assignments, filters 78 Views, hierarchy 1 View
+- manual-owned: field order 110 Views, sort 41, group 4, explicit non-null widths 70 Views / 898 assignments, row height 110, frozen columns 110
+- row-height level = 1 for all 110 Views
+- frozen-column count = 1 for all 110 Views
+- sort state collapses to 8 profiles
+- all 4 group states are `platform DESC`
 
-No other View property mutation is inferred from response metadata.
+Implemented / CI-verified contracts:
 
-## View properties still blocked by API-contract evidence
+- `customer_base_view_manual_parity_execution_plan_v1`
+- `customer_base_view_manual_parity_verifier_v1`
+- parity classifier `customer_base_clone_parity_coverage_v4`
 
-The current approved export represents these properties:
+Manual View execution happens only after migration-owned Tables/Views exist. Post-configuration verification uses semantic names and
+ignores unrelated customer Tables plus automatic-owned hidden/default-width metadata.
 
-- field order: 110 Views
-- sort: 41 Views
-- group: 4 Views
-- column config: 94 Views
-- row height: 110 Views
-- frozen columns: 110 Views
+## Advanced Permission — implementation complete, Apply wiring pending
 
-Current official documentation proves generic View CRUD and a concrete `hierarchy_config` request, but this workstream has not
-found a safe documented request contract for the six properties above. Therefore they are classified as
-`documented_write_contract_not_proven`, not as ordinary missing implementation.
+Exact semantic audit proved:
 
-Rules:
+- roles: Reader / General / Editor / Client
+- members = 0
+- dashboard role rules = 0
+- no field/record fine-grained rules
+- current Source Table rules = 17 per role = 68 total
+- 6 orphaned historical Table references repeated across all 4 roles = 24 forensic-only entries; never materialize them
+- permission values = 0 / 1 / 2 / 4
+- schemaVersion = 2
+- exported baseRule values = 1
 
-1. do not invent request keys from exported response metadata;
-2. do not send undocumented View properties to customer Target;
-3. keep full parity blocked until a documented mechanism or explicit manual parity procedure is proven.
+Implemented / CI-verified:
 
-Card/color/Form parity does not block this export because those features are not represented in the 32-table clone scope.
+- read-only role planner
+- current Source Table-name → Target Table-ID remap
+- orphan-reference forensic retention
+- pre-existing Target role immutable fence
+- documented role list/create transport only
+- GET-only expected role/table-permission verifier
 
-## Dashboard / Workflow / Advanced Permission capability classification
+Remaining role work: controlled Apply wiring + explicit idempotent partial-role recovery before role writes can be enabled.
 
-### Dashboards — 6 represented
+## Dashboard / Workflow exact resource evidence
 
-Official Bitable API exposes:
+User-run local resource manifest v1 was structurally successful against the exact Source authority and performed zero remote operations.
+Its uploaded file SHA-256 is `ef1b84d6a3e9a5da35c3b586a7685d67b2bd62efc0209a1ab1007c4484940d40`.
 
-- list dashboards;
-- copy an existing dashboard by `block_id`.
+**Security classification:** that v1 output is forensic input only, **not a retained-safe artifact**. Review found that it still emitted some
+internal auth/tenant/user/base/generated-step/Select-option identifiers. No such raw values are copied into repository documentation.
 
-No documented export-payload → create-dashboard-in-existing-Base contract has been proven. A whole-Base copy creates another Base,
-which does not satisfy migration into the existing customer Target. Dashboard materialization therefore stays fail-closed.
+Safe structural facts extracted from v1:
 
-### Workflows — 2 represented
+```text
+Dashboards                         6
+Dashboard charts                  75
+Dashboard chart counts            13 / 10 / 11 / 8 / 11 / 22
+Dashboard advanced-perm enabled   false for all 6
+Dashboard snapshots               6 opaque fingerprints
+Chart snapshots                   75 opaque fingerprints
+Workflows                         2
+Mapped Table references           26
+Mapped Field references           131
+Parsed JSON strings               4
+Opaque string fingerprints        81
+Unresolved reference-like values  0
+Remote request                    0
+Remote mutation                   0
+Target read/write                 false / false
+Apply                             disabled
+```
 
-Official Bitable API exposes workflow listing and workflow-related permission scopes. A complete documented definition-replay request
-contract for creating/updating an arbitrary workflow from the local export payload has not yet been proven. Do not guess endpoints.
+Workflow semantic evidence:
 
-### Advanced Permission roles — 4 represented
+1. `AI Materialization → MKT_AI_Report_Runs`
+   - trigger `setRecord`
+   - export status `1`
+   - steps: `SetRecordTrigger` → four `GenerateAiTextWithSkyLarkAction` steps → `SetRecordAction`
+2. `Eligible AI Run → Lark Group Notification`
+   - trigger `addRecordV2`
+   - export status `0`
+   - exported Draft steps: `AddRecordTrigger` → `Delay` (1 minute)
 
-Target reports Advanced Permission v2. Official v2 API documents:
+Dashboard snapshots are opaque in the export manifest, so their full visual/chart semantics cannot be reconstructed safely from this
+artifact alone. Dashboard parity therefore requires supported UI/source-reference reconstruction after Target clone resources exist.
 
-`POST /open-apis/base/v2/apps/:app_token/roles`
+Workflow definitions are substantially parseable and have zero unresolved Table/Field references, so they can drive a deterministic
+manual checklist. They still must **not** be replayed as internal `FlowSchema`/`Draft` OpenAPI payloads without a documented write contract.
 
-with `role_name`, `table_roles`, optional `block_roles`, and optional `base_rule`.
+## Resource manifest redaction v2
 
-This is potentially automatable, but implementation remains blocked until:
+Root cause fixed in repository after reviewing v1 output:
 
-- exact `gzipBaseRole` export structure is inventoried;
-- source Table/Dashboard references can be deterministically remapped;
-- pre-existing Target roles/resources are snapshotted and protected from update/delete;
-- role creation/readback verifier exists.
+- redact `authKey` values
+- redact tenant/user/base identity tags
+- redact generated Workflow step/state IDs, including embedded expressions
+- map Select option IDs to semantic Table/Field/option names when defined
+- redact unknown generated reference-like values by fingerprint only
+- distinguish generated `rec/trig/...` identities from ordinary words such as `recommendations` / `trigger_name`
+- regression tests assert raw identifiers cannot survive serialization
 
-## Local-only export resource shape audit
+Contracts upgraded:
 
-Added `scripts/customer-base-export-resource-shape-audit.mjs` plus value-redacted structural inspector.
+- `customer_base_resource_manual_parity_manifest_v2`
+- `customer_base_resource_manual_parity_operator_v2`
 
-Purpose: learn the exact shapes of `gzipDashboard`, `gzipAutomation`, `gzipBaseRole`, `gzipAccessConfig` and `gzipExtraInfo`
-without leaking primitive values and without any Lark request.
+The v1 file does **not** need to be rerun merely to recover its structural evidence. v2 exists to prevent future unsafe output and must
+pass exact-head CI before any further use.
 
-The operator:
+## Dashboard / Workflow capability rule
 
-- pins the exact approved SHA and all structural counts;
-- stops on any authority mismatch;
-- prints only property paths, types, array lengths and reference-key counts;
-- does not print role member IDs, workflow text, resource IDs/tokens or other primitive values;
-- performs `remoteRequestCount=0` and `remoteMutationCount=0`.
+- Do not infer request bodies from export snapshots or response metadata.
+- Generic create/update permission scopes are not a definition-replay contract.
+- Dashboard list/copy capability is not treated as proven cross-Base export-definition replay.
+- Keep Dashboard/Workflow writes disabled unless a documented request contract is proven.
+- Otherwise use exact manual UI/source-reference procedures after automatic clone Apply.
 
 ## Apply gate
 
-`cloneApplyEnabled` must remain `false` until all of the following are closed:
+`cloneApplyEnabled` remains `false` until:
 
-- canonical verifier wired into the only controlled Apply sequence;
-- documented hierarchy phase wired into that sequence;
-- fieldOrder/sort/group/colInfos/rowHeight/frozen parity resolved by documented API or explicit verified manual parity;
-- 6 Dashboard parity resolved;
-- 2 Workflow parity resolved;
-- 4 Advanced Permission roles remapped/protected/verified;
-- Base-level resources receive the same pre-existing-resource protection principle as Tables;
-- exact-head CI passes after final wiring.
+- one resumable controlled orchestration is implemented around the existing consolidator
+- documented hierarchy phase is wired
+- Advanced Permission phase is wired with partial-role recovery
+- canonical verifier is wired post-Apply
+- automatic/manual ownership is frozen before mutation
+- Dashboard/Workflow manual procedures and post-configuration verification criteria are explicit
+- exact-head CI passes
 
-No Customer Lark Apply is authorized yet.
+Planned controlled order:
+
+`protected Target snapshot → consolidation → hierarchy parity → Advanced Permission → canonical GET-only verifier → manual View/Dashboard/Workflow UI parity → post-configuration verification → manual folder placement`
+
+No Customer Apply is authorized yet.
 
 ## Safety contract
 
-1. Source export is immutable authority.
-2. SHA/count mismatch blocks before any Target mutation.
-3. Every pre-existing Target Table is immutable.
-4. TikTok = `protected_external_reuse`, zero-write and outside clone traversal.
-5. Protected writes are rejected before OpenAPI request.
-6. No customer resource delete.
-7. No Worker/D1/Queue/schedule mutation in this workstream.
-8. No Source mutation.
-9. No undocumented request payloads or guessed endpoint paths.
-10. PR #661 remains Draft until controlled Apply + canonical verification close successfully.
-
-## Required repository gates
-
-- `npm ci`
-- `npm run check`
-- `npm test`
-- `npm run test:report-reliability`
-- `npm audit`
-- `npm run deploy:dry-run`
-- diff whitespace/diagnostics
+1. Exact local export remains authority.
+2. Every pre-existing Target Table/resource is immutable.
+3. TikTok protected external remains zero-write and outside clone traversal.
+4. No customer resource delete.
+5. No Source mutation.
+6. No Worker/D1/Queue/schedule/deploy mutation in this workstream.
+7. No undocumented request payloads or guessed endpoint paths.
+8. PR #661 stays Draft until controlled Apply + verification close.
+9. Files known to expose internal identifiers are never committed as evidence artifacts.
 
 ## Next closure sequence
 
-1. Exact-head CI for the canonical verifier, hierarchy parity phase, resource-shape audit and documentation refresh.
-2. Run the **local-only value-redacted export resource shape audit once** on the exact approved `.base` file.
-3. Use that output to implement only provable Dashboard/Workflow/Advanced Permission remap coverage; keep unsupported capabilities fail-closed.
-4. Add Base-level pre-existing resource protection before any Dashboard/Workflow/Role write capability can be enabled.
-5. Build one controlled orchestration around the existing shared consolidator → documented parity phases → canonical verifier.
-6. Keep customer operator Apply disabled until `fullParityReady=true` by contract.
-7. One controlled customer Apply to migration-created resources only.
-8. GET-only canonical verification and explicit UI/manual evidence for any API-unexposed dimensions.
-9. Only then Ready/Merge PR #661.
+1. Pass exact-head CI for resource-manifest redaction v2.
+2. Convert the two Workflow definitions and six opaque Dashboard identities into explicit manual post-Apply verification procedures without storing raw internal IDs.
+3. Implement/test one resumable controlled Apply orchestration around existing shared components only.
+4. Keep Apply disabled until failure/recovery behavior is proven.
+5. One controlled customer Apply to migration-created resources only.
+6. GET-only canonical verification.
+7. Execute manual View/Dashboard/Workflow parity.
+8. Export/verify Target manual View state and retain safe UI evidence for Dashboard/Workflow.
+9. Move cloned Tables under `Setup Phase | Social MKT Data Hub` manually if no supported folder API exists.
+10. Ready/Merge PR #661 only after all parity gates pass.
 
-Detailed workstream record: `docs/project-brain/customer-base-consolidation-v1.md`.
+Detailed record: `docs/project-brain/customer-base-consolidation-v1.md`.
