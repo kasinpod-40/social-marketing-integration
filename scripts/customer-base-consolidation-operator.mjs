@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
+import { basename } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
+import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { printJson } from './lib/lark-runtime.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
-import { auditLarkBaseFullParity } from '../packages/application/src/use-cases/audit-lark-base-full-parity.js';
-import { preflightCustomerBaseFullParity } from '../packages/application/src/use-cases/preflight-customer-base-full-parity.js';
 
 const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '🪪 MKT_Accounts',
@@ -41,6 +41,18 @@ const EXPECTED_SOURCE_TABLE_NAMES = Object.freeze([
   '📣 MKT_Report_Top_Ads',
 ]);
 
+const EXPECTED_EXPORT_BASELINE = Object.freeze({
+  tables: 33,
+  fields: 723,
+  records: 35_373,
+  views: 111,
+  relationFields: 12,
+  formulaFields: 4,
+  dashboards: 6,
+  workflows: 2,
+  advancedPermissionRoles: 4,
+});
+
 const SOURCE_LABEL = 'Social MKT Data Hub';
 const TARGET_LABEL = '✨Marketing Content Calendar';
 const TARGET_FOLDER_LABEL = 'Setup Phase | Social MKT Data Hub';
@@ -49,7 +61,7 @@ const CUSTOMER_PROD_VARS_TEMPLATE_FILE = '.customer.prod.vars.example';
 const REQUIRED_CUSTOMER_PROD_KEYS = Object.freeze([
   'LARK_APP_ID',
   'LARK_APP_SECRET',
-  'LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN',
+  'LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE',
   'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
 ]);
 
@@ -58,7 +70,7 @@ try {
 } catch (error) {
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_full_parity_operator_v2',
+    contractVersion: 'customer_base_full_parity_operator_v3',
     code: error?.code ?? 'CUSTOMER_BASE_FULL_PARITY_OPERATOR_FAILED',
     message: error?.message ?? String(error),
     details: redactDetails(error?.details ?? {}),
@@ -68,11 +80,11 @@ try {
 
 async function main() {
   const mode = resolveMode(process.argv.slice(2));
-  if (mode !== 'full-parity-audit') {
+  if (!new Set(['full-parity-audit', 'source-export-audit']).has(mode)) {
     throw operatorError(
       'CUSTOMER_BASE_PARTIAL_PARITY_PATH_BLOCKED',
-      'Customer requires 100% source parity. Legacy provision/preview/apply/verify paths are blocked until full-parity clone and verifier coverage are complete.',
-      { requestedMode: mode, allowedMode: 'full-parity-audit' },
+      'Customer requires 100% source parity. Write/apply paths remain blocked until the local .base export is normalized and every exported dimension has clone/remap/verify coverage.',
+      { requestedMode: mode, allowedModes: ['full-parity-audit', 'source-export-audit'] },
     );
   }
 
@@ -81,99 +93,137 @@ async function main() {
   const env = { ...fileEnv, ...process.env };
   assertCustomerProdConfig(env, customerProdVarsFile);
 
-  const sourceAppToken = requireText(
-    env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN,
-    'LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN',
+  const sourceExportFile = requireText(
+    env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE,
+    'LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE',
   );
   const targetAppToken = requireText(
     env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN,
     'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN',
   );
-  if (sourceAppToken === targetAppToken) {
-    throw operatorError(
-      'CUSTOMER_BASE_CONSOLIDATION_SAME_BASE_BLOCKED',
-      'Source and target Base app tokens must be different',
-    );
+
+  const exportInspection = await inspectLarkBaseExport(sourceExportFile);
+  const exportAuthority = compareExportAuthority(exportInspection);
+
+  if (mode === 'source-export-audit') {
+    printJson({
+      ok: exportAuthority.ok,
+      contractVersion: 'customer_base_full_parity_operator_v3',
+      action: 'source-export-audit',
+      stage: 'local-export-authority-preflight',
+      mode: 'local-read-only',
+      sourceAuthority: safeExportIdentity(exportInspection),
+      exportInspection,
+      exportAuthority,
+      configSource: configSource(customerProdVarsFile),
+      targetFolder: TARGET_FOLDER_LABEL,
+      remoteMutationCount: 0,
+      targetReadExecuted: false,
+      nextCommand: null,
+    });
+    if (!exportAuthority.ok) process.exitCode = 1;
+    return;
   }
 
-  const sourceClient = createLarkBitableClientFromEnv({
-    ...env,
-    LARK_APP_TOKEN: sourceAppToken,
-  }, { onRequest: traceIfVerbose });
   const targetClient = createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: targetAppToken,
   }, { onRequest: traceIfVerbose });
-
-  const identityPreflight = await preflightCustomerBaseFullParity({
-    sourceClient,
-    targetClient,
-    expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
-    expectedSourceLabel: SOURCE_LABEL,
-    expectedTargetLabel: TARGET_LABEL,
-  });
-
-  if (!identityPreflight.ok) {
-    printJson({
-      ok: false,
-      contractVersion: 'customer_base_full_parity_operator_v2',
-      action: 'full-parity-audit',
-      stage: 'identity-and-source-authority-preflight',
-      mode: 'read-only',
-      identityPreflight,
-      configSource: configSource(customerProdVarsFile),
-      sourceIdentity: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
-      targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
-      targetFolder: TARGET_FOLDER_LABEL,
-      remoteMutationCount: 0,
-      deepAuditExecuted: false,
-      nextCommand: null,
-    });
-    process.exitCode = 1;
-    return;
+  const targetInspection = await inspectTarget(targetClient);
+  const blockers = [...exportAuthority.blockers];
+  if (targetInspection.metadata.name !== TARGET_LABEL) {
+    blockers.push(problem(
+      'CUSTOMER_BASE_TARGET_IDENTITY_NAME_MISMATCH',
+      'Configured Target Base name does not match the customer destination',
+      { expected: TARGET_LABEL, actual: targetInspection.metadata.name },
+    ));
   }
 
-  const sourceInstrumentation = instrumentStrictReads(sourceClient, 'source');
-  const targetInstrumentation = instrumentStrictReads(targetClient, 'target');
-
-  const audit = await auditLarkBaseFullParity({
-    sourceClient: sourceInstrumentation.client,
-    targetClient: targetInstrumentation.client,
-    expectedTableNames: EXPECTED_SOURCE_TABLE_NAMES,
-    expectedTableCount: EXPECTED_SOURCE_TABLE_NAMES.length,
-  });
-
-  const strictReadFailures = [
-    ...sourceInstrumentation.failures,
-    ...targetInstrumentation.failures,
-  ];
-  const strictBlockers = strictReadFailures.map((failure) => ({
-    code: 'FULL_PARITY_STRICT_READ_FAILED',
-    message: `${failure.side} OpenAPI read failed during full-parity audit`,
-    details: failure,
-  }));
-  const blockers = [...audit.blockers, ...strictBlockers];
-  const ok = audit.ok && strictReadFailures.length === 0;
-
+  const ok = blockers.length === 0;
   printJson({
-    ...audit,
     ok,
-    blockers,
-    strictReadFailureCount: strictReadFailures.length,
-    strictReadFailures,
-    contractVersion: 'customer_base_full_parity_operator_v2',
+    contractVersion: 'customer_base_full_parity_operator_v3',
     action: 'full-parity-audit',
-    stage: 'deep-full-parity-audit',
-    identityPreflight,
+    stage: 'local-export-authority-and-target-preflight',
+    mode: 'read-only',
+    sourceAuthority: safeExportIdentity(exportInspection),
+    exportInspection,
+    exportAuthority,
+    target: targetInspection,
+    blockers,
     configSource: configSource(customerProdVarsFile),
-    sourceIdentity: safeBaseIdentity(SOURCE_LABEL, sourceAppToken),
     targetIdentity: safeBaseIdentity(TARGET_LABEL, targetAppToken),
     targetFolder: TARGET_FOLDER_LABEL,
     remoteMutationCount: 0,
-    deepAuditExecuted: true,
+    sourceLiveReadExecuted: false,
+    sourceLiveAuthorityRequired: false,
+    cloneApplyEnabled: false,
     nextCommand: null,
   });
   if (!ok) process.exitCode = 1;
+}
+
+async function inspectTarget(client) {
+  const [metadataResponse, tables] = await Promise.all([
+    client.requestBitableJson(
+      `/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}`,
+      { method: 'GET' },
+    ),
+    client.listTables(),
+  ]);
+  const app = metadataResponse?.data?.app ?? metadataResponse?.data ?? {};
+  const names = tables.map((table) => optionalText(table?.name)).filter(Boolean);
+  const expectedPresent = EXPECTED_SOURCE_TABLE_NAMES.filter((name) => names.includes(name));
+  return {
+    metadata: {
+      name: requireText(app?.name, 'target base.name'),
+      revision: finiteNumberOrNull(app?.revision),
+      isAdvanced: typeof app?.is_advanced === 'boolean' ? app.is_advanced : null,
+      timeZone: optionalText(app?.time_zone),
+      formulaType: finiteNumberOrNull(app?.formula_type),
+      advanceVersion: optionalText(app?.advance_version),
+    },
+    tableCount: tables.length,
+    uniqueTableNameCount: new Set(names).size,
+    expectedMigrationTablesPresent: expectedPresent,
+    expectedMigrationTableCount: expectedPresent.length,
+    missingExpectedMigrationTables: EXPECTED_SOURCE_TABLE_NAMES.filter((name) => !names.includes(name)),
+    unrelatedTables: names.filter((name) => !EXPECTED_SOURCE_TABLE_NAMES.includes(name)),
+  };
+}
+
+function compareExportAuthority(inspection) {
+  const blockers = [];
+  for (const [key, expected] of Object.entries(EXPECTED_EXPORT_BASELINE)) {
+    const actual = inspection?.counts?.[key];
+    if (actual !== expected) {
+      blockers.push(problem(
+        'CUSTOMER_BASE_SOURCE_EXPORT_COUNT_MISMATCH',
+        `Source .base export ${key} count does not match the approved authority baseline`,
+        { dimension: key, expected, actual: actual ?? null },
+      ));
+    }
+  }
+
+  const tableNames = inspection?.names?.tables ?? [];
+  if (tableNames.length > 0) {
+    const missing = EXPECTED_SOURCE_TABLE_NAMES.filter((name) => !tableNames.includes(name));
+    const unexpected = tableNames.filter((name) => !EXPECTED_SOURCE_TABLE_NAMES.includes(name));
+    if (missing.length > 0 || unexpected.length > 0) {
+      blockers.push(problem(
+        'CUSTOMER_BASE_SOURCE_EXPORT_TABLE_SET_MISMATCH',
+        'Source .base export table names do not match the approved 33-table migration set',
+        { missingExpectedTables: missing, unexpectedTables: unexpected },
+      ));
+    }
+  }
+
+  return Object.freeze({
+    ok: blockers.length === 0,
+    expected: EXPECTED_EXPORT_BASELINE,
+    actual: inspection.counts,
+    blockers: Object.freeze(blockers),
+  });
 }
 
 function configSource(customerProdVarsFile) {
@@ -181,6 +231,7 @@ function configSource(customerProdVarsFile) {
     mode: 'customer-prod-file',
     file: customerProdVarsFile,
     template: CUSTOMER_PROD_VARS_TEMPLATE_FILE,
+    sourceAuthority: 'local-lark-base-export',
   };
 }
 
@@ -192,7 +243,7 @@ function assertCustomerProdConfig(env, customerProdVarsFile) {
 
   throw operatorError(
     'CUSTOMER_BASE_CONSOLIDATION_CONFIG_MISSING',
-    `Customer PROD Lark config is incomplete: ${missing.join(', ')}`,
+    `Customer PROD Lark/export config is incomplete: ${missing.join(', ')}`,
     {
       missing,
       configFile: customerProdVarsFile,
@@ -202,82 +253,10 @@ function assertCustomerProdConfig(env, customerProdVarsFile) {
   );
 }
 
-function instrumentStrictReads(client, side) {
-  const failures = [];
-  const original = client.requestBitableJson.bind(client);
-  client.requestBitableJson = async (path, options = {}) => {
-    const request = normalizeFullParityReadRequest(path, options);
-    try {
-      return await original(request.path, request.options);
-    } catch (error) {
-      failures.push(Object.freeze(decorateReadFailure({
-        side,
-        resource: sanitizePath(request.path, client.appToken),
-        code: error?.code ?? error?.details?.code ?? 'UNKNOWN_READ_ERROR',
-        status: error?.details?.status ?? null,
-        larkCode: error?.details?.larkCode ?? null,
-      })));
-      throw error;
-    }
-  };
-  return Object.freeze({ client, failures });
-}
-
-function normalizeFullParityReadRequest(path, options) {
-  const rawPath = typeof path === 'string' ? path : String(path ?? '');
-  const [pathname, query = ''] = rawPath.split('?', 2);
-  const method = String(options?.method ?? 'GET').toUpperCase();
-
-  // Official Base v3 Workflow list contract is POST .../workflows/list with pagination in the body.
-  // Keep this compatibility shim until the audit module itself no longer calls the superseded guessed GET path.
-  if (method === 'GET' && pathname.endsWith('/workflows')) {
-    const params = new URLSearchParams(query);
-    const body = {};
-    const pageSize = Number(params.get('page_size'));
-    if (Number.isInteger(pageSize) && pageSize > 0) body.page_size = pageSize;
-    const pageToken = params.get('page_token');
-    if (pageToken) body.page_token = pageToken;
-    return {
-      path: `${pathname}/list`,
-      options: { ...options, method: 'POST', body },
-    };
-  }
-
-  return { path: rawPath, options };
-}
-
-function decorateReadFailure(failure) {
-  const resource = failure.resource;
-  if (resource.includes('/blocks/')) {
-    return { ...failure, requiredScope: 'base:block:read' };
-  }
-  if (resource.includes('/forms')) {
-    return { ...failure, requiredScope: 'base:form:read' };
-  }
-  if (resource.includes('/workflows')) {
-    return { ...failure, requiredScope: 'base:workflow:read' };
-  }
-  if (resource.endsWith('/roles')) {
-    return {
-      ...failure,
-      requiredScope: 'base:role:read',
-      additionalRequirement: 'Advanced Permission must be enabled and the caller must be a Base admin.',
-    };
-  }
-  if (resource.includes('/views/')) {
-    return { ...failure, requiredScope: 'base:view:read' };
-  }
-  return failure;
-}
-
-function sanitizePath(path, appToken) {
-  const raw = typeof path === 'string' ? path : String(path ?? '');
-  return raw.split(appToken).join('[BASE]');
-}
-
 function resolveMode(args) {
   const known = [
     ['--full-parity-audit', 'full-parity-audit'],
+    ['--source-export-audit', 'source-export-audit'],
     ['--provision-missing', 'provision-missing'],
     ['--preview', 'preview'],
     ['--apply', 'apply'],
@@ -292,6 +271,15 @@ function resolveMode(args) {
     );
   }
   return selected[0]?.[1] ?? 'full-parity-audit';
+}
+
+function safeExportIdentity(inspection) {
+  return Object.freeze({
+    label: SOURCE_LABEL,
+    fileName: basename(inspection.file.path),
+    fileSha256: inspection.file.sha256,
+    fileSizeBytes: inspection.file.sizeBytes,
+  });
 }
 
 function safeBaseIdentity(label, appToken) {
@@ -314,6 +302,19 @@ function redactDetails(value) {
     else result[key] = redactDetails(nested);
   }
   return result;
+}
+
+function problem(code, message, details = {}) {
+  return Object.freeze({ code, message, details: Object.freeze(structuredClone(details)) });
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function finiteNumberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function requireText(value, name) {
