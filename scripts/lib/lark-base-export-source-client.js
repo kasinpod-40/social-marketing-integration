@@ -341,7 +341,10 @@ function normalizeView(input) {
   }
   const property = raw?.property && typeof raw.property === 'object' ? raw.property : {};
   const colInfos = property?.colInfos && typeof property.colInfos === 'object' ? property.colInfos : {};
-  const hiddenFields = Object.entries(colInfos).filter(([, info]) => info?.hidden === true).map(([fieldId]) => fieldId);
+  const hiddenFields = Object.entries(colInfos)
+    .filter(([, info]) => info?.hidden === true)
+    .map(([fieldId]) => fieldId)
+    .sort();
   const filterInfo = normalizeFilterInfo(property?.filterInfo);
   return deepFreeze({
     viewId: input.viewId,
