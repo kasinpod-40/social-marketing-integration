@@ -1,16 +1,20 @@
 import { createHash } from 'node:crypto';
 
-const SENSITIVE_KEY = /(?:token|secret|credential|password|authorization|webhook|cookie|signature|sign)$/iu;
+const SENSITIVE_KEY = /(?:token|secret|credential|password|authorization|auth(?:entication)?[_-]?key|authkey|webhook|cookie|signature|sign)$/iu;
 const IDENTITY_KEY = /(?:(?:^|_)(?:id|ids|creator|editor|member|owner|user|chat|department|base_id|dashboardid|chartid)(?:$|_))|(?:Id|Ids|Creator|Editor|Member|Owner|User|Chat|Department|TableID|FieldID|ViewID|TableId|FieldId|ViewId|DashboardID|ChartID)$/iu;
-const RAW_REFERENCE = /^(?:tbl|fld|vew|rec|rol)[A-Za-z0-9_-]{4,}$/u;
+const RAW_REFERENCE = /^(?:tbl|fld|vew|rec|rol|opt)[A-Za-z0-9_-]{6,}$/u;
+const EMBEDDED_RAW_REFERENCE = /\b(?:tbl|fld|vew|rec|rol|opt)[A-Za-z0-9_-]{6,}\b/gu;
+const INTERNAL_ID_VALUE = /^(?:(?:act|trig|cond)[A-Za-z0-9_-]{6,}|(?:tenant|user|base)_\d{6,})$/u;
+const EMBEDDED_INTERNAL_ID = /\b(?:(?:act|trig|cond)[A-Za-z0-9_-]{6,}|(?:tenant|user|base)_\d{6,})\b/gu;
 const LARGE_OPAQUE_THRESHOLD = 12_000;
 const MAX_DEPTH = 18;
 
 /**
  * Builds a local-only, value-sanitized manual parity inventory for Base resources
  * whose export definitions cannot be replayed through a proven public OpenAPI
- * request contract. The output never exposes Lark tokens, webhook tokens or raw
- * internal IDs. Current Source Table/Field IDs are replaced by stable names.
+ * request contract. The output never exposes Lark tokens, auth keys, webhook
+ * tokens or raw internal IDs. Current Source Table/Field/Select-option IDs are
+ * replaced by stable semantic names whenever the export defines that mapping.
  */
 export async function buildLarkBaseResourceManualParityManifest(input) {
   const sourceClient = requireClient(input?.sourceClient);
@@ -27,7 +31,7 @@ export async function buildLarkBaseResourceManualParityManifest(input) {
 
   return deepFreeze({
     ok: true,
-    contractVersion: 'customer_base_resource_manual_parity_manifest_v1',
+    contractVersion: 'customer_base_resource_manual_parity_manifest_v2',
     mode: 'local-read-only-sensitive-values-redacted',
     dashboards,
     workflows,
@@ -37,6 +41,7 @@ export async function buildLarkBaseResourceManualParityManifest(input) {
       workflowCount: workflows.length,
       mappedTableReferences: diagnostics.mappedTableReferences,
       mappedFieldReferences: diagnostics.mappedFieldReferences,
+      mappedOptionReferences: diagnostics.mappedOptionReferences,
       parsedJsonStrings: diagnostics.parsedJsonStrings,
       opaqueStringFingerprints: diagnostics.opaqueStringFingerprints,
       redactedSensitiveValues: diagnostics.redactedSensitiveValues,
@@ -135,12 +140,13 @@ function sanitizeValue(value, path, key, references, diagnostics, depth) {
     if (mapped) return mapped;
     if (RAW_REFERENCE.test(value)) {
       diagnostics.unresolvedReferenceLikeValues.push({ path, fingerprint: fingerprint(value) });
-      return redacted(value, 'unresolved-reference-like', diagnostics);
+      return redactedReference(value, diagnostics);
     }
+    if (INTERNAL_ID_VALUE.test(value)) return redactedIdentityString(value, diagnostics);
     if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
     if (isStructuredStringKey(key)) return sanitizeStructuredString(value, path, references, diagnostics);
     if (value.length > LARGE_OPAQUE_THRESHOLD) return opaqueSummary(value, diagnostics, 'large-string');
-    return replaceEmbeddedKnownReferences(value, references, diagnostics);
+    return replaceEmbeddedKnownReferences(value, path, references, diagnostics);
   }
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'boolean') return value;
@@ -152,6 +158,11 @@ function sanitizeStructuredString(value, path, references, diagnostics) {
   if (typeof value !== 'string') return sanitizeValue(value, path, 'structured', references, diagnostics, 0);
   const mapped = mapReference(value, references, diagnostics);
   if (mapped) return mapped;
+  if (RAW_REFERENCE.test(value)) {
+    diagnostics.unresolvedReferenceLikeValues.push({ path, fingerprint: fingerprint(value) });
+    return redactedReference(value, diagnostics);
+  }
+  if (INTERNAL_ID_VALUE.test(value)) return redactedIdentityString(value, diagnostics);
   if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
   try {
     const parsed = JSON.parse(value);
@@ -180,29 +191,33 @@ function sanitizeIdentityValue(value, key, references, diagnostics) {
 }
 
 function sanitizeObjectKey(key, references, diagnostics) {
-  if (references.tableById.has(key)) {
-    diagnostics.mappedTableReferences += 1;
-    return `table:${references.tableById.get(key)}`;
-  }
-  if (references.fieldById.has(key)) {
-    diagnostics.mappedFieldReferences += 1;
-    const [tableName, fieldName] = references.fieldById.get(key).split('\u0000');
-    return `field:${tableName}.${fieldName}`;
-  }
+  let result = key;
   for (const [tableId, tableName] of references.tableById) {
-    if (key.includes(tableId)) {
-      diagnostics.mappedTableReferences += 1;
-      return key.replaceAll(tableId, `table:${tableName}`);
-    }
+    if (!result.includes(tableId)) continue;
+    diagnostics.mappedTableReferences += 1;
+    result = result.replaceAll(tableId, `table:${tableName}`);
   }
   for (const [fieldId, combined] of references.fieldById) {
-    if (key.includes(fieldId)) {
-      diagnostics.mappedFieldReferences += 1;
-      const [tableName, fieldName] = combined.split('\u0000');
-      return key.replaceAll(fieldId, `field:${tableName}.${fieldName}`);
-    }
+    if (!result.includes(fieldId)) continue;
+    diagnostics.mappedFieldReferences += 1;
+    const [tableName, fieldName] = combined.split('\u0000');
+    result = result.replaceAll(fieldId, `field:${tableName}.${fieldName}`);
   }
-  return key;
+  for (const [optionId, combined] of references.optionById) {
+    if (!result.includes(optionId)) continue;
+    diagnostics.mappedOptionReferences += 1;
+    const [tableName, fieldName, optionName] = combined.split('\u0000');
+    result = result.replaceAll(optionId, `option:${tableName}.${fieldName}=${optionName}`);
+  }
+  result = result.replace(EMBEDDED_INTERNAL_ID, (match) => {
+    diagnostics.redactedIdentityValues += 1;
+    return `internal:${shortFingerprint(match)}`;
+  });
+  result = result.replace(EMBEDDED_RAW_REFERENCE, (match) => {
+    diagnostics.unresolvedReferenceLikeValues.push({ path: 'object-key', fingerprint: fingerprint(match) });
+    return `unresolved:${shortFingerprint(match)}`;
+  });
+  return result;
 }
 
 function mapReference(value, references, diagnostics) {
@@ -215,10 +230,15 @@ function mapReference(value, references, diagnostics) {
     const [tableName, fieldName] = references.fieldById.get(value).split('\u0000');
     return { refType: 'field', tableName, fieldName };
   }
+  if (references.optionById.has(value)) {
+    diagnostics.mappedOptionReferences += 1;
+    const [tableName, fieldName, optionName] = references.optionById.get(value).split('\u0000');
+    return { refType: 'select-option', tableName, fieldName, optionName };
+  }
   return null;
 }
 
-function replaceEmbeddedKnownReferences(value, references, diagnostics) {
+function replaceEmbeddedKnownReferences(value, path, references, diagnostics) {
   let result = value;
   for (const [tableId, tableName] of references.tableById) {
     if (!result.includes(tableId)) continue;
@@ -231,12 +251,27 @@ function replaceEmbeddedKnownReferences(value, references, diagnostics) {
     const [tableName, fieldName] = combined.split('\u0000');
     result = result.replaceAll(fieldId, `[field:${tableName}.${fieldName}]`);
   }
+  for (const [optionId, combined] of references.optionById) {
+    if (!result.includes(optionId)) continue;
+    diagnostics.mappedOptionReferences += 1;
+    const [tableName, fieldName, optionName] = combined.split('\u0000');
+    result = result.replaceAll(optionId, `[option:${tableName}.${fieldName}=${optionName}]`);
+  }
+  result = result.replace(EMBEDDED_INTERNAL_ID, (match) => {
+    diagnostics.redactedIdentityValues += 1;
+    return `[internal:${shortFingerprint(match)}]`;
+  });
+  result = result.replace(EMBEDDED_RAW_REFERENCE, (match) => {
+    diagnostics.unresolvedReferenceLikeValues.push({ path, fingerprint: fingerprint(match) });
+    return `[unresolved:${shortFingerprint(match)}]`;
+  });
   return result;
 }
 
 async function buildReferenceMaps(sourceClient) {
   const tableById = new Map();
   const fieldById = new Map();
+  const optionById = new Map();
   for (const table of await sourceClient.listTables()) {
     const tableId = requireText(table?.tableId, 'tableId');
     const tableName = requireText(table?.name, `table name ${tableId}`);
@@ -247,9 +282,22 @@ async function buildReferenceMaps(sourceClient) {
       const fieldName = requireText(field?.fieldName, `${tableName} fieldName`);
       if (fieldById.has(fieldId)) throw new TypeError(`duplicate fieldId: ${fieldId}`);
       fieldById.set(fieldId, `${tableName}\u0000${fieldName}`);
+      const options = Array.isArray(field?.property?.options)
+        ? field.property.options
+        : (Array.isArray(field?.exportProperty?.options) ? field.exportProperty.options : []);
+      for (const option of options) {
+        const optionId = optionalText(option?.id);
+        if (!optionId) continue;
+        const optionName = requireText(option?.name, `${tableName}.${fieldName} option name`);
+        const combined = `${tableName}\u0000${fieldName}\u0000${optionName}`;
+        if (optionById.has(optionId) && optionById.get(optionId) !== combined) {
+          throw new TypeError(`duplicate select optionId across fields: ${optionId}`);
+        }
+        optionById.set(optionId, combined);
+      }
     }
   }
-  return { tableById, fieldById };
+  return { tableById, fieldById, optionById };
 }
 
 function isStructuredStringKey(key) {
@@ -258,7 +306,7 @@ function isStructuredStringKey(key) {
 
 function looksSensitiveString(value) {
   const text = String(value);
-  return /(?:access[_-]?token|refresh[_-]?token|authorization:\s*bearer|webhook[_-]?token|client[_-]?secret)/iu.test(text)
+  return /(?:access[_-]?token|refresh[_-]?token|authorization:\s*bearer|webhook[_-]?token|client[_-]?secret|auth[_-]?key)/iu.test(text)
     || /https?:\/\/[^\s]+[?&](?:token|access_token|key|secret)=/iu.test(text);
 }
 
@@ -282,6 +330,28 @@ function redacted(value, reason, diagnostics) {
   };
 }
 
+function redactedReference(value, diagnostics) {
+  diagnostics.redactedIdentityValues += 1;
+  return {
+    redacted: true,
+    reason: 'unresolved-reference-like',
+    fingerprint: fingerprint(value),
+  };
+}
+
+function redactedIdentityString(value, diagnostics) {
+  diagnostics.redactedIdentityValues += 1;
+  return {
+    redacted: true,
+    reason: 'internal-identity',
+    fingerprint: fingerprint(value),
+  };
+}
+
+function shortFingerprint(value) {
+  return fingerprint(value).slice(0, 16);
+}
+
 function fingerprint(value) {
   return createHash('sha256').update(stableJson(value)).digest('hex');
 }
@@ -301,6 +371,7 @@ function createDiagnostics() {
   return {
     mappedTableReferences: 0,
     mappedFieldReferences: 0,
+    mappedOptionReferences: 0,
     parsedJsonStrings: 0,
     opaqueStringFingerprints: 0,
     redactedSensitiveValues: 0,
@@ -335,9 +406,14 @@ function requireArray(value, name) {
   return value;
 }
 
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
 function requireText(value, name) {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name} is required`);
-  return value.trim();
+  const normalized = optionalText(value);
+  if (!normalized) throw new TypeError(`${name} is required`);
+  return normalized;
 }
 
 function deepFreeze(value) {
