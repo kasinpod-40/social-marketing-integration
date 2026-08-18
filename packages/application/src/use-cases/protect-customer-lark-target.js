@@ -102,16 +102,30 @@ export function assertProtectedTargetTablePlan(input) {
     input?.requiredProtectedTableNames ?? DEFAULT_REQUIRED_PROTECTED_NAMES,
   );
   const existingNames = new Set(existingTables.map((table) => requireText(table?.name, 'existing protected table name')));
+  const requiredNameSet = new Set(requiredProtectedNames);
   const violations = [];
 
   for (const requiredName of requiredProtectedNames) {
     if (!existingNames.has(requiredName)) {
       violations.push({ name: requiredName, reason: 'required protected table was not present in the pre-migration snapshot' });
+      continue;
+    }
+    const plan = plans.find((entry) => entry?.name === requiredName) ?? null;
+    if (!plan) {
+      violations.push({
+        name: requiredName,
+        reason: 'required protected Source overlap has no reuse_exact plan entry; preview conflict or omission must block',
+      });
+      continue;
+    }
+    if (plan.action !== 'reuse_exact') {
+      violations.push({ name: requiredName, reason: `required protected table action must be reuse_exact, found ${String(plan.action)}` });
     }
   }
 
   for (const table of existingTables) {
     const name = requireText(table?.name, 'existing protected table name');
+    if (requiredNameSet.has(name)) continue;
     const plan = plans.find((entry) => entry?.name === name) ?? null;
     if (!plan) continue;
     if (plan.action !== 'reuse_exact') {
