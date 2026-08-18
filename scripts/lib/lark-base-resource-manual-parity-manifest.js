@@ -2,19 +2,18 @@ import { createHash } from 'node:crypto';
 
 const SENSITIVE_KEY = /(?:token|secret|credential|password|authorization|auth(?:entication)?[_-]?key|authkey|webhook|cookie|signature|sign)$/iu;
 const IDENTITY_KEY = /(?:(?:^|_)(?:id|ids|creator|editor|member|owner|user|chat|department|base_id|dashboardid|chartid)(?:$|_))|(?:Id|Ids|Creator|Editor|Member|Owner|User|Chat|Department|TableID|FieldID|ViewID|TableId|FieldId|ViewId|DashboardID|ChartID)$/iu;
-const RAW_REFERENCE = /^(?:tbl|fld|vew|rec|rol|opt)[A-Za-z0-9_-]{6,}$/u;
-const EMBEDDED_RAW_REFERENCE = /\b(?:tbl|fld|vew|rec|rol|opt)[A-Za-z0-9_-]{6,}\b/gu;
-const INTERNAL_ID_VALUE = /^(?:(?:act|trig|cond)[A-Za-z0-9_-]{6,}|(?:tenant|user|base)_\d{6,})$/u;
-const EMBEDDED_INTERNAL_ID = /\b(?:(?:act|trig|cond)[A-Za-z0-9_-]{6,}|(?:tenant|user|base)_\d{6,})\b/gu;
+const RAW_REFERENCE_CANDIDATE = /^(?:tbl|fld|vew|rec|rol|opt)[A-Za-z0-9_-]{6,}$/u;
+const EMBEDDED_RAW_REFERENCE_CANDIDATE = /\b(?:tbl|fld|vew|rec|rol|opt)[A-Za-z0-9_-]{6,}\b/gu;
+const INTERNAL_ID_CANDIDATE = /^(?:(?:act|trig|cond)[A-Za-z0-9_-]{6,}|(?:tenant|user|base)_\d{6,})$/u;
+const EMBEDDED_INTERNAL_ID_CANDIDATE = /\b(?:(?:act|trig|cond)[A-Za-z0-9_-]{6,}|(?:tenant|user|base)_\d{6,})\b/gu;
 const LARGE_OPAQUE_THRESHOLD = 12_000;
 const MAX_DEPTH = 18;
 
 /**
  * Builds a local-only, value-sanitized manual parity inventory for Base resources
  * whose export definitions cannot be replayed through a proven public OpenAPI
- * request contract. The output never exposes Lark tokens, auth keys, webhook
- * tokens or raw internal IDs. Current Source Table/Field/Select-option IDs are
- * replaced by stable semantic names whenever the export defines that mapping.
+ * request contract. Tokens/auth keys/internal identities are never emitted raw.
+ * Current Source Table/Field/Select-option IDs are replaced by semantic names.
  */
 export async function buildLarkBaseResourceManualParityManifest(input) {
   const sourceClient = requireClient(input?.sourceClient);
@@ -90,23 +89,13 @@ function sanitizeWorkflow(value, index, references, diagnostics) {
   const workflow = requireObject(value, `workflow[${index}]`);
   const safe = {};
   for (const [key, nested] of Object.entries(workflow)) {
-    if (key === 'nodeSchema') {
-      safe.nodeSchema = sanitizeValue(nested, `workflow[${index}].nodeSchema`, key, references, diagnostics, 0);
-      continue;
-    }
-    if (key === 'WorkflowExtra') {
-      safe.WorkflowExtra = sanitizeValue(nested, `workflow[${index}].WorkflowExtra`, key, references, diagnostics, 0);
-      continue;
-    }
     if (SENSITIVE_KEY.test(key)) {
       safe[key] = redacted(nested, 'sensitive', diagnostics);
-      continue;
-    }
-    if (IDENTITY_KEY.test(key)) {
+    } else if (IDENTITY_KEY.test(key)) {
       safe[key] = sanitizeIdentityValue(nested, key, references, diagnostics);
-      continue;
+    } else {
+      safe[key] = sanitizeValue(nested, `workflow[${index}].${key}`, key, references, diagnostics, 0);
     }
-    safe[key] = sanitizeValue(nested, `workflow[${index}].${key}`, key, references, diagnostics, 0);
   }
   return deepFreeze({
     sourceOrdinal: index + 1,
@@ -138,11 +127,11 @@ function sanitizeValue(value, path, key, references, diagnostics, depth) {
   if (typeof value === 'string') {
     const mapped = mapReference(value, references, diagnostics);
     if (mapped) return mapped;
-    if (RAW_REFERENCE.test(value)) {
+    if (looksLikeRawReference(value)) {
       diagnostics.unresolvedReferenceLikeValues.push({ path, fingerprint: fingerprint(value) });
       return redactedReference(value, diagnostics);
     }
-    if (INTERNAL_ID_VALUE.test(value)) return redactedIdentityString(value, diagnostics);
+    if (looksLikeInternalIdentity(value)) return redactedIdentityString(value, diagnostics);
     if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
     if (isStructuredStringKey(key)) return sanitizeStructuredString(value, path, references, diagnostics);
     if (value.length > LARGE_OPAQUE_THRESHOLD) return opaqueSummary(value, diagnostics, 'large-string');
@@ -158,11 +147,11 @@ function sanitizeStructuredString(value, path, references, diagnostics) {
   if (typeof value !== 'string') return sanitizeValue(value, path, 'structured', references, diagnostics, 0);
   const mapped = mapReference(value, references, diagnostics);
   if (mapped) return mapped;
-  if (RAW_REFERENCE.test(value)) {
+  if (looksLikeRawReference(value)) {
     diagnostics.unresolvedReferenceLikeValues.push({ path, fingerprint: fingerprint(value) });
     return redactedReference(value, diagnostics);
   }
-  if (INTERNAL_ID_VALUE.test(value)) return redactedIdentityString(value, diagnostics);
+  if (looksLikeInternalIdentity(value)) return redactedIdentityString(value, diagnostics);
   if (looksSensitiveString(value)) return redacted(value, 'sensitive-string', diagnostics);
   try {
     const parsed = JSON.parse(value);
@@ -191,29 +180,14 @@ function sanitizeIdentityValue(value, key, references, diagnostics) {
 }
 
 function sanitizeObjectKey(key, references, diagnostics) {
-  let result = key;
-  for (const [tableId, tableName] of references.tableById) {
-    if (!result.includes(tableId)) continue;
-    diagnostics.mappedTableReferences += 1;
-    result = result.replaceAll(tableId, `table:${tableName}`);
-  }
-  for (const [fieldId, combined] of references.fieldById) {
-    if (!result.includes(fieldId)) continue;
-    diagnostics.mappedFieldReferences += 1;
-    const [tableName, fieldName] = combined.split('\u0000');
-    result = result.replaceAll(fieldId, `field:${tableName}.${fieldName}`);
-  }
-  for (const [optionId, combined] of references.optionById) {
-    if (!result.includes(optionId)) continue;
-    diagnostics.mappedOptionReferences += 1;
-    const [tableName, fieldName, optionName] = combined.split('\u0000');
-    result = result.replaceAll(optionId, `option:${tableName}.${fieldName}=${optionName}`);
-  }
-  result = result.replace(EMBEDDED_INTERNAL_ID, (match) => {
+  let result = replaceKnownReferencesInText(key, references, diagnostics, false);
+  result = result.replace(EMBEDDED_INTERNAL_ID_CANDIDATE, (match) => {
+    if (!looksLikeInternalIdentity(match)) return match;
     diagnostics.redactedIdentityValues += 1;
     return `internal:${shortFingerprint(match)}`;
   });
-  result = result.replace(EMBEDDED_RAW_REFERENCE, (match) => {
+  result = result.replace(EMBEDDED_RAW_REFERENCE_CANDIDATE, (match) => {
+    if (!looksLikeRawReference(match)) return match;
     diagnostics.unresolvedReferenceLikeValues.push({ path: 'object-key', fingerprint: fingerprint(match) });
     return `unresolved:${shortFingerprint(match)}`;
   });
@@ -239,33 +213,44 @@ function mapReference(value, references, diagnostics) {
 }
 
 function replaceEmbeddedKnownReferences(value, path, references, diagnostics) {
+  let result = replaceKnownReferencesInText(value, references, diagnostics, true);
+  result = result.replace(EMBEDDED_INTERNAL_ID_CANDIDATE, (match) => {
+    if (!looksLikeInternalIdentity(match)) return match;
+    diagnostics.redactedIdentityValues += 1;
+    return `[internal:${shortFingerprint(match)}]`;
+  });
+  result = result.replace(EMBEDDED_RAW_REFERENCE_CANDIDATE, (match) => {
+    if (!looksLikeRawReference(match)) return match;
+    diagnostics.unresolvedReferenceLikeValues.push({ path, fingerprint: fingerprint(match) });
+    return `[unresolved:${shortFingerprint(match)}]`;
+  });
+  return result;
+}
+
+function replaceKnownReferencesInText(value, references, diagnostics, bracketed) {
   let result = value;
   for (const [tableId, tableName] of references.tableById) {
     if (!result.includes(tableId)) continue;
     diagnostics.mappedTableReferences += 1;
-    result = result.replaceAll(tableId, `[table:${tableName}]`);
+    result = result.replaceAll(tableId, formatSemanticRef(`table:${tableName}`, bracketed));
   }
   for (const [fieldId, combined] of references.fieldById) {
     if (!result.includes(fieldId)) continue;
     diagnostics.mappedFieldReferences += 1;
     const [tableName, fieldName] = combined.split('\u0000');
-    result = result.replaceAll(fieldId, `[field:${tableName}.${fieldName}]`);
+    result = result.replaceAll(fieldId, formatSemanticRef(`field:${tableName}.${fieldName}`, bracketed));
   }
   for (const [optionId, combined] of references.optionById) {
     if (!result.includes(optionId)) continue;
     diagnostics.mappedOptionReferences += 1;
     const [tableName, fieldName, optionName] = combined.split('\u0000');
-    result = result.replaceAll(optionId, `[option:${tableName}.${fieldName}=${optionName}]`);
+    result = result.replaceAll(optionId, formatSemanticRef(`option:${tableName}.${fieldName}=${optionName}`, bracketed));
   }
-  result = result.replace(EMBEDDED_INTERNAL_ID, (match) => {
-    diagnostics.redactedIdentityValues += 1;
-    return `[internal:${shortFingerprint(match)}]`;
-  });
-  result = result.replace(EMBEDDED_RAW_REFERENCE, (match) => {
-    diagnostics.unresolvedReferenceLikeValues.push({ path, fingerprint: fingerprint(match) });
-    return `[unresolved:${shortFingerprint(match)}]`;
-  });
   return result;
+}
+
+function formatSemanticRef(value, bracketed) {
+  return bracketed ? `[${value}]` : value;
 }
 
 async function buildReferenceMaps(sourceClient) {
@@ -300,6 +285,19 @@ async function buildReferenceMaps(sourceClient) {
   return { tableById, fieldById, optionById };
 }
 
+function looksLikeRawReference(value) {
+  const text = String(value);
+  if (!RAW_REFERENCE_CANDIDATE.test(text)) return false;
+  return /[A-Z0-9]/u.test(text.slice(3));
+}
+
+function looksLikeInternalIdentity(value) {
+  const text = String(value);
+  if (/^(?:tenant|user|base)_\d{6,}$/u.test(text)) return true;
+  if (!INTERNAL_ID_CANDIDATE.test(text)) return false;
+  return /[A-Z0-9]/u.test(text.slice(text.startsWith('cond') ? 4 : (text.startsWith('trig') ? 4 : 3)));
+}
+
 function isStructuredStringKey(key) {
   return /(?:snapshot|schema|draft|flow|config|definition|payload|extra)$/iu.test(String(key));
 }
@@ -323,29 +321,17 @@ function opaqueSummary(value, diagnostics, reason) {
 
 function redacted(value, reason, diagnostics) {
   diagnostics.redactedSensitiveValues += 1;
-  return {
-    redacted: true,
-    reason,
-    fingerprint: fingerprint(value),
-  };
+  return { redacted: true, reason, fingerprint: fingerprint(value) };
 }
 
 function redactedReference(value, diagnostics) {
   diagnostics.redactedIdentityValues += 1;
-  return {
-    redacted: true,
-    reason: 'unresolved-reference-like',
-    fingerprint: fingerprint(value),
-  };
+  return { redacted: true, reason: 'unresolved-reference-like', fingerprint: fingerprint(value) };
 }
 
 function redactedIdentityString(value, diagnostics) {
   diagnostics.redactedIdentityValues += 1;
-  return {
-    redacted: true,
-    reason: 'internal-identity',
-    fingerprint: fingerprint(value),
-  };
+  return { redacted: true, reason: 'internal-identity', fingerprint: fingerprint(value) };
 }
 
 function shortFingerprint(value) {
