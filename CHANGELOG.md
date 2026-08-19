@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — Customer Base Formula Base v3 recovery — 2026-08-19
+
+- Preserved the original controlled-Apply checkpoint after partial customer Target writes; 32 clone-scope Tables, successful ordinary fields and Relations remain in place, while Records have not started and `📣 MKT_Ads_Campaigns.budget` remains the current Formula gate.
+- Recorded four live `99992402` rejections through the legacy Bitable v1 Formula field-write model, including the smallest type-only shell. No failed attempt created the `budget` Formula field, and no new checkpoint or destructive rollback is allowed.
+- Confirmed the previous Formula writer was still using legacy `/open-apis/bitable/v1/.../fields` numeric type/property requests while the current official Lark 2026 field writer uses `/open-apis/base/v3/bases/.../fields` with Formula `type`, `name` and `expression`.
+- Added Formula-only Base v3 create/update capabilities to the existing parity decorator and shared authenticated/retried transport. Internal/export Formula contracts and `consolidate-lark-base.js` remain unchanged.
+- Added fail-closed target-ID → Base v3 name translation: current-table references become `[FieldName]`, cross-table references become `[TableName].[FieldName]`, and unresolved legacy `$table/$field` tokens are rejected before remote mutation.
+- Resumable recovery now selects Base v3 Formula create when available, uses Base v3 PUT for recoverable historical shells, keeps exact existing Formula reuse zero-write and performs immediate semantic readback through the existing normalized field contract.
+- Added Base v3 Formula write methods to the existing checkpoint mutation fence and added focused transport/recovery regressions. Code milestone `1660ecaa638dd17e32e15ed0dca3729b10927665` passed Branch Verification Run `32266554304`, Job `96112717530`, including Unit + Workers runtime, reliability, audit and Wrangler dry-run.
+- The transport/schema defect is confirmed in repository code, but the complete live cause of `99992402` remains unconfirmed until a controlled customer Target recovery passes `budget` through Base v3. Do not fall back to another guessed v1 Formula payload.
+
 ## Unreleased — Customer Base Policy B parity hardening — 2026-08-18
 
 - Locked customer consolidation Policy B: exact 33-table export remains authority, 32 Tables are clone scope, and live Target `🎵 RAW_TikTok_Creator_Videos` is immutable `protected_external_reuse` outside clone/apply/verify traversal.
@@ -81,7 +92,7 @@
 - Treat an omitted `shares` property on a successful Facebook Page Posts inventory row as an observed zero, while preserving explicit `shares: null` as unavailable.
 - Add regression coverage across RAW metric, Canonical ContentDaily, and D1 Organic history output.
 - Audit the fresh Lark Base export read-only: current Views/Likes/Comments are complete, and 7-day period metrics remain N/A because baseline coverage is incomplete rather than zero.
-- PR #652 passed both CI workflows and merged before PR #653. The combined exact-main Worker release reached 100% traffic with zero immediate new alert/DLQ/lock; no manual Facebook source run was used as evidence.
+- PR #652 passed both CI workflows and merged before PR #653. The combined exact-main Worker release reached 100% traffic with zero immediate new alert/DLQ/lock; no manual Facebook source rerun was used as evidence.
 
 ## Unreleased — Facebook Authoritative Inventory Dashboard Fix — 2026-08-15
 
