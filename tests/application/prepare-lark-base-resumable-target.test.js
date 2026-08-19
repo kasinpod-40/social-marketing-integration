@@ -134,6 +134,30 @@ function partiallyAppliedTarget() {
   ]);
 }
 
+function emptyTarget() {
+  return new FakeClient([{
+    tableId: 'protected_tiktok',
+    name: 'TikTok',
+    fields: [text('protected_key', 'key', true)],
+    records: [],
+    views: [grid('protected_view', 'All')],
+  }]);
+}
+
+async function prepareEmptyTarget(target) {
+  const prepared = await prepareLarkBaseResumableTarget({
+    targetClient: target,
+    expectedTableNames: ['Accounts'],
+    protectedTables: [{ name: 'TikTok', tableId: 'protected_tiktok' }],
+  });
+  const created = await prepared.client.createTable({
+    name: 'Accounts',
+    defaultViewName: 'All Records',
+    fields: [{ fieldName: 'account_key', type: 1, description: '', property: null }],
+  });
+  return { prepared, created };
+}
+
 test('resumable adapter lets the existing consolidator finish an exact partial table without duplicates', async () => {
   const source = sourceClient();
   const target = partiallyAppliedTarget();
@@ -164,23 +188,8 @@ test('resumable adapter lets the existing consolidator finish an exact partial t
 });
 
 test('resumable adapter strips foreign select option IDs only before create writes', async () => {
-  const target = new FakeClient([{
-    tableId: 'protected_tiktok',
-    name: 'TikTok',
-    fields: [text('protected_key', 'key', true)],
-    records: [],
-    views: [grid('protected_view', 'All')],
-  }]);
-  const prepared = await prepareLarkBaseResumableTarget({
-    targetClient: target,
-    expectedTableNames: ['Accounts'],
-    protectedTables: [{ name: 'TikTok', tableId: 'protected_tiktok' }],
-  });
-  const created = await prepared.client.createTable({
-    name: 'Accounts',
-    defaultViewName: 'All Records',
-    fields: [{ fieldName: 'account_key', type: 1, description: '', property: null }],
-  });
+  const target = emptyTarget();
+  const { prepared, created } = await prepareEmptyTarget(target);
   const sourceField = {
     fieldName: 'status',
     type: 3,
@@ -207,24 +216,89 @@ test('resumable adapter strips foreign select option IDs only before create writ
   ]);
 });
 
+test('resumable adapter omits Formula property.type when Target formula_type is not 2 and resumes idempotently', async () => {
+  const target = emptyTarget();
+  let metadataReads = 0;
+  target.getBaseFormulaType = async () => {
+    metadataReads += 1;
+    return 1;
+  };
+  const { prepared, created } = await prepareEmptyTarget(target);
+  const sourceField = {
+    fieldName: 'budget',
+    type: 20,
+    uiType: 'Formula',
+    description: '',
+    property: {
+      currency_code: 'THB',
+      formatter: '0.00',
+      formula_expression: 'IF({budget_micros}=BLANK(), BLANK(), {budget_micros}/1000000)',
+      type: { data_type: 2, ui_type: 'Currency' },
+    },
+  };
+
+  await prepared.client.createField({ tableId: created.tableId, field: sourceField });
+  await prepared.client.createField({ tableId: created.tableId, field: sourceField });
+
+  const createCalls = target.calls.filter((call) => call.kind === 'createField' && call.fieldName === 'budget');
+  assert.equal(createCalls.length, 1);
+  assert.deepEqual(createCalls[0].field.property, {
+    currency_code: 'THB',
+    formatter: '0.00',
+    formula_expression: 'IF({budget_micros}=BLANK(), BLANK(), {budget_micros}/1000000)',
+  });
+  assert.deepEqual(sourceField.property.type, { data_type: 2, ui_type: 'Currency' });
+  assert.equal(metadataReads, 1);
+});
+
+test('resumable adapter preserves Formula property.type when Target formula_type is 2', async () => {
+  const target = emptyTarget();
+  target.getBaseFormulaType = async () => 2;
+  const { prepared, created } = await prepareEmptyTarget(target);
+  const formulaType = { data_type: 2, ui_type: 'Currency' };
+  const sourceField = {
+    fieldName: 'budget',
+    type: 20,
+    uiType: 'Formula',
+    description: '',
+    property: {
+      currency_code: 'THB',
+      formatter: '0.00',
+      formula_expression: '{budget_micros}/1000000',
+      type: formulaType,
+    },
+  };
+
+  await prepared.client.createField({ tableId: created.tableId, field: sourceField });
+
+  const createCall = target.calls.find((call) => call.kind === 'createField' && call.fieldName === 'budget');
+  assert.deepEqual(createCall.field.property.type, formulaType);
+});
+
+test('resumable adapter fails closed when Target formula_type 2 requires missing Formula property.type', async () => {
+  const target = emptyTarget();
+  target.getBaseFormulaType = async () => 2;
+  const { prepared, created } = await prepareEmptyTarget(target);
+
+  await assert.rejects(
+    () => prepared.client.createField({
+      tableId: created.tableId,
+      field: {
+        fieldName: 'budget',
+        type: 20,
+        uiType: 'Formula',
+        description: '',
+        property: { formula_expression: '{budget_micros}/1000000', formatter: '0.00' },
+      },
+    }),
+    (error) => error?.code === 'CUSTOMER_BASE_RESUME_FORMULA_PROPERTY_TYPE_REQUIRED',
+  );
+  assert.equal(target.calls.some((call) => call.kind === 'createField' && call.fieldName === 'budget'), false);
+});
+
 test('resumable adapter reports safe mutation context when Lark rejects field create', async () => {
-  const target = new FakeClient([{
-    tableId: 'protected_tiktok',
-    name: 'TikTok',
-    fields: [text('protected_key', 'key', true)],
-    records: [],
-    views: [grid('protected_view', 'All')],
-  }]);
-  const prepared = await prepareLarkBaseResumableTarget({
-    targetClient: target,
-    expectedTableNames: ['Accounts'],
-    protectedTables: [{ name: 'TikTok', tableId: 'protected_tiktok' }],
-  });
-  const created = await prepared.client.createTable({
-    name: 'Accounts',
-    defaultViewName: 'All Records',
-    fields: [{ fieldName: 'account_key', type: 1, description: '', property: null }],
-  });
+  const target = emptyTarget();
+  const { prepared, created } = await prepareEmptyTarget(target);
   target.createField = async () => {
     const error = new Error('Lark API error 1254001: WrongRequestBody');
     error.code = 'LARK_PERMANENT_API_ERROR';
