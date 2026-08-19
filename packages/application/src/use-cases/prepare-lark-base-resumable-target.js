@@ -408,57 +408,35 @@ async function createFormulaFieldInStages(input) {
     targetFormulaType,
   } = input;
   const fieldName = requireText(requestedField?.fieldName, 'Formula fieldName');
+  const shellField = stripFormulaExpressionFromField(requestedField);
   let created;
   try {
     created = await target.createField({
       ...request,
-      field: requestedField,
+      field: shellField,
     });
   } catch (error) {
     throw remoteWriteError(
-      'CUSTOMER_BASE_RESUME_FORMULA_CREATE_REMOTE_REJECTED',
-      `Lark rejected Formula create: ${tableName ?? tableId}.${fieldName}`,
+      'CUSTOMER_BASE_RESUME_FORMULA_SHELL_CREATE_REMOTE_REJECTED',
+      `Lark rejected Formula type-only shell create: ${tableName ?? tableId}.${fieldName}`,
       error,
       {
-        operation: 'createFormulaField',
+        operation: 'createFormulaTypeOnlyShell',
         tableId,
         tableName,
-        ...summarizeFieldMutation(requestedField),
+        ...summarizeFieldMutation(shellField),
       },
     );
   }
 
-  const fieldId = requireText(created?.fieldId, `Formula fieldId ${fieldName}`);
-  const fields = await target.listFields({ tableId });
-  const readback = fields.find((item) => item?.fieldId === fieldId)
-    ?? fields.find((item) => item?.fieldName === fieldName)
-    ?? null;
-  if (!readback) {
-    throw codedError(
-      'CUSTOMER_BASE_RESUME_FORMULA_READBACK_MISSING',
-      `Formula field missing after create: ${tableName ?? tableId}.${fieldName}`,
-      { tableId, tableName, fieldId, fieldName },
-    );
-  }
-
-  const comparableReadback = adaptFormulaFieldForTarget(readback, targetFormulaType);
-  const comparison = compareFieldMutation(comparableReadback, requestedField);
-  if (!comparison.ok) {
-    throw codedError(
-      'CUSTOMER_BASE_RESUME_FORMULA_READBACK_MISMATCH',
-      `Formula field differs after create: ${tableName ?? tableId}.${fieldName}`,
-      {
-        tableId,
-        tableName,
-        fieldId,
-        fieldName,
-        differencePaths: comparison.differencePaths,
-        existingPropertyKeys: propertyKeys(comparison.existing.property),
-        requestedPropertyKeys: propertyKeys(comparison.requested.property),
-      },
-    );
-  }
-  return structuredClone(readback);
+  return finalizeFormulaField({
+    target,
+    tableId,
+    tableName,
+    existingField: created,
+    requestedField,
+    targetFormulaType,
+  });
 }
 
 async function finalizeFormulaField(input) {
