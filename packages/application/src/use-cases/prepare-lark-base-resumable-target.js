@@ -116,7 +116,7 @@ export async function prepareLarkBaseResumableTarget(input) {
             return structuredClone(resume);
           }
 
-          const created = await target.createTable(request);
+          const created = await target.createTable(stripGeneratedSelectOptionIdsFromCreateTableRequest(request));
           const tableId = requireText(created?.tableId, `created tableId ${name}`);
           writableIds.add(tableId);
           return created;
@@ -140,7 +140,10 @@ export async function prepareLarkBaseResumableTarget(input) {
             }
             return structuredClone(existing);
           }
-          return target.createField(request);
+          return target.createField({
+            ...request,
+            field: stripGeneratedSelectOptionIdsFromField(field),
+          });
         };
       }
 
@@ -240,6 +243,25 @@ export async function prepareLarkBaseResumableTarget(input) {
       rule: 'baseline-and-unrelated-tables-immutable-clone-scope-partials-exact-idempotent',
     }),
   });
+}
+
+function stripGeneratedSelectOptionIdsFromCreateTableRequest(request) {
+  const fields = requireArray(request?.fields, 'createTable.fields');
+  return {
+    ...request,
+    fields: fields.map(stripGeneratedSelectOptionIdsFromField),
+  };
+}
+
+function stripGeneratedSelectOptionIdsFromField(field) {
+  const sanitized = structuredClone(requireObject(field, 'field'));
+  if (!Array.isArray(sanitized?.property?.options)) return sanitized;
+  sanitized.property.options = sanitized.property.options.map((option) => {
+    if (!option || typeof option !== 'object' || Array.isArray(option)) return option;
+    const { id: _generatedId, ...rest } = option;
+    return rest;
+  });
+  return sanitized;
 }
 
 function requireWritableTable(value, operation, protectedIds, writableIds) {
