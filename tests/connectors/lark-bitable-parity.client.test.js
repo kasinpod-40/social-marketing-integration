@@ -87,14 +87,15 @@ test('parity decorator reads and caches Base formula_type through the shared tra
   }]);
 });
 
-test('parity decorator fails closed when Base formula_type metadata is missing', async () => {
-  const transport = new FakeFormulaTypeTransport(undefined);
-  const client = withLarkBaseParityCapabilities(transport);
-
-  await assert.rejects(
-    () => client.getBaseFormulaType(),
-    /formula_type must be an integer/u,
-  );
+test('parity decorator fails closed when Base formula_type metadata is missing or empty', async () => {
+  for (const formulaType of [undefined, null, '']) {
+    const transport = new FakeFormulaTypeTransport(formulaType);
+    const client = withLarkBaseParityCapabilities(transport);
+    await assert.rejects(
+      () => client.getBaseFormulaType(),
+      /formula_type must be an integer/u,
+    );
+  }
 });
 
 test('parity decorator reads hierarchy_config through the shared transport', async () => {
