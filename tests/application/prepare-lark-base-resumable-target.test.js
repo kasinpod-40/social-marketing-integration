@@ -68,6 +68,19 @@ class FakeClient {
     return structuredClone(created);
   }
 
+  async updateField({ tableId, fieldId, field }) {
+    this.calls.push({ kind: 'updateField', tableId, fieldId, fieldName: field.fieldName, field: structuredClone(field) });
+    const table = this.table(tableId);
+    const index = table.fields.findIndex((item) => item.fieldId === fieldId);
+    if (index < 0) throw new Error(`Unknown field ${fieldId}`);
+    table.fields[index] = {
+      ...structuredClone(field),
+      fieldId,
+      isPrimary: table.fields[index].isPrimary === true,
+    };
+    return structuredClone(table.fields[index]);
+  }
+
   async batchCreateRecords({ tableId, records }) {
     this.calls.push({ kind: 'batchCreateRecords', tableId, rows: records.length });
     for (const fields of records) {
@@ -269,8 +282,14 @@ test('resumable adapter omits Formula property.type when Target formula_type is 
   await prepared.client.createField({ tableId: created.tableId, field: sourceField });
 
   const createCalls = target.calls.filter((call) => call.kind === 'createField' && call.fieldName === 'budget');
+  const updateCalls = target.calls.filter((call) => call.kind === 'updateField' && call.fieldName === 'budget');
   assert.equal(createCalls.length, 1);
+  assert.equal(updateCalls.length, 1);
   assert.deepEqual(createCalls[0].field.property, {
+    currency_code: 'THB',
+    formatter: '0.00',
+  });
+  assert.deepEqual(updateCalls[0].field.property, {
     currency_code: 'THB',
     formatter: '0.00',
     formula_expression: 'IF({budget_micros}=BLANK(), BLANK(), {budget_micros}/1000000)',
@@ -303,7 +322,17 @@ test('resumable adapter canonicalizes Formula property.type when Target formula_
   await prepared.client.createField({ tableId: created.tableId, field: sourceField });
 
   const createCall = target.calls.find((call) => call.kind === 'createField' && call.fieldName === 'budget');
+  const updateCall = target.calls.find((call) => call.kind === 'updateField' && call.fieldName === 'budget');
   assert.deepEqual(createCall.field.property, {
+    currency_code: 'THB',
+    formatter: '0.00',
+    type: {
+      data_type: 2,
+      ui_type: 'Currency',
+      ui_property: { currency_code: 'THB', formatter: '0.00' },
+    },
+  });
+  assert.deepEqual(updateCall.field.property, {
     currency_code: 'THB',
     formatter: '0.00',
     formula_expression: '{budget_micros}/1000000',
