@@ -13,6 +13,17 @@ test('maps spreadsheet-style number formatter aliases to Lark OpenAPI enums', ()
   assert.equal(normalizeLarkNumberFormatter('0.0000'), '0.0000');
 });
 
+test('maps exported THB Currency UI formatter to the OpenAPI formatter while preserving currency_code', () => {
+  assert.equal(normalizeLarkNumberFormatter('฿#,##0.00'), '0.00');
+  assert.deepEqual(serializeLarkFieldProperty(2, {
+    currency_code: 'THB',
+    formatter: '฿#,##0.00',
+  }), {
+    currency_code: 'THB',
+    formatter: '0.00',
+  });
+});
+
 test('normalizes and serializes Number field property with official formatter values', () => {
   assert.deepEqual(normalizeLarkFieldProperty(2, { formatter: '#,##0' }), {
     formatter: '1,000',
