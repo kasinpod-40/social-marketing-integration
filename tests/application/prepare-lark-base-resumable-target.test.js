@@ -207,6 +207,75 @@ test('resumable adapter strips foreign select option IDs only before create writ
   ]);
 });
 
+test('resumable adapter reports safe mutation context when Lark rejects field create', async () => {
+  const target = new FakeClient([{
+    tableId: 'protected_tiktok',
+    name: 'TikTok',
+    fields: [text('protected_key', 'key', true)],
+    records: [],
+    views: [grid('protected_view', 'All')],
+  }]);
+  const prepared = await prepareLarkBaseResumableTarget({
+    targetClient: target,
+    expectedTableNames: ['Accounts'],
+    protectedTables: [{ name: 'TikTok', tableId: 'protected_tiktok' }],
+  });
+  const created = await prepared.client.createTable({
+    name: 'Accounts',
+    defaultViewName: 'All Records',
+    fields: [{ fieldName: 'account_key', type: 1, description: '', property: null }],
+  });
+  target.createField = async () => {
+    const error = new Error('Lark API error 1254001: WrongRequestBody');
+    error.code = 'LARK_PERMANENT_API_ERROR';
+    error.details = {
+      status: 200,
+      larkCode: 1254001,
+      retryAfter: null,
+      secret: 'must-not-leak',
+    };
+    throw error;
+  };
+
+  const rejectedField = {
+    fieldName: 'status',
+    type: 3,
+    uiType: 'SingleSelect',
+    description: 'must-not-leak-description',
+    property: {
+      options: [{ id: 'optMustNotLeak', name: 'must-not-leak-option', color: 1 }],
+    },
+  };
+
+  await assert.rejects(
+    () => prepared.client.createField({ tableId: created.tableId, field: rejectedField }),
+    (error) => {
+      assert.equal(error?.code, 'CUSTOMER_BASE_RESUME_CREATE_FIELD_REMOTE_REJECTED');
+      assert.match(error?.message ?? '', /Accounts\.status/u);
+      assert.deepEqual(error?.details, {
+        operation: 'createField',
+        tableId: created.tableId,
+        tableName: 'Accounts',
+        fieldName: 'status',
+        fieldType: 3,
+        uiType: 'SingleSelect',
+        propertyKeys: ['options'],
+        optionCount: 1,
+        causeCode: 'LARK_PERMANENT_API_ERROR',
+        status: 200,
+        larkCode: 1254001,
+        retryAfter: null,
+      });
+      const serialized = JSON.stringify(error);
+      assert.equal(serialized.includes('optMustNotLeak'), false);
+      assert.equal(serialized.includes('must-not-leak-option'), false);
+      assert.equal(serialized.includes('must-not-leak-description'), false);
+      assert.equal(serialized.includes('must-not-leak'), false);
+      return true;
+    },
+  );
+});
+
 test('resumable adapter blocks drift inside a migration-owned partial field', async () => {
   const target = partiallyAppliedTarget();
   target.table('target_accounts').fields[1].type = 2;
