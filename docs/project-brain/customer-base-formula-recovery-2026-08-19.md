@@ -148,9 +148,9 @@ New regressions prove code behavior without claiming live Target success:
 - v3 rejection retains redacted operation/Table/Field/Lark-code diagnostics;
 - existing Formula semantic comparison/reuse remains intact.
 
-## Verified code milestone
+## Verified milestones
 
-Before the final safety/docs commits:
+Base v3 implementation milestone:
 
 ```text
 HEAD  1660ecaa638dd17e32e15ed0dca3729b10927665
@@ -159,15 +159,18 @@ Job   96112717530
 PASS  every Branch Verification step
 ```
 
-Safety-only follow-up:
+Safety + repository-truth milestone:
 
 ```text
-HEAD  a09857e5bc78d69e019b333d9d899dd7cbc812bd
-DIFF  prepare-lark-base-resumable-target.js +2/-0
-RULE  add createFormulaFieldV3/updateFormulaFieldV3 to the existing write-method fence
+HEAD  627df1fae25adb0ff31fa54f9036c8b36c700db2
+Run   32267549092
+Job   96115748843
+PASS  every Branch Verification step
 ```
 
-Final documentation commits follow this milestone. A final exact-HEAD Branch Verification is required before the next customer Apply.
+The intervening safety commit `a09857e5bc78d69e019b333d9d899dd7cbc812bd` added only two entries to the existing write-method fence: `createFormulaFieldV3` and `updateFormulaFieldV3`. Subsequent documentation commits align `docs/current-task.md`, this incident record and `CHANGELOG.md` with the real partial Target state.
+
+The next customer Apply must still be run only from the final branch HEAD after the documentation-only closure commit has completed Branch Verification; no live Base v3 Target mutation has occurred yet.
 
 ## No-repeat rules
 
