@@ -2,7 +2,7 @@
 
 ## Scope
 
-This record captures the controlled recovery state for PR #661 after the customer Target Base received partial migration writes. It supersedes any earlier operational instruction to create a new checkpoint.
+This incident record is the recovery authority for the Formula phase of PR #661 after partial customer Target writes. It supersedes all earlier Formula request-shape hypotheses and all instructions to prepare a new checkpoint.
 
 ## Immutable recovery baseline
 
@@ -11,103 +11,182 @@ This record captures the controlled recovery state for PR #661 after the custome
 - Target Base: `✨Marketing Content Calendar`
 - Clone scope: 32 Tables
 - Protected external Table: `🎵 RAW_TikTok_Creator_Videos`
-- Folder placement: user already moved cloned Tables under `Setup Phase | Social MKT Data Hub`
+- Folder placement: complete under `Setup Phase | Social MKT Data Hub`
 
 Recovery rule: **reuse the original checkpoint only; never run `--prepare-checkpoint` again.**
 
-## Observed Target progress
+## Retained Target progress
 
-The controlled Apply is no longer a zero-mutation preview. The Target contains migration-owned partial state.
-
-Observed automatic progress before the current blocker:
+Before the Formula blocker, controlled Apply had already completed/advanced these migration-owned phases:
 
 1. original checkpoint accepted;
-2. clone-scope Tables created/claimed;
+2. 32 clone-scope Tables created/claimed;
 3. ordinary fields progressed;
-4. Relation fields progressed, including the corrected `account_link` relation semantics;
+4. Relation fields progressed, including corrected `account_link` semantics;
 5. Formula phase reached `📣 MKT_Ads_Campaigns.budget`;
-6. Record phase has not started.
+6. Record materialization had not started.
 
-Downstream phases remain incomplete until proven by later operator output: remaining Formulas, Records, relation record-cell remap, Views, hierarchy, Advanced Permission, canonical verification, manual View parity, Dashboards, Workflows and final export verification.
+Do not delete or recreate successful partial Tables/Fields. Downstream Records, relation cells, Views, hierarchy, Advanced Permission and canonical verification remain pending until later operator output proves them complete.
 
-## Live Formula failures
+## Live Formula failure chronology
 
-### Earlier full Formula create
+All live failures below were executed through the legacy Bitable v1 field-write path and stopped before Record materialization.
 
-A prior attempt to create `📣 MKT_Ads_Campaigns.budget` with the exported Formula property set was rejected by Lark with code `99992402`.
+### 1. Full legacy Formula create
 
-### Shell-staging attempt
+A type-20 Formula create carrying the exported Formula property set was rejected with Lark `99992402`.
 
-At verified HEAD `3b7ee74b55aec459300f08fb6722cfe0ae69e552`, the adapter attempted:
+### 2. Legacy shell with presentation metadata
 
-`CREATE Formula shell without formula_expression → PUT full Formula → GET verify`
+The adapter attempted a shell without `formula_expression`, retaining currency/formatter/type metadata. Lark rejected the CREATE with `99992402`; no Formula shell was created.
 
-The CREATE itself was rejected before any Formula field was created:
+### 3. Legacy direct create with `formula_expression + type`
+
+After canonicalizing type-2 UI metadata beneath `property.type.ui_property`, the request still failed:
 
 ```text
-operator code  CUSTOMER_BASE_RESUME_FORMULA_SHELL_CREATE_REMOTE_REJECTED
-operation      createFormulaShell
-Table          📣 MKT_Ads_Campaigns
-Field          budget
-Field type     20 / Formula
-propertyKeys   currency_code / formatter / type
+operator code  CUSTOMER_BASE_RESUME_FORMULA_CREATE_REMOTE_REJECTED
+operation      createFormulaField
+propertyKeys   formula_expression / type
 HTTP           400
 Lark code      99992402
 ```
 
-This live evidence invalidated the shell-staging assumption for this Target.
+### 4. Legacy type-only shell
 
-## Current recovery implementation
+The smallest remaining legacy Formula shell was also rejected:
 
-The resumable adapter now follows the documented Formula model for a Base whose `formula_type` is `2`:
+```text
+operator code  CUSTOMER_BASE_RESUME_FORMULA_SHELL_CREATE_REMOTE_REJECTED
+operation      createFormulaTypeOnlyShell
+Table          📣 MKT_Ads_Campaigns
+Field          budget
+Field type     20 / Formula
+propertyKeys   type
+HTTP           400
+Lark code      99992402
+```
 
-- require `formula_expression`;
-- require `property.type`;
-- canonicalize Formula result UI metadata into `property.type.ui_property`;
-- avoid duplicating those type-2 UI keys at Formula-property top level;
-- create the complete Formula once;
-- immediately list/read back Fields and compare semantic mutation state;
-- reuse an exact existing Formula on retry without write;
-- retain the historical-shell PUT path only for a shell that is actually present;
-- refuse to overwrite a different non-empty Formula expression.
+This fourth result rules out the prior hypothesis that top-level Formula presentation metadata or `formula_expression` alone caused the legacy CREATE rejection. It also proves that continuing to probe more Bitable v1 Formula property variants is not justified.
 
-The implementation deliberately stays inside `prepare-lark-base-resumable-target.js`; `consolidate-lark-base.js` remains the single migration engine and continues to own Formula Table/Field-ID remapping.
+## Confirmed repository transport/schema defect
+
+Repository inspection showed the shared legacy field writer still used:
+
+```text
+POST /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields
+PUT  /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields/:field_id
+```
+
+with the legacy field model (`field_name`, numeric `type`, optional `ui_type`, `property`).
+
+The current official Lark 2026 Base field-write implementation uses Base v3:
+
+```text
+POST /open-apis/base/v3/bases/:base_token/tables/:table_id/fields
+PUT  /open-apis/base/v3/bases/:base_token/tables/:table_id/fields/:field_id
+```
+
+and its Formula write schema is based on:
+
+```json
+{
+  "type": "formula",
+  "name": "budget",
+  "expression": "..."
+}
+```
+
+rather than a numeric type-20 Bitable v1 mutation body.
+
+This is a confirmed repository defect in the previous Formula transport/schema selection. Per repository rules, it is **not yet called the complete live root cause of `99992402`** until the customer Target accepts and exactly reads back the Base v3 Formula.
+
+## Base v3 recovery implementation
+
+The migration engine remains `consolidate-lark-base.js`; no second clone engine was created.
+
+The existing parity decorator now owns the Formula-only Base v3 boundary while reusing the same authenticated/retried shared Lark transport:
+
+- `createFormulaFieldV3({ tableId, field })`
+- `updateFormulaFieldV3({ tableId, fieldId, field })`
+
+The internal/export Formula contract remains unchanged so existing remap/verifier logic can remain stable. At the HTTP boundary only:
+
+1. require legacy internal Formula type `20` and `property.formula_expression`;
+2. resolve current Target Table IDs to exact Target Table names;
+3. resolve current Target Field IDs to exact Target Field names;
+4. translate `bitable::$table[targetTableId].$field[targetFieldId]` references:
+   - same Table → `[FieldName]`;
+   - another Table → `[TableName].[FieldName]`;
+5. fail closed if any legacy `bitable::`, `$table[...]` or `$field[...]` token remains unresolved;
+6. submit only documented Base v3 Formula fields: `type`, `name`, `expression`, and optional `description`;
+7. immediately read the resulting Formula through the existing normalized `listFields()` path;
+8. compare that readback against the Source-derived internal semantic Formula field.
+
+The resumable adapter behavior is now:
+
+- exact existing Formula → zero-write reuse;
+- fresh Formula + Base v3 capability → Base v3 CREATE only; never legacy Formula CREATE fallback;
+- historical recoverable shell + Base v3 capability → Base v3 PUT;
+- v3 CREATE rejection → `CUSTOMER_BASE_RESUME_FORMULA_V3_CREATE_REMOTE_REJECTED` with safe diagnostics;
+- v3 successful CREATE but semantic mismatch → `CUSTOMER_BASE_RESUME_FORMULA_V3_READBACK_MISMATCH`; preserve the created Formula and recover from the same original checkpoint;
+- a different non-empty existing expression remains a hard conflict.
+
+The two Base v3 mutation capabilities are also included in the same existing checkpoint write fence as other migration writes, preventing direct calls against protected or unowned Tables.
 
 ## Regression coverage
 
-Focused and shared resumable-target tests now cover:
+New regressions prove code behavior without claiming live Target success:
 
-- direct Formula type-2 CREATE with `formula_expression + type.ui_property`;
-- no follow-up PUT on fresh create;
-- GET readback after create;
-- exact Formula reuse with zero write;
-- historical shell recovery without duplicate create;
-- conflict on a different non-empty expression;
-- `formula_type != 2` behavior;
-- Source object immutability;
-- safe redacted diagnostics if Formula CREATE is rejected.
+- Base v3 Formula POST endpoint and request body;
+- Base v3 Formula PUT endpoint;
+- current-table target-ID reference → `[FieldName]`;
+- cross-table target-ID reference → `[TableName].[FieldName]`;
+- unresolved target ID fails before remote write;
+- resumable fresh Formula selects `createFormulaFieldV3` and never invokes legacy Formula `createField/updateField`;
+- historical shell selects `updateFormulaFieldV3`;
+- v3 rejection retains redacted operation/Table/Field/Lark-code diagnostics;
+- existing Formula semantic comparison/reuse remains intact.
 
 ## Verified code milestone
 
+Before the final safety/docs commits:
+
 ```text
-HEAD  4f624207e2828b859d0e65c181d72d6a2aaa4d1e
-Run   32254077830
-Job   96071712121
-PASS  all Branch Verification steps
+HEAD  1660ecaa638dd17e32e15ed0dca3729b10927665
+Run   32266554304
+Job   96112717530
+PASS  every Branch Verification step
 ```
 
-This is a **code/CI milestone only**. The request-shape diagnosis remains a hypothesis until a controlled live recovery passes `📣 MKT_Ads_Campaigns.budget` on the customer Target.
+Safety-only follow-up:
+
+```text
+HEAD  a09857e5bc78d69e019b333d9d899dd7cbc812bd
+DIFF  prepare-lark-base-resumable-target.js +2/-0
+RULE  add createFormulaFieldV3/updateFormulaFieldV3 to the existing write-method fence
+```
+
+Final documentation commits follow this milestone. A final exact-HEAD Branch Verification is required before the next customer Apply.
 
 ## No-repeat rules
 
-- Do not create a new checkpoint.
-- Do not delete or recreate the 32 partial clone Tables.
-- Do not delete migration-created partial Fields.
-- Do not rerun old shell-staging code.
-- Do not replay a failed historical Apply from a new baseline.
+- Never create a new checkpoint.
+- Never delete/recreate the 32 migration-owned partial Tables.
+- Never delete successful ordinary/Relation fields.
+- Do not retry any previous Bitable v1 Formula payload shape.
+- Do not fall back from Base v3 Formula failure to a guessed legacy request.
 - Do not mutate Source, Worker, D1, Queue, schedule or deployment state in this recovery.
-- Do not mark the Formula root cause confirmed until live Target evidence passes the failing field.
+- Do not describe the Base v3 transport correction as the complete live root cause until `budget` passes on the customer Target.
+- If Base v3 creates `budget` but readback comparison fails, preserve that Formula and diagnose the exact difference paths on the next recovery.
 
-## Next evidence required
+## Next live evidence required
 
-Run the controlled `--apply` only from the exact final CI-verified branch HEAD while validating the original checkpoint SHA. Preserve and return the complete operator JSON. The next decision must be based on the actual phase/code returned by that run rather than assuming later phases are complete.
+Run controlled `--apply` only from the final CI-verified branch HEAD while validating the original checkpoint SHA.
+
+Interpret the next operator result literally:
+
+- `budget` created and exact readback passes → Formula transport hypothesis is live-confirmed for that field and the operator may proceed to remaining Formulas/downstream phases;
+- `CUSTOMER_BASE_RESUME_FORMULA_V3_CREATE_REMOTE_REJECTED` → inspect the new Lark code. A permission/scope error is an external prerequisite; another `99992402` means Base v3 transport was necessary but not sufficient;
+- `CUSTOMER_BASE_RESUME_FORMULA_V3_READBACK_MISMATCH` → Formula exists; do not delete it. Preserve Target state and use the reported semantic difference paths;
+- any later-phase failure → retain all prior successful state and continue only from the same checkpoint.
