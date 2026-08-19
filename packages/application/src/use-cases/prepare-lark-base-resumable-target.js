@@ -60,7 +60,7 @@ export async function prepareLarkBaseResumableTarget(input) {
       throw codedError(
         'CUSTOMER_BASE_RESUME_EXPECTED_NAME_WAS_PREEXISTING',
         `Clone-scope table existed before controlled Apply and cannot be adopted: ${table.name}`,
-        { name, tableId: table.tableId },
+        { name: table.name, tableId: table.tableId },
       );
     }
   }
