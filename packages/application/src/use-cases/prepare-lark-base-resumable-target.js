@@ -11,6 +11,15 @@ const WRITE_METHODS = Object.freeze([
   'updateViewHierarchy',
 ]);
 const FORMULA_FIELD_TYPE = 20;
+const FORMULA_TYPE2_UI_PROPERTY_KEYS = Object.freeze([
+  'currency_code',
+  'formatter',
+  'range_customize',
+  'min',
+  'max',
+  'date_formatter',
+  'rating',
+]);
 
 /**
  * Adapts a customer Target Base so the existing consolidation engine can safely
@@ -51,7 +60,7 @@ export async function prepareLarkBaseResumableTarget(input) {
       throw codedError(
         'CUSTOMER_BASE_RESUME_EXPECTED_NAME_WAS_PREEXISTING',
         `Clone-scope table existed before controlled Apply and cannot be adopted: ${table.name}`,
-        { name: table.name, tableId: table.tableId },
+        { name, tableId: table.tableId },
       );
     }
   }
@@ -399,35 +408,57 @@ async function createFormulaFieldInStages(input) {
     targetFormulaType,
   } = input;
   const fieldName = requireText(requestedField?.fieldName, 'Formula fieldName');
-  const shellField = stripFormulaExpressionFromField(requestedField);
   let created;
   try {
     created = await target.createField({
       ...request,
-      field: shellField,
+      field: requestedField,
     });
   } catch (error) {
     throw remoteWriteError(
-      'CUSTOMER_BASE_RESUME_FORMULA_SHELL_CREATE_REMOTE_REJECTED',
-      `Lark rejected Formula shell create: ${tableName ?? tableId}.${fieldName}`,
+      'CUSTOMER_BASE_RESUME_FORMULA_CREATE_REMOTE_REJECTED',
+      `Lark rejected Formula create: ${tableName ?? tableId}.${fieldName}`,
       error,
       {
-        operation: 'createFormulaShell',
+        operation: 'createFormulaField',
         tableId,
         tableName,
-        ...summarizeFieldMutation(shellField),
+        ...summarizeFieldMutation(requestedField),
       },
     );
   }
 
-  return finalizeFormulaField({
-    target,
-    tableId,
-    tableName,
-    existingField: created,
-    requestedField,
-    targetFormulaType,
-  });
+  const fieldId = requireText(created?.fieldId, `Formula fieldId ${fieldName}`);
+  const fields = await target.listFields({ tableId });
+  const readback = fields.find((item) => item?.fieldId === fieldId)
+    ?? fields.find((item) => item?.fieldName === fieldName)
+    ?? null;
+  if (!readback) {
+    throw codedError(
+      'CUSTOMER_BASE_RESUME_FORMULA_READBACK_MISSING',
+      `Formula field missing after create: ${tableName ?? tableId}.${fieldName}`,
+      { tableId, tableName, fieldId, fieldName },
+    );
+  }
+
+  const comparableReadback = adaptFormulaFieldForTarget(readback, targetFormulaType);
+  const comparison = compareFieldMutation(comparableReadback, requestedField);
+  if (!comparison.ok) {
+    throw codedError(
+      'CUSTOMER_BASE_RESUME_FORMULA_READBACK_MISMATCH',
+      `Formula field differs after create: ${tableName ?? tableId}.${fieldName}`,
+      {
+        tableId,
+        tableName,
+        fieldId,
+        fieldName,
+        differencePaths: comparison.differencePaths,
+        existingPropertyKeys: propertyKeys(comparison.existing.property),
+        requestedPropertyKeys: propertyKeys(comparison.requested.property),
+      },
+    );
+  }
+  return structuredClone(readback);
 }
 
 async function finalizeFormulaField(input) {
@@ -555,6 +586,23 @@ function adaptFormulaFieldForTarget(field, formulaType, options = {}) {
         `Target Base formula_type=2 requires Formula property.type: ${requireText(normalized?.fieldName, 'fieldName')}`,
         { fieldName: requireText(normalized?.fieldName, 'fieldName'), formulaType },
       );
+    }
+    if (property?.type && typeof property.type === 'object' && !Array.isArray(property.type)) {
+      const uiProperty = property.type.ui_property
+        && typeof property.type.ui_property === 'object'
+        && !Array.isArray(property.type.ui_property)
+        ? structuredClone(property.type.ui_property)
+        : {};
+      for (const key of FORMULA_TYPE2_UI_PROPERTY_KEYS) {
+        if (property[key] !== undefined && uiProperty[key] === undefined) {
+          uiProperty[key] = structuredClone(property[key]);
+        }
+        delete property[key];
+      }
+      property.type = {
+        ...property.type,
+        ...(Object.keys(uiProperty).length > 0 ? { ui_property: uiProperty } : {}),
+      };
     }
     return normalized;
   }
