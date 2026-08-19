@@ -284,12 +284,8 @@ test('resumable adapter omits Formula property.type when Target formula_type is 
   const createCalls = target.calls.filter((call) => call.kind === 'createField' && call.fieldName === 'budget');
   const updateCalls = target.calls.filter((call) => call.kind === 'updateField' && call.fieldName === 'budget');
   assert.equal(createCalls.length, 1);
-  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls.length, 0);
   assert.deepEqual(createCalls[0].field.property, {
-    currency_code: 'THB',
-    formatter: '0.00',
-  });
-  assert.deepEqual(updateCalls[0].field.property, {
     currency_code: 'THB',
     formatter: '0.00',
     formula_expression: 'IF({budget_micros}=BLANK(), BLANK(), {budget_micros}/1000000)',
@@ -323,23 +319,23 @@ test('resumable adapter canonicalizes Formula property.type when Target formula_
 
   const createCall = target.calls.find((call) => call.kind === 'createField' && call.fieldName === 'budget');
   const updateCall = target.calls.find((call) => call.kind === 'updateField' && call.fieldName === 'budget');
+  assert.equal(updateCall, undefined);
   assert.deepEqual(createCall.field.property, {
-    currency_code: 'THB',
-    formatter: '0.00',
+    formula_expression: '{budget_micros}/1000000',
     type: {
       data_type: 2,
       ui_type: 'Currency',
       ui_property: { currency_code: 'THB', formatter: '0.00' },
     },
   });
-  assert.deepEqual(updateCall.field.property, {
-    currency_code: 'THB',
-    formatter: '0.00',
-    formula_expression: '{budget_micros}/1000000',
+  assert.deepEqual(sourceField.property, {
+    currencyCode: 'THB',
+    formatter: '฿#,##0.00',
+    formula: '{budget_micros}/1000000',
     type: {
-      data_type: 2,
-      ui_type: 'Currency',
-      ui_property: { currency_code: 'THB', formatter: '0.00' },
+      dataType: 2,
+      uiType: 'Currency',
+      uiProperty: { currencyCode: 'THB', formatter: '฿#,##0.00' },
     },
   });
 });
