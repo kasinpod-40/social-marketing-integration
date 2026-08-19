@@ -124,7 +124,7 @@ export function withLarkBaseParityCapabilities(client) {
     });
   };
 
-  const readBackFormula = async (tableId, fieldName) => {
+  const readBackFormulaLegacy = async (tableId, fieldName) => {
     if (typeof client.listFields !== 'function') {
       throw new TypeError('client must implement listFields() for Formula readback');
     }
@@ -138,15 +138,58 @@ export function withLarkBaseParityCapabilities(client) {
     return structuredClone(matches[0]);
   };
 
+  const readBackFormulaV3 = async (tableId, fieldId) => {
+    const response = await client.requestBitableJson(
+      baseV3FieldPath(client.appToken, tableId, fieldId),
+      { method: 'GET' },
+    );
+    return normalizeBaseV3FormulaDefinition(response?.data?.field ?? response?.data);
+  };
+
+  const verifyFormulaV3 = async (input) => {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const fieldId = requireText(input?.fieldId, 'fieldId');
+    const expected = await toBaseV3FormulaBody({ tableId, field: input?.field });
+    const actual = await readBackFormulaV3(tableId, fieldId);
+    const comparison = compareBaseV3FormulaDefinitions(actual, expected);
+    if (!comparison.ok) {
+      const error = new Error(`Base v3 Formula definition differs after readback: ${expected.name}`);
+      error.code = 'LARK_BASE_V3_FORMULA_READBACK_MISMATCH';
+      error.details = {
+        tableId,
+        fieldId,
+        fieldName: expected.name,
+        differencePaths: comparison.differencePaths,
+      };
+      throw error;
+    }
+    return Object.freeze({
+      ok: true,
+      tableId,
+      fieldId,
+      fieldName: expected.name,
+      definition: actual,
+    });
+  };
+
+  wrapped.verifyFormulaFieldV3Definition = verifyFormulaV3;
+
   wrapped.createFormulaFieldV3 = async (input) => {
     const tableId = requireText(input?.tableId, 'tableId');
     const body = await toBaseV3FormulaBody({ tableId, field: input?.field });
-    await client.requestBitableJson(baseV3FieldCollectionPath(client.appToken, tableId), {
+    const response = await client.requestBitableJson(baseV3FieldCollectionPath(client.appToken, tableId), {
       method: 'POST',
       retryMode: 'rate_limit_only',
       body,
     });
-    return readBackFormula(tableId, body.name);
+    const createdPayload = response?.data?.field ?? response?.data ?? {};
+    let fieldId = optionalText(createdPayload?.id ?? createdPayload?.field_id ?? createdPayload?.fieldId);
+    if (!fieldId) {
+      const legacy = await readBackFormulaLegacy(tableId, body.name);
+      fieldId = requireText(legacy?.fieldId, `created Formula fieldId ${body.name}`);
+    }
+    await verifyFormulaV3({ tableId, fieldId, field: input?.field });
+    return readBackFormulaLegacy(tableId, body.name);
   };
 
   wrapped.updateFormulaFieldV3 = async (input) => {
@@ -157,7 +200,8 @@ export function withLarkBaseParityCapabilities(client) {
       method: 'PUT',
       body,
     });
-    return readBackFormula(tableId, body.name);
+    await verifyFormulaV3({ tableId, fieldId, field: input?.field });
+    return readBackFormulaLegacy(tableId, body.name);
   };
 
   wrapped.getViewHierarchy = async (input) => {
@@ -240,6 +284,66 @@ export function withLarkBaseParityCapabilities(client) {
   };
 
   return wrapped;
+}
+
+function normalizeBaseV3FormulaDefinition(field) {
+  const value = requireObject(field, 'Base v3 Formula field');
+  const type = requireText(value?.type, 'Base v3 Formula type').toLowerCase();
+  if (type !== 'formula') throw new TypeError(`Base v3 Formula readback returned type ${type}`);
+  return Object.freeze({
+    type,
+    name: requireText(value?.name, 'Base v3 Formula name'),
+    expression: requireText(value?.expression, 'Base v3 Formula expression'),
+    description: optionalText(value?.description),
+  });
+}
+
+function compareBaseV3FormulaDefinitions(actual, expected) {
+  const left = {
+    type: requireText(actual?.type, 'actual Formula type').toLowerCase(),
+    name: requireText(actual?.name, 'actual Formula name'),
+    expression: canonicalFormulaExpression(actual?.expression),
+    description: optionalText(actual?.description),
+  };
+  const right = {
+    type: requireText(expected?.type, 'expected Formula type').toLowerCase(),
+    name: requireText(expected?.name, 'expected Formula name'),
+    expression: canonicalFormulaExpression(expected?.expression),
+    description: optionalText(expected?.description),
+  };
+  const differencePaths = [];
+  for (const key of ['type', 'name', 'expression', 'description']) {
+    if (left[key] !== right[key]) differencePaths.push(`$.${key}`);
+  }
+  return Object.freeze({ ok: differencePaths.length === 0, differencePaths: Object.freeze(differencePaths) });
+}
+
+function canonicalFormulaExpression(value) {
+  const text = requireText(value, 'Formula expression');
+  let result = '';
+  let quote = null;
+  let escaped = false;
+  for (const char of text) {
+    if (quote) {
+      result += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      result += char;
+      continue;
+    }
+    if (/\s/u.test(char)) continue;
+    result += char;
+  }
+  return result;
 }
 
 function normalizeAdvancedPermissionRole(role) {
