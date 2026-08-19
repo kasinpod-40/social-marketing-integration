@@ -30,6 +30,10 @@ export async function prepareLarkBaseResumableTarget(input) {
   const currentTables = await targetClient.listTables();
   const currentByName = uniqueTableByName(currentTables);
   const currentById = new Map(currentTables.map((table) => [requireText(table?.tableId, 'current tableId'), table]));
+  const tableNameById = new Map(currentTables.map((table) => [
+    requireText(table?.tableId, 'current tableId'),
+    requireText(table?.name, 'current table name'),
+  ]));
 
   for (const table of protectedTables) {
     const current = currentById.get(table.tableId);
@@ -116,9 +120,26 @@ export async function prepareLarkBaseResumableTarget(input) {
             return structuredClone(resume);
           }
 
-          const created = await target.createTable(stripGeneratedSelectOptionIdsFromCreateTableRequest(request));
+          const sanitizedRequest = stripGeneratedSelectOptionIdsFromCreateTableRequest(request);
+          let created;
+          try {
+            created = await target.createTable(sanitizedRequest);
+          } catch (error) {
+            const primary = sanitizedRequest.fields[0] ?? null;
+            throw remoteWriteError(
+              'CUSTOMER_BASE_RESUME_CREATE_TABLE_REMOTE_REJECTED',
+              `Lark rejected migration table create: ${name}`,
+              error,
+              {
+                operation: 'createTable',
+                tableName: name,
+                ...(primary ? summarizeFieldMutation(primary) : {}),
+              },
+            );
+          }
           const tableId = requireText(created?.tableId, `created tableId ${name}`);
           writableIds.add(tableId);
+          tableNameById.set(tableId, name);
           return created;
         };
       }
@@ -126,6 +147,7 @@ export async function prepareLarkBaseResumableTarget(input) {
       if (property === 'createField') {
         return async (request) => {
           const tableId = requireWritableTable(request?.tableId, 'createField', dynamicProtectedIds, writableIds);
+          const tableName = tableNameById.get(tableId) ?? null;
           const field = requireObject(request?.field, 'createField.field');
           const fieldName = requireText(field?.fieldName, 'createField.fieldName');
           const existingFields = await target.listFields({ tableId });
@@ -140,10 +162,25 @@ export async function prepareLarkBaseResumableTarget(input) {
             }
             return structuredClone(existing);
           }
-          return target.createField({
-            ...request,
-            field: stripGeneratedSelectOptionIdsFromField(field),
-          });
+          const sanitizedField = stripGeneratedSelectOptionIdsFromField(field);
+          try {
+            return await target.createField({
+              ...request,
+              field: sanitizedField,
+            });
+          } catch (error) {
+            throw remoteWriteError(
+              'CUSTOMER_BASE_RESUME_CREATE_FIELD_REMOTE_REJECTED',
+              `Lark rejected migration field create: ${tableName ?? tableId}.${fieldName}`,
+              error,
+              {
+                operation: 'createField',
+                tableId,
+                tableName,
+                ...summarizeFieldMutation(sanitizedField),
+              },
+            );
+          }
         };
       }
 
@@ -185,7 +222,22 @@ export async function prepareLarkBaseResumableTarget(input) {
             }
           }
           if (missing.length === 0) return { created: 0 };
-          return target.batchCreateRecords({ ...request, records: missing });
+          try {
+            return await target.batchCreateRecords({ ...request, records: missing });
+          } catch (error) {
+            throw remoteWriteError(
+              'CUSTOMER_BASE_RESUME_RECORD_CREATE_REMOTE_REJECTED',
+              `Lark rejected migration record batch create: ${tableNameById.get(tableId) ?? tableId}`,
+              error,
+              {
+                operation: 'batchCreateRecords',
+                tableId,
+                tableName: tableNameById.get(tableId) ?? null,
+                recordCount: missing.length,
+                fieldNames: collectRecordFieldNames(missing),
+              },
+            );
+          }
         };
       }
 
@@ -203,7 +255,22 @@ export async function prepareLarkBaseResumableTarget(input) {
             }
             return structuredClone(existing);
           }
-          return target.createView(request);
+          try {
+            return await target.createView(request);
+          } catch (error) {
+            throw remoteWriteError(
+              'CUSTOMER_BASE_RESUME_CREATE_VIEW_REMOTE_REJECTED',
+              `Lark rejected migration View create: ${tableNameById.get(tableId) ?? tableId}.${viewName}`,
+              error,
+              {
+                operation: 'createView',
+                tableId,
+                tableName: tableNameById.get(tableId) ?? null,
+                viewName,
+                viewType: optionalText(request?.viewType),
+              },
+            );
+          }
         };
       }
 
@@ -224,7 +291,20 @@ export async function prepareLarkBaseResumableTarget(input) {
               { operation: String(property), tableId },
             );
           }
-          return target[property](request);
+          try {
+            return await target[property](request);
+          } catch (error) {
+            throw remoteWriteError(
+              'CUSTOMER_BASE_RESUME_REMOTE_WRITE_REJECTED',
+              `Lark rejected migration write: ${String(property)} ${tableNameById.get(tableId) ?? tableId}`,
+              error,
+              {
+                operation: String(property),
+                tableId,
+                tableName: tableNameById.get(tableId) ?? null,
+              },
+            );
+          }
         };
       }
 
@@ -262,6 +342,46 @@ function stripGeneratedSelectOptionIdsFromField(field) {
     return rest;
   });
   return sanitized;
+}
+
+function summarizeFieldMutation(field) {
+  const value = requireObject(field, 'field');
+  const property = value?.property && typeof value.property === 'object' && !Array.isArray(value.property)
+    ? value.property
+    : null;
+  return {
+    fieldName: requireText(value?.fieldName, 'fieldName'),
+    fieldType: Number(value?.type),
+    uiType: optionalText(value?.uiType),
+    propertyKeys: property ? Object.keys(property).sort() : [],
+    optionCount: Array.isArray(property?.options) ? property.options.length : 0,
+  };
+}
+
+function collectRecordFieldNames(records) {
+  const names = new Set();
+  for (const record of records) {
+    for (const fieldName of Object.keys(requireObject(record, 'record payload'))) names.add(fieldName);
+  }
+  return [...names].sort();
+}
+
+function remoteWriteError(code, message, error, details = {}) {
+  const causeDetails = error?.details && typeof error.details === 'object' && !Array.isArray(error.details)
+    ? error.details
+    : {};
+  return codedError(code, message, {
+    ...details,
+    causeCode: optionalText(error?.code),
+    status: finiteNumberOrNull(causeDetails.status),
+    larkCode: finiteNumberOrNull(causeDetails.larkCode),
+    retryAfter: finiteNumberOrNull(causeDetails.retryAfter),
+  });
+}
+
+function finiteNumberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function requireWritableTable(value, operation, protectedIds, writableIds) {
