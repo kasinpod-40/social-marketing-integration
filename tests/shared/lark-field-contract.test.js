@@ -63,6 +63,25 @@ test('normalizes exported Formula type metadata to the documented OpenAPI reques
   });
 });
 
+test('relation canonical property ignores derived table_name while preserving table_id and multiplicity', () => {
+  assert.deepEqual(normalizeLarkFieldProperty(18, {
+    table_id: 'tblAccounts',
+    table_name: '👤 MKT_Accounts',
+    multiple: false,
+  }), {
+    table_id: 'tblAccounts',
+    multiple: false,
+  });
+  assert.deepEqual(serializeLarkFieldProperty(18, {
+    tableId: 'tblAccounts',
+    tableName: '👤 MKT_Accounts',
+    multiple: true,
+  }), {
+    table_id: 'tblAccounts',
+    multiple: true,
+  });
+});
+
 test('generic field serialization preserves select option IDs for existing-field updates', () => {
   const property = {
     options: [
