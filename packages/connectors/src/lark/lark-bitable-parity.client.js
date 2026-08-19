@@ -9,6 +9,27 @@
 export function withLarkBaseParityCapabilities(client) {
   requireTransport(client);
   const wrapped = Object.create(client);
+  let formulaTypePromise = null;
+
+  wrapped.getBaseFormulaType = async () => {
+    if (!formulaTypePromise) {
+      formulaTypePromise = client.requestBitableJson(appPath(client.appToken), { method: 'GET' })
+        .then((response) => {
+          const app = response?.data?.app ?? response?.data ?? {};
+          const raw = app?.formula_type ?? app?.formulaType;
+          const formulaType = Number(raw);
+          if (!Number.isInteger(formulaType)) {
+            throw new TypeError('Lark Base metadata formula_type must be an integer');
+          }
+          return formulaType;
+        })
+        .catch((error) => {
+          formulaTypePromise = null;
+          throw error;
+        });
+    }
+    return formulaTypePromise;
+  };
 
   wrapped.getViewHierarchy = async (input) => {
     const tableId = requireText(input?.tableId, 'tableId');
@@ -103,6 +124,10 @@ function normalizeAdvancedPermissionRole(role) {
       tablePerm: requireFiniteNumber(entry?.table_perm ?? entry?.tablePerm, `tableRoles[${index}].tablePerm`),
     }))),
   });
+}
+
+function appPath(appToken) {
+  return `/open-apis/bitable/v1/apps/${encodeURIComponent(requireText(appToken, 'appToken'))}`;
 }
 
 function viewPath(appToken, tableId, viewId) {
