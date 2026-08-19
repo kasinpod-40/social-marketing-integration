@@ -25,11 +25,12 @@ const NUMBER_FORMATTER_ALIASES = Object.freeze({
   '#,##0': '1,000',
   '#,##0.00': '1,000.00',
   '#,##0.0000': '0.0000',
+  '฿#,##0.00': '0.00',
 });
 
 /**
  * แปลงรูปแบบ Number formatter จากรูปแบบ Spreadsheet/UI ให้เป็น enum ของ Lark OpenAPI
- * Lark ไม่รับ pattern เช่น #,##0 ใน Field Create/Update API
+ * Lark ไม่รับ pattern เช่น #,##0 หรือ Currency UI pattern เช่น ฿#,##0.00 ใน Field Create/Update API
  */
 export function normalizeLarkNumberFormatter(value) {
   if (typeof value !== 'string') return value;
