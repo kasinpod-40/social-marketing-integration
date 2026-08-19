@@ -3,7 +3,7 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = FORMULA_BASE_V3_RECOVERY_CODE_CI_VERIFIED_LIVE_VALIDATION_PENDING
+TASK_STATUS                         = FORMULA_BASE_V3_RECOVERY_FINAL_CI_VERIFIED_LIVE_VALIDATION_PENDING
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 SOURCE_AUTHORITY                    = LOCAL_LARK_BASE_EXPORT
 SOURCE_EXPORT_SHA256                = c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643
@@ -115,9 +115,9 @@ The branch now keeps the existing internal/export Formula contract unchanged and
 
 This confirms a repository transport/schema defect in the previous Formula write path. It does **not** yet prove that this defect is the complete live root cause of Lark `99992402`; that statement requires the next controlled Base v3 Target recovery to pass `budget`.
 
-## Code verification milestone
+## Verification milestones
 
-Base v3 Formula code milestone before final documentation closure:
+Base v3 Formula implementation milestone:
 
 ```text
 CODE_HEAD     1660ecaa638dd17e32e15ed0dca3729b10927665
@@ -126,7 +126,16 @@ Job           96112717530
 Result        SUCCESS — all Branch Verification steps
 ```
 
-A subsequent safety-only commit `a09857e5bc78d69e019b333d9d899dd7cbc812bd` adds the two Formula v3 mutation capabilities to the existing checkpoint write-method fence. Final exact-HEAD Branch Verification must be rerun after documentation updates before another live Apply.
+Safety + repository-truth milestone:
+
+```text
+VERIFIED_HEAD 627df1fae25adb0ff31fa54f9036c8b36c700db2
+Run           32267549092
+Job           96115748843
+Result        SUCCESS — all Branch Verification steps
+```
+
+The safety commit adds `createFormulaFieldV3/updateFormulaFieldV3` to the existing checkpoint write-method fence. The subsequent documentation commits align current-task, Project Brain and CHANGELOG with the actual partial Target state and recovery rules.
 
 Regression coverage includes:
 
@@ -156,17 +165,16 @@ Regression coverage includes:
 
 ## Next controlled sequence
 
-1. Finish exact-HEAD CI after current documentation closure.
-2. Pull only that final verified branch HEAD on the operator Mac.
-3. Verify the original checkpoint SHA remains `7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053`.
-4. Run **only** `node scripts/customer-base-controlled-apply.mjs --apply` with the existing confirmation token and exact Source export.
-5. Interpret the real live result without guessing:
+1. Pull only the final CI-verified branch HEAD on the operator Mac.
+2. Verify the original checkpoint SHA remains `7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053`.
+3. Run **only** `node scripts/customer-base-controlled-apply.mjs --apply` with the existing confirmation token and exact Source export.
+4. Interpret the real live result without guessing:
    - Base v3 Formula create + exact readback passes → continue remaining Formulas and downstream phases;
    - `CUSTOMER_BASE_RESUME_FORMULA_V3_CREATE_REMOTE_REJECTED` → inspect the returned Lark code/scope/contract evidence; do not fall back to v1;
    - `CUSTOMER_BASE_RESUME_FORMULA_V3_READBACK_MISMATCH` → preserve the newly created Formula and use the reported difference paths for recovery;
    - another `99992402` from the Base v3 path → the transport correction was necessary but not sufficient; stop and diagnose from that new evidence.
-6. After Formulas: materialize 33,488 clone-scope Records, relation record-cell remap, supported Views, hierarchy, Advanced Permission and canonical GET verification.
-7. Complete retained manual View layout parity, Dashboard / Workflow UI parity and final Target export verification.
-8. Ready/Merge PR #661 only after all parity gates pass.
+5. After Formulas: materialize 33,488 clone-scope Records, relation record-cell remap, supported Views, hierarchy, Advanced Permission and canonical GET verification.
+6. Complete retained manual View layout parity, Dashboard / Workflow UI parity and final Target export verification.
+7. Ready/Merge PR #661 only after all parity gates pass.
 
 Detailed incident record: `docs/project-brain/customer-base-formula-recovery-2026-08-19.md`.
