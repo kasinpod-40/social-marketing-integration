@@ -17,6 +17,9 @@ export function withLarkBaseParityCapabilities(client) {
         .then((response) => {
           const app = response?.data?.app ?? response?.data ?? {};
           const raw = app?.formula_type ?? app?.formulaType;
+          if (raw === null || raw === undefined || raw === '') {
+            throw new TypeError('Lark Base metadata formula_type must be an integer');
+          }
           const formulaType = Number(raw);
           if (!Number.isInteger(formulaType)) {
             throw new TypeError('Lark Base metadata formula_type must be an integer');
