@@ -29,14 +29,20 @@ const view = (viewId, viewName, property = {}, publicLevel = 'Public') => ({
 const record = (recordId, fields) => ({ recordId, fields, createdTime: null, lastModifiedTime: null, lastModifiedBy: null });
 
 class ReadClient {
-  constructor(tables) {
+  constructor(tables, formulaType = 1) {
     this.tables = structuredClone(tables);
+    this.formulaType = formulaType;
     this.calls = [];
   }
 
   async listTables() {
     this.calls.push('listTables');
     return this.tables.map(({ tableId, name }) => ({ tableId, name }));
+  }
+
+  async getBaseFormulaType() {
+    this.calls.push('getBaseFormulaType');
+    return this.formulaType;
   }
 
   table(tableId) {
@@ -108,7 +114,7 @@ function sourceFixture() {
   ]);
 }
 
-function targetFixture() {
+function targetFixture(formulaType = 1) {
   return new ReadClient([
     {
       tableId: 'target_accounts',
@@ -154,7 +160,7 @@ function targetFixture() {
       records: [record('customer_rec', { key: 'keep' })],
       views: [view('customer_view', 'Grid')],
     },
-  ]);
+  ], formulaType);
 }
 
 test('canonical verifier accepts deterministic table field record relation formula and basic View remaps', async () => {
@@ -178,6 +184,43 @@ test('canonical verifier accepts deterministic table field record relation formu
   assert.equal(result.coverage.unrelatedTargetTablesIgnored, true);
   assert.equal(sourceClient.calls.some((call) => call.startsWith('create')), false);
   assert.equal(targetClient.calls.some((call) => call.startsWith('create')), false);
+  assert.equal(targetClient.calls.filter((call) => call === 'getBaseFormulaType').length, 1);
+});
+
+test('canonical verifier ignores Source Formula property.type when Target formula_type is not 2', async () => {
+  const sourceClient = sourceFixture();
+  const targetClient = targetFixture(1);
+  sourceClient.tables.find((table) => table.name === 'Campaigns')
+    .fields.find((field) => field.fieldName === 'budget').property.type = { data_type: 2, ui_type: 'Currency' };
+
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts', 'Campaigns'],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.mismatches, 0);
+});
+
+test('canonical verifier requires Formula property.type parity when Target formula_type is 2', async () => {
+  const sourceClient = sourceFixture();
+  const targetClient = targetFixture(2);
+  sourceClient.tables.find((table) => table.name === 'Campaigns')
+    .fields.find((field) => field.fieldName === 'budget').property.type = { data_type: 2, ui_type: 'Currency' };
+
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts', 'Campaigns'],
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.mismatches.some((item) => (
+    item.code === 'CANONICAL_VERIFY_FIELD_CONFIG_MISMATCH'
+      && item.message.includes('Campaigns.budget')
+      && item.details.differencePaths.some((path) => path.includes('property.type'))
+  )));
 });
 
 test('canonical verifier fails closed on full field property drift after ID remap', async () => {
