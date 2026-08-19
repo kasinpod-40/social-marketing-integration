@@ -83,26 +83,10 @@ export function normalizeLarkFieldProperty(type, property) {
   return Object.keys(result).length > 0 ? Object.freeze(result) : null;
 }
 
-/**
- * สร้าง Property request body ที่ปลอดภัยสำหรับ Lark Field Create/Update API
- *
- * Select option IDs เป็น identity ที่ Lark สร้างต่อ Base/Field เอง จึงเก็บไว้ได้ใน
- * normalized read model แต่ห้าม replay Source/foreign IDs กลับไปใน mutation payload.
- */
+/** สร้าง Property request body ที่ปลอดภัยสำหรับ Lark Field Create/Update API */
 export function serializeLarkFieldProperty(type, property) {
   const normalized = normalizeLarkFieldProperty(type, property);
-  if (!normalized) return null;
-  const serialized = structuredClone(normalized);
-  if (Array.isArray(serialized.options)) {
-    serialized.options = serialized.options.map(stripGeneratedSelectOptionIdentity);
-  }
-  return serialized;
-}
-
-function stripGeneratedSelectOptionIdentity(option) {
-  if (!isPlainObject(option)) return option;
-  const { id: _generatedId, ...rest } = option;
-  return rest;
+  return normalized ? structuredClone(normalized) : null;
 }
 
 function isPlainObject(value) {
