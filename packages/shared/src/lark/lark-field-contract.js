@@ -69,7 +69,6 @@ const OFFICIAL_PROPERTY_KEYS = new Set([
   'auto_fill',
   'multiple',
   'table_id',
-  'table_name',
   'back_field_name',
   'auto_serial',
   'location',
@@ -92,7 +91,8 @@ export function larkFieldTypeAllowsProperty(type) {
 
 /**
  * แปลง Property จาก API/UI aliases เป็นรูปแบบ OpenAPI canonical snake_case
- * และตัด UI-internal/unsupported keys เช่น optionsType, timeFormat, styleId, extractExternalUrl.
+ * และตัด UI-internal/derived/unsupported keys เช่น table_name, optionsType,
+ * timeFormat, styleId, extractExternalUrl. Relation identity ใช้ table_id เท่านั้น.
  */
 export function normalizeLarkFieldProperty(type, property) {
   if (!larkFieldTypeAllowsProperty(type) || !isPlainObject(property)) return null;
