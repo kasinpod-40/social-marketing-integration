@@ -10,6 +10,8 @@ export function withLarkBaseParityCapabilities(client) {
   requireTransport(client);
   const wrapped = Object.create(client);
   let formulaTypePromise = null;
+  let formulaTableNameByIdPromise = null;
+  const formulaFieldNameByTableId = new Map();
 
   wrapped.getBaseFormulaType = async () => {
     if (!formulaTypePromise) {
@@ -32,6 +34,130 @@ export function withLarkBaseParityCapabilities(client) {
         });
     }
     return formulaTypePromise;
+  };
+
+  const getFormulaTableNameById = async () => {
+    if (!formulaTableNameByIdPromise) {
+      if (typeof client.listTables !== 'function') {
+        throw new TypeError('client must implement listTables() for Base v3 Formula translation');
+      }
+      formulaTableNameByIdPromise = Promise.resolve(client.listTables())
+        .then((tables) => new Map(requireArray(tables, 'Formula tables').map((table, index) => [
+          requireText(table?.tableId, `Formula tables[${index}].tableId`),
+          requireBracketSafeName(table?.name, `Formula tables[${index}].name`),
+        ])))
+        .catch((error) => {
+          formulaTableNameByIdPromise = null;
+          throw error;
+        });
+    }
+    return formulaTableNameByIdPromise;
+  };
+
+  const getFormulaFieldNameById = async (tableId) => {
+    if (!formulaFieldNameByTableId.has(tableId)) {
+      if (typeof client.listFields !== 'function') {
+        throw new TypeError('client must implement listFields() for Base v3 Formula translation');
+      }
+      formulaFieldNameByTableId.set(
+        tableId,
+        Promise.resolve(client.listFields({ tableId }))
+          .then((fields) => new Map(requireArray(fields, `Formula fields ${tableId}`).map((field, index) => [
+            requireText(field?.fieldId, `Formula fields ${tableId}[${index}].fieldId`),
+            requireBracketSafeName(field?.fieldName, `Formula fields ${tableId}[${index}].fieldName`),
+          ])))
+          .catch((error) => {
+            formulaFieldNameByTableId.delete(tableId);
+            throw error;
+          }),
+      );
+    }
+    return formulaFieldNameByTableId.get(tableId);
+  };
+
+  const toBaseV3FormulaBody = async (input) => {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const field = requireObject(input?.field, 'field');
+    if (Number(field?.type) !== 20) {
+      throw new TypeError('Base v3 Formula writer requires legacy Formula field type 20');
+    }
+    const name = requireBracketSafeName(field?.fieldName ?? field?.field_name, 'Formula fieldName');
+    const expression = requireText(field?.property?.formula_expression, 'Formula property.formula_expression');
+    const references = [...expression.matchAll(/bitable::\$table\[([^\]]+)\]\.\$field\[([^\]]+)\]/gu)];
+    const tableNameById = await getFormulaTableNameById();
+    const replacementByToken = new Map();
+
+    for (const match of references) {
+      const referencedTableId = requireText(match[1], 'Formula referenced tableId');
+      const referencedFieldId = requireText(match[2], 'Formula referenced fieldId');
+      const referencedTableName = tableNameById.get(referencedTableId);
+      if (!referencedTableName) {
+        throw new TypeError(`Base v3 Formula references unknown table ID: ${referencedTableId}`);
+      }
+      const fieldNameById = await getFormulaFieldNameById(referencedTableId);
+      const referencedFieldName = fieldNameById.get(referencedFieldId);
+      if (!referencedFieldName) {
+        throw new TypeError(`Base v3 Formula references unknown field ID: ${referencedFieldId}`);
+      }
+      replacementByToken.set(
+        match[0],
+        referencedTableId === tableId
+          ? `[${referencedFieldName}]`
+          : `[${referencedTableName}].[${referencedFieldName}]`,
+      );
+    }
+
+    let translated = expression;
+    for (const [token, replacement] of replacementByToken.entries()) {
+      translated = translated.split(token).join(replacement);
+    }
+    if (/bitable::|\$table\[|\$field\[/u.test(translated)) {
+      throw new TypeError('Base v3 Formula translation left unsupported legacy table/field references');
+    }
+
+    const description = optionalText(field?.description?.text ?? field?.description);
+    return Object.freeze({
+      type: 'formula',
+      name,
+      expression: translated,
+      ...(description ? { description } : {}),
+    });
+  };
+
+  const readBackFormula = async (tableId, fieldName) => {
+    if (typeof client.listFields !== 'function') {
+      throw new TypeError('client must implement listFields() for Formula readback');
+    }
+    const fields = await client.listFields({ tableId });
+    const matches = requireArray(fields, 'Formula readback fields')
+      .filter((field) => optionalText(field?.fieldName) === fieldName);
+    if (matches.length !== 1) {
+      throw new TypeError(`Formula readback requires exactly one field named ${fieldName}; found ${matches.length}`);
+    }
+    formulaFieldNameByTableId.delete(tableId);
+    return structuredClone(matches[0]);
+  };
+
+  wrapped.createFormulaFieldV3 = async (input) => {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const body = await toBaseV3FormulaBody({ tableId, field: input?.field });
+    await client.requestBitableJson(baseV3FieldCollectionPath(client.appToken, tableId), {
+      method: 'POST',
+      retryMode: 'rate_limit_only',
+      body,
+    });
+    return readBackFormula(tableId, body.name);
+  };
+
+  wrapped.updateFormulaFieldV3 = async (input) => {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const fieldId = requireText(input?.fieldId, 'fieldId');
+    const body = await toBaseV3FormulaBody({ tableId, field: input?.field });
+    await client.requestBitableJson(baseV3FieldPath(client.appToken, tableId, fieldId), {
+      method: 'PUT',
+      body,
+    });
+    return readBackFormula(tableId, body.name);
   };
 
   wrapped.getViewHierarchy = async (input) => {
@@ -133,6 +259,15 @@ function appPath(appToken) {
   return `/open-apis/bitable/v1/apps/${encodeURIComponent(requireText(appToken, 'appToken'))}`;
 }
 
+function baseV3FieldCollectionPath(appToken, tableId) {
+  return `/open-apis/base/v3/bases/${encodeURIComponent(requireText(appToken, 'appToken'))}`
+    + `/tables/${encodeURIComponent(requireText(tableId, 'tableId'))}/fields`;
+}
+
+function baseV3FieldPath(appToken, tableId, fieldId) {
+  return `${baseV3FieldCollectionPath(appToken, tableId)}/${encodeURIComponent(requireText(fieldId, 'fieldId'))}`;
+}
+
 function viewPath(appToken, tableId, viewId) {
   return `/open-apis/bitable/v1/apps/${encodeURIComponent(requireText(appToken, 'appToken'))}`
     + `/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`;
@@ -152,6 +287,21 @@ function requireTransport(client) {
   }
   requireText(client.appToken, 'client.appToken');
   return client;
+}
+
+function requireObject(value, name) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${name} must be an object`);
+  }
+  return value;
+}
+
+function requireBracketSafeName(value, name) {
+  const normalized = requireText(value, name);
+  if (normalized.includes(']')) {
+    throw new TypeError(`${name} contains unsupported ] for Base v3 Formula reference syntax`);
+  }
+  return normalized;
 }
 
 function optionalText(value) {
