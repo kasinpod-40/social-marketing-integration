@@ -216,6 +216,34 @@ test('resumable adapter strips foreign select option IDs only before create writ
   ]);
 });
 
+test('resumable adapter reuses an existing Currency field across export and OpenAPI formatter aliases', async () => {
+  const target = emptyTarget();
+  const { prepared, created } = await prepareEmptyTarget(target);
+  target.table(created.tableId).fields.push({
+    fieldId: 'fld_existing_cpa',
+    fieldName: 'cpa',
+    type: 2,
+    uiType: 'Currency',
+    description: '',
+    isPrimary: false,
+    property: { currency_code: 'THB', formatter: '0.00' },
+  });
+
+  const result = await prepared.client.createField({
+    tableId: created.tableId,
+    field: {
+      fieldName: 'cpa',
+      type: 2,
+      uiType: 'Currency',
+      description: '',
+      property: { currencyCode: 'THB', formatter: '฿#,##0.00' },
+    },
+  });
+
+  assert.equal(result.fieldId, 'fld_existing_cpa');
+  assert.equal(target.calls.some((call) => call.kind === 'createField' && call.fieldName === 'cpa'), false);
+});
+
 test('resumable adapter omits Formula property.type when Target formula_type is not 2 and resumes idempotently', async () => {
   const target = emptyTarget();
   let metadataReads = 0;
@@ -251,28 +279,40 @@ test('resumable adapter omits Formula property.type when Target formula_type is 
   assert.equal(metadataReads, 1);
 });
 
-test('resumable adapter preserves Formula property.type when Target formula_type is 2', async () => {
+test('resumable adapter canonicalizes Formula property.type when Target formula_type is 2', async () => {
   const target = emptyTarget();
   target.getBaseFormulaType = async () => 2;
   const { prepared, created } = await prepareEmptyTarget(target);
-  const formulaType = { data_type: 2, ui_type: 'Currency' };
   const sourceField = {
     fieldName: 'budget',
     type: 20,
     uiType: 'Formula',
     description: '',
     property: {
-      currency_code: 'THB',
-      formatter: '0.00',
-      formula_expression: '{budget_micros}/1000000',
-      type: formulaType,
+      currencyCode: 'THB',
+      formatter: '฿#,##0.00',
+      formula: '{budget_micros}/1000000',
+      type: {
+        dataType: 2,
+        uiType: 'Currency',
+        uiProperty: { currencyCode: 'THB', formatter: '฿#,##0.00' },
+      },
     },
   };
 
   await prepared.client.createField({ tableId: created.tableId, field: sourceField });
 
   const createCall = target.calls.find((call) => call.kind === 'createField' && call.fieldName === 'budget');
-  assert.deepEqual(createCall.field.property.type, formulaType);
+  assert.deepEqual(createCall.field.property, {
+    currency_code: 'THB',
+    formatter: '0.00',
+    formula_expression: '{budget_micros}/1000000',
+    type: {
+      data_type: 2,
+      ui_type: 'Currency',
+      ui_property: { currency_code: 'THB', formatter: '0.00' },
+    },
+  });
 });
 
 test('resumable adapter fails closed when Target formula_type 2 requires missing Formula property.type', async () => {
@@ -350,7 +390,7 @@ test('resumable adapter reports safe mutation context when Lark rejects field cr
   );
 });
 
-test('resumable adapter blocks drift inside a migration-owned partial field', async () => {
+test('resumable adapter blocks drift inside a migration-owned partial field with safe difference paths', async () => {
   const target = partiallyAppliedTarget();
   target.table('target_accounts').fields[1].type = 2;
   const prepared = await prepareLarkBaseResumableTarget({
@@ -367,7 +407,13 @@ test('resumable adapter blocks drift inside a migration-owned partial field', as
 
   await assert.rejects(
     () => prepared.client.createField({ tableId: 'target_accounts', field: { fieldName: 'name', type: 1, description: '', property: null } }),
-    (error) => error?.code === 'CUSTOMER_BASE_RESUME_FIELD_CONFLICT',
+    (error) => {
+      assert.equal(error?.code, 'CUSTOMER_BASE_RESUME_FIELD_CONFLICT');
+      assert.deepEqual(error?.details?.differencePaths, ['$.type']);
+      assert.deepEqual(error?.details?.existingPropertyKeys, []);
+      assert.deepEqual(error?.details?.requestedPropertyKeys, []);
+      return true;
+    },
   );
 });
 
