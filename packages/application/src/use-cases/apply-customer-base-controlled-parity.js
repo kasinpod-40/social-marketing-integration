@@ -1,3 +1,4 @@
+import { normalizeLarkFieldProperty } from '../../../shared/src/lark/lark-field-contract.js';
 import { applyLarkBaseConsolidation } from './consolidate-lark-base.js';
 import { applyLarkBaseDocumentedViewParity } from './apply-lark-base-documented-view-parity.js';
 import { applyLarkBaseAdvancedPermissionParity } from './apply-lark-base-advanced-permission-parity.js';
@@ -10,6 +11,8 @@ import { verifyLarkBaseCloneCanonicalParity } from './verify-lark-base-clone-can
 
 export const CUSTOMER_BASE_CONTROLLED_APPLY_CONFIRMATION = 'CUSTOMER_BASE_CONTROLLED_APPLY_V1';
 export const CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_VERSION = 'customer_base_controlled_apply_checkpoint_v1';
+
+const FORMULA_FIELD_TYPE = 20;
 
 const DEFAULT_OPERATIONS = Object.freeze({
   applyLarkBaseConsolidation,
@@ -123,10 +126,11 @@ export async function applyCustomerBaseControlledParity(input) {
     expectedTableNames,
     protectedTables: checkpoint.protectedTables,
   });
+  const consolidationTarget = withFormulaV3ParityRecovery(resumable.client);
 
   const consolidation = await operations.applyLarkBaseConsolidation({
     sourceClient,
-    targetClient: resumable.client,
+    targetClient: consolidationTarget,
     expectedTableNames,
     expectedSourceTableCount: expectedTableNames.length,
     onProgress: input?.onProgress,
@@ -135,12 +139,12 @@ export async function applyCustomerBaseControlledParity(input) {
 
   const documentedViews = await operations.applyLarkBaseDocumentedViewParity({
     sourceClient,
-    targetClient: resumable.client,
+    targetClient: consolidationTarget,
     expectedTableNames,
   });
   assertPhaseOk(documentedViews, 'documented-view-parity');
 
-  const targetTables = await resumable.client.listTables();
+  const targetTables = await consolidationTarget.listTables();
   const permissionPlan = operations.planLarkBaseAdvancedPermissionParity({
     permissionSemantics,
     targetTables,
@@ -153,20 +157,20 @@ export async function applyCustomerBaseControlledParity(input) {
 
   const permissionApply = await operations.applyLarkBaseAdvancedPermissionParity({
     plan: permissionPlan,
-    targetClient: resumable.client,
+    targetClient: consolidationTarget,
     protectedRoleNames: checkpoint.protectedRoles.map((role) => role.roleName),
   });
   assertPhaseOk(permissionApply, 'advanced-permission-apply');
 
   const permissionVerification = await operations.verifyLarkBaseAdvancedPermissionParity({
     plan: permissionPlan,
-    targetClient: resumable.client,
+    targetClient: consolidationTarget,
   });
   assertPhaseOk(permissionVerification, 'advanced-permission-verify');
 
   const canonicalVerification = await operations.verifyLarkBaseCloneCanonicalParity({
     sourceClient,
-    targetClient: resumable.client,
+    targetClient: consolidationTarget,
     expectedTableNames,
   });
   assertPhaseOk(canonicalVerification, 'canonical-clone-verify');
@@ -194,6 +198,336 @@ export async function applyCustomerBaseControlledParity(input) {
     automaticApplyComplete: true,
     finalFullParityComplete: false,
   });
+}
+
+/**
+ * Bridges the two documented Formula APIs without weakening the existing checkpoint fence.
+ * Base v3 owns Formula definition (name/expression/description). Bitable v1 owns the
+ * formula_type=2 presentation metadata exposed by the Source export. All writes below
+ * are invoked through the resumable client, so protected/unowned Tables remain blocked.
+ */
+function withFormulaV3ParityRecovery(client) {
+  const verifiedLegacyExpressionByTableAndName = new Map();
+
+  return new Proxy(client, {
+    get(target, property, receiver) {
+      if (property === 'listFields') {
+        return async (request) => {
+          const tableId = requireText(request?.tableId, 'listFields.tableId');
+          const fields = await target.listFields(request);
+          return fields.map((field) => {
+            const fieldName = typeof field?.fieldName === 'string' ? field.fieldName.trim() : '';
+            const expectedExpression = verifiedLegacyExpressionByTableAndName.get(`${tableId}:${fieldName}`);
+            if (!expectedExpression || Number(field?.type) !== FORMULA_FIELD_TYPE) return field;
+            const copy = structuredClone(field);
+            copy.property = copy.property && typeof copy.property === 'object' && !Array.isArray(copy.property)
+              ? structuredClone(copy.property)
+              : {};
+            copy.property.formula_expression = expectedExpression;
+            return copy;
+          });
+        };
+      }
+
+      if (property === 'createField') {
+        return async (request) => {
+          const field = requireObject(request?.field, 'createField.field');
+          if (Number(field?.type) !== FORMULA_FIELD_TYPE) return target.createField(request);
+          const tableId = requireText(request?.tableId, 'createField.tableId');
+          const fieldName = requireText(field?.fieldName, 'createField.fieldName');
+          const requested = await canonicalFormulaTargetMutation(target, field);
+          const fields = await target.listFields({ tableId });
+          let current = fields.find((item) => item?.fieldName === fieldName) ?? null;
+
+          if (current) {
+            const fieldId = requireText(current?.fieldId, `existing Formula fieldId ${fieldName}`);
+            const currentExpression = optionalText(current?.property?.formula_expression);
+            if (!currentExpression) {
+              current = await updateFormulaDefinitionV3(target, {
+                tableId,
+                fieldId,
+                fieldName,
+                requested,
+              });
+            } else {
+              await verifyFormulaDefinitionV3(target, {
+                tableId,
+                fieldId,
+                fieldName,
+                requested,
+              });
+            }
+          } else {
+            current = await createFormulaDefinitionV3(target, {
+              tableId,
+              fieldName,
+              requested,
+            });
+          }
+
+          const reconciled = await reconcileFormulaPresentationV1(target, {
+            tableId,
+            fieldName,
+            current,
+            requested,
+          });
+          verifiedLegacyExpressionByTableAndName.set(
+            `${tableId}:${fieldName}`,
+            requireText(requested?.property?.formula_expression, `Formula expression ${fieldName}`),
+          );
+          return reconciled;
+        };
+      }
+
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+async function canonicalFormulaTargetMutation(target, field) {
+  if (typeof target.getBaseFormulaType !== 'function') {
+    throw codedError(
+      'CUSTOMER_BASE_FORMULA_CAPABILITY_UNAVAILABLE',
+      'Target client must expose Base formula_type metadata for Formula parity',
+    );
+  }
+  const formulaType = Number(await target.getBaseFormulaType());
+  if (!Number.isInteger(formulaType)) {
+    throw codedError('CUSTOMER_BASE_FORMULA_CAPABILITY_INVALID', 'Target Base formula_type must be an integer');
+  }
+  const requested = structuredClone(field);
+  const property = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, requested?.property);
+  requested.property = property ? structuredClone(property) : null;
+  if (!optionalText(requested?.property?.formula_expression)) {
+    throw codedError('CUSTOMER_BASE_FORMULA_EXPRESSION_REQUIRED', `Formula Source field has no expression: ${requireText(requested?.fieldName, 'Formula fieldName')}`);
+  }
+  if (formulaType === 2) {
+    if (!requested?.property?.type || typeof requested.property.type !== 'object') {
+      throw codedError(
+        'CUSTOMER_BASE_FORMULA_PROPERTY_TYPE_REQUIRED',
+        `Target Base formula_type=2 requires property.type: ${requireText(requested?.fieldName, 'Formula fieldName')}`,
+      );
+    }
+  } else if (requested?.property) {
+    delete requested.property.type;
+  }
+  return requested;
+}
+
+async function createFormulaDefinitionV3(target, input) {
+  if (typeof target.createFormulaFieldV3 !== 'function') {
+    throw codedError('CUSTOMER_BASE_FORMULA_V3_CREATE_UNAVAILABLE', 'Target client has no Base v3 Formula create capability');
+  }
+  try {
+    return await target.createFormulaFieldV3({ tableId: input.tableId, field: input.requested });
+  } catch (error) {
+    throw formulaRemoteError(
+      'CUSTOMER_BASE_FORMULA_V3_CREATE_REJECTED',
+      `Lark rejected Base v3 Formula create: ${input.fieldName}`,
+      error,
+      { tableId: input.tableId, fieldName: input.fieldName },
+    );
+  }
+}
+
+async function updateFormulaDefinitionV3(target, input) {
+  if (typeof target.updateFormulaFieldV3 !== 'function') {
+    throw codedError('CUSTOMER_BASE_FORMULA_V3_UPDATE_UNAVAILABLE', 'Target client has no Base v3 Formula update capability');
+  }
+  try {
+    return await target.updateFormulaFieldV3({
+      tableId: input.tableId,
+      fieldId: input.fieldId,
+      field: input.requested,
+    });
+  } catch (error) {
+    throw formulaRemoteError(
+      'CUSTOMER_BASE_FORMULA_V3_UPDATE_REJECTED',
+      `Lark rejected Base v3 Formula update: ${input.fieldName}`,
+      error,
+      { tableId: input.tableId, fieldId: input.fieldId, fieldName: input.fieldName },
+    );
+  }
+}
+
+async function verifyFormulaDefinitionV3(target, input) {
+  if (typeof target.verifyFormulaFieldV3Definition !== 'function') {
+    throw codedError('CUSTOMER_BASE_FORMULA_V3_VERIFY_UNAVAILABLE', 'Target client has no Base v3 Formula readback capability');
+  }
+  try {
+    return await target.verifyFormulaFieldV3Definition({
+      tableId: input.tableId,
+      fieldId: input.fieldId,
+      field: input.requested,
+    });
+  } catch (error) {
+    throw formulaRemoteError(
+      'CUSTOMER_BASE_FORMULA_V3_DEFINITION_MISMATCH',
+      `Base v3 Formula definition differs from Source: ${input.fieldName}`,
+      error,
+      {
+        tableId: input.tableId,
+        fieldId: input.fieldId,
+        fieldName: input.fieldName,
+        differencePaths: Array.isArray(error?.details?.differencePaths)
+          ? error.details.differencePaths.slice(0, 16)
+          : [],
+      },
+    );
+  }
+}
+
+async function reconcileFormulaPresentationV1(target, input) {
+  const fieldId = requireText(input?.current?.fieldId, `Formula fieldId ${input.fieldName}`);
+  await verifyFormulaDefinitionV3(target, {
+    tableId: input.tableId,
+    fieldId,
+    fieldName: input.fieldName,
+    requested: input.requested,
+  });
+
+  const initial = compareFormulaPresentation(input.current, input.requested);
+  if (initial.ok) return structuredClone(input.current);
+
+  const currentExpression = requireText(
+    input?.current?.property?.formula_expression,
+    `Formula readback expression ${input.fieldName}`,
+  );
+  const updateField = structuredClone(input.requested);
+  updateField.property = updateField.property && typeof updateField.property === 'object'
+    ? structuredClone(updateField.property)
+    : {};
+  // Legacy v1 is used only for presentation. Preserve the server's current expression
+  // byte-for-byte so this update cannot rewrite Formula definition through the old API.
+  updateField.property.formula_expression = currentExpression;
+
+  try {
+    await target.updateField({
+      tableId: input.tableId,
+      fieldId,
+      field: updateField,
+    });
+  } catch (error) {
+    throw formulaRemoteError(
+      'CUSTOMER_BASE_FORMULA_PRESENTATION_UPDATE_REJECTED',
+      `Lark rejected Formula presentation update: ${input.fieldName}`,
+      error,
+      {
+        tableId: input.tableId,
+        fieldId,
+        fieldName: input.fieldName,
+        differencePaths: initial.differencePaths,
+      },
+    );
+  }
+
+  await verifyFormulaDefinitionV3(target, {
+    tableId: input.tableId,
+    fieldId,
+    fieldName: input.fieldName,
+    requested: input.requested,
+  });
+  const fields = await target.listFields({ tableId: input.tableId });
+  const readback = fields.find((item) => item?.fieldId === fieldId)
+    ?? fields.find((item) => item?.fieldName === input.fieldName)
+    ?? null;
+  if (!readback) {
+    throw codedError(
+      'CUSTOMER_BASE_FORMULA_PRESENTATION_READBACK_MISSING',
+      `Formula missing after presentation update: ${input.fieldName}`,
+      { tableId: input.tableId, fieldId, fieldName: input.fieldName },
+    );
+  }
+  const finalComparison = compareFormulaPresentation(readback, input.requested);
+  if (!finalComparison.ok) {
+    throw codedError(
+      'CUSTOMER_BASE_FORMULA_PRESENTATION_READBACK_MISMATCH',
+      `Formula presentation differs after legacy update: ${input.fieldName}`,
+      {
+        tableId: input.tableId,
+        fieldId,
+        fieldName: input.fieldName,
+        differencePaths: finalComparison.differencePaths,
+      },
+    );
+  }
+  return structuredClone(readback);
+}
+
+function compareFormulaPresentation(existing, requested) {
+  const left = formulaPresentationShape(existing, 'existing');
+  const right = formulaPresentationShape(requested, 'requested');
+  const differencePaths = collectDifferencePaths(left, right);
+  return Object.freeze({
+    ok: differencePaths.length === 0,
+    differencePaths: Object.freeze(differencePaths.slice(0, 24)),
+  });
+}
+
+function formulaPresentationShape(field, label) {
+  const value = requireObject(field, `${label} Formula field`);
+  const property = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, value?.property);
+  const presentation = property ? structuredClone(property) : {};
+  delete presentation.formula_expression;
+  return sortJson({
+    fieldName: requireText(value?.fieldName, `${label} Formula fieldName`),
+    type: Number(value?.type),
+    property: Object.keys(presentation).length > 0 ? presentation : null,
+  });
+}
+
+function collectDifferencePaths(left, right, path = '$', result = []) {
+  if (Object.is(left, right)) return result;
+  const leftArray = Array.isArray(left);
+  const rightArray = Array.isArray(right);
+  if (leftArray || rightArray) {
+    if (!(leftArray && rightArray)) {
+      result.push(path);
+      return result;
+    }
+    if (left.length !== right.length) result.push(`${path}.length`);
+    const length = Math.min(left.length, right.length);
+    for (let index = 0; index < length; index += 1) {
+      collectDifferencePaths(left[index], right[index], `${path}[${index}]`, result);
+    }
+    return result;
+  }
+  const leftObject = left !== null && typeof left === 'object';
+  const rightObject = right !== null && typeof right === 'object';
+  if (leftObject || rightObject) {
+    if (!(leftObject && rightObject)) {
+      result.push(path);
+      return result;
+    }
+    const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+    for (const key of keys) {
+      if (!(key in left) || !(key in right)) result.push(`${path}.${key}`);
+      else collectDifferencePaths(left[key], right[key], `${path}.${key}`, result);
+    }
+    return result;
+  }
+  result.push(path);
+  return result;
+}
+
+function formulaRemoteError(code, message, error, details = {}) {
+  const causeDetails = error?.details && typeof error.details === 'object' && !Array.isArray(error.details)
+    ? error.details
+    : {};
+  return codedError(code, message, {
+    ...details,
+    causeCode: optionalText(error?.code),
+    status: finiteNumberOrNull(causeDetails.status),
+    larkCode: finiteNumberOrNull(causeDetails.larkCode),
+    retryAfter: causeDetails.retryAfter ?? null,
+  });
+}
+
+function finiteNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function validateCheckpoint(value) {
@@ -250,6 +584,10 @@ function requireObjectLike(value, name) {
   return value;
 }
 
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
 function requireText(value, name) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name} is required`);
   return value.trim();
@@ -263,6 +601,12 @@ function requireArray(value, name) {
 function requireObject(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${name} must be an object`);
   return value;
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortJson(value[key])]));
 }
 
 function codedError(code, message, details = {}) {
