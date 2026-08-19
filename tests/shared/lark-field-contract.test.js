@@ -22,19 +22,14 @@ test('normalizes and serializes Number field property with official formatter va
   });
 });
 
-test('keeps select option IDs in read normalization but strips generated IDs from mutation payloads', () => {
+test('generic field serialization preserves select option IDs for existing-field updates', () => {
   const property = {
     options: [
-      { id: 'optSourceA', name: 'Active', color: 1 },
-      { id: 'optSourceB', name: 'Paused', color: 2 },
+      { id: 'optExistingA', name: 'Active', color: 1 },
+      { id: 'optExistingB', name: 'Paused', color: 2 },
     ],
   };
 
   assert.deepEqual(normalizeLarkFieldProperty(3, property), property);
-  assert.deepEqual(serializeLarkFieldProperty(3, property), {
-    options: [
-      { name: 'Active', color: 1 },
-      { name: 'Paused', color: 2 },
-    ],
-  });
+  assert.deepEqual(serializeLarkFieldProperty(3, property), property);
 });
