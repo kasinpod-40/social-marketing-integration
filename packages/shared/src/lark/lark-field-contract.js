@@ -93,6 +93,11 @@ export function larkFieldTypeAllowsProperty(type) {
  * แปลง Property จาก API/UI aliases เป็นรูปแบบ OpenAPI canonical snake_case
  * และตัด UI-internal/derived/unsupported keys เช่น table_name, optionsType,
  * timeFormat, styleId, extractExternalUrl. Relation identity ใช้ table_id เท่านั้น.
+ *
+ * Formula `formula_type=2` อาจแสดง presentation metadata ทั้งที่ระดับ property
+ * และภายใน `property.type.ui_property` ตาม generation/แหล่งข้อมูลที่อ่านมา.
+ * เมื่อมี `property.type` ให้ canonicalize formatter/currency/range/date/rating
+ * ลง `type.ui_property` เพื่อให้ export, Bitable v1 readback และ verifier ใช้ shape เดียวกัน.
  */
 export function normalizeLarkFieldProperty(type, property) {
   if (!larkFieldTypeAllowsProperty(type) || !isPlainObject(property)) return null;
@@ -107,6 +112,25 @@ export function normalizeLarkFieldProperty(type, property) {
     if (normalizedValue === undefined || normalizedValue === null) continue;
     result[key] = structuredClone(normalizedValue);
   }
+
+  if (fieldType === 20 && isPlainObject(result.type)) {
+    const uiProperty = isPlainObject(result.type.ui_property)
+      ? structuredClone(result.type.ui_property)
+      : {};
+    for (const key of OFFICIAL_FORMULA_UI_PROPERTY_KEYS) {
+      if (result[key] !== undefined && uiProperty[key] === undefined) {
+        uiProperty[key] = key === 'formatter'
+          ? normalizeLarkNumberFormatter(result[key])
+          : structuredClone(result[key]);
+      }
+      delete result[key];
+    }
+    result.type = {
+      ...result.type,
+      ...(Object.keys(uiProperty).length > 0 ? { ui_property: uiProperty } : {}),
+    };
+  }
+
   return Object.keys(result).length > 0 ? Object.freeze(result) : null;
 }
 
