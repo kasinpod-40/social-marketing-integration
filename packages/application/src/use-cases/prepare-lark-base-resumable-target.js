@@ -408,6 +408,49 @@ async function createFormulaFieldInStages(input) {
     targetFormulaType,
   } = input;
   const fieldName = requireText(requestedField?.fieldName, 'Formula fieldName');
+
+  if (typeof target.createFormulaFieldV3 === 'function') {
+    let created;
+    try {
+      created = await target.createFormulaFieldV3({
+        ...request,
+        tableId,
+        field: requestedField,
+      });
+    } catch (error) {
+      throw remoteWriteError(
+        'CUSTOMER_BASE_RESUME_FORMULA_V3_CREATE_REMOTE_REJECTED',
+        `Lark rejected Base v3 Formula create: ${tableName ?? tableId}.${fieldName}`,
+        error,
+        {
+          operation: 'createFormulaFieldV3',
+          tableId,
+          tableName,
+          ...summarizeFieldMutation(requestedField),
+        },
+      );
+    }
+
+    const comparableCreated = adaptFormulaFieldForTarget(created, targetFormulaType);
+    const comparison = compareFieldMutation(comparableCreated, requestedField);
+    if (!comparison.ok) {
+      throw codedError(
+        'CUSTOMER_BASE_RESUME_FORMULA_V3_READBACK_MISMATCH',
+        `Formula field differs after Base v3 create: ${tableName ?? tableId}.${fieldName}`,
+        {
+          tableId,
+          tableName,
+          fieldId: optionalText(created?.fieldId),
+          fieldName,
+          differencePaths: comparison.differencePaths,
+          existingPropertyKeys: propertyKeys(comparison.existing.property),
+          requestedPropertyKeys: propertyKeys(comparison.requested.property),
+        },
+      );
+    }
+    return structuredClone(created);
+  }
+
   const shellField = stripFormulaExpressionFromField(requestedField);
   let created;
   try {
@@ -450,20 +493,29 @@ async function finalizeFormulaField(input) {
   } = input;
   const fieldName = requireText(requestedField?.fieldName, 'Formula fieldName');
   const fieldId = requireText(existingField?.fieldId, `Formula fieldId ${fieldName}`);
+  const useBaseV3 = typeof target.updateFormulaFieldV3 === 'function';
 
   try {
-    await target.updateField({
-      tableId,
-      fieldId,
-      field: requestedField,
-    });
+    if (useBaseV3) {
+      await target.updateFormulaFieldV3({
+        tableId,
+        fieldId,
+        field: requestedField,
+      });
+    } else {
+      await target.updateField({
+        tableId,
+        fieldId,
+        field: requestedField,
+      });
+    }
   } catch (error) {
     throw remoteWriteError(
       'CUSTOMER_BASE_RESUME_FORMULA_FINALIZE_REMOTE_REJECTED',
       `Lark rejected Formula finalize update: ${tableName ?? tableId}.${fieldName}`,
       error,
       {
-        operation: 'finalizeFormulaField',
+        operation: useBaseV3 ? 'finalizeFormulaFieldV3' : 'finalizeFormulaField',
         tableId,
         tableName,
         fieldId,
