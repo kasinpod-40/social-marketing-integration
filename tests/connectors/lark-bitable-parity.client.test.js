@@ -59,6 +59,44 @@ class FakeRoleTransport {
   }
 }
 
+class FakeFormulaTypeTransport {
+  constructor(formulaType) {
+    this.appToken = 'app_target';
+    this.formulaType = formulaType;
+    this.calls = [];
+  }
+
+  async requestBitableJson(path, options = {}) {
+    this.calls.push({ path, options: structuredClone(options) });
+    if (options.method === 'GET' && path === '/open-apis/bitable/v1/apps/app_target') {
+      return { code: 0, data: { app: { formula_type: this.formulaType } } };
+    }
+    throw new Error(`unexpected formula metadata request ${options.method} ${path}`);
+  }
+}
+
+test('parity decorator reads and caches Base formula_type through the shared transport', async () => {
+  const transport = new FakeFormulaTypeTransport(1);
+  const client = withLarkBaseParityCapabilities(transport);
+
+  assert.equal(await client.getBaseFormulaType(), 1);
+  assert.equal(await client.getBaseFormulaType(), 1);
+  assert.deepEqual(transport.calls, [{
+    path: '/open-apis/bitable/v1/apps/app_target',
+    options: { method: 'GET' },
+  }]);
+});
+
+test('parity decorator fails closed when Base formula_type metadata is missing', async () => {
+  const transport = new FakeFormulaTypeTransport(undefined);
+  const client = withLarkBaseParityCapabilities(transport);
+
+  await assert.rejects(
+    () => client.getBaseFormulaType(),
+    /formula_type must be an integer/u,
+  );
+});
+
 test('parity decorator reads hierarchy_config through the shared transport', async () => {
   const transport = new FakeTransport();
   const client = withLarkBaseParityCapabilities(transport);
