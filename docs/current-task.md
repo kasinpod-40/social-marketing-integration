@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                         = POLICY_B_PREVIEW_PASS_FULL_PARITY_BLOCKED
+TASK_STATUS                         = CONTROLLED_APPLY_IMPLEMENTED_CI_PENDING
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 SOURCE_AUTHORITY                    = LOCAL_LARK_BASE_EXPORT
 SOURCE_EXPORT_FILE                  = Social MKT Data Hub(20260818-030125).base
@@ -14,8 +14,9 @@ SOURCE_AUTHORITY_TABLES             = 33
 CLONE_PARITY_TABLES                 = 32
 PROTECTED_EXTERNAL_TABLES           = 1
 POLICY_B_PREVIEW_READY              = TRUE
+AUTOMATIC_APPLY_IMPLEMENTED         = TRUE
 FULL_PARITY_READY                   = FALSE
-CUSTOMER_LARK_APPLY                 = DISABLED
+CUSTOMER_LARK_APPLY                 = DISABLED_PENDING_EXACT_HEAD_CI_AND_CHECKPOINT
 SOURCE_MUTATION                     = ZERO
 TARGET_MUTATION                     = ZERO_TO_DATE
 DRAFT_PR                            = 661
@@ -42,11 +43,11 @@ Latest observed immutable Target set:
 - `(Graphic) Content Creator`
 - `คำถามจาก Sale & Support`
 
-## Closed read-only evidence
+## Closed evidence — do not rerun unchanged
 
-Do **not** rerun unchanged v6, permission semantic audit, or View manifest.
+Do **not** rerun unchanged v6, permission semantic audit, View manifest, or the unsafe v1 resource manifest.
 
-Real Target GET-only v6 proved:
+Real Target GET-only v6 already proved:
 
 - Policy-B preview ready
 - Target before = 4 Tables
@@ -55,11 +56,21 @@ Real Target GET-only v6 proved:
 - remote mutation = 0
 - Apply disabled
 
-## Implemented automatic parity
+Retained safe View evidence:
+
+- `customer-base-view-manual-parity.json`
+- SHA-256 `7dabe74dd30291623e1620127f49f31fb2bb5d8131b36fcffe1884b5b089dc10`
+- 32 Tables / 110 Views
+- local-only / zero remote request / zero mutation
+
+Resource manifest v1 structural facts remain forensic input only. Its uploaded SHA-256 is
+`ef1b84d6a3e9a5da35c3b586a7685d67b2bd62efc0209a1ab1007c4484940d40`; raw internal identifiers from that file are never committed.
+
+## Automatic parity implementation
 
 Existing `consolidate-lark-base.js` remains the only Table migration engine. No parallel clone engine is allowed.
 
-Implemented and CI-verified:
+Implemented and previously CI-verified:
 
 - Table / Field / Record clone
 - deterministic Relation / Formula remap
@@ -69,152 +80,163 @@ Implemented and CI-verified:
 - documented View `hierarchy_config.field_id` phase
 - canonical GET-only Field/Record/Relation/Formula/View verifier
 - immutable pre-existing Target Table write fence
+- Advanced Permission planner / transport / verifier
+- resource-manifest redaction v2
 
-Automatic parity still needs controlled Apply wiring; implementation itself is not the blocker.
+Resource-manifest v2 exact verified milestone:
 
-## View manual parity — procedure + verifier implemented
+```text
+HEAD    1fb0157714dd4cfca1891b6fdcd0ef0d27ba2ba9
+Run     32176109766
+Job     95838326966
+Result  SUCCESS
+```
 
-Retained safe View manifest evidence:
+## Resumable controlled Apply — implemented, exact-head CI pending
 
-- file `customer-base-view-manual-parity.json`
-- SHA-256 `7dabe74dd30291623e1620127f49f31fb2bb5d8131b36fcffe1884b5b089dc10`
-- 32 Tables / 110 Views
-- 0 remote request / 0 mutation
+The controlled path now composes existing shared components only:
 
-Ownership:
+`baseline checkpoint → resumable target adapter → existing consolidation → documented hierarchy → Advanced Permission → canonical GET-only verifier`
 
-- automatic-owned: hidden fields 11 Views / 85 assignments, filters 78 Views, hierarchy 1 View
-- manual-owned: field order 110 Views, sort 41, group 4, explicit non-null widths 70 Views / 898 assignments, row height 110, frozen columns 110
-- row-height level = 1 for all 110 Views
-- frozen-column count = 1 for all 110 Views
-- sort state collapses to 8 profiles
-- all 4 group states are `platform DESC`
+New contracts:
 
-Implemented / CI-verified contracts:
+- `customer_base_resumable_target_v1`
+- `customer_base_advanced_permission_apply_v1`
+- `customer_base_controlled_apply_checkpoint_v1`
+- `customer_base_controlled_apply_v1`
+- `customer_base_controlled_apply_operator_v1`
+
+### Table partial-write recovery
+
+`prepare-lark-base-resumable-target.js` does not replace the consolidator. It adapts the Target around the existing consolidator:
+
+- checkpoint baseline Tables remain immutable;
+- unrelated current customer Tables remain immutable;
+- a clone-scope Table name absent from the pre-Apply baseline but present on retry is treated as a recovery candidate;
+- recovery candidate is hidden from preflight, then claimed in place by the existing consolidator;
+- existing migration-owned fields are reused only when their safe semantic mutation matches;
+- existing migration-owned records are reused only when requested field values match by unique primary value;
+- only missing records are created;
+- protected/unowned writes fail closed;
+- any conflicting partial state stops before further mutation.
+
+This closes the previous failure mode where a process interruption after Table creation made the next consolidation preview reject its own partial Table.
+
+### Advanced Permission partial-role recovery
+
+`apply-lark-base-advanced-permission-parity.js`:
+
+- freezes every role name present in the checkpoint baseline;
+- never adopts or updates a pre-existing customer role;
+- creates only missing migration roles;
+- immediately reads each created role back;
+- on retry, reuses only exact migration-owned role/table-permission state;
+- mismatched partial roles block before new mutation.
+
+### Controlled operator
+
+`scripts/customer-base-controlled-apply.mjs` has two explicit modes:
+
+```bash
+node scripts/customer-base-controlled-apply.mjs --prepare-checkpoint
+```
+
+- GET-only
+- exact export SHA/count gate
+- exact Target Base-name gate
+- snapshots protected Table/Role identities
+- writes a local private `0600` checkpoint under Downloads by default
+- performs zero customer mutation
+
+Apply mode exists but is **not authorized yet**:
+
+```bash
+CUSTOMER_BASE_APPLY_CONFIRMATION=CUSTOMER_BASE_CONTROLLED_APPLY_V1 \
+node scripts/customer-base-controlled-apply.mjs --apply
+```
+
+It cannot write without the exact confirmation token and matching checkpoint/Source SHA/clone scope.
+
+## View manual parity
+
+Automatic-owned:
+
+- hidden fields: 11 Views / 85 assignments
+- filters: 78 Views
+- hierarchy: 1 View
+
+Manual-owned:
+
+- field order: 110 Views
+- sort: 41 Views
+- group: 4 Views
+- explicit non-null widths: 70 Views / 898 assignments
+- row height: 110 Views, all level 1
+- frozen columns: 110 Views, all count 1
+
+Contracts already implemented:
 
 - `customer_base_view_manual_parity_execution_plan_v1`
 - `customer_base_view_manual_parity_verifier_v1`
 - parity classifier `customer_base_clone_parity_coverage_v4`
 
-Manual View execution happens only after migration-owned Tables/Views exist. Post-configuration verification uses semantic names and
-ignores unrelated customer Tables plus automatic-owned hidden/default-width metadata.
+Detailed evidence: `docs/project-brain/customer-base-view-manual-parity-evidence-2026-08-18.md`.
 
-## Advanced Permission — implementation complete, Apply wiring pending
+## Dashboard / Workflow manual parity — procedure frozen
 
-Exact semantic audit proved:
+Detailed procedure: `docs/project-brain/customer-base-dashboard-workflow-manual-parity-2026-08-19.md`.
 
-- roles: Reader / General / Editor / Client
-- members = 0
-- dashboard role rules = 0
-- no field/record fine-grained rules
-- current Source Table rules = 17 per role = 68 total
-- 6 orphaned historical Table references repeated across all 4 roles = 24 forensic-only entries; never materialize them
-- permission values = 0 / 1 / 2 / 4
-- schemaVersion = 2
-- exported baseRule values = 1
-
-Implemented / CI-verified:
-
-- read-only role planner
-- current Source Table-name → Target Table-ID remap
-- orphan-reference forensic retention
-- pre-existing Target role immutable fence
-- documented role list/create transport only
-- GET-only expected role/table-permission verifier
-
-Remaining role work: controlled Apply wiring + explicit idempotent partial-role recovery before role writes can be enabled.
-
-## Dashboard / Workflow exact resource evidence
-
-User-run local resource manifest v1 was structurally successful against the exact Source authority and performed zero remote operations.
-Its uploaded file SHA-256 is `ef1b84d6a3e9a5da35c3b586a7685d67b2bd62efc0209a1ab1007c4484940d40`.
-
-**Security classification:** that v1 output is forensic input only, **not a retained-safe artifact**. Review found that it still emitted some
-internal auth/tenant/user/base/generated-step/Select-option identifiers. No such raw values are copied into repository documentation.
-
-Safe structural facts extracted from v1:
+Dashboard verification authority:
 
 ```text
-Dashboards                         6
-Dashboard charts                  75
-Dashboard chart counts            13 / 10 / 11 / 8 / 11 / 22
-Dashboard advanced-perm enabled   false for all 6
-Dashboard snapshots               6 opaque fingerprints
-Chart snapshots                   75 opaque fingerprints
-Workflows                         2
-Mapped Table references           26
-Mapped Field references           131
-Parsed JSON strings               4
-Opaque string fingerprints        81
-Unresolved reference-like values  0
-Remote request                    0
-Remote mutation                   0
-Target read/write                 false / false
-Apply                             disabled
+Dashboards                    6
+Charts                        75
+Per-dashboard counts          13 / 10 / 11 / 8 / 11 / 22
+Advanced-perm enabled         false for all 6
+Subtype profiles
+  Dashboard 1                 0×8, 7×3, 14×2
+  Dashboard 2                 0×6, 7×3, 14×1
+  Dashboard 3                 0×7, 7×3, 14×1
+  Dashboard 4                 0×3, 7×3, 11×2
+  Dashboard 5                 0×7, 7×3, 14×1
+  Dashboard 6                 0×17, 7×3, 14×2
 ```
 
-Workflow semantic evidence:
+Dashboard snapshots remain opaque; reconstruction/verification is UI/source-reference only. No opaque snapshot payload may be replayed.
 
-1. `AI Materialization → MKT_AI_Report_Runs`
-   - trigger `setRecord`
-   - export status `1`
-   - steps: `SetRecordTrigger` → four `GenerateAiTextWithSkyLarkAction` steps → `SetRecordAction`
-2. `Eligible AI Run → Lark Group Notification`
-   - trigger `addRecordV2`
-   - export status `0`
-   - exported Draft steps: `AddRecordTrigger` → `Delay` (1 minute)
+Workflow 1:
 
-Dashboard snapshots are opaque in the export manifest, so their full visual/chart semantics cannot be reconstructed safely from this
-artifact alone. Dashboard parity therefore requires supported UI/source-reference reconstruction after Target clone resources exist.
+- `AI Materialization → MKT_AI_Report_Runs`
+- trigger `setRecord`
+- Source export status `1`
+- `SetRecordTrigger → 4× GenerateAiTextWithSkyLarkAction → SetRecordAction`
 
-Workflow definitions are substantially parseable and have zero unresolved Table/Field references, so they can drive a deterministic
-manual checklist. They still must **not** be replayed as internal `FlowSchema`/`Draft` OpenAPI payloads without a documented write contract.
+Workflow 2:
 
-## Resource manifest redaction v2
+- `Eligible AI Run → Lark Group Notification`
+- trigger `addRecordV2`
+- Source export status `0`
+- safe Draft evidence `AddRecordTrigger → Delay (1 minute)`
 
-Root cause fixed in repository after reviewing v1 output:
-
-- redact `authKey` values
-- redact tenant/user/base identity tags
-- redact generated Workflow step/state IDs, including embedded expressions
-- map Select option IDs to semantic Table/Field/option names when defined
-- redact unknown generated reference-like values by fingerprint only
-- distinguish generated `rec/trig/...` identities from ordinary words such as `recommendations` / `trigger_name`
-- regression tests assert raw identifiers cannot survive serialization
-
-Contracts upgraded:
-
-- `customer_base_resource_manual_parity_manifest_v2`
-- `customer_base_resource_manual_parity_operator_v2`
-
-The v1 file does **not** need to be rerun merely to recover its structural evidence. v2 exists to prevent future unsafe output and must
-pass exact-head CI before any further use.
-
-## Dashboard / Workflow capability rule
-
-- Do not infer request bodies from export snapshots or response metadata.
-- Generic create/update permission scopes are not a definition-replay contract.
-- Dashboard list/copy capability is not treated as proven cross-Base export-definition replay.
-- Keep Dashboard/Workflow writes disabled unless a documented request contract is proven.
-- Otherwise use exact manual UI/source-reference procedures after automatic clone Apply.
+Workflow reconstruction is UI/source-reference only. No raw Draft/FlowSchema/generated IDs/auth keys may be replayed.
 
 ## Apply gate
 
-`cloneApplyEnabled` remains `false` until:
+Customer Apply remains disabled until all of the following are true:
 
-- one resumable controlled orchestration is implemented around the existing consolidator
-- documented hierarchy phase is wired
-- Advanced Permission phase is wired with partial-role recovery
-- canonical verifier is wired post-Apply
-- automatic/manual ownership is frozen before mutation
-- Dashboard/Workflow manual procedures and post-configuration verification criteria are explicit
-- exact-head CI passes
+1. exact-head Branch Verification passes with the new recovery/orchestration tests;
+2. no new architecture/hygiene/reliability/audit/dry-run failure exists;
+3. the GET-only checkpoint mode is executed once against the unchanged customer Target and proves the original protected baseline;
+4. checkpoint clone-scope collision count is zero;
+5. user explicitly authorizes the one controlled customer Apply.
 
-Planned controlled order:
+Automatic controlled order after authorization:
 
-`protected Target snapshot → consolidation → hierarchy parity → Advanced Permission → canonical GET-only verifier → manual View/Dashboard/Workflow UI parity → post-configuration verification → manual folder placement`
+`protected checkpoint → consolidation/recovery → documented hierarchy → Advanced Permission/recovery → Advanced Permission GET verify → canonical clone GET verify`
 
-No Customer Apply is authorized yet.
+Then manual order:
+
+`View layout → Dashboard UI parity → Workflow UI parity → Target export/manual verification → folder placement`
 
 ## Safety contract
 
@@ -226,19 +248,21 @@ No Customer Apply is authorized yet.
 6. No Worker/D1/Queue/schedule/deploy mutation in this workstream.
 7. No undocumented request payloads or guessed endpoint paths.
 8. PR #661 stays Draft until controlled Apply + verification close.
-9. Files known to expose internal identifiers are never committed as evidence artifacts.
+9. Unsafe forensic resource files are never committed as evidence artifacts.
+10. A failed controlled Apply must be resumed from the same baseline checkpoint; do not create a fresh baseline after partial mutation.
 
 ## Next closure sequence
 
-1. Pass exact-head CI for resource-manifest redaction v2.
-2. Convert the two Workflow definitions and six opaque Dashboard identities into explicit manual post-Apply verification procedures without storing raw internal IDs.
-3. Implement/test one resumable controlled Apply orchestration around existing shared components only.
-4. Keep Apply disabled until failure/recovery behavior is proven.
-5. One controlled customer Apply to migration-created resources only.
-6. GET-only canonical verification.
-7. Execute manual View/Dashboard/Workflow parity.
-8. Export/verify Target manual View state and retain safe UI evidence for Dashboard/Workflow.
-9. Move cloned Tables under `Setup Phase | Social MKT Data Hub` manually if no supported folder API exists.
-10. Ready/Merge PR #661 only after all parity gates pass.
+1. Pass exact-head CI for the new resumable controlled Apply implementation.
+2. Run only `--prepare-checkpoint` on the exact unchanged customer Target; retain its safe summary. This is GET-only.
+3. Review checkpoint baseline/collisions; keep mutation zero.
+4. User authorizes one controlled Apply.
+5. Execute controlled Apply once; if interrupted, resume with the same checkpoint.
+6. Confirm automatic canonical/permission verification passes.
+7. Execute retained manual View procedure.
+8. Execute Dashboard/Workflow UI/source-reference procedure and retain safe screenshots.
+9. Export Target once and verify manual-owned View dimensions locally.
+10. Move 32 cloned Tables under `Setup Phase | Social MKT Data Hub` if folder placement remains UI-only.
+11. Ready/Merge PR #661 only after every parity gate passes.
 
-Detailed record: `docs/project-brain/customer-base-consolidation-v1.md`.
+Detailed program record: `docs/project-brain/customer-base-consolidation-v1.md`.
