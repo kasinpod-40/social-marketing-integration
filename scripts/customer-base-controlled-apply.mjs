@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { chmod, readFile, readdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -18,6 +19,12 @@ const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
 const SOURCE_EXPORT_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
 const SOURCE_EXPORT_NAME_PATTERN = /^Social MKT Data Hub.*\.base$/u;
 const TARGET_LABEL = '✨Marketing Content Calendar';
+const REQUIRED_PROTECTED_TABLE_NAMES = Object.freeze([
+  '🎵 RAW_TikTok_Creator_Videos',
+  '(VDO) Content Creator',
+  '(Graphic) Content Creator',
+  'คำถามจาก Sale & Support',
+]);
 const PROTECTED_EXTERNAL_TABLE_NAMES = Object.freeze(['🎵 RAW_TikTok_Creator_Videos']);
 const EXPECTED_COUNTS = Object.freeze({
   tables: 33,
@@ -67,21 +74,26 @@ async function main() {
   }
 
   const targetAppToken = requireText(env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN, 'LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN');
+  const targetAppFingerprintSha256 = fingerprint(targetAppToken);
   const targetClient = withLarkBaseParityCapabilities(createLarkBitableClientFromEnv({
     ...env,
     LARK_APP_TOKEN: targetAppToken,
   }));
-  await assertTargetIdentity(targetClient);
 
   if (mode === 'prepare-checkpoint') {
     const checkpoint = await prepareCustomerBaseControlledApplyCheckpoint({
       targetClient,
       expectedTableNames,
-      requiredProtectedTableNames: PROTECTED_EXTERNAL_TABLE_NAMES,
+      requiredProtectedTableNames: REQUIRED_PROTECTED_TABLE_NAMES,
       protectedExternalTableNames: PROTECTED_EXTERNAL_TABLE_NAMES,
       sourceAuthoritySha256: SOURCE_EXPORT_SHA256,
     });
-    await writePrivateCheckpoint(checkpointFile, checkpoint);
+    const persistedCheckpoint = Object.freeze({
+      ...checkpoint,
+      targetAppFingerprintSha256,
+      targetIdentityAnchorTableNames: REQUIRED_PROTECTED_TABLE_NAMES,
+    });
+    await writePrivateCheckpoint(checkpointFile, persistedCheckpoint);
     printJson({
       ok: true,
       contractVersion: 'customer_base_controlled_apply_operator_v1',
@@ -93,6 +105,11 @@ async function main() {
         fileSha256: SOURCE_EXPORT_SHA256,
       },
       target: TARGET_LABEL,
+      targetIdentity: {
+        mode: 'configured-app-fingerprint-plus-protected-table-anchors',
+        appFingerprintSha256: targetAppFingerprintSha256,
+        requiredAnchorTables: REQUIRED_PROTECTED_TABLE_NAMES,
+      },
       cloneScopeTables: expectedTableNames.length,
       checkpointFile,
       protectedTables: checkpoint.protectedTables.map((table) => table.name),
@@ -111,6 +128,22 @@ async function main() {
     });
   }
   const checkpoint = JSON.parse(await readFile(checkpointFile, 'utf8'));
+  if (checkpoint?.targetAppFingerprintSha256 !== targetAppFingerprintSha256) {
+    throw codedError(
+      'CUSTOMER_BASE_CONTROLLED_APPLY_TARGET_FINGERPRINT_MISMATCH',
+      'Controlled Apply checkpoint belongs to a different configured Target Base token',
+      {
+        checkpointFingerprint: checkpoint?.targetAppFingerprintSha256 ?? null,
+        configuredFingerprint: targetAppFingerprintSha256,
+      },
+    );
+  }
+  if (JSON.stringify(checkpoint?.targetIdentityAnchorTableNames ?? []) !== JSON.stringify(REQUIRED_PROTECTED_TABLE_NAMES)) {
+    throw codedError(
+      'CUSTOMER_BASE_CONTROLLED_APPLY_TARGET_ANCHOR_MISMATCH',
+      'Controlled Apply checkpoint does not contain the approved Target identity anchors',
+    );
+  }
   const resources = fullSourceClient.getExportResources();
   const permissionSemantics = inspectLarkBaseExportPermissionSemantics({
     roles: resources.roles,
@@ -132,6 +165,11 @@ async function main() {
     ...result,
     action: 'apply',
     target: TARGET_LABEL,
+    targetIdentity: {
+      mode: 'checkpoint-app-fingerprint-plus-protected-table-anchors',
+      appFingerprintSha256: targetAppFingerprintSha256,
+      requiredAnchorTables: REQUIRED_PROTECTED_TABLE_NAMES,
+    },
     targetFolder: 'Setup Phase | Social MKT Data Hub',
     checkpointFile,
     sourceMutationCount: 0,
@@ -210,18 +248,6 @@ async function resolveSourceAuthority(env) {
   );
 }
 
-async function assertTargetIdentity(client) {
-  const response = await client.requestBitableJson(`/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}`, { method: 'GET' });
-  const app = response?.data?.app ?? response?.data ?? {};
-  const actual = requireText(app?.name, 'Target Base name');
-  if (actual !== TARGET_LABEL) {
-    throw codedError('CUSTOMER_BASE_CONTROLLED_APPLY_TARGET_IDENTITY_MISMATCH', 'Configured Target Base is not the approved customer destination', {
-      expected: TARGET_LABEL,
-      actual,
-    });
-  }
-}
-
 async function writePrivateCheckpoint(filePath, checkpoint) {
   await writeFile(filePath, `${JSON.stringify(checkpoint, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
   await chmod(filePath, 0o600);
@@ -244,6 +270,10 @@ function authorityMismatches(inspection) {
     if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
   }
   return mismatches;
+}
+
+function fingerprint(value) {
+  return createHash('sha256').update(requireText(value, 'fingerprint value')).digest('hex');
 }
 
 function resolveMode(argv) {
