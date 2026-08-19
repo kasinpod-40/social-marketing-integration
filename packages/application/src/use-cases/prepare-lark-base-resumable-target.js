@@ -4,6 +4,8 @@ const WRITE_METHODS = Object.freeze([
   'renameTable',
   'createField',
   'updateField',
+  'createFormulaFieldV3',
+  'updateFormulaFieldV3',
   'batchCreateRecords',
   'batchUpdateRecords',
   'createView',
