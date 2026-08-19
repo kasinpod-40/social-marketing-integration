@@ -33,7 +33,7 @@ test('normalizes and serializes Number field property with official formatter va
   });
 });
 
-test('normalizes exported Formula type metadata to the documented OpenAPI request shape', () => {
+test('canonicalizes Formula type2 presentation metadata under type.ui_property', () => {
   assert.deepEqual(serializeLarkFieldProperty(20, {
     formula: '{budget_micros}/1000000',
     formatter: '฿#,##0.00',
@@ -42,15 +42,11 @@ test('normalizes exported Formula type metadata to the documented OpenAPI reques
       dataType: 2,
       uiType: 'Currency',
       uiProperty: {
-        currencyCode: 'THB',
-        formatter: '฿#,##0.00',
         rangeCustomize: false,
       },
     },
   }), {
     formula_expression: '{budget_micros}/1000000',
-    formatter: '0.00',
-    currency_code: 'THB',
     type: {
       data_type: 2,
       ui_type: 'Currency',
@@ -58,6 +54,32 @@ test('normalizes exported Formula type metadata to the documented OpenAPI reques
         currency_code: 'THB',
         formatter: '0.00',
         range_customize: false,
+      },
+    },
+  });
+});
+
+test('Formula nested type2 presentation wins over duplicate top-level aliases', () => {
+  assert.deepEqual(normalizeLarkFieldProperty(20, {
+    formula_expression: '{budget_micros}/1000000',
+    formatter: '0.0',
+    currency_code: 'USD',
+    type: {
+      data_type: 2,
+      ui_type: 'Currency',
+      ui_property: {
+        formatter: '0.00',
+        currency_code: 'THB',
+      },
+    },
+  }), {
+    formula_expression: '{budget_micros}/1000000',
+    type: {
+      data_type: 2,
+      ui_type: 'Currency',
+      ui_property: {
+        formatter: '0.00',
+        currency_code: 'THB',
       },
     },
   });
