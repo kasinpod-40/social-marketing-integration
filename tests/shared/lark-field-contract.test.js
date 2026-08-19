@@ -33,6 +33,36 @@ test('normalizes and serializes Number field property with official formatter va
   });
 });
 
+test('normalizes exported Formula type metadata to the documented OpenAPI request shape', () => {
+  assert.deepEqual(serializeLarkFieldProperty(20, {
+    formula: '{budget_micros}/1000000',
+    formatter: '฿#,##0.00',
+    currencyCode: 'THB',
+    type: {
+      dataType: 2,
+      uiType: 'Currency',
+      uiProperty: {
+        currencyCode: 'THB',
+        formatter: '฿#,##0.00',
+        rangeCustomize: false,
+      },
+    },
+  }), {
+    formula_expression: '{budget_micros}/1000000',
+    formatter: '0.00',
+    currency_code: 'THB',
+    type: {
+      data_type: 2,
+      ui_type: 'Currency',
+      ui_property: {
+        currency_code: 'THB',
+        formatter: '0.00',
+        range_customize: false,
+      },
+    },
+  });
+});
+
 test('generic field serialization preserves select option IDs for existing-field updates', () => {
   const property = {
     options: [
