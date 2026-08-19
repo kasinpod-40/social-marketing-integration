@@ -49,7 +49,7 @@ class FakeClient {
   }
 
   async createTable({ name, defaultViewName, fields }) {
-    this.calls.push({ kind: 'createTable', name });
+    this.calls.push({ kind: 'createTable', name, fields: structuredClone(fields) });
     const tableId = `new_${++this.sequence}`;
     this.tables.push({
       tableId,
@@ -62,7 +62,7 @@ class FakeClient {
   }
 
   async createField({ tableId, field }) {
-    this.calls.push({ kind: 'createField', tableId, fieldName: field.fieldName });
+    this.calls.push({ kind: 'createField', tableId, fieldName: field.fieldName, field: structuredClone(field) });
     const created = { ...structuredClone(field), fieldId: `fld_${++this.sequence}`, isPrimary: false };
     this.table(tableId).fields.push(created);
     return structuredClone(created);
@@ -161,6 +161,50 @@ test('resumable adapter lets the existing consolidator finish an exact partial t
   assert.equal(target.calls.some((call) => call.kind === 'createTable' && call.name === 'Accounts'), false);
   assert.equal(target.calls.some((call) => call.kind === 'createField' && call.fieldName === 'name'), false);
   assert.deepEqual(target.calls.filter((call) => call.kind === 'batchCreateRecords').map((call) => call.rows), [1]);
+});
+
+test('resumable adapter strips foreign select option IDs only before create writes', async () => {
+  const target = new FakeClient([{
+    tableId: 'protected_tiktok',
+    name: 'TikTok',
+    fields: [text('protected_key', 'key', true)],
+    records: [],
+    views: [grid('protected_view', 'All')],
+  }]);
+  const prepared = await prepareLarkBaseResumableTarget({
+    targetClient: target,
+    expectedTableNames: ['Accounts'],
+    protectedTables: [{ name: 'TikTok', tableId: 'protected_tiktok' }],
+  });
+  const created = await prepared.client.createTable({
+    name: 'Accounts',
+    defaultViewName: 'All Records',
+    fields: [{ fieldName: 'account_key', type: 1, description: '', property: null }],
+  });
+  const sourceField = {
+    fieldName: 'status',
+    type: 3,
+    uiType: 'SingleSelect',
+    description: '',
+    property: {
+      options: [
+        { id: 'optSourceActive', name: 'Active', color: 1 },
+        { id: 'optSourcePaused', name: 'Paused', color: 2 },
+      ],
+    },
+  };
+
+  await prepared.client.createField({ tableId: created.tableId, field: sourceField });
+
+  const createCall = target.calls.find((call) => call.kind === 'createField' && call.fieldName === 'status');
+  assert.deepEqual(createCall.field.property.options, [
+    { name: 'Active', color: 1 },
+    { name: 'Paused', color: 2 },
+  ]);
+  assert.deepEqual(sourceField.property.options, [
+    { id: 'optSourceActive', name: 'Active', color: 1 },
+    { id: 'optSourcePaused', name: 'Paused', color: 2 },
+  ]);
 });
 
 test('resumable adapter blocks drift inside a migration-owned partial field', async () => {
