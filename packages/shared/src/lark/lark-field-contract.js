@@ -83,10 +83,24 @@ export function normalizeLarkFieldProperty(type, property) {
   return Object.keys(result).length > 0 ? Object.freeze(result) : null;
 }
 
-/** สร้าง Property request body ที่ปลอดภัยสำหรับ Lark Field Create/Update API */
-export function serializeLarkFieldProperty(type, property) {
+/**
+ * สร้าง Property request body ที่ปลอดภัยสำหรับ Lark Field Create/Update API
+ *
+ * Select option IDs เป็น identity ที่ Lark สร้างต่อ Base/Field ปลายทางเอง จึงต้องตัด
+ * Source IDs ออกจาก Create payload แต่ Update payload ยังเก็บ ID ได้เพื่ออ้าง option เดิม.
+ */
+export function serializeLarkFieldProperty(type, property, options = {}) {
   const normalized = normalizeLarkFieldProperty(type, property);
-  return normalized ? structuredClone(normalized) : null;
+  if (!normalized) return null;
+  const serialized = structuredClone(normalized);
+  if (options?.omitGeneratedSelectOptionIds === true && Array.isArray(serialized.options)) {
+    serialized.options = serialized.options.map((option) => {
+      if (!isPlainObject(option)) return option;
+      const { id: _generatedId, ...rest } = option;
+      return rest;
+    });
+  }
+  return serialized;
 }
 
 function isPlainObject(value) {
