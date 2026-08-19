@@ -10,6 +10,7 @@ const WRITE_METHODS = Object.freeze([
   'updateView',
   'updateViewHierarchy',
 ]);
+const FORMULA_FIELD_TYPE = 20;
 
 /**
  * Adapts a customer Target Base so the existing consolidation engine can safely
@@ -176,30 +177,56 @@ export async function prepareLarkBaseResumableTarget(input) {
           const tableName = tableNameById.get(tableId) ?? null;
           const field = requireObject(request?.field, 'createField.field');
           const fieldName = requireText(field?.fieldName, 'createField.fieldName');
-          const targetFormulaType = Number(field?.type) === 20 ? await getTargetFormulaType() : null;
-          const comparableRequestedField = adaptFormulaFieldForTarget(field, targetFormulaType, { requirePropertyType: true });
+          const isFormula = Number(field?.type) === FORMULA_FIELD_TYPE;
+          const targetFormulaType = isFormula ? await getTargetFormulaType() : null;
+          const comparableRequestedField = adaptFormulaFieldForTarget(field, targetFormulaType, {
+            requirePropertyType: true,
+            requireFormulaExpression: true,
+          });
           const existingFields = await target.listFields({ tableId });
           const existing = existingFields.find((item) => item?.fieldName === fieldName) ?? null;
           if (existing) {
             const comparableExistingField = adaptFormulaFieldForTarget(existing, targetFormulaType);
             const comparison = compareFieldMutation(comparableExistingField, comparableRequestedField);
-            if (!comparison.ok) {
-              throw codedError(
-                'CUSTOMER_BASE_RESUME_FIELD_CONFLICT',
-                `Existing migration-owned field differs from requested Source field: ${fieldName}`,
-                {
-                  tableId,
-                  tableName,
-                  fieldName,
-                  differencePaths: comparison.differencePaths,
-                  existingPropertyKeys: propertyKeys(comparison.existing.property),
-                  requestedPropertyKeys: propertyKeys(comparison.requested.property),
-                },
-              );
+            if (comparison.ok) return structuredClone(existing);
+
+            if (isFormula && isRecoverableFormulaShell(comparableExistingField, comparableRequestedField)) {
+              return finalizeFormulaField({
+                target,
+                tableId,
+                tableName,
+                existingField: comparableExistingField,
+                requestedField: comparableRequestedField,
+                targetFormulaType,
+              });
             }
-            return structuredClone(existing);
+
+            throw codedError(
+              'CUSTOMER_BASE_RESUME_FIELD_CONFLICT',
+              `Existing migration-owned field differs from requested Source field: ${fieldName}`,
+              {
+                tableId,
+                tableName,
+                fieldName,
+                differencePaths: comparison.differencePaths,
+                existingPropertyKeys: propertyKeys(comparison.existing.property),
+                requestedPropertyKeys: propertyKeys(comparison.requested.property),
+              },
+            );
           }
+
           const sanitizedField = stripGeneratedSelectOptionIdsFromField(comparableRequestedField);
+          if (isFormula) {
+            return createFormulaFieldInStages({
+              target,
+              request,
+              tableId,
+              tableName,
+              requestedField: sanitizedField,
+              targetFormulaType,
+            });
+          }
+
           try {
             return await target.createField({
               ...request,
@@ -362,6 +389,131 @@ export async function prepareLarkBaseResumableTarget(input) {
   });
 }
 
+async function createFormulaFieldInStages(input) {
+  const {
+    target,
+    request,
+    tableId,
+    tableName,
+    requestedField,
+    targetFormulaType,
+  } = input;
+  const fieldName = requireText(requestedField?.fieldName, 'Formula fieldName');
+  const shellField = stripFormulaExpressionFromField(requestedField);
+  let created;
+  try {
+    created = await target.createField({
+      ...request,
+      field: shellField,
+    });
+  } catch (error) {
+    throw remoteWriteError(
+      'CUSTOMER_BASE_RESUME_FORMULA_SHELL_CREATE_REMOTE_REJECTED',
+      `Lark rejected Formula shell create: ${tableName ?? tableId}.${fieldName}`,
+      error,
+      {
+        operation: 'createFormulaShell',
+        tableId,
+        tableName,
+        ...summarizeFieldMutation(shellField),
+      },
+    );
+  }
+
+  return finalizeFormulaField({
+    target,
+    tableId,
+    tableName,
+    existingField: created,
+    requestedField,
+    targetFormulaType,
+  });
+}
+
+async function finalizeFormulaField(input) {
+  const {
+    target,
+    tableId,
+    tableName,
+    existingField,
+    requestedField,
+    targetFormulaType,
+  } = input;
+  const fieldName = requireText(requestedField?.fieldName, 'Formula fieldName');
+  const fieldId = requireText(existingField?.fieldId, `Formula fieldId ${fieldName}`);
+
+  try {
+    await target.updateField({
+      tableId,
+      fieldId,
+      field: requestedField,
+    });
+  } catch (error) {
+    throw remoteWriteError(
+      'CUSTOMER_BASE_RESUME_FORMULA_FINALIZE_REMOTE_REJECTED',
+      `Lark rejected Formula finalize update: ${tableName ?? tableId}.${fieldName}`,
+      error,
+      {
+        operation: 'finalizeFormulaField',
+        tableId,
+        tableName,
+        fieldId,
+        ...summarizeFieldMutation(requestedField),
+      },
+    );
+  }
+
+  const fields = await target.listFields({ tableId });
+  const readback = fields.find((item) => item?.fieldId === fieldId)
+    ?? fields.find((item) => item?.fieldName === fieldName)
+    ?? null;
+  if (!readback) {
+    throw codedError(
+      'CUSTOMER_BASE_RESUME_FORMULA_READBACK_MISSING',
+      `Formula field missing after finalize update: ${tableName ?? tableId}.${fieldName}`,
+      { tableId, tableName, fieldId, fieldName },
+    );
+  }
+
+  const comparableReadback = adaptFormulaFieldForTarget(readback, targetFormulaType);
+  const comparison = compareFieldMutation(comparableReadback, requestedField);
+  if (!comparison.ok) {
+    throw codedError(
+      'CUSTOMER_BASE_RESUME_FORMULA_READBACK_MISMATCH',
+      `Formula field differs after finalize update: ${tableName ?? tableId}.${fieldName}`,
+      {
+        tableId,
+        tableName,
+        fieldId,
+        fieldName,
+        differencePaths: comparison.differencePaths,
+        existingPropertyKeys: propertyKeys(comparison.existing.property),
+        requestedPropertyKeys: propertyKeys(comparison.requested.property),
+      },
+    );
+  }
+  return structuredClone(readback);
+}
+
+function isRecoverableFormulaShell(existing, requested) {
+  if (Number(existing?.type) !== FORMULA_FIELD_TYPE || Number(requested?.type) !== FORMULA_FIELD_TYPE) return false;
+  const requestedExpression = optionalText(requested?.property?.formula_expression);
+  const existingExpression = optionalText(existing?.property?.formula_expression);
+  if (!requestedExpression || existingExpression) return false;
+  return compareFieldMutation(
+    stripFormulaExpressionFromField(existing),
+    stripFormulaExpressionFromField(requested),
+  ).ok;
+}
+
+function stripFormulaExpressionFromField(field) {
+  const result = structuredClone(requireObject(field, 'Formula field'));
+  if (!result?.property || typeof result.property !== 'object' || Array.isArray(result.property)) return result;
+  delete result.property.formula_expression;
+  if (Object.keys(result.property).length === 0) result.property = null;
+  return result;
+}
+
 function stripGeneratedSelectOptionIdsFromCreateTableRequest(request) {
   const fields = requireArray(request?.fields, 'createTable.fields');
   return {
@@ -383,10 +535,18 @@ function stripGeneratedSelectOptionIdsFromField(field) {
 
 function adaptFormulaFieldForTarget(field, formulaType, options = {}) {
   const normalized = structuredClone(requireObject(field, 'field'));
-  if (Number(normalized?.type) !== 20) return normalized;
-  const canonicalProperty = normalizeLarkFieldProperty(20, normalized?.property);
+  if (Number(normalized?.type) !== FORMULA_FIELD_TYPE) return normalized;
+  const canonicalProperty = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, normalized?.property);
   normalized.property = canonicalProperty ? structuredClone(canonicalProperty) : null;
   const property = normalized.property;
+
+  if (options.requireFormulaExpression === true && !optionalText(property?.formula_expression)) {
+    throw codedError(
+      'CUSTOMER_BASE_RESUME_FORMULA_EXPRESSION_REQUIRED',
+      `Formula Source field must contain formula_expression: ${requireText(normalized?.fieldName, 'fieldName')}`,
+      { fieldName: requireText(normalized?.fieldName, 'fieldName'), formulaType },
+    );
+  }
 
   if (formulaType === 2) {
     if (options.requirePropertyType === true && (!property || property.type === undefined || property.type === null)) {
@@ -592,7 +752,7 @@ function normalizeNames(value, name) {
 }
 
 function requireClient(client) {
-  for (const method of ['listTables', 'listFields', 'listRecords', 'listViews', 'createTable', 'createField', 'batchCreateRecords']) {
+  for (const method of ['listTables', 'listFields', 'listRecords', 'listViews', 'createTable', 'createField', 'updateField', 'batchCreateRecords']) {
     if (!client || typeof client[method] !== 'function') throw new TypeError(`targetClient must implement ${method}()`);
   }
   return client;
