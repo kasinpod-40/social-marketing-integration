@@ -1,4 +1,4 @@
-import { chmod, readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, readdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
@@ -16,6 +16,7 @@ import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/
 
 const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
 const SOURCE_EXPORT_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
+const SOURCE_EXPORT_NAME_PATTERN = /^Social MKT Data Hub.*\.base$/u;
 const TARGET_LABEL = '✨Marketing Content Calendar';
 const PROTECTED_EXTERNAL_TABLE_NAMES = Object.freeze(['🎵 RAW_TikTok_Creator_Videos']);
 const EXPECTED_COUNTS = Object.freeze({
@@ -49,11 +50,10 @@ async function main() {
   const customerProdVarsFile = process.env.CUSTOMER_PROD_VARS_FILE ?? '.customer.prod.vars';
   const fileEnv = await readDevVars(customerProdVarsFile);
   const env = { ...fileEnv, ...process.env };
-  const sourceExportFile = optionalText(env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE)
-    ?? join(homedir(), 'Downloads', SOURCE_EXPORT_FILENAME);
+  const sourceAuthority = await resolveSourceAuthority(env);
+  const sourceExportFile = sourceAuthority.filePath;
+  const inspection = sourceAuthority.inspection;
   const checkpointFile = optionalText(env.CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_FILE) ?? DEFAULT_CHECKPOINT_FILE;
-  const inspection = await inspectLarkBaseExport(sourceExportFile);
-  assertAuthority(inspection);
 
   const fullSourceClient = await createLarkBaseExportSourceClient(sourceExportFile);
   const cloneSourceClient = await createLarkBaseExportSourceClient(sourceExportFile, {
@@ -87,7 +87,10 @@ async function main() {
       contractVersion: 'customer_base_controlled_apply_operator_v1',
       action: 'prepare-checkpoint',
       mode: 'read-only',
-      sourceAuthoritySha256: SOURCE_EXPORT_SHA256,
+      sourceAuthority: {
+        fileName: inspection?.file?.fileName ?? null,
+        fileSha256: SOURCE_EXPORT_SHA256,
+      },
       target: TARGET_LABEL,
       cloneScopeTables: expectedTableNames.length,
       checkpointFile,
@@ -136,6 +139,69 @@ async function main() {
   });
 }
 
+async function resolveSourceAuthority(env) {
+  const configured = optionalText(env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE);
+  if (configured) {
+    let inspection;
+    try {
+      inspection = await inspectLarkBaseExport(configured);
+    } catch (error) {
+      throw codedError(
+        'CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_UNREADABLE',
+        'Configured Source export file cannot be read',
+        { configuredPath: configured, causeCode: error?.code ?? null },
+      );
+    }
+    assertAuthority(inspection);
+    return Object.freeze({ filePath: configured, inspection });
+  }
+
+  const downloadsDirectory = join(homedir(), 'Downloads');
+  const preferredNames = [SOURCE_EXPORT_FILENAME, 'Social MKT Data Hub.base'];
+  const discoveredNames = [];
+  try {
+    const entries = await readdir(downloadsDirectory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && SOURCE_EXPORT_NAME_PATTERN.test(entry.name)) discoveredNames.push(entry.name);
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+
+  const candidateNames = [...new Set([...preferredNames, ...discoveredNames.sort()])];
+  const checkedFiles = [];
+  for (const fileName of candidateNames) {
+    const filePath = join(downloadsDirectory, fileName);
+    let inspection;
+    try {
+      inspection = await inspectLarkBaseExport(filePath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue;
+      checkedFiles.push(Object.freeze({ fileName, status: 'unreadable_or_invalid', causeCode: error?.code ?? null }));
+      continue;
+    }
+
+    const mismatches = authorityMismatches(inspection);
+    checkedFiles.push(Object.freeze({
+      fileName,
+      status: mismatches.length === 0 ? 'exact_authority' : 'authority_mismatch',
+      sha256: inspection?.file?.sha256 ?? null,
+    }));
+    if (mismatches.length === 0) return Object.freeze({ filePath, inspection });
+  }
+
+  throw codedError(
+    'CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_NOT_FOUND',
+    'No local Social MKT Data Hub .base file matches the exact approved Source authority SHA/counts',
+    {
+      downloadsDirectory,
+      expectedSha256: SOURCE_EXPORT_SHA256,
+      checkedFiles,
+      hint: 'Place the exact approved export in Downloads or set LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE to its exact path.',
+    },
+  );
+}
+
 async function assertTargetIdentity(client) {
   const response = await client.requestBitableJson(`/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}`, { method: 'GET' });
   const app = response?.data?.app ?? response?.data ?? {};
@@ -154,6 +220,13 @@ async function writePrivateCheckpoint(filePath, checkpoint) {
 }
 
 function assertAuthority(inspection) {
+  const mismatches = authorityMismatches(inspection);
+  if (mismatches.length > 0) {
+    throw codedError('CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_MISMATCH', 'Source export is not the exact approved authority', { mismatches });
+  }
+}
+
+function authorityMismatches(inspection) {
   const mismatches = [];
   if (inspection?.file?.sha256 !== SOURCE_EXPORT_SHA256) {
     mismatches.push({ dimension: 'sha256', expected: SOURCE_EXPORT_SHA256, actual: inspection?.file?.sha256 ?? null });
@@ -162,9 +235,7 @@ function assertAuthority(inspection) {
     const actual = inspection?.counts?.[dimension];
     if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
   }
-  if (mismatches.length > 0) {
-    throw codedError('CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_MISMATCH', 'Source export is not the exact approved authority', { mismatches });
-  }
+  return mismatches;
 }
 
 function resolveMode(argv) {
