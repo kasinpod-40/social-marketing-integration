@@ -108,6 +108,12 @@ class FormulaTarget {
       error.details = { status: 400, larkCode: 99992402, retryAfter: null };
       throw error;
     }
+    if (Number(field?.type) === 20 && field?.property?.formula_expression) {
+      const error = new Error('Formula create does not support formula_expression');
+      error.code = 'LARK_PERMANENT_API_ERROR';
+      error.details = { status: 400, larkCode: 99992402, retryAfter: null };
+      throw error;
+    }
     const created = {
       ...structuredClone(field),
       fieldId: `fld_created_${++this.sequence}`,
@@ -161,16 +167,27 @@ async function prepareResumedTarget(target) {
   return { prepared, tableId: claimed.tableId };
 }
 
-test('Formula type2 create sends expression and nested UI property in one POST, then exact-readbacks', async () => {
+test('Formula type2 create posts only property.type, then PUTs the full formula and exact-readbacks', async () => {
   const target = new FormulaTarget();
   const { prepared, tableId } = await prepareFreshTarget(target);
 
   const result = await prepared.client.createField({ tableId, field: budgetField() });
 
   const createCall = target.calls.find((call) => call.kind === 'createField');
+  const updateCall = target.calls.find((call) => call.kind === 'updateField');
   assert.ok(createCall);
-  assert.equal(target.calls.some((call) => call.kind === 'updateField'), false);
+  assert.ok(updateCall);
   assert.deepEqual(createCall.field.property, {
+    type: {
+      data_type: 2,
+      ui_type: 'Currency',
+      ui_property: {
+        currency_code: 'THB',
+        formatter: '0.00',
+      },
+    },
+  });
+  assert.deepEqual(updateCall.field.property, {
     formula_expression: '{budget_micros}/1000000',
     type: {
       data_type: 2,
@@ -196,7 +213,7 @@ test('Formula recovery reuses an existing exact field without another write', as
   assert.equal(target.calls.some((call) => call.kind === 'updateField'), false);
 });
 
-test('Formula recovery finalizes a historical existing shell without creating a duplicate field', async () => {
+test('Formula recovery finalizes an existing type-only shell without creating a duplicate field', async () => {
   const target = new FormulaTarget({ includeCampaigns: true, formulaExpression: null });
   const { prepared, tableId } = await prepareResumedTarget(target);
   target.calls.length = 0;
@@ -238,22 +255,22 @@ test('Formula recovery refuses to overwrite a different non-empty expression', a
   assert.equal(target.calls.some((call) => call.kind === 'updateField'), false);
 });
 
-test('Formula create rejection reports only safe request-shape diagnostics', async () => {
+test('Formula shell create rejection reports only safe request-shape diagnostics', async () => {
   const target = new FormulaTarget({ rejectCreate: true });
   const { prepared, tableId } = await prepareFreshTarget(target);
 
   await assert.rejects(
     () => prepared.client.createField({ tableId, field: budgetField() }),
     (error) => {
-      assert.equal(error?.code, 'CUSTOMER_BASE_RESUME_FORMULA_CREATE_REMOTE_REJECTED');
+      assert.equal(error?.code, 'CUSTOMER_BASE_RESUME_FORMULA_SHELL_CREATE_REMOTE_REJECTED');
       assert.deepEqual(error?.details, {
-        operation: 'createFormulaField',
+        operation: 'createFormulaTypeOnlyShell',
         tableId,
         tableName: 'Campaigns',
         fieldName: 'budget',
         fieldType: 20,
         uiType: 'Formula',
-        propertyKeys: ['formula_expression', 'type'],
+        propertyKeys: ['type'],
         optionCount: 0,
         causeCode: 'LARK_PERMANENT_API_ERROR',
         status: 400,
