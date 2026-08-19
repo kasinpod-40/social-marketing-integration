@@ -1,6 +1,6 @@
 import { chmod, readFile, readdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import { inspectLarkBaseExportPermissionSemantics } from './lib/lark-base-export-permission-semantics.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
@@ -88,7 +88,8 @@ async function main() {
       action: 'prepare-checkpoint',
       mode: 'read-only',
       sourceAuthority: {
-        fileName: inspection?.file?.fileName ?? null,
+        fileName: inspection?.file?.fileName ?? basename(sourceExportFile),
+        filePath: sourceExportFile,
         fileSha256: SOURCE_EXPORT_SHA256,
       },
       target: TARGET_LABEL,
@@ -156,34 +157,41 @@ async function resolveSourceAuthority(env) {
     return Object.freeze({ filePath: configured, inspection });
   }
 
-  const downloadsDirectory = join(homedir(), 'Downloads');
+  const searchDirectories = Object.freeze([
+    join(homedir(), 'Desktop'),
+    join(homedir(), 'Downloads'),
+  ]);
   const preferredNames = [SOURCE_EXPORT_FILENAME, 'Social MKT Data Hub.base'];
-  const discoveredNames = [];
-  try {
-    const entries = await readdir(downloadsDirectory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && SOURCE_EXPORT_NAME_PATTERN.test(entry.name)) discoveredNames.push(entry.name);
+  const candidatePaths = [];
+
+  for (const directory of searchDirectories) {
+    for (const fileName of preferredNames) candidatePaths.push(join(directory, fileName));
+    try {
+      const entries = await readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && SOURCE_EXPORT_NAME_PATTERN.test(entry.name)) {
+          candidatePaths.push(join(directory, entry.name));
+        }
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
     }
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
   }
 
-  const candidateNames = [...new Set([...preferredNames, ...discoveredNames.sort()])];
   const checkedFiles = [];
-  for (const fileName of candidateNames) {
-    const filePath = join(downloadsDirectory, fileName);
+  for (const filePath of [...new Set(candidatePaths)]) {
     let inspection;
     try {
       inspection = await inspectLarkBaseExport(filePath);
     } catch (error) {
       if (error?.code === 'ENOENT') continue;
-      checkedFiles.push(Object.freeze({ fileName, status: 'unreadable_or_invalid', causeCode: error?.code ?? null }));
+      checkedFiles.push(Object.freeze({ filePath, status: 'unreadable_or_invalid', causeCode: error?.code ?? null }));
       continue;
     }
 
     const mismatches = authorityMismatches(inspection);
     checkedFiles.push(Object.freeze({
-      fileName,
+      filePath,
       status: mismatches.length === 0 ? 'exact_authority' : 'authority_mismatch',
       sha256: inspection?.file?.sha256 ?? null,
     }));
@@ -194,10 +202,10 @@ async function resolveSourceAuthority(env) {
     'CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_NOT_FOUND',
     'No local Social MKT Data Hub .base file matches the exact approved Source authority SHA/counts',
     {
-      downloadsDirectory,
+      searchedDirectories: searchDirectories,
       expectedSha256: SOURCE_EXPORT_SHA256,
       checkedFiles,
-      hint: 'Place the exact approved export in Downloads or set LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE to its exact path.',
+      hint: 'Keep the exact approved export on Desktop/Downloads or set LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE to its exact path.',
     },
   );
 }
