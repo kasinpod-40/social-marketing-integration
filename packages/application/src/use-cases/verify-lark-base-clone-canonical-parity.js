@@ -50,6 +50,10 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
     targetSnapshots.set(sourceTable.tableId, await loadTableSnapshot(targetClient, targetTable));
   }
 
+  const hasFormulaFields = [...sourceSnapshots.values()]
+    .some((snapshot) => snapshot.fields.some((field) => Number(field?.type) === FORMULA_FIELD_TYPE));
+  const targetFormulaType = hasFormulaFields ? await readTargetFormulaType(targetClient) : null;
+
   const fieldIdMaps = new Map();
   const targetFieldBySourceFieldId = new Map();
   for (const sourceTable of sourceTables) {
@@ -101,6 +105,7 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
       target,
       fieldIdMaps,
       targetTableIdBySourceId,
+      targetFormulaType,
       mismatches,
     });
     verifyRecords({
@@ -134,7 +139,7 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
       mismatches: mismatches.length,
     },
     coverage: {
-      fields: 'full-readable-config-with-relation-formula-id-remap',
+      fields: 'full-readable-config-with-relation-formula-id-remap-and-target-formula-capability',
       records: 'all-readable-field-values-with-relation-record-id-remap',
       views: 'name-type-public-hidden-filter-with-field-id-remap',
       unrelatedTargetTablesIgnored: true,
@@ -163,8 +168,29 @@ async function loadTableSnapshot(client, table) {
   return { table, fields, records, views };
 }
 
+async function readTargetFormulaType(client) {
+  if (typeof client.getBaseFormulaType !== 'function') {
+    throw new TypeError('targetClient must implement getBaseFormulaType() when Formula fields are present');
+  }
+  const raw = await client.getBaseFormulaType();
+  if (raw === null || raw === undefined || raw === '') {
+    throw new TypeError('Target Base formula_type must be an integer');
+  }
+  const formulaType = Number(raw);
+  if (!Number.isInteger(formulaType)) throw new TypeError('Target Base formula_type must be an integer');
+  return formulaType;
+}
+
 function verifyFields(input) {
-  const { sourceTable, source, target, fieldIdMaps, targetTableIdBySourceId, mismatches } = input;
+  const {
+    sourceTable,
+    source,
+    target,
+    fieldIdMaps,
+    targetTableIdBySourceId,
+    targetFormulaType,
+    mismatches,
+  } = input;
   if (source.fields.length !== target.fields.length) {
     mismatches.push(problem('CANONICAL_VERIFY_FIELD_COUNT_MISMATCH', `Field count mismatch: ${sourceTable.name}`, {
       sourceFields: source.fields.length,
@@ -182,8 +208,12 @@ function verifyFields(input) {
       side: 'source',
       targetTableIdBySourceId,
       fieldIdMaps,
+      targetFormulaType,
     });
-    const targetComparable = canonicalField(targetField, { side: 'target' });
+    const targetComparable = canonicalField(targetField, {
+      side: 'target',
+      targetFormulaType,
+    });
     if (stableJson(sourceComparable) !== stableJson(targetComparable)) {
       mismatches.push(problem('CANONICAL_VERIFY_FIELD_CONFIG_MISMATCH', `Field configuration mismatch: ${sourceTable.name}.${sourceField.fieldName}`, {
         differencePaths: collectDifferencePaths(sourceComparable, targetComparable).slice(0, 32),
@@ -210,6 +240,9 @@ function canonicalFieldProperty(type, property, context) {
   if (Number(type) === 5) {
     result.date_formatter = normalizeOptionalText(result.date_formatter) ?? 'yyyy/MM/dd';
     result.auto_fill = result.auto_fill === true;
+  }
+  if (Number(type) === FORMULA_FIELD_TYPE && context?.targetFormulaType !== 2) {
+    delete result.type;
   }
   if (Array.isArray(result.options)) {
     result.options = result.options.map((option) => {
