@@ -78,6 +78,30 @@ export async function prepareLarkBaseResumableTarget(input) {
   );
   for (const tableId of protectedIds) dynamicProtectedIds.add(tableId);
 
+  let formulaTypePromise = null;
+  const getTargetFormulaType = async () => {
+    if (typeof targetClient.getBaseFormulaType !== 'function') {
+      throw codedError(
+        'CUSTOMER_BASE_RESUME_FORMULA_CAPABILITY_UNAVAILABLE',
+        'Target client must expose documented Base formula_type metadata before Formula migration',
+      );
+    }
+    if (!formulaTypePromise) {
+      formulaTypePromise = Promise.resolve(targetClient.getBaseFormulaType())
+        .then((value) => {
+          const formulaType = Number(value);
+          if (!Number.isInteger(formulaType)) {
+            throw codedError(
+              'CUSTOMER_BASE_RESUME_FORMULA_CAPABILITY_INVALID',
+              'Target Base formula_type metadata must be an integer',
+            );
+          }
+          return formulaType;
+        });
+    }
+    return formulaTypePromise;
+  };
+
   const client = new Proxy(targetClient, {
     get(target, property, receiver) {
       if (property === 'listTables') {
@@ -150,10 +174,13 @@ export async function prepareLarkBaseResumableTarget(input) {
           const tableName = tableNameById.get(tableId) ?? null;
           const field = requireObject(request?.field, 'createField.field');
           const fieldName = requireText(field?.fieldName, 'createField.fieldName');
+          const targetFormulaType = Number(field?.type) === 20 ? await getTargetFormulaType() : null;
+          const comparableRequestedField = adaptFormulaFieldForTarget(field, targetFormulaType, { requirePropertyType: true });
           const existingFields = await target.listFields({ tableId });
           const existing = existingFields.find((item) => item?.fieldName === fieldName) ?? null;
           if (existing) {
-            if (!fieldMatchesMutation(existing, field)) {
+            const comparableExistingField = adaptFormulaFieldForTarget(existing, targetFormulaType);
+            if (!fieldMatchesMutation(comparableExistingField, comparableRequestedField)) {
               throw codedError(
                 'CUSTOMER_BASE_RESUME_FIELD_CONFLICT',
                 `Existing migration-owned field differs from requested Source field: ${fieldName}`,
@@ -162,7 +189,7 @@ export async function prepareLarkBaseResumableTarget(input) {
             }
             return structuredClone(existing);
           }
-          const sanitizedField = stripGeneratedSelectOptionIdsFromField(field);
+          const sanitizedField = stripGeneratedSelectOptionIdsFromField(comparableRequestedField);
           try {
             return await target.createField({
               ...request,
@@ -342,6 +369,28 @@ function stripGeneratedSelectOptionIdsFromField(field) {
     return rest;
   });
   return sanitized;
+}
+
+function adaptFormulaFieldForTarget(field, formulaType, options = {}) {
+  const normalized = structuredClone(requireObject(field, 'field'));
+  if (Number(normalized?.type) !== 20) return normalized;
+  const property = normalized?.property && typeof normalized.property === 'object' && !Array.isArray(normalized.property)
+    ? normalized.property
+    : null;
+
+  if (formulaType === 2) {
+    if (options.requirePropertyType === true && (!property || property.type === undefined || property.type === null)) {
+      throw codedError(
+        'CUSTOMER_BASE_RESUME_FORMULA_PROPERTY_TYPE_REQUIRED',
+        `Target Base formula_type=2 requires Formula property.type: ${requireText(normalized?.fieldName, 'fieldName')}`,
+        { fieldName: requireText(normalized?.fieldName, 'fieldName'), formulaType },
+      );
+    }
+    return normalized;
+  }
+
+  if (property && Object.hasOwn(property, 'type')) delete property.type;
+  return normalized;
 }
 
 function summarizeFieldMutation(field) {
