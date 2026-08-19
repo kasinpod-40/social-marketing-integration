@@ -13,6 +13,7 @@ const PROPERTY_KEY_ALIASES = Object.freeze({
   tableName: 'table_name',
   backFieldName: 'back_field_name',
   autoSerial: 'auto_serial',
+  formula: 'formula_expression',
   formulaExpression: 'formula_expression',
   allowedEditModes: 'allowed_edit_modes',
   rangeCustomize: 'range_customize',
@@ -20,6 +21,29 @@ const PROPERTY_KEY_ALIASES = Object.freeze({
   filterInfo: 'filter_info',
 });
 
+const FORMULA_TYPE_KEY_ALIASES = Object.freeze({
+  dataType: 'data_type',
+  uiType: 'ui_type',
+  uiProperty: 'ui_property',
+});
+
+const FORMULA_UI_PROPERTY_KEY_ALIASES = Object.freeze({
+  currencyCode: 'currency_code',
+  rangeCustomize: 'range_customize',
+  dateFormat: 'date_formatter',
+  dateFormatter: 'date_formatter',
+});
+
+const OFFICIAL_FORMULA_TYPE_KEYS = new Set(['data_type', 'ui_type', 'ui_property']);
+const OFFICIAL_FORMULA_UI_PROPERTY_KEYS = new Set([
+  'currency_code',
+  'formatter',
+  'range_customize',
+  'min',
+  'max',
+  'date_formatter',
+  'rating',
+]);
 
 const NUMBER_FORMATTER_ALIASES = Object.freeze({
   '#,##0': '1,000',
@@ -72,13 +96,15 @@ export function larkFieldTypeAllowsProperty(type) {
  */
 export function normalizeLarkFieldProperty(type, property) {
   if (!larkFieldTypeAllowsProperty(type) || !isPlainObject(property)) return null;
+  const fieldType = Number(type);
   const result = {};
   for (const [rawKey, rawValue] of Object.entries(property)) {
     const key = PROPERTY_KEY_ALIASES[rawKey] ?? rawKey;
     if (!OFFICIAL_PROPERTY_KEYS.has(key) || rawValue === undefined) continue;
-    const normalizedValue = key === 'formatter'
-      ? normalizeLarkNumberFormatter(rawValue)
-      : rawValue;
+    let normalizedValue = rawValue;
+    if (key === 'formatter') normalizedValue = normalizeLarkNumberFormatter(rawValue);
+    if (key === 'type' && fieldType === 20) normalizedValue = normalizeFormulaPropertyType(rawValue);
+    if (normalizedValue === undefined || normalizedValue === null) continue;
     result[key] = structuredClone(normalizedValue);
   }
   return Object.keys(result).length > 0 ? Object.freeze(result) : null;
@@ -88,6 +114,42 @@ export function normalizeLarkFieldProperty(type, property) {
 export function serializeLarkFieldProperty(type, property) {
   const normalized = normalizeLarkFieldProperty(type, property);
   return normalized ? structuredClone(normalized) : null;
+}
+
+function normalizeFormulaPropertyType(value) {
+  if (!isPlainObject(value)) return null;
+  const result = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = FORMULA_TYPE_KEY_ALIASES[rawKey] ?? rawKey;
+    if (!OFFICIAL_FORMULA_TYPE_KEYS.has(key) || rawValue === undefined || rawValue === null) continue;
+    if (key === 'data_type') {
+      const dataType = Number(rawValue);
+      if (Number.isInteger(dataType)) result.data_type = dataType;
+      continue;
+    }
+    if (key === 'ui_type') {
+      if (typeof rawValue === 'string' && rawValue.trim() !== '') result.ui_type = rawValue.trim();
+      continue;
+    }
+    if (key === 'ui_property') {
+      const uiProperty = normalizeFormulaUiProperty(rawValue);
+      if (uiProperty) result.ui_property = uiProperty;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function normalizeFormulaUiProperty(value) {
+  if (!isPlainObject(value)) return null;
+  const result = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = FORMULA_UI_PROPERTY_KEY_ALIASES[rawKey] ?? rawKey;
+    if (!OFFICIAL_FORMULA_UI_PROPERTY_KEYS.has(key) || rawValue === undefined || rawValue === null) continue;
+    result[key] = key === 'formatter'
+      ? normalizeLarkNumberFormatter(rawValue)
+      : structuredClone(rawValue);
+  }
+  return Object.keys(result).length > 0 ? result : null;
 }
 
 function isPlainObject(value) {
