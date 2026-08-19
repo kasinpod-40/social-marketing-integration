@@ -1,3 +1,5 @@
+import { normalizeLarkFieldProperty } from '../../../shared/src/lark/lark-field-contract.js';
+
 const WRITE_METHODS = Object.freeze([
   'renameTable',
   'createField',
@@ -180,11 +182,19 @@ export async function prepareLarkBaseResumableTarget(input) {
           const existing = existingFields.find((item) => item?.fieldName === fieldName) ?? null;
           if (existing) {
             const comparableExistingField = adaptFormulaFieldForTarget(existing, targetFormulaType);
-            if (!fieldMatchesMutation(comparableExistingField, comparableRequestedField)) {
+            const comparison = compareFieldMutation(comparableExistingField, comparableRequestedField);
+            if (!comparison.ok) {
               throw codedError(
                 'CUSTOMER_BASE_RESUME_FIELD_CONFLICT',
                 `Existing migration-owned field differs from requested Source field: ${fieldName}`,
-                { tableId, fieldName },
+                {
+                  tableId,
+                  tableName,
+                  fieldName,
+                  differencePaths: comparison.differencePaths,
+                  existingPropertyKeys: propertyKeys(comparison.existing.property),
+                  requestedPropertyKeys: propertyKeys(comparison.requested.property),
+                },
               );
             }
             return structuredClone(existing);
@@ -374,9 +384,9 @@ function stripGeneratedSelectOptionIdsFromField(field) {
 function adaptFormulaFieldForTarget(field, formulaType, options = {}) {
   const normalized = structuredClone(requireObject(field, 'field'));
   if (Number(normalized?.type) !== 20) return normalized;
-  const property = normalized?.property && typeof normalized.property === 'object' && !Array.isArray(normalized.property)
-    ? normalized.property
-    : null;
+  const canonicalProperty = normalizeLarkFieldProperty(20, normalized?.property);
+  normalized.property = canonicalProperty ? structuredClone(canonicalProperty) : null;
+  const property = normalized.property;
 
   if (formulaType === 2) {
     if (options.requirePropertyType === true && (!property || property.type === undefined || property.type === null)) {
@@ -446,10 +456,40 @@ function requireWritableTable(value, operation, protectedIds, writableIds) {
 }
 
 function fieldMatchesMutation(existing, requested) {
-  if (requireText(existing?.fieldName, 'existing fieldName') !== requireText(requested?.fieldName, 'requested fieldName')) return false;
-  if (Number(existing?.type) !== Number(requested?.type)) return false;
-  if (requested?.description !== undefined && String(existing?.description ?? '') !== String(requested.description ?? '')) return false;
-  return stableJson(canonicalProperty(existing?.property)) === stableJson(canonicalProperty(requested?.property));
+  return compareFieldMutation(existing, requested).ok;
+}
+
+function compareFieldMutation(existing, requested) {
+  const existingComparable = canonicalFieldMutation(existing, 'existing');
+  const requestedComparable = canonicalFieldMutation(requested, 'requested');
+  const differencePaths = collectDifferencePaths(existingComparable, requestedComparable);
+  return {
+    ok: differencePaths.length === 0,
+    existing: existingComparable,
+    requested: requestedComparable,
+    differencePaths: differencePaths.slice(0, 24),
+  };
+}
+
+function canonicalFieldMutation(field, label) {
+  const value = requireObject(field, `${label} field`);
+  const type = Number(value?.type);
+  const property = canonicalProperty(normalizeLarkFieldProperty(type, value?.property));
+  return {
+    fieldName: requireText(value?.fieldName, `${label} fieldName`),
+    type,
+    description: normalizeDescription(value?.description),
+    property,
+  };
+}
+
+function normalizeDescription(value) {
+  if (typeof value === 'string') return value.trim();
+  return typeof value?.text === 'string' ? value.text.trim() : '';
+}
+
+function propertyKeys(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).sort() : [];
 }
 
 function canonicalProperty(value) {
@@ -459,6 +499,38 @@ function canonicalProperty(value) {
     .filter((key) => key !== 'id')
     .sort()
     .map((key) => [key, canonicalProperty(value[key])]));
+}
+
+function collectDifferencePaths(left, right, path = '$', result = []) {
+  if (Object.is(left, right)) return result;
+  const leftArray = Array.isArray(left);
+  const rightArray = Array.isArray(right);
+  if (leftArray || rightArray) {
+    if (!(leftArray && rightArray)) {
+      result.push(path);
+      return result;
+    }
+    if (left.length !== right.length) result.push(`${path}.length`);
+    const length = Math.min(left.length, right.length);
+    for (let index = 0; index < length; index += 1) collectDifferencePaths(left[index], right[index], `${path}[${index}]`, result);
+    return result;
+  }
+  const leftObject = left !== null && typeof left === 'object';
+  const rightObject = right !== null && typeof right === 'object';
+  if (leftObject || rightObject) {
+    if (!(leftObject && rightObject)) {
+      result.push(path);
+      return result;
+    }
+    const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+    for (const key of keys) {
+      if (!(key in left) || !(key in right)) result.push(`${path}.${key}`);
+      else collectDifferencePaths(left[key], right[key], `${path}.${key}`, result);
+    }
+    return result;
+  }
+  result.push(path);
+  return result;
 }
 
 function indexRecords(records, primaryName, label) {
