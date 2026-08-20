@@ -238,7 +238,7 @@ function withFormulaV3ParityRecovery(client) {
           if (Number(field?.type) !== FORMULA_FIELD_TYPE) return target.createField(request);
           const tableId = requireText(request?.tableId, 'createField.tableId');
           const fieldName = requireText(field?.fieldName, 'createField.fieldName');
-          const requested = await canonicalFormulaTargetMutation(target, field);
+          const requested = canonicalFormulaTargetMutation(field);
           const fields = await target.listFields({ tableId });
           let current = fields.find((item) => item?.fieldName === fieldName) ?? null;
 
@@ -288,32 +288,12 @@ function withFormulaV3ParityRecovery(client) {
   });
 }
 
-async function canonicalFormulaTargetMutation(target, field) {
-  if (typeof target.getBaseFormulaType !== 'function') {
-    throw codedError(
-      'CUSTOMER_BASE_FORMULA_CAPABILITY_UNAVAILABLE',
-      'Target client must expose Base formula_type metadata for Formula parity',
-    );
-  }
-  const formulaType = Number(await target.getBaseFormulaType());
-  if (!Number.isInteger(formulaType)) {
-    throw codedError('CUSTOMER_BASE_FORMULA_CAPABILITY_INVALID', 'Target Base formula_type must be an integer');
-  }
+function canonicalFormulaTargetMutation(field) {
   const requested = structuredClone(field);
   const property = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, requested?.property);
   requested.property = property ? structuredClone(property) : null;
   if (!optionalText(requested?.property?.formula_expression)) {
     throw codedError('CUSTOMER_BASE_FORMULA_EXPRESSION_REQUIRED', `Formula Source field has no expression: ${requireText(requested?.fieldName, 'Formula fieldName')}`);
-  }
-  if (formulaType === 2) {
-    if (!requested?.property?.type || typeof requested.property.type !== 'object') {
-      throw codedError(
-        'CUSTOMER_BASE_FORMULA_PROPERTY_TYPE_REQUIRED',
-        `Target Base formula_type=2 requires property.type: ${requireText(requested?.fieldName, 'Formula fieldName')}`,
-      );
-    }
-  } else if (requested?.property) {
-    delete requested.property.type;
   }
   return requested;
 }
