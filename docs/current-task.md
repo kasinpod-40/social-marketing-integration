@@ -3,178 +3,170 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = FORMULA_BASE_V3_RECOVERY_FINAL_CI_VERIFIED_LIVE_VALIDATION_PENDING
+TASK_STATUS                         = VIEW_BASE_V3_AND_SOURCE_REFRESH_RECOVERY_CI_VERIFIED
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
-SOURCE_AUTHORITY                    = LOCAL_LARK_BASE_EXPORT
-SOURCE_EXPORT_SHA256                = c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
 CLONE_PARITY_TABLES                 = 32
 PROTECTED_EXTERNAL_TABLES           = 1
 ORIGINAL_CHECKPOINT                 = PREPARED_AND_MUST_BE_REUSED
 ORIGINAL_CHECKPOINT_SHA256          = 7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053
+CHECKPOINT_SOURCE_BASELINE_SHA256   = c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643
 TARGET_MUTATION                     = PARTIAL_CONTROLLED_APPLY_WRITES_PRESENT
-CURRENT_AUTOMATIC_PHASE             = FORMULA
-CURRENT_BLOCKER                     = 📣 MKT_Ads_Campaigns.budget
-LATEST_LIVE_BLOCKER                 = LEGACY_BITABLE_V1_FORMULA_TYPE_ONLY_CREATE_REJECTED_99992402
-FORMULA_V3_LIVE_VALIDATION          = NOT_YET_EXECUTED
-RECORD_PHASE                        = NOT_STARTED
+FORMULA_DEFINITION                  = LIVE_BASE_V3_VERIFIED
+FORMULA_PRESENTATION                = MANUAL_UI_PARITY
+CURRENT_AUTOMATIC_PHASE             = VIEW
+LATEST_LIVE_BLOCKER                 = UPDATE_VIEW_LEGACY_PATCH_1254001
+VIEW_RECOVERY                        = BASE_V3_FILTER_VISIBLE_FIELDS_IMPLEMENTED
+SOURCE_CURRENT_PATH                 = /Users/wasanjantawong/Desktop/Social MKT Data Hub.base
+SOURCE_REFRESH                      = LATEST_EXPORT_REPLACES_OLD_FILE_AT_SAME_PATH
+RECORD_PHASE                        = PARTIAL_APPLY_PROGRESS_EXISTS_BEFORE_VIEW_PHASE
 FOLDER_PLACEMENT                    = COMPLETE_BY_USER
 DRAFT_PR                            = 661
-PRODUCTION                          = BLOCKED_PENDING_LIVE_RECOVERY_AND_PARITY
+PRODUCTION                          = BLOCKED_PENDING_NEXT_CONTROLLED_APPLY_AND_FINAL_PARITY
 ```
 
-## Authority and scope
+## Current Source authority model
 
-The approved Source authority remains the exact local export with SHA-256
-`c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643`:
+The original checkpoint remains immutable and continues to prove Target ownership from before the first customer write.
+Its retained Source baseline SHA-256 is:
 
-- 33 Tables / 723 Fields / 35,528 Records / 111 Views
-- 12 Relations / 4 Formulas / 6 Dashboards / 2 Workflows / 4 Advanced Permission roles
-- clone scope = 32 Tables / 705 Fields / 33,488 Records / 110 Views
-- `🎵 RAW_TikTok_Creator_Videos` remains immutable `protected_external_reuse`
+`c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643`
 
-`consolidate-lark-base.js` remains the only Table migration engine. The Base v3 Formula repair extends the existing parity transport/decorator and resumable adapter; it does not create another clone engine or change the Source authority.
+The user replaced `/Users/wasanjantawong/Desktop/Social MKT Data Hub.base` with a newer export containing today's latest data. The current export is now allowed as **refresh Source authority** without preparing a new checkpoint.
 
-## Controlled Apply truth
+Apply admission is fail-closed:
 
-The controlled Apply has already run and the Target contains migration-owned partial state. Any older statement saying Target mutation is zero, Apply has not run, or a checkpoint should be prepared next is superseded.
+- checkpoint SHA and Target fingerprint must remain the original approved values;
+- clone-scope Table names must match the checkpoint exactly before Target mutation;
+- Tables = 33;
+- Fields = 723;
+- Views = 111;
+- Relations = 12;
+- Formulas = 4;
+- Dashboards = 6;
+- Workflows = 2;
+- Advanced Permission roles = 4;
+- current Record count must be at least the original 35,528 baseline;
+- the four required protected/anchor Tables must still exist;
+- current Source SHA is inspected from the file itself and may differ from the checkpoint Source baseline SHA.
 
-Observed progress before the current Formula blocker:
+If any structural dimension changes, controlled Apply stops before Target mutation. This preserves the original checkpoint as a Target ownership fence while allowing non-destructive current-data refresh from the latest export.
 
-- original checkpoint accepted;
-- 32 clone-scope Tables created/claimed;
-- ordinary fields progressed successfully;
-- Relation fields progressed successfully, including `account_link` compatibility;
-- Formula phase reached `📣 MKT_Ads_Campaigns.budget`;
-- Record materialization has not started;
-- relation record-cell remap, supported Views, hierarchy, Advanced Permission and canonical verification remain downstream;
-- cloned Tables are already under `Setup Phase | Social MKT Data Hub`.
+**Never run `--prepare-checkpoint` again.**
 
-### Checkpoint rule — immutable
+## Retained Target progress
 
-The only allowed recovery baseline is the original checkpoint whose SHA-256 is
-`7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053`.
+Controlled Apply has already created/claimed the 32 clone-scope Tables and progressed through ordinary fields, Relations and Formula definition recovery. Successful migration-owned state must be retained.
 
-**Never run `--prepare-checkpoint` again.** A new baseline after partial Target writes would incorrectly reclassify migration-owned resources as pre-existing customer state.
-
-## Formula incident — live evidence
-
-All live failures so far occurred through the legacy Bitable v1 field-write model. `📣 MKT_Ads_Campaigns.budget` was rejected with Lark code `99992402` under progressively reduced legacy request shapes:
-
-1. full exported Formula property set;
-2. shell without `formula_expression` but with currency / formatter / type metadata;
-3. direct create with `formula_expression + type`;
-4. type-only shell with `propertyKeys = ["type"]`.
-
-The latest live result is:
+Formula live evidence now proves:
 
 ```text
-operator code  CUSTOMER_BASE_RESUME_FORMULA_SHELL_CREATE_REMOTE_REJECTED
-operation      createFormulaTypeOnlyShell
-Table          📣 MKT_Ads_Campaigns
-Field          budget
-Field type     20 / Formula
-propertyKeys   type
-HTTP           400
-Lark code      99992402
+Table    📣 MKT_Ads_Campaigns
+Field    budget
+Field ID fldA1bzPlX
 ```
 
-No Formula field was created by that rejected request. Existing successful Tables, ordinary fields and Relations must be retained.
+Base v3 Formula definition succeeds and verifies. Legacy Bitable v1 Formula presentation PUT was rejected with `99992402`, so Formula automatic ownership stops at Base v3 definition. Currency/formatter/result presentation is manual/UI parity evidence and must never trigger another legacy Formula PUT.
 
-## Confirmed repository defect and current repair
+Do not delete or recreate `fldA1bzPlX` or any successful partial Table/Field/Relation state.
 
-Repository inspection confirmed that the shared `createField()` / `updateField()` path still writes legacy numeric field contracts through:
+## Latest live blocker — View write
+
+The next controlled Apply advanced past Formula and reached Views, then failed:
 
 ```text
-POST /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields
-PUT  /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields/:field_id
+operator    CUSTOMER_BASE_RESUME_REMOTE_WRITE_REJECTED
+operation   updateView
+Table       🪪 MKT_Accounts
+Table ID    tblVB102JoqSfgHa
+HTTP        400
+Lark code   1254001
 ```
 
-The current official Base field-write contract used by Lark's 2026 CLI uses Base v3:
+The rejected implementation used the legacy combined View PATCH model (`property.hidden_fields` / `property.filter_info`). This failure is retained evidence only; do not rerun that exact HEAD.
+
+## View Base v3 recovery
+
+Official Lark Base v3 View contracts separate property writes:
 
 ```text
-POST /open-apis/base/v3/bases/:base_token/tables/:table_id/fields
-PUT  /open-apis/base/v3/bases/:base_token/tables/:table_id/fields/:field_id
+PUT /open-apis/base/v3/bases/:base_token/tables/:table_id/views/:view_id/visible_fields
+PUT /open-apis/base/v3/bases/:base_token/tables/:table_id/views/:view_id/filter
 ```
 
-For Formula fields that contract uses `type: "formula"`, `name` and `expression` rather than the legacy numeric `type: 20` / `field_name` / `ui_type` / `property` request shape.
+Current branch changes the existing parity decorator only; no second HTTP client or clone engine is introduced.
 
-The branch now keeps the existing internal/export Formula contract unchanged and converts only at the Lark HTTP boundary:
+`updateView()` now:
 
-- the existing parity decorator exposes migration-only `createFormulaFieldV3()` and `updateFormulaFieldV3()` on the shared authenticated/retried transport;
-- legacy internal target-ID references such as `bitable::$table[targetTableId].$field[targetFieldId]` are resolved from current Target metadata and translated to Base v3 name syntax;
-- current-table references become `[FieldName]`;
-- cross-table references become `[TableName].[FieldName]`;
-- unresolved legacy `$table` / `$field` references fail closed before a write;
-- fresh Formula recovery uses Base v3 create directly and never falls back to legacy Formula create when the v3 capability exists;
-- historical Formula shells, if present, are finalized through Base v3 PUT;
-- immediate readback continues through the existing normalized `listFields()` contract and must semantically match the Source-derived internal Formula field;
-- direct Base v3 Formula methods are covered by the same checkpoint write fence as other Target mutation methods;
-- ordinary fields, Relations, Records, Views, permissions and checkpoint logic retain their existing transports/contracts.
+1. uses the existing authenticated/retried transport;
+2. maps Target hidden-field IDs to a Base v3 `visible_fields` object;
+3. rejects unmapped hidden IDs before write;
+4. translates legacy Source filter operators into Base v3 tuple DSL;
+5. preserves Boolean checkbox values as booleans;
+6. maps select/link membership semantics to `intersects` / `disjoint`;
+7. maps numeric comparison semantics to `>`, `>=`, `<`, `<=`;
+8. writes Filter and Visible Fields separately;
+9. GET-verifies each Base v3 property immediately after PUT;
+10. keeps all writes behind the existing resumable/checkpoint fence.
 
-This confirms a repository transport/schema defect in the previous Formula write path. It does **not** yet prove that this defect is the complete live root cause of Lark `99992402`; that statement requires the next controlled Base v3 Target recovery to pass `budget`.
+Official View layout dimensions not yet owned by this automatic phase remain manual unless separately proven by documented APIs.
 
-## Verification milestones
+## Code / CI milestone
 
-Base v3 Formula implementation milestone:
+Code HEAD before documentation-only follow-up:
 
 ```text
-CODE_HEAD     1660ecaa638dd17e32e15ed0dca3729b10927665
-Run           32266554304
-Job           96112717530
-Result        SUCCESS — all Branch Verification steps
+HEAD  382d0a6fd3f0ed600d43244b54b3d44bc755c7ac
+Run   32325406976
+Job   96295532732
+PASS  every Branch Verification step
 ```
 
-Safety + repository-truth milestone:
+Verified gates:
 
-```text
-VERIFIED_HEAD 627df1fae25adb0ff31fa54f9036c8b36c700db2
-Run           32267549092
-Job           96115748843
-Result        SUCCESS — all Branch Verification steps
-```
+- locked dependencies;
+- syntax / architecture / hygiene;
+- focused Report / Meta / Woo / Chatwoot / TikTok suites;
+- Unit + Workers runtime, including new View v3 regressions;
+- Report reliability;
+- dependency audit;
+- Wrangler dry-run;
+- diff whitespace / diagnostics.
 
-The safety commit adds `createFormulaFieldV3/updateFormulaFieldV3` to the existing checkpoint write-method fence. The subsequent documentation commits align current-task, Project Brain and CHANGELOG with the actual partial Target state and recovery rules.
+The View v3 regression proves:
 
-Regression coverage includes:
-
-- Base v3 Formula POST path and documented body shape;
-- Base v3 Formula PUT path;
-- current-table target-ID → `[FieldName]` translation;
-- cross-table target-ID → `[TableName].[FieldName]` translation;
-- unresolved reference fail-closed before remote mutation;
-- resumable fresh Formula chooses v3 capability and never invokes legacy Formula create/update;
-- historical shell recovery chooses v3 update;
-- safe redacted v3 rejection diagnostics;
-- Source/internal Formula object remains the semantic comparison authority.
+- documented Base v3 endpoint paths;
+- `visible_fields` object body;
+- filter tuple conversion;
+- select/scalar/comparison/empty/checkbox mappings;
+- unmapped hidden field fails before write;
+- readback mismatch fails closed rather than trusting PUT success.
 
 ## Safety contract
 
-1. Exact local export remains Source authority.
-2. Every Table/Role that existed before the original checkpoint remains immutable.
-3. `🎵 RAW_TikTok_Creator_Videos` remains zero-write and outside clone traversal.
-4. No customer resource delete.
-5. No Source mutation.
-6. No Worker/D1/Queue/schedule/deploy mutation in this recovery.
-7. No undocumented Formula payload probing or fallback to another guessed v1 request shape.
-8. The same original checkpoint must be reused after every interrupted Apply.
-9. PR #661 remains Draft/Open/Unmerged until automatic and manual parity close.
-10. Do not remove/recreate the 32 partial clone Tables or already-successful Fields.
-11. If Base v3 Formula create succeeds but semantic readback fails, preserve the created Formula and diagnose the exact readback difference on the next recovery; do not delete it or create a new checkpoint.
+1. Original checkpoint only; never prepare another checkpoint after partial Target writes.
+2. `🎵 RAW_TikTok_Creator_Videos` remains protected external reuse and zero-write.
+3. No customer resource deletion.
+4. No Source mutation.
+5. No Worker/D1/Queue/schedule/deploy mutation in this migration recovery.
+6. Never retry legacy Formula presentation PUT.
+7. Never retry the rejected legacy combined View PATCH for hidden/filter parity.
+8. Source refresh may change SHA/Record count only under the structural admission gate above.
+9. Any changed clone-scope Table names or structural counts stop before Target mutation.
+10. PR #661 remains Draft/Open/Unmerged until automatic + manual parity and final Target export verification close.
 
 ## Next controlled sequence
 
 1. Pull only the final CI-verified branch HEAD on the operator Mac.
-2. Verify the original checkpoint SHA remains `7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053`.
-3. Run **only** `node scripts/customer-base-controlled-apply.mjs --apply` with the existing confirmation token and exact Source export.
-4. Interpret the real live result without guessing:
-   - Base v3 Formula create + exact readback passes → continue remaining Formulas and downstream phases;
-   - `CUSTOMER_BASE_RESUME_FORMULA_V3_CREATE_REMOTE_REJECTED` → inspect the returned Lark code/scope/contract evidence; do not fall back to v1;
-   - `CUSTOMER_BASE_RESUME_FORMULA_V3_READBACK_MISMATCH` → preserve the newly created Formula and use the reported difference paths for recovery;
-   - another `99992402` from the Base v3 path → the transport correction was necessary but not sufficient; stop and diagnose from that new evidence.
-5. After Formulas: materialize 33,488 clone-scope Records, relation record-cell remap, supported Views, hierarchy, Advanced Permission and canonical GET verification.
-6. Complete retained manual View layout parity, Dashboard / Workflow UI parity and final Target export verification.
-7. Ready/Merge PR #661 only after all parity gates pass.
+2. Verify the original checkpoint file SHA remains `7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053`.
+3. Use the current `/Users/wasanjantawong/Desktop/Social MKT Data Hub.base`; do not restore the old export merely to satisfy the old SHA.
+4. Run only controlled `--apply` with the existing confirmation token; do not run `--prepare-checkpoint`.
+5. The operator first inspects the latest export locally and blocks before Target mutation if refresh compatibility or checkpoint scope fails.
+6. If admitted, resume successful partial state and exercise Base v3 View writes.
+7. Interpret the next live result literally; retain every successful prior phase.
+8. After automatic Apply passes, complete Formula presentation UI parity, remaining View layout parity, Dashboard/Workflow UI parity and final Target export comparison.
+9. Ready/Merge PR #661 only after all automatic/manual gates pass.
 
-Detailed incident record: `docs/project-brain/customer-base-formula-recovery-2026-08-19.md`.
+Detailed current recovery record: `docs/project-brain/customer-base-view-v3-source-refresh-2026-08-20.md`.
+Historical Formula incident record: `docs/project-brain/customer-base-formula-recovery-2026-08-19.md`.
