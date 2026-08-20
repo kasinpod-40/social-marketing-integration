@@ -1,5 +1,12 @@
 const MANUAL_DYNAMIC_DATE_TOKENS = new Set(['TheLastMonth']);
 const OWNERSHIP = 'ui-manual-unsupported-view-dynamic-date-token';
+const CANONICAL_READ_METHODS = Object.freeze([
+  'listTables',
+  'listFields',
+  'listRecords',
+  'listViews',
+  'getView',
+]);
 
 /**
  * Project only View filters that have a documented automatic write contract.
@@ -84,11 +91,10 @@ export const LARK_BASE_MANUAL_DYNAMIC_DATE_VIEW_FILTER_OWNERSHIP = OWNERSHIP;
 
 function bindClientSurface(sourceClient) {
   const client = {};
-  for (const key of Reflect.ownKeys(sourceClient)) {
-    const descriptor = Object.getOwnPropertyDescriptor(sourceClient, key);
-    if (!descriptor || !('value' in descriptor)) continue;
-    const value = descriptor.value;
-    client[key] = typeof value === 'function' ? value.bind(sourceClient) : value;
+  for (const key of CANONICAL_READ_METHODS) {
+    const method = sourceClient[key];
+    if (typeof method !== 'function') continue;
+    client[key] = (...args) => method.apply(sourceClient, args);
   }
   return client;
 }
