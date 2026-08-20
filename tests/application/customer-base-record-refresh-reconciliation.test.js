@@ -259,7 +259,10 @@ test('exact-retry does not require a batchUpdateRecords capability', async () =>
 
   const result = await client.batchCreateRecords({
     tableId: 'tbl_accounts',
-    records: [{ account_key: 'instagram:new', last_sync_at: 3000 }],
+    records: [
+      { account_key: 'facebook:982406442148381', last_sync_at: 1000 },
+      { account_key: 'instagram:new', last_sync_at: 3000 },
+    ],
   });
   assert.deepEqual(result, { created: 1 });
 });
