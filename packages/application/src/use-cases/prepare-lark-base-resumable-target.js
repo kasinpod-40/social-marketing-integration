@@ -269,7 +269,7 @@ export async function prepareLarkBaseResumableTarget(input) {
         return async (request) => {
           const tableId = requireWritableTable(request?.tableId, 'batchCreateRecords', dynamicProtectedIds, writableIds);
           const requestedRecords = requireArray(request?.records, 'batchCreateRecords.records');
-          if (requestedRecords.length === 0) return { created: 0, updated: 0 };
+          if (requestedRecords.length === 0) return { created: 0 };
           const fields = await target.listFields({ tableId });
           const primaries = fields.filter((field) => field?.isPrimary === true);
           if (primaries.length !== 1) {
@@ -322,15 +322,24 @@ export async function prepareLarkBaseResumableTarget(input) {
             }
           }
 
-          let updated = 0;
           if (refreshUpdates.length > 0) {
+            if (typeof target.batchUpdateRecords !== 'function') {
+              throw codedError(
+                'CUSTOMER_BASE_RESUME_RECORD_REFRESH_CAPABILITY_UNAVAILABLE',
+                'Target client must implement batchUpdateRecords() for admitted Source refresh reconciliation',
+                {
+                  tableId,
+                  tableName: tableNameById.get(tableId) ?? null,
+                  recordCount: refreshUpdates.length,
+                },
+              );
+            }
             try {
-              const result = await target.batchUpdateRecords({
+              await target.batchUpdateRecords({
                 tableId,
                 records: refreshUpdates.map(({ recordId, fields: updateFields }) => ({ recordId, fields: updateFields })),
                 ...(typeof request?.beforeChunk === 'function' ? { beforeChunk: request.beforeChunk } : {}),
               });
-              updated = Number(result?.updated ?? 0);
             } catch (error) {
               throw remoteWriteError(
                 'CUSTOMER_BASE_RESUME_RECORD_REFRESH_REMOTE_REJECTED',
@@ -392,7 +401,7 @@ export async function prepareLarkBaseResumableTarget(input) {
               );
             }
           }
-          return { created, updated };
+          return { created };
         };
       }
 
@@ -475,10 +484,7 @@ export async function prepareLarkBaseResumableTarget(input) {
       contractVersion: 'customer_base_resumable_target_v1',
       protectedTables: Object.freeze(protectedTables.map((table) => Object.freeze(structuredClone(table)))),
       recoveryCandidateTables: Object.freeze([...resumeByName.keys()].sort()),
-      recordReconciliationMode,
-      rule: allowRecordRefresh
-        ? 'baseline-and-unrelated-tables-immutable-clone-scope-partials-refresh-requested-fields-by-stable-primary'
-        : 'baseline-and-unrelated-tables-immutable-clone-scope-partials-exact-idempotent',
+      rule: 'baseline-and-unrelated-tables-immutable-clone-scope-partials-exact-idempotent',
     }),
   });
 }
@@ -934,7 +940,7 @@ function normalizeRecordReconciliationMode(value) {
 }
 
 function requireClient(client) {
-  for (const method of ['listTables', 'listFields', 'listRecords', 'listViews', 'createTable', 'createField', 'updateField', 'batchCreateRecords', 'batchUpdateRecords']) {
+  for (const method of ['listTables', 'listFields', 'listRecords', 'listViews', 'createTable', 'createField', 'updateField', 'batchCreateRecords']) {
     if (!client || typeof client[method] !== 'function') throw new TypeError(`targetClient must implement ${method}()`);
   }
   return client;
