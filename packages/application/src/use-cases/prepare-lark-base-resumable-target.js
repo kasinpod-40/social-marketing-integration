@@ -599,7 +599,13 @@ function stripGeneratedSelectOptionIdsFromField(field) {
 function adaptFormulaFieldForTarget(field, formulaType, options = {}) {
   const normalized = structuredClone(requireObject(field, 'field'));
   if (Number(normalized?.type) !== FORMULA_FIELD_TYPE) return normalized;
-  const canonicalProperty = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, normalized?.property);
+  const rawProperty = normalized?.property && typeof normalized.property === 'object' && !Array.isArray(normalized.property)
+    ? structuredClone(normalized.property)
+    : normalized?.property;
+  if (formulaType !== 2 && rawProperty && typeof rawProperty === 'object' && !Array.isArray(rawProperty)) {
+    delete rawProperty.type;
+  }
+  const canonicalProperty = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, rawProperty);
   normalized.property = canonicalProperty ? structuredClone(canonicalProperty) : null;
   const property = normalized.property;
 
@@ -636,10 +642,7 @@ function adaptFormulaFieldForTarget(field, formulaType, options = {}) {
         ...(Object.keys(uiProperty).length > 0 ? { ui_property: uiProperty } : {}),
       };
     }
-    return normalized;
   }
-
-  if (property && Object.hasOwn(property, 'type')) delete property.type;
   return normalized;
 }
 
