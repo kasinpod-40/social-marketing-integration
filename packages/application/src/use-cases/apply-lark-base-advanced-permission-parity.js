@@ -3,19 +3,38 @@
  * previously validated plan. Role names that existed in the controlled-Apply
  * checkpoint are immutable and can never be adopted or overwritten.
  *
- * Missing roles are created one at a time and immediately read back. If the process
- * stops after creating a subset, a rerun with the same protected-role checkpoint
- * reuses exact roles created by the migration and continues with the remaining ones.
+ * An empty plan is an explicit zero-request no-op: inactive unassigned Source role
+ * definitions must not introduce Advanced Permission API dependencies on the Target.
+ *
+ * Missing active roles are created one at a time and immediately read back. If the
+ * process stops after creating a subset, a rerun with the same protected-role
+ * checkpoint reuses exact roles created by the migration and continues with the
+ * remaining ones.
  */
 export async function applyLarkBaseAdvancedPermissionParity(input) {
   const plan = requireObject(input?.plan, 'plan');
   if (plan.readyToWrite !== true || plan.ok !== true) {
     throw codedError('ADVANCED_PERMISSION_APPLY_PLAN_BLOCKED', 'Advanced Permission plan is not ready to write');
   }
-  const targetClient = requireClient(input?.targetClient);
   const protectedRoleNames = normalizeNames(input?.protectedRoleNames ?? []);
-  const protectedSet = new Set(protectedRoleNames);
   const expectedRoles = requireArray(plan.roles, 'plan.roles');
+
+  if (expectedRoles.length === 0) {
+    return deepFreeze({
+      ok: true,
+      contractVersion: 'customer_base_advanced_permission_apply_v1',
+      mode: 'inactive-source-roles-zero-request-noop',
+      createdRoles: 0,
+      reusedExactRoles: 0,
+      protectedRoleNames,
+      results: [],
+      remoteRequestCount: 0,
+      remoteMutationCount: 0,
+    });
+  }
+
+  const targetClient = requireClient(input?.targetClient);
+  const protectedSet = new Set(protectedRoleNames);
   const before = await targetClient.listAdvancedPermissionRoles();
   const beforeByName = uniqueRoleByName(before);
   const blockers = [];
