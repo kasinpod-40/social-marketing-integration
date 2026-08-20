@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planLarkBaseAdvancedPermissionParity } from '../../packages/application/src/use-cases/plan-lark-base-advanced-permission-parity.js';
 
-test('plans current table roles, omits all-enabled base_rule and retains orphan evidence', () => {
+test('classifies unassigned Source role definitions as inactive and plans zero role writes', () => {
   const result = planLarkBaseAdvancedPermissionParity({
     targetTables: [
       { name: 'Orders', tableId: 'tbl_target_orders' },
@@ -30,23 +30,22 @@ test('plans current table roles, omits all-enabled base_rule and retains orphan 
   assert.equal(result.readyToWrite, true);
   assert.equal(result.remoteRequestCount, 0);
   assert.equal(result.remoteMutationCount, 0);
-  assert.equal(result.summary.roleCount, 1);
-  assert.equal(result.summary.tableRoleCount, 2);
-  assert.equal(result.summary.orphanedTableRoleCount, 1);
-  assert.equal(result.summary.orphanedTableReferenceCount, 1);
-  assert.deepEqual(result.roles[0].request, {
-    role_name: 'Reader',
-    table_roles: [
-      { table_id: 'tbl_target_items', table_perm: 2 },
-      { table_id: 'tbl_target_orders', table_perm: 1 },
-    ],
-  });
-  assert.equal('base_rule' in result.roles[0].request, false);
-  assert.equal(result.roles[0].baseRuleMode, 'omit_documented_all_permissions_default');
-  assert.equal(result.roles[0].orphanedTableRoles[0].classification, 'orphaned_export_reference_not_materializable');
+  assert.equal(result.summary.sourceRoleCount, 1);
+  assert.equal(result.summary.roleCount, 0);
+  assert.equal(result.summary.inactiveRoleCount, 1);
+  assert.equal(result.summary.tableRoleCount, 0);
+  assert.equal(result.summary.orphanedTableRoleCount, 0);
+  assert.equal(result.summary.orphanedTableReferenceCount, 0);
+  assert.deepEqual(result.roles, []);
+  assert.deepEqual(result.inactiveRoles, [{
+    roleName: 'Reader',
+    memberCount: 0,
+    dashboardRoleCount: 0,
+    classification: 'inactive_unassigned_source_role_no_effective_access',
+  }]);
 });
 
-test('fails closed when fine-grained rules, members, dashboards, unmapped tables or non-all base rules are represented', () => {
+test('fails closed when active roles contain unsupported members, dashboards, unmapped tables or non-all base rules', () => {
   const result = planLarkBaseAdvancedPermissionParity({
     targetTables: [{ name: 'Orders', tableId: 'tbl_target_orders' }],
     permissionSemantics: {
@@ -66,6 +65,8 @@ test('fails closed when fine-grained rules, members, dashboards, unmapped tables
 
   assert.equal(result.ok, false);
   assert.equal(result.readyToWrite, false);
+  assert.equal(result.summary.sourceRoleCount, 1);
+  assert.equal(result.summary.inactiveRoleCount, 0);
   const codes = new Set(result.blockers.map((item) => item.code));
   for (const expected of [
     'ADVANCED_PERMISSION_MEMBERS_UNSUPPORTED',
