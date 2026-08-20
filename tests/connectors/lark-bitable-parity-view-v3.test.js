@@ -61,7 +61,7 @@ class FakeViewV3Transport {
   }
 }
 
-test('parity decorator writes hidden fields and Select filters through documented Base v3 View endpoints using Target option IDs', async () => {
+test('parity decorator writes hidden fields and Select filters through documented Base v3 View endpoints using option names', async () => {
   const transport = new FakeViewV3Transport();
   const client = withLarkBaseParityCapabilities(transport);
 
@@ -80,7 +80,7 @@ test('parity decorator writes hidden fields and Select filters through documente
   assert.deepEqual(result.visibleFields, ['fld_primary', 'fld_status']);
   assert.deepEqual(result.filter, {
     logic: 'and',
-    conditions: [['fld_status', 'intersects', ['opt_active_target']]],
+    conditions: [['fld_status', 'intersects', ['Active']]],
   });
   assert.deepEqual(transport.calls.map((call) => [call.options.method, call.path]), [
     ['PUT', '/open-apis/base/v3/bases/app_target/tables/tbl_accounts/views/vew_all/visible_fields'],
@@ -88,6 +88,43 @@ test('parity decorator writes hidden fields and Select filters through documente
     ['PUT', '/open-apis/base/v3/bases/app_target/tables/tbl_accounts/views/vew_all/filter'],
     ['GET', '/open-apis/base/v3/bases/app_target/tables/tbl_accounts/views/vew_all/filter'],
   ]);
+});
+
+test('parity decorator accepts Base v3 Select readback as Target option IDs after writing documented option names', async () => {
+  class IdReadbackTransport extends FakeViewV3Transport {
+    async requestBitableJson(path, options = {}) {
+      if (path.endsWith('/filter') && options.method === 'GET') {
+        this.calls.push({ path, options: structuredClone(options) });
+        return {
+          code: 0,
+          data: {
+            logic: this.filter.logic,
+            conditions: this.filter.conditions.map(([fieldId, operator, value]) => [
+              fieldId,
+              operator,
+              Array.isArray(value)
+                ? value.map((item) => item === 'Active' ? 'opt_active_target' : item === 'Paused' ? 'opt_paused_target' : item)
+                : value,
+            ]),
+          },
+        };
+      }
+      return super.requestBitableJson(path, options);
+    }
+  }
+  const transport = new IdReadbackTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.updateView({
+    tableId: 'tbl_accounts',
+    viewId: 'vew_all',
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active'] }],
+    },
+  });
+
+  assert.deepEqual(result.filter.conditions, [['fld_status', 'intersects', ['Active']]]);
 });
 
 test('parity decorator accepts Lark one-condition OR to AND readback canonicalization', async () => {
@@ -116,7 +153,7 @@ test('parity decorator accepts Lark one-condition OR to AND readback canonicaliz
   assert.equal(result.filter.conditions.length, 1);
 });
 
-test('parity decorator expands SingleSelect multi-value any-of into one OR condition per Target option ID', async () => {
+test('parity decorator keeps documented Select multi-value any-of as one intersects name-array condition', async () => {
   class ReorderingTransport extends FakeViewV3Transport {
     async requestBitableJson(path, options = {}) {
       if (path.endsWith('/filter') && options.method === 'GET') {
@@ -125,7 +162,11 @@ test('parity decorator expands SingleSelect multi-value any-of into one OR condi
           code: 0,
           data: {
             logic: this.filter.logic,
-            conditions: [...this.filter.conditions].reverse(),
+            conditions: this.filter.conditions.map(([fieldId, operator, value]) => [
+              fieldId,
+              operator,
+              Array.isArray(value) ? [...value].reverse() : value,
+            ]),
           },
         };
       }
@@ -147,22 +188,22 @@ test('parity decorator expands SingleSelect multi-value any-of into one OR condi
   assert.deepEqual(result.filter, {
     logic: 'or',
     conditions: [
-      ['fld_status', 'intersects', ['opt_active_target']],
-      ['fld_status', 'intersects', ['opt_paused_target']],
+      ['fld_status', 'intersects', ['Active', 'Paused']],
     ],
   });
 });
 
-test('parity decorator rejects a collapsed one-value SingleSelect readback for a required multi-value set', async () => {
+test('parity decorator rejects a collapsed one-value Select readback for a required multi-value set', async () => {
   class CollapsingTransport extends FakeViewV3Transport {
     async requestBitableJson(path, options = {}) {
       if (path.endsWith('/filter') && options.method === 'GET') {
         this.calls.push({ path, options: structuredClone(options) });
+        const [fieldId, operator, value] = this.filter.conditions[0];
         return {
           code: 0,
           data: {
-            logic: 'or',
-            conditions: this.filter.conditions.slice(0, 1),
+            logic: this.filter.logic,
+            conditions: [[fieldId, operator, Array.isArray(value) ? value.slice(0, 1) : value]],
           },
         };
       }
@@ -225,7 +266,7 @@ test('parity decorator exposes Target Select View filters by semantic option nam
   });
 });
 
-test('parity decorator fails closed when a semantic Select option cannot resolve to exactly one Target option ID', async () => {
+test('parity decorator fails closed when a semantic Select option cannot resolve to exactly one Target option', async () => {
   const transport = new FakeViewV3Transport();
   const client = withLarkBaseParityCapabilities(transport);
 
@@ -238,7 +279,7 @@ test('parity decorator fails closed when a semantic Select option cannot resolve
         conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Missing'] }],
       },
     }),
-    /must resolve to exactly one Target option ID/u,
+    /must resolve to exactly one Target option/u,
   );
   assert.deepEqual(transport.calls, []);
 });
