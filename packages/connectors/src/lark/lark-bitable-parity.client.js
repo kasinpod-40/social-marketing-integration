@@ -135,7 +135,10 @@ export function withLarkBaseParityCapabilities(client) {
         const item = requireObject(condition, `view.filterInfo.conditions[${index}]`);
         const fieldId = requireText(item?.fieldId ?? item?.field_id, `view.filterInfo.conditions[${index}].fieldId`);
         const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `view.filterInfo.conditions[${index}].fieldType`);
-        const operator = requireText(item?.operator, `view.filterInfo.conditions[${index}].operator`);
+        const operator = normalizeSingleSelectViewFilterOperator(
+          requireText(item?.operator, `view.filterInfo.conditions[${index}].operator`),
+          fieldType,
+        );
         if (item?.value === null || item?.value === undefined) {
           return Object.freeze({ fieldId, fieldType, operator, value: null });
         }
@@ -555,6 +558,20 @@ function resolveTargetSelectOptionName(field, remoteValue) {
   throw new TypeError(`View Select readback value must resolve to exactly one Target option: ${value}`);
 }
 
+/**
+ * Base v3 uses `intersects`/`disjoint` for SingleSelect membership while legacy View
+ * readback can surface the same persisted predicate as `is`/`contains` or
+ * `isNot`/`doesNotContain`. The source export uses `is`/`isNot`; normalize Target-only
+ * aliases back to that source-aligned semantic vocabulary before parity comparison.
+ */
+function normalizeSingleSelectViewFilterOperator(operator, fieldType) {
+  const value = requireText(operator, 'SingleSelect View filter operator');
+  if (Number(fieldType) !== 3) return value;
+  if (new Set(['is', 'contains', 'intersects']).has(value)) return 'is';
+  if (new Set(['isNot', 'doesNotContain', 'disjoint']).has(value)) return 'isNot';
+  return value;
+}
+
 function toBaseV3ViewFilter(value) {
   const source = requireObject(value, 'filterInfo');
   const conditions = requireArray(source.conditions, 'filterInfo.conditions').map((condition, index) => {
@@ -755,10 +772,14 @@ function canonicalSemanticViewFilterInfo(value) {
   const conjunction = source.conjunction === 'or' ? 'or' : 'and';
   const rawConditions = requireArray(source.conditions ?? [], 'semantic View filter conditions').map((condition, index) => {
     const item = requireObject(condition, `semantic View filter condition ${index}`);
+    const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `semantic View filter condition ${index} fieldType`);
     return {
       fieldId: requireText(item?.fieldId ?? item?.field_id, `semantic View filter condition ${index} fieldId`),
-      fieldType: requirePositiveInteger(item?.fieldType ?? item?.field_type, `semantic View filter condition ${index} fieldType`),
-      operator: requireText(item?.operator, `semantic View filter condition ${index} operator`),
+      fieldType,
+      operator: normalizeSingleSelectViewFilterOperator(
+        requireText(item?.operator, `semantic View filter condition ${index} operator`),
+        fieldType,
+      ),
       value: canonicalSemanticViewFilterValue(item?.value),
     };
   });
@@ -984,5 +1005,4 @@ function requirePositiveInteger(value, name) {
 function requireFiniteNumber(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new TypeError(`${name} must be a finite number`);
-  return number;
 }
