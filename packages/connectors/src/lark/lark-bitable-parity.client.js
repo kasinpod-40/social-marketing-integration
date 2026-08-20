@@ -117,7 +117,9 @@ export function withLarkBaseParityCapabilities(client) {
           fieldId,
           fieldType,
           operator,
-          value: Object.freeze(values.map((logicalValue) => resolveTargetSelectOptionId(field, logicalValue))),
+          // Base v3 filter tuples use Select option names. Validate every logical value
+          // against current Target metadata, but never replay generated option IDs.
+          value: Object.freeze(values.map((logicalValue) => resolveTargetSelectOptionWriteName(field, logicalValue))),
         });
       })),
     });
@@ -146,6 +148,26 @@ export function withLarkBaseParityCapabilities(client) {
         const optionValues = normalizeStringArray(decoded, `View select readback ${fieldId}`)
           .map((remoteValue) => resolveTargetSelectOptionName(field, remoteValue));
         return Object.freeze({ fieldId, fieldType, operator, value: Object.freeze(optionValues) });
+      })),
+    });
+  };
+
+  const normalizeBaseV3ViewFilterForComparison = async (tableId, value) => {
+    const normalized = normalizeBaseV3FilterResponse(value);
+    const fields = await getViewFieldById(tableId);
+    return Object.freeze({
+      logic: normalized.logic,
+      conditions: Object.freeze(normalized.conditions.map((condition, index) => {
+        const fieldId = requireText(condition[0], `Base v3 View filter condition ${index} fieldId`);
+        const operator = requireText(condition[1], `Base v3 View filter condition ${index} operator`);
+        if (condition.length !== 3) return Object.freeze([fieldId, operator]);
+        const field = fields.get(fieldId);
+        if (!field || ![3, 4].includes(Number(field?.type))) {
+          return Object.freeze([fieldId, operator, structuredClone(condition[2])]);
+        }
+        const values = normalizeStringArray(condition[2], `Base v3 View select readback ${fieldId}`)
+          .map((remoteValue) => resolveTargetSelectOptionName(field, remoteValue));
+        return Object.freeze([fieldId, operator, Object.freeze(values)]);
       })),
     });
   };
@@ -359,15 +381,16 @@ export function withLarkBaseParityCapabilities(client) {
         baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'filter'),
         { method: 'GET' },
       );
-      const actual = normalizeBaseV3FilterResponse(response?.data);
-      const expectedComparable = canonicalBaseV3ViewFilter(filter);
-      const actualComparable = canonicalBaseV3ViewFilter(actual);
+      const expectedComparable = canonicalBaseV3ViewFilter(
+        await normalizeBaseV3ViewFilterForComparison(tableId, filter),
+      );
+      const actualComparable = canonicalBaseV3ViewFilter(
+        await normalizeBaseV3ViewFilterForComparison(tableId, response?.data),
+      );
       if (stableJson(actualComparable) !== stableJson(expectedComparable)) {
         throw readbackMismatch('LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH', 'Base v3 View filter differs after readback', {
           tableId,
           viewId,
-          expected: filter,
-          actual,
           expectedComparable,
           actualComparable,
         });
@@ -465,16 +488,18 @@ export function withLarkBaseParityCapabilities(client) {
   return wrapped;
 }
 
-function resolveTargetSelectOptionId(field, logicalValue) {
+function resolveTargetSelectOptionWriteName(field, logicalValue) {
   const value = requireText(String(logicalValue), 'View Select option value');
   const options = requireArray(field?.property?.options, `View Select options ${field?.fieldName ?? field?.fieldId ?? ''}`);
   const idMatches = options.filter((option) => optionalText(option?.id) === value);
-  if (idMatches.length === 1) return value;
+  if (idMatches.length === 1) {
+    return requireText(idMatches[0]?.name, `Target View Select option name ${value}`);
+  }
   const nameMatches = options.filter((option) => optionalText(option?.name) === value);
   if (nameMatches.length !== 1) {
-    throw new TypeError(`View Select option name must resolve to exactly one Target option ID: ${value}`);
+    throw new TypeError(`View Select option name must resolve to exactly one Target option: ${value}`);
   }
-  return requireText(nameMatches[0]?.id, `Target View Select option id ${value}`);
+  return value;
 }
 
 function resolveTargetSelectOptionName(field, remoteValue) {
@@ -489,38 +514,20 @@ function resolveTargetSelectOptionName(field, remoteValue) {
 
 function toBaseV3ViewFilter(value) {
   const source = requireObject(value, 'filterInfo');
-  const logic = source.conjunction === 'or' ? 'or' : 'and';
-  const conditions = requireArray(source.conditions, 'filterInfo.conditions').flatMap((condition, index) => {
+  const conditions = requireArray(source.conditions, 'filterInfo.conditions').map((condition, index) => {
     const item = requireObject(condition, `filterInfo.conditions[${index}]`);
     const fieldId = requireText(item?.fieldId ?? item?.field_id, `filterInfo.conditions[${index}].fieldId`);
     const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `filterInfo.conditions[${index}].fieldType`);
     const legacyOperator = requireText(item?.operator, `filterInfo.conditions[${index}].operator`);
     const operator = baseV3ViewFilterOperator(legacyOperator, fieldType);
-    const hasValue = operator !== 'empty' && operator !== 'non_empty';
-    const normalizedValue = hasValue
-      ? baseV3ViewFilterValue(item?.value, fieldType, legacyOperator)
-      : undefined;
-
-    // Lark retains only one value when a SingleSelect `is` is written as one
-    // multi-value condition. Preserve source any-of semantics by expanding it to
-    // one OR condition per option ID, matching the already-proven Native AI path.
-    if (fieldType === 3 && legacyOperator === 'is' && Array.isArray(normalizedValue) && normalizedValue.length > 1) {
-      if (logic !== 'or') {
-        throw new TypeError('SingleSelect multi-value View filter requires OR conjunction');
-      }
-      return normalizedValue.map((optionId) => Object.freeze([
-        fieldId,
-        operator,
-        Object.freeze([optionId]),
-      ]));
-    }
-
     const tuple = [fieldId, operator];
-    if (hasValue) tuple.push(normalizedValue);
-    return [Object.freeze(tuple)];
+    if (operator !== 'empty' && operator !== 'non_empty') {
+      tuple.push(baseV3ViewFilterValue(item?.value, fieldType, legacyOperator));
+    }
+    return Object.freeze(tuple);
   });
   return Object.freeze({
-    logic,
+    logic: source.conjunction === 'or' ? 'or' : 'and',
     conditions: Object.freeze(conditions),
   });
 }
