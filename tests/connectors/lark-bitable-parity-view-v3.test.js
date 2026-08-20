@@ -6,7 +6,7 @@ class FakeViewV3Transport {
   constructor() {
     this.appToken = 'app_target';
     this.calls = [];
-    this.visibleFields = ['fld_primary', 'fld_status', 'fld_hidden'];
+    this.visibleFields = ['fld_primary', 'fld_status', 'fld_number', 'fld_checkbox', 'fld_hidden'];
     this.filter = { logic: 'and', conditions: [] };
   }
 
@@ -18,6 +18,8 @@ class FakeViewV3Transport {
         fieldId: 'fld_status', fieldName: 'status', type: 3,
         property: { options: [{ id: 'opt_active_target', name: 'Active' }, { id: 'opt_paused_target', name: 'Paused' }] },
       },
+      { fieldId: 'fld_number', fieldName: 'score', type: 2, property: { formatter: '0' } },
+      { fieldId: 'fld_checkbox', fieldName: 'checked', type: 7, property: null },
       { fieldId: 'fld_hidden', fieldName: 'internal_note', type: 1, property: null },
     ];
   }
@@ -77,7 +79,7 @@ test('parity decorator writes hidden fields and Select filters through documente
     },
   });
 
-  assert.deepEqual(result.visibleFields, ['fld_primary', 'fld_status']);
+  assert.deepEqual(result.visibleFields, ['fld_primary', 'fld_status', 'fld_number', 'fld_checkbox']);
   assert.deepEqual(result.filter, {
     logic: 'and',
     conditions: [['fld_status', 'intersects', ['Active']]],
@@ -296,8 +298,8 @@ test('parity decorator maps scalar, comparison, empty and boolean legacy filters
       conditions: [
         { fieldId: 'fld_primary', fieldType: 1, operator: 'contains', value: '["chemistry"]' },
         { fieldId: 'fld_primary', fieldType: 1, operator: 'isNotEmpty', value: null },
-        { fieldId: 'fld_status', fieldType: 2, operator: 'isGreaterEqual', value: '[10]' },
-        { fieldId: 'fld_hidden', fieldType: 7, operator: 'is', value: '[true]' },
+        { fieldId: 'fld_number', fieldType: 2, operator: 'isGreaterEqual', value: '[10]' },
+        { fieldId: 'fld_checkbox', fieldType: 7, operator: 'is', value: '[true]' },
       ],
     },
   });
@@ -307,8 +309,8 @@ test('parity decorator maps scalar, comparison, empty and boolean legacy filters
     conditions: [
       ['fld_primary', 'intersects', 'chemistry'],
       ['fld_primary', 'non_empty'],
-      ['fld_status', '>=', 10],
-      ['fld_hidden', '==', true],
+      ['fld_number', '>=', 10],
+      ['fld_checkbox', '==', true],
     ],
   });
 });
