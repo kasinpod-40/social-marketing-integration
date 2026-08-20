@@ -2,6 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyLarkBaseAdvancedPermissionParity } from '../../packages/application/src/use-cases/verify-lark-base-advanced-permission-parity.js';
 
+test('inactive Source role verification is a zero-request no-op', async () => {
+  const result = await verifyLarkBaseAdvancedPermissionParity({
+    plan: { roles: [] },
+    targetClient: {},
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'inactive-source-roles-zero-request-noop');
+  assert.equal(result.expectedRoleCount, 0);
+  assert.equal(result.targetRoleCount, null);
+  assert.equal(result.remoteRequestCount, 0);
+  assert.equal(result.remoteMutationCount, 0);
+  assert.equal(result.baseRuleVerification, 'not_applicable_no_active_source_roles');
+});
+
 test('verifies expected migration roles while ignoring unrelated customer roles', async () => {
   const result = await verifyLarkBaseAdvancedPermissionParity({
     plan: {
