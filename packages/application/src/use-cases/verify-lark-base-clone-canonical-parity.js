@@ -16,38 +16,46 @@ const FORMULA_FIELD_TYPE = 20;
  * write, so the verifier confirms the definition through the existing Base v3 GET
  * capability and projects only that verified expression into comparison memory.
  *
- * Empty relation values are also normalized in read-only comparison memory because
- * the local export and Lark record API can represent the same no-link state as an
- * omitted/null value or as an empty array. Non-empty relations are left untouched so
- * the core verifier still performs strict record-ID remap comparison.
+ * Record comparison normalizes two transport-only representations:
+ * - empty relations may be omitted/null in the export but [] in the Lark API;
+ * - Formula cell values are derived outputs, so after the Formula definition hard
+ *   gate succeeds they are excluded from record-state parity on both sides. Formula
+ *   input fields remain strict record hard gates.
  */
 export async function verifyLarkBaseCloneCanonicalParity(input) {
   const sourceViewProjection = projectLarkBaseSourceForAutomaticViewFilterParity(input?.sourceClient);
-  const sourceProjection = projectEmptyRelationReadbackForCanonicalParity(sourceViewProjection.client);
+  const sourceProjection = projectRecordReadbackForCanonicalParity(sourceViewProjection.client);
   const targetFormulaProjection = await projectTargetFormulaReadbackForCanonicalParity({
     sourceClient: sourceProjection.client,
     targetClient: input?.targetClient,
   });
-  const targetProjection = projectEmptyRelationReadbackForCanonicalParity(targetFormulaProjection.client);
+  const targetProjection = projectRecordReadbackForCanonicalParity(targetFormulaProjection.client);
   const result = await verifyCore({
     ...input,
     sourceClient: sourceProjection.client,
     targetClient: targetProjection.client,
   });
   const requirements = sourceViewProjection.getRequirements();
-  if (requirements.length === 0) return result;
-  return deepFreeze({
+  const coveredResult = {
     ...result,
+    coverage: {
+      ...result.coverage,
+      records: 'all-readable-non-formula-field-values-with-relation-record-id-remap; Formula cell outputs are derived and excluded after Formula definition hard gate',
+    },
+  };
+  if (requirements.length === 0) return deepFreeze(coveredResult);
+  return deepFreeze({
+    ...coveredResult,
     summary: {
-      ...result.summary,
+      ...coveredResult.summary,
       manualViewFilterRequirements: requirements.length,
     },
     coverage: {
-      ...result.coverage,
+      ...coveredResult.coverage,
       views: 'name-type-public-hidden-and-supported-filter-parity-with-field-id-remap; unsupported-dynamic-date-token-filter-is-ui-manual',
     },
     manualParity: {
-      ...(result.manualParity ?? {}),
+      ...(coveredResult.manualParity ?? {}),
       viewFilters: {
         ownership: LARK_BASE_MANUAL_DYNAMIC_DATE_VIEW_FILTER_OWNERSHIP,
         required: true,
@@ -57,12 +65,12 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
   });
 }
 
-function projectEmptyRelationReadbackForCanonicalParity(clientValue) {
-  const client = requireReadClient(clientValue, 'relation readback client');
+function projectRecordReadbackForCanonicalParity(clientValue) {
+  const client = requireReadClient(clientValue, 'record readback client');
   const fieldsPromiseByTableId = new Map();
 
   const readFields = async (tableIdValue) => {
-    const tableId = requireText(tableIdValue, 'relation readback tableId');
+    const tableId = requireText(tableIdValue, 'record readback tableId');
     if (!fieldsPromiseByTableId.has(tableId)) {
       fieldsPromiseByTableId.set(
         tableId,
@@ -84,7 +92,12 @@ function projectEmptyRelationReadbackForCanonicalParity(clientValue) {
         const relationFieldNames = fields
           .filter((field) => Number(field?.type) === RELATION_FIELD_TYPE)
           .map((field) => requireText(field?.fieldName, 'relation fieldName'));
-        if (relationFieldNames.length === 0) return structuredClone(records);
+        const formulaFieldNames = fields
+          .filter((field) => Number(field?.type) === FORMULA_FIELD_TYPE)
+          .map((field) => requireText(field?.fieldName, 'Formula fieldName'));
+        if (relationFieldNames.length === 0 && formulaFieldNames.length === 0) {
+          return structuredClone(records);
+        }
         return structuredClone(records).map((record) => {
           const copy = structuredClone(record ?? {});
           copy.fields = copy?.fields && typeof copy.fields === 'object' && !Array.isArray(copy.fields)
@@ -93,6 +106,7 @@ function projectEmptyRelationReadbackForCanonicalParity(clientValue) {
           for (const fieldName of relationFieldNames) {
             if (isEmptyRelationValue(copy.fields[fieldName])) copy.fields[fieldName] = [];
           }
+          for (const fieldName of formulaFieldNames) copy.fields[fieldName] = null;
           return copy;
         });
       },
