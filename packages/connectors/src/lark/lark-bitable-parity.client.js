@@ -396,15 +396,46 @@ export function withLarkBaseParityCapabilities(client) {
         const expectedSemantic = canonicalSemanticViewFilterInfo(resolvedFilterInfo);
         const actualSemantic = canonicalSemanticViewFilterInfo(semanticView?.property?.filterInfo);
         if (stableJson(actualSemantic) !== stableJson(expectedSemantic)) {
-          throw readbackMismatch('LARK_VIEW_FILTER_SEMANTIC_READBACK_MISMATCH', 'Persisted View filter semantics differ after Base v3 write', {
-            tableId,
-            viewId,
-            verification: 'base-v3-presentation-mismatch-then-view-semantic-readback',
-            expectedConditionCount: expectedSemantic.conditions.length,
-            actualConditionCount: actualSemantic.conditions.length,
-            baseV3ExpectedConditionCount: expectedComparable.conditions.length,
-            baseV3ActualConditionCount: actualComparable.conditions.length,
-          });
+          const recoveryFilter = toBaseV3SingleSelectAnyOfRecoveryFilter(resolvedFilterInfo);
+          if (recoveryFilter) {
+            await client.requestBitableJson(baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'filter'), {
+              method: 'PUT',
+              body: recoveryFilter,
+            });
+            const recoveryResponse = await client.requestBitableJson(
+              baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'filter'),
+              { method: 'GET' },
+            );
+            const recoveryComparable = canonicalBaseV3ViewFilter(
+              await normalizeBaseV3ViewFilterForComparison(tableId, recoveryResponse?.data),
+            );
+            const recoveredView = await wrapped.getView({ tableId, viewId });
+            const recoveredSemantic = canonicalSemanticViewFilterInfo(recoveredView?.property?.filterInfo);
+            if (stableJson(recoveredSemantic) === stableJson(expectedSemantic)) {
+              filter = recoveryFilter;
+            } else {
+              throw readbackMismatch('LARK_VIEW_FILTER_SEMANTIC_READBACK_MISMATCH', 'Persisted View filter semantics differ after Base v3 SingleSelect any-of recovery', {
+                tableId,
+                viewId,
+                verification: 'single-select-any-of-recovery-semantic-readback',
+                recoveryAttempted: true,
+                expectedConditionCount: expectedSemantic.conditions.length,
+                actualConditionCount: recoveredSemantic.conditions.length,
+                recoveryBaseV3ConditionCount: recoveryComparable.conditions.length,
+              });
+            }
+          } else {
+            throw readbackMismatch('LARK_VIEW_FILTER_SEMANTIC_READBACK_MISMATCH', 'Persisted View filter semantics differ after Base v3 write', {
+              tableId,
+              viewId,
+              verification: 'base-v3-presentation-mismatch-then-view-semantic-readback',
+              recoveryAttempted: false,
+              expectedConditionCount: expectedSemantic.conditions.length,
+              actualConditionCount: actualSemantic.conditions.length,
+              baseV3ExpectedConditionCount: expectedComparable.conditions.length,
+              baseV3ActualConditionCount: actualComparable.conditions.length,
+            });
+          }
         }
       }
     }
@@ -542,6 +573,47 @@ function toBaseV3ViewFilter(value) {
     logic: source.conjunction === 'or' ? 'or' : 'and',
     conditions: Object.freeze(conditions),
   });
+}
+
+/**
+ * Recovery for the exact live failure class where Lark accepts a documented Base v3
+ * SingleSelect intersects array but persists only one semantic option. Preserve the
+ * documented option-name contract and expand only multi-value SingleSelect `is` under
+ * OR into one condition per option. Other filter classes are never rewritten here.
+ */
+function toBaseV3SingleSelectAnyOfRecoveryFilter(value) {
+  const source = requireObject(value, 'filterInfo');
+  if (source.conjunction !== 'or') return null;
+  const conditions = [];
+  let expanded = false;
+
+  for (const [index, condition] of requireArray(source.conditions, 'filterInfo.conditions').entries()) {
+    const item = requireObject(condition, `filterInfo.conditions[${index}]`);
+    const fieldId = requireText(item?.fieldId ?? item?.field_id, `filterInfo.conditions[${index}].fieldId`);
+    const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `filterInfo.conditions[${index}].fieldType`);
+    const legacyOperator = requireText(item?.operator, `filterInfo.conditions[${index}].operator`);
+    const operator = baseV3ViewFilterOperator(legacyOperator, fieldType);
+
+    if (fieldType === 3 && legacyOperator === 'is') {
+      const values = baseV3ViewFilterValue(item?.value, fieldType, legacyOperator);
+      if (Array.isArray(values) && values.length > 1) {
+        for (const optionName of values) {
+          conditions.push(Object.freeze([fieldId, operator, Object.freeze([optionName])]));
+        }
+        expanded = true;
+        continue;
+      }
+    }
+
+    const tuple = [fieldId, operator];
+    if (operator !== 'empty' && operator !== 'non_empty') {
+      tuple.push(baseV3ViewFilterValue(item?.value, fieldType, legacyOperator));
+    }
+    conditions.push(Object.freeze(tuple));
+  }
+
+  if (!expanded) return null;
+  return Object.freeze({ logic: 'or', conditions: Object.freeze(conditions) });
 }
 
 function baseV3ViewFilterOperator(operator, fieldType) {
