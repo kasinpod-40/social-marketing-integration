@@ -374,12 +374,10 @@ function refreshAuthorityMismatches(inspection) {
       actual: Number.isFinite(records) ? records : null,
     });
   }
-  const tableNames = new Set(Array.isArray(inspection?.names?.tables) ? inspection.names.tables : []);
-  for (const tableName of REQUIRED_PROTECTED_TABLE_NAMES) {
-    if (!tableNames.has(tableName)) {
-      mismatches.push({ dimension: 'requiredTable', expected: tableName, actual: 'missing' });
-    }
-  }
+  // Target identity anchors belong only to the immutable checkpoint/Target fence.
+  // Source refresh compatibility is governed by structural counts here and the
+  // exact clone-scope Table-name comparison against checkpoint.expectedTableNames
+  // before any Target client mutation can start.
   return mismatches;
 }
 
