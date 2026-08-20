@@ -13,10 +13,31 @@ class FakeViewV3Transport {
   async listFields({ tableId }) {
     assert.equal(tableId, 'tbl_accounts');
     return [
-      { fieldId: 'fld_primary', fieldName: 'account_key', type: 1 },
-      { fieldId: 'fld_status', fieldName: 'status', type: 3 },
-      { fieldId: 'fld_hidden', fieldName: 'internal_note', type: 1 },
+      { fieldId: 'fld_primary', fieldName: 'account_key', type: 1, property: null },
+      {
+        fieldId: 'fld_status', fieldName: 'status', type: 3,
+        property: { options: [{ id: 'opt_active_target', name: 'Active' }, { id: 'opt_paused_target', name: 'Paused' }] },
+      },
+      { fieldId: 'fld_hidden', fieldName: 'internal_note', type: 1, property: null },
     ];
+  }
+
+  async getView({ tableId, viewId }) {
+    assert.equal(tableId, 'tbl_accounts');
+    assert.equal(viewId, 'vew_all');
+    return {
+      viewId,
+      viewName: 'All Accounts',
+      viewType: 'grid',
+      publicLevel: 'Public',
+      property: {
+        hiddenFields: [],
+        filterInfo: {
+          conjunction: 'and',
+          conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: '["opt_active_target"]' }],
+        },
+      },
+    };
   }
 
   async requestBitableJson(path, options = {}) {
@@ -40,7 +61,7 @@ class FakeViewV3Transport {
   }
 }
 
-test('parity decorator writes hidden fields and filters through documented Base v3 View endpoints', async () => {
+test('parity decorator writes hidden fields and Select filters through documented Base v3 View endpoints using Target option IDs', async () => {
   const transport = new FakeViewV3Transport();
   const client = withLarkBaseParityCapabilities(transport);
 
@@ -59,7 +80,7 @@ test('parity decorator writes hidden fields and filters through documented Base 
   assert.deepEqual(result.visibleFields, ['fld_primary', 'fld_status']);
   assert.deepEqual(result.filter, {
     logic: 'and',
-    conditions: [['fld_status', 'intersects', ['Active']]],
+    conditions: [['fld_status', 'intersects', ['opt_active_target']]],
   });
   assert.deepEqual(transport.calls.map((call) => [call.options.method, call.path]), [
     ['PUT', '/open-apis/base/v3/bases/app_target/tables/tbl_accounts/views/vew_all/visible_fields'],
@@ -67,6 +88,35 @@ test('parity decorator writes hidden fields and filters through documented Base 
     ['PUT', '/open-apis/base/v3/bases/app_target/tables/tbl_accounts/views/vew_all/filter'],
     ['GET', '/open-apis/base/v3/bases/app_target/tables/tbl_accounts/views/vew_all/filter'],
   ]);
+});
+
+test('parity decorator exposes Target Select View filters by semantic option name for canonical verification', async () => {
+  const transport = new FakeViewV3Transport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const view = await client.getView({ tableId: 'tbl_accounts', viewId: 'vew_all' });
+  assert.deepEqual(view.property.filterInfo, {
+    conjunction: 'and',
+    conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active'] }],
+  });
+});
+
+test('parity decorator fails closed when a semantic Select option cannot resolve to exactly one Target option ID', async () => {
+  const transport = new FakeViewV3Transport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  await assert.rejects(
+    () => client.updateView({
+      tableId: 'tbl_accounts',
+      viewId: 'vew_all',
+      filterInfo: {
+        conjunction: 'and',
+        conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Missing'] }],
+      },
+    }),
+    /must resolve to exactly one Target option ID/u,
+  );
+  assert.deepEqual(transport.calls, []);
 });
 
 test('parity decorator maps scalar, comparison, empty and boolean legacy filters to Base v3 tuples', async () => {
