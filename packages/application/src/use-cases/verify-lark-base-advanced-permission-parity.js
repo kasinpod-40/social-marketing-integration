@@ -1,15 +1,34 @@
 /**
  * GET-only verifier for migration-created Advanced Permission roles.
  *
- * It verifies the public, readable role contract: role name plus exact Target Table
- * IDs and table_perm values. Unrelated customer roles are ignored. Base-level
- * all-enabled semantics are guaranteed by the documented v2 create omission rule
- * and are not reconstructed from export-internal numeric keys here.
+ * An empty expected-role plan is an explicit zero-request no-op so inactive Source
+ * role definitions do not create a Target Advanced Permission dependency.
+ *
+ * Active migration-owned roles are verified through the public readable contract:
+ * role name plus exact Target Table IDs and table_perm values. Unrelated customer
+ * roles are ignored. Base-level all-enabled semantics are guaranteed by the
+ * documented v2 create omission rule and are not reconstructed from export-internal
+ * numeric keys here.
  */
 export async function verifyLarkBaseAdvancedPermissionParity(input) {
   const plan = requireObject(input?.plan, 'plan');
-  const targetClient = requireClient(input?.targetClient);
   const expectedRoles = requireArray(plan?.roles, 'plan.roles');
+
+  if (expectedRoles.length === 0) {
+    return deepFreeze({
+      ok: true,
+      contractVersion: 'customer_base_advanced_permission_verifier_v1',
+      mode: 'inactive-source-roles-zero-request-noop',
+      expectedRoleCount: 0,
+      targetRoleCount: null,
+      baseRuleVerification: 'not_applicable_no_active_source_roles',
+      mismatches: [],
+      remoteRequestCount: 0,
+      remoteMutationCount: 0,
+    });
+  }
+
+  const targetClient = requireClient(input?.targetClient);
   const targetRoles = await targetClient.listAdvancedPermissionRoles();
   const targetByName = uniqueRoleByName(targetRoles);
   const mismatches = [];
