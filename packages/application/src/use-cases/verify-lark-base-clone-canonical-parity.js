@@ -9,6 +9,9 @@ const FORMULA_FIELD_TYPE = 20;
  * The verifier tolerates generated Target IDs only when Source table/field/record references
  * can be deterministically remapped by table name, field name and unique primary value.
  * It performs no mutations and intentionally ignores unrelated Target tables.
+ * Formula definition remains an automatic hard gate; legacy Formula result presentation
+ * is reported separately as manual/UI parity evidence because current Base v3 writes do
+ * not expose those style/result fields.
  */
 export async function verifyLarkBaseCloneCanonicalParity(input) {
   const sourceClient = requireReadClient(input?.sourceClient, 'sourceClient');
@@ -20,6 +23,7 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
     targetClient.listTables(),
   ]);
   const mismatches = [];
+  const manualFormulaPresentation = [];
   const sourceByName = uniqueTableIndex(sourceTables, 'source', mismatches);
   const targetByName = uniqueTableIndex(targetTables, 'target', mismatches);
 
@@ -107,6 +111,7 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
       targetTableIdBySourceId,
       targetFormulaType,
       mismatches,
+      manualFormulaPresentation,
     });
     verifyRecords({
       sourceTable,
@@ -137,12 +142,21 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
       mappedFields: sumMapSizes(fieldIdMaps),
       mappedRecords: sumMapSizes(recordIdMaps),
       mismatches: mismatches.length,
+      manualFormulaPresentationMismatches: manualFormulaPresentation.length,
     },
     coverage: {
-      fields: 'full-readable-config-with-relation-formula-id-remap-and-target-formula-capability',
+      fields: 'full-readable-config-with-relation-remap-formula-definition-hard-gate-and-formula-presentation-manual-evidence',
       records: 'all-readable-field-values-with-relation-record-id-remap',
       views: 'name-type-public-hidden-filter-with-field-id-remap',
       unrelatedTargetTablesIgnored: true,
+    },
+    manualParity: {
+      formulaPresentation: {
+        ownership: 'ui-manual-current-openapi-read-only',
+        required: manualFormulaPresentation.length > 0,
+        targetFormulaType,
+        mismatches: manualFormulaPresentation,
+      },
     },
     mismatches,
     remoteMutationCount: 0,
@@ -190,6 +204,7 @@ function verifyFields(input) {
     targetTableIdBySourceId,
     targetFormulaType,
     mismatches,
+    manualFormulaPresentation,
   } = input;
   if (source.fields.length !== target.fields.length) {
     mismatches.push(problem('CANONICAL_VERIFY_FIELD_COUNT_MISMATCH', `Field count mismatch: ${sourceTable.name}`, {
@@ -204,6 +219,22 @@ function verifyFields(input) {
       mismatches.push(problem('CANONICAL_VERIFY_FIELD_MISSING', `Target field missing: ${sourceTable.name}.${sourceField.fieldName}`));
       continue;
     }
+
+    if (Number(sourceField?.type) === FORMULA_FIELD_TYPE) {
+      const sourcePresentation = canonicalFormulaPresentation(sourceField?.property);
+      const targetPresentation = canonicalFormulaPresentation(targetField?.property);
+      if (stableJson(sourcePresentation) !== stableJson(targetPresentation)) {
+        manualFormulaPresentation.push(deepFreeze({
+          tableName: sourceTable.name,
+          fieldName: requireText(sourceField?.fieldName, 'Formula fieldName'),
+          targetFormulaType,
+          differencePaths: collectDifferencePaths(sourcePresentation, targetPresentation).slice(0, 24),
+          source: sourcePresentation,
+          target: targetPresentation,
+        }));
+      }
+    }
+
     const sourceComparable = canonicalField(sourceField, {
       side: 'source',
       targetTableIdBySourceId,
@@ -235,16 +266,18 @@ function canonicalField(field, context) {
 }
 
 function canonicalFieldProperty(type, property, context) {
-  const rawProperty = Number(type) === FORMULA_FIELD_TYPE
-    && context?.targetFormulaType !== 2
-    && property
-    && typeof property === 'object'
-    && !Array.isArray(property)
-    ? structuredClone(property)
-    : property;
-  if (rawProperty !== property) delete rawProperty.type;
-  const normalized = normalizeLarkFieldProperty(type, rawProperty);
+  const normalized = normalizeLarkFieldProperty(type, property);
   const result = normalized ? structuredClone(normalized) : {};
+
+  if (Number(type) === FORMULA_FIELD_TYPE) {
+    const expression = normalizeOptionalText(result.formula_expression);
+    if (!expression) return null;
+    const mappedExpression = context?.side === 'source'
+      ? remapFormulaExpression(expression, context.targetTableIdBySourceId, context.fieldIdMaps)
+      : expression;
+    return sortObject({ formula_expression: mappedExpression });
+  }
+
   if (Number(type) === 5) {
     result.date_formatter = normalizeOptionalText(result.date_formatter) ?? 'yyyy/MM/dd';
     result.auto_fill = result.auto_fill === true;
@@ -261,9 +294,14 @@ function canonicalFieldProperty(type, property, context) {
     const mapped = context.targetTableIdBySourceId.get(result.table_id);
     result.table_id = mapped ?? `__unmapped_table__:${result.table_id}`;
   }
-  if (context?.side === 'source' && Number(type) === FORMULA_FIELD_TYPE && typeof result.formula_expression === 'string') {
-    result.formula_expression = remapFormulaExpression(result.formula_expression, context.targetTableIdBySourceId, context.fieldIdMaps);
-  }
+  delete result.table_name;
+  return Object.keys(result).length > 0 ? sortObject(result) : null;
+}
+
+function canonicalFormulaPresentation(property) {
+  const normalized = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, property);
+  const result = normalized ? structuredClone(normalized) : {};
+  delete result.formula_expression;
   delete result.table_name;
   return Object.keys(result).length > 0 ? sortObject(result) : null;
 }
