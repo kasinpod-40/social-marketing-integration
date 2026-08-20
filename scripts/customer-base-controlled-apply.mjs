@@ -190,11 +190,16 @@ async function main() {
     roles: resources.roles,
     sourceTables: await fullSourceClient.listTables(),
   });
+  const recordReconciliationMode = currentSourceSha256 === checkpoint.sourceAuthoritySha256
+    ? 'exact-retry'
+    : 'source-refresh';
 
   // The checkpoint SHA remains the immutable pre-write Target baseline fence.
   // The current export SHA is separately admitted above as refresh-compatible Source authority.
   // Use the checkpoint's retained Table-name order after set-equivalence so the original
   // controlled-Apply contract remains stable even if a newer export reorders tables.
+  // Record reconciliation becomes source-refresh only after this local structural admission
+  // proves that the current export is a compatible replacement for the baseline Source.
   const result = await applyCustomerBaseControlledParity({
     confirmation,
     sourceClient: cloneSourceClient,
@@ -203,6 +208,7 @@ async function main() {
     checkpoint,
     expectedTableNames: checkpoint.expectedTableNames,
     sourceAuthoritySha256: checkpoint.sourceAuthoritySha256,
+    recordReconciliationMode,
     onProgress: verboseProgress,
   });
 
@@ -210,6 +216,7 @@ async function main() {
     ...result,
     sourceAuthoritySha256: currentSourceSha256,
     checkpointSourceAuthoritySha256: checkpoint.sourceAuthoritySha256,
+    recordReconciliationMode,
     sourceAuthority: {
       authorityMode: sourceAuthority.authorityMode,
       fileName: basename(sourceExportFile),
