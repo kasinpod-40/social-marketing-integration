@@ -360,12 +360,16 @@ export function withLarkBaseParityCapabilities(client) {
         { method: 'GET' },
       );
       const actual = normalizeBaseV3FilterResponse(response?.data);
-      if (stableJson(actual) !== stableJson(filter)) {
+      const expectedComparable = canonicalBaseV3ViewFilter(filter);
+      const actualComparable = canonicalBaseV3ViewFilter(actual);
+      if (stableJson(actualComparable) !== stableJson(expectedComparable)) {
         throw readbackMismatch('LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH', 'Base v3 View filter differs after readback', {
           tableId,
           viewId,
           expected: filter,
           actual,
+          expectedComparable,
+          actualComparable,
         });
       }
     }
@@ -485,21 +489,39 @@ function resolveTargetSelectOptionName(field, remoteValue) {
 
 function toBaseV3ViewFilter(value) {
   const source = requireObject(value, 'filterInfo');
-  const conditions = requireArray(source.conditions, 'filterInfo.conditions').map((condition, index) => {
+  const logic = source.conjunction === 'or' ? 'or' : 'and';
+  const conditions = requireArray(source.conditions, 'filterInfo.conditions').flatMap((condition, index) => {
     const item = requireObject(condition, `filterInfo.conditions[${index}]`);
     const fieldId = requireText(item?.fieldId ?? item?.field_id, `filterInfo.conditions[${index}].fieldId`);
     const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `filterInfo.conditions[${index}].fieldType`);
     const legacyOperator = requireText(item?.operator, `filterInfo.conditions[${index}].operator`);
     const operator = baseV3ViewFilterOperator(legacyOperator, fieldType);
-    const tuple = [fieldId, operator];
-    if (operator !== 'empty' && operator !== 'non_empty') {
-      tuple.push(baseV3ViewFilterValue(item?.value, fieldType, legacyOperator));
+    const hasValue = operator !== 'empty' && operator !== 'non_empty';
+    const normalizedValue = hasValue
+      ? baseV3ViewFilterValue(item?.value, fieldType, legacyOperator)
+      : undefined;
+
+    // Lark retains only one value when a SingleSelect `is` is written as one
+    // multi-value condition. Preserve source any-of semantics by expanding it to
+    // one OR condition per option ID, matching the already-proven Native AI path.
+    if (fieldType === 3 && legacyOperator === 'is' && Array.isArray(normalizedValue) && normalizedValue.length > 1) {
+      if (logic !== 'or') {
+        throw new TypeError('SingleSelect multi-value View filter requires OR conjunction');
+      }
+      return normalizedValue.map((optionId) => Object.freeze([
+        fieldId,
+        operator,
+        Object.freeze([optionId]),
+      ]));
     }
-    return tuple;
+
+    const tuple = [fieldId, operator];
+    if (hasValue) tuple.push(normalizedValue);
+    return [Object.freeze(tuple)];
   });
   return Object.freeze({
-    logic: source.conjunction === 'or' ? 'or' : 'and',
-    conditions: Object.freeze(conditions.map((condition) => Object.freeze(condition))),
+    logic,
+    conditions: Object.freeze(conditions),
   });
 }
 
@@ -598,6 +620,47 @@ function normalizeBaseV3FilterResponse(data) {
     return structuredClone(condition);
   });
   return { logic, conditions };
+}
+
+/**
+ * Canonicalize only presentation differences that Lark is proven to rewrite without
+ * changing filter meaning: one-condition conjunction, condition order, and set order.
+ * Cardinality is preserved, so a collapsed multi-value filter never compares equal.
+ */
+function canonicalBaseV3ViewFilter(value) {
+  const source = requireObject(value, 'Base v3 View filter');
+  const conditions = requireArray(source.conditions ?? [], 'Base v3 View filter conditions')
+    .map((condition, index) => canonicalBaseV3FilterCondition(condition, index))
+    .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+  return Object.freeze({
+    logic: conditions.length <= 1 ? 'and' : (source.logic === 'or' ? 'or' : 'and'),
+    conditions: Object.freeze(conditions),
+  });
+}
+
+function canonicalBaseV3FilterCondition(condition, index) {
+  if (!Array.isArray(condition) || condition.length < 2 || condition.length > 3) {
+    throw new TypeError(`Base v3 View filter condition ${index} must be a tuple`);
+  }
+  const result = [structuredClone(condition[0]), structuredClone(condition[1])];
+  if (condition.length === 3) result.push(canonicalFilterSetValue(condition[2]));
+  return Object.freeze(result);
+}
+
+function canonicalFilterSetValue(value) {
+  if (!Array.isArray(value)) return sortCanonicalObject(value);
+  return value
+    .map((item) => sortCanonicalObject(item))
+    .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+}
+
+function sortCanonicalObject(value) {
+  if (Array.isArray(value)) return value.map(sortCanonicalObject);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortCanonicalObject(value[key])]));
+  }
+  if (typeof value === 'number' && Object.is(value, -0)) return 0;
+  return value;
 }
 
 function readbackMismatch(code, message, details) {
