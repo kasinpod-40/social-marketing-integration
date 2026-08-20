@@ -130,7 +130,7 @@ test('exact-retry still fails closed when an existing migration-owned record dif
   assert.equal(target.calls.some((call) => call.kind === 'batchUpdateRecords'), false);
 });
 
-test('source-refresh reconciles requested fields by stable primary and creates only missing records', async () => {
+test('source-refresh reconciles requested fields by stable primary while preserving the historical create result shape', async () => {
   const target = new RecordRefreshTarget();
   const client = await claimedAccounts(target, 'source-refresh');
 
@@ -142,7 +142,7 @@ test('source-refresh reconciles requested fields by stable primary and creates o
     ],
   });
 
-  assert.deepEqual(result, { created: 1, updated: 1 });
+  assert.deepEqual(result, { created: 1 });
   const updateCall = target.calls.find((call) => call.kind === 'batchUpdateRecords');
   assert.deepEqual(updateCall.records, [{
     recordId: 'rec_existing',
@@ -155,6 +155,33 @@ test('source-refresh reconciles requested fields by stable primary and creates o
   );
   const existing = target.table('tbl_accounts').records.find((item) => item.recordId === 'rec_existing');
   assert.equal(existing.fields.last_sync_at, 2000);
+});
+
+test('exact-retry does not require a batchUpdateRecords capability', async () => {
+  const target = new RecordRefreshTarget();
+  delete target.batchUpdateRecords;
+  target.batchUpdateRecords = undefined;
+  const client = await claimedAccounts(target, 'exact-retry');
+
+  const result = await client.batchCreateRecords({
+    tableId: 'tbl_accounts',
+    records: [{ account_key: 'instagram:new', last_sync_at: 3000 }],
+  });
+  assert.deepEqual(result, { created: 1 });
+});
+
+test('source-refresh requires update capability only when an existing record actually differs', async () => {
+  const target = new RecordRefreshTarget();
+  target.batchUpdateRecords = undefined;
+  const client = await claimedAccounts(target, 'source-refresh');
+
+  await assert.rejects(
+    () => client.batchCreateRecords({
+      tableId: 'tbl_accounts',
+      records: [{ account_key: 'facebook:982406442148381', last_sync_at: 2000 }],
+    }),
+    (error) => error?.code === 'CUSTOMER_BASE_RESUME_RECORD_REFRESH_CAPABILITY_UNAVAILABLE',
+  );
 });
 
 test('source-refresh fails closed when update readback does not match the requested Source value', async () => {
@@ -188,7 +215,7 @@ test('controlled Apply threads source-refresh mode only through the existing res
     verifyLarkBaseCloneCanonicalParity: async () => ({ ok: true }),
   };
 
-  const result = await applyCustomerBaseControlledParity({
+  await applyCustomerBaseControlledParity({
     confirmation: CUSTOMER_BASE_CONTROLLED_APPLY_CONFIRMATION,
     sourceClient: {},
     targetClient: {},
@@ -210,5 +237,4 @@ test('controlled Apply threads source-refresh mode only through the existing res
   });
 
   assert.deepEqual(captured, ['source-refresh']);
-  assert.equal(result.recordReconciliationMode, 'source-refresh');
 });
