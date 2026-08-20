@@ -204,6 +204,88 @@ export function withLarkBaseParityCapabilities(client) {
     return readBackFormulaLegacy(tableId, body.name);
   };
 
+  wrapped.updateView = async (input) => {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    const viewName = optionalText(input?.viewName);
+    const hasHiddenFields = input?.hiddenFields !== undefined;
+    const hasFilterInfo = input?.filterInfo !== undefined && input?.filterInfo !== null;
+    if (!viewName && !hasHiddenFields && !hasFilterInfo) {
+      throw new TypeError('Base v3 View update requires at least one supported mutation');
+    }
+
+    if (viewName) {
+      await client.requestBitableJson(baseV3ViewPath(client.appToken, tableId, viewId), {
+        method: 'PATCH',
+        body: { name: viewName },
+      });
+    }
+
+    let visibleFields = null;
+    if (hasHiddenFields) {
+      if (typeof client.listFields !== 'function') {
+        throw new TypeError('client must implement listFields() for Base v3 visible_fields parity');
+      }
+      const fields = requireArray(await client.listFields({ tableId }), 'View target fields');
+      const fieldIds = fields.map((field, index) => requireText(field?.fieldId, `View target fields[${index}].fieldId`));
+      const fieldIdSet = new Set(fieldIds);
+      const hiddenFields = uniqueTexts(requireArray(input.hiddenFields, 'hiddenFields'), 'hiddenFields');
+      const unknownHidden = hiddenFields.filter((fieldId) => !fieldIdSet.has(fieldId));
+      if (unknownHidden.length > 0) {
+        throw new TypeError(`Base v3 View hidden fields are not present in Target table: ${unknownHidden.join(', ')}`);
+      }
+      visibleFields = fieldIds.filter((fieldId) => !hiddenFields.includes(fieldId));
+      const body = { visible_fields: visibleFields };
+      await client.requestBitableJson(baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'visible_fields'), {
+        method: 'PUT',
+        body,
+      });
+      const response = await client.requestBitableJson(
+        baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'visible_fields'),
+        { method: 'GET' },
+      );
+      const actual = normalizeVisibleFieldsResponse(response?.data);
+      if (stableJson(actual) !== stableJson(visibleFields)) {
+        throw readbackMismatch('LARK_BASE_V3_VIEW_VISIBLE_FIELDS_READBACK_MISMATCH', 'Base v3 View visible_fields differs after readback', {
+          tableId,
+          viewId,
+          expected: visibleFields,
+          actual,
+        });
+      }
+    }
+
+    let filter = null;
+    if (hasFilterInfo) {
+      filter = toBaseV3ViewFilter(input.filterInfo);
+      await client.requestBitableJson(baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'filter'), {
+        method: 'PUT',
+        body: filter,
+      });
+      const response = await client.requestBitableJson(
+        baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'filter'),
+        { method: 'GET' },
+      );
+      const actual = normalizeBaseV3FilterResponse(response?.data);
+      if (stableJson(actual) !== stableJson(filter)) {
+        throw readbackMismatch('LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH', 'Base v3 View filter differs after readback', {
+          tableId,
+          viewId,
+          expected: filter,
+          actual,
+        });
+      }
+    }
+
+    return Object.freeze({
+      tableId,
+      viewId,
+      viewName,
+      visibleFields: visibleFields ? Object.freeze([...visibleFields]) : null,
+      filter: filter ? structuredClone(filter) : null,
+    });
+  };
+
   wrapped.getViewHierarchy = async (input) => {
     const tableId = requireText(input?.tableId, 'tableId');
     const viewId = requireText(input?.viewId, 'viewId');
@@ -284,6 +366,142 @@ export function withLarkBaseParityCapabilities(client) {
   };
 
   return wrapped;
+}
+
+function toBaseV3ViewFilter(value) {
+  const source = requireObject(value, 'filterInfo');
+  const conditions = requireArray(source.conditions, 'filterInfo.conditions').map((condition, index) => {
+    const item = requireObject(condition, `filterInfo.conditions[${index}]`);
+    const fieldId = requireText(item?.fieldId ?? item?.field_id, `filterInfo.conditions[${index}].fieldId`);
+    const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `filterInfo.conditions[${index}].fieldType`);
+    const legacyOperator = requireText(item?.operator, `filterInfo.conditions[${index}].operator`);
+    const operator = baseV3ViewFilterOperator(legacyOperator, fieldType);
+    const tuple = [fieldId, operator];
+    if (operator !== 'empty' && operator !== 'non_empty') {
+      tuple.push(baseV3ViewFilterValue(item?.value, fieldType, legacyOperator));
+    }
+    return tuple;
+  });
+  return Object.freeze({
+    logic: source.conjunction === 'or' ? 'or' : 'and',
+    conditions: Object.freeze(conditions.map((condition) => Object.freeze(condition))),
+  });
+}
+
+function baseV3ViewFilterOperator(operator, fieldType) {
+  switch (operator) {
+    case 'isEmpty': return 'empty';
+    case 'isNotEmpty': return 'non_empty';
+    case 'isGreater': return '>';
+    case 'isGreaterEqual': return '>=';
+    case 'isLess': return '<';
+    case 'isLessEqual': return '<=';
+    case 'contains': return 'intersects';
+    case 'doesNotContain': return 'disjoint';
+    case 'is': return new Set([3, 4, 18]).has(fieldType) ? 'intersects' : '==';
+    case 'isNot': return new Set([3, 4, 18]).has(fieldType) ? 'disjoint' : '!=';
+    default: throw new TypeError(`Unsupported legacy View filter operator for Base v3: ${operator}`);
+  }
+}
+
+function baseV3ViewFilterValue(value, fieldType, legacyOperator) {
+  const decoded = decodeLegacyViewFilterValue(value);
+  if (new Set([3, 4]).has(fieldType)) {
+    return normalizeStringArray(decoded, `View select filter ${legacyOperator}`);
+  }
+  if (fieldType === 18) {
+    return normalizeArray(decoded).map((item) => {
+      if (typeof item === 'string') return { id: requireText(item, 'View relation filter record id') };
+      const object = requireObject(item, 'View relation filter item');
+      return { id: requireText(object?.id ?? object?.record_id ?? object?.recordId, 'View relation filter record id') };
+    });
+  }
+  if (fieldType === 2) {
+    const scalar = unwrapSingleFilterValue(decoded, 'View number filter');
+    const number = Number(scalar);
+    if (!Number.isFinite(number)) throw new TypeError(`View number filter must be numeric: ${String(scalar)}`);
+    return number;
+  }
+  if (fieldType === 7) {
+    const scalar = unwrapSingleFilterValue(decoded, 'View checkbox filter');
+    if (typeof scalar === 'boolean') return scalar;
+    if (scalar === 'true' || scalar === 1 || scalar === '1') return true;
+    if (scalar === 'false' || scalar === 0 || scalar === '0') return false;
+    throw new TypeError(`View checkbox filter must be boolean: ${String(scalar)}`);
+  }
+  if (fieldType === 20) {
+    return structuredClone(decoded);
+  }
+  const scalar = unwrapSingleFilterValue(decoded, 'View scalar filter');
+  if (typeof scalar === 'string' || typeof scalar === 'number' || typeof scalar === 'boolean') return scalar;
+  throw new TypeError(`Unsupported View scalar filter value: ${JSON.stringify(scalar)}`);
+}
+
+function decodeLegacyViewFilterValue(value) {
+  if (value === null || value === undefined) throw new TypeError('View filter requires value');
+  if (typeof value !== 'string') return structuredClone(value);
+  const text = value.trim();
+  if (!text) throw new TypeError('View filter value cannot be empty');
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function unwrapSingleFilterValue(value, label) {
+  if (!Array.isArray(value)) return value;
+  if (value.length !== 1) throw new TypeError(`${label} requires exactly one value`);
+  return value[0];
+}
+
+function normalizeArray(value) {
+  return Array.isArray(value) ? value : [value];
+}
+
+function normalizeStringArray(value, label) {
+  return normalizeArray(value).map((item, index) => requireText(item, `${label}[${index}]`));
+}
+
+function normalizeVisibleFieldsResponse(data) {
+  if (Array.isArray(data)) return data.map((item, index) => requireText(item, `visible_fields[${index}]`));
+  const source = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  const value = source.visible_fields ?? source.visibleFields;
+  return requireArray(value, 'visible_fields readback').map((item, index) => requireText(item, `visible_fields[${index}]`));
+}
+
+function normalizeBaseV3FilterResponse(data) {
+  const source = data && typeof data === 'object' && !Array.isArray(data)
+    ? (data.filter && typeof data.filter === 'object' ? data.filter : data)
+    : null;
+  if (!source) throw new TypeError('Base v3 View filter readback must be an object');
+  const logic = source.logic === 'or' ? 'or' : 'and';
+  const conditions = requireArray(source.conditions ?? [], 'View filter readback conditions').map((condition, index) => {
+    if (!Array.isArray(condition) || condition.length < 2 || condition.length > 3) {
+      throw new TypeError(`View filter readback condition ${index} must be a tuple`);
+    }
+    return structuredClone(condition);
+  });
+  return { logic, conditions };
+}
+
+function readbackMismatch(code, message, details) {
+  const error = new Error(message);
+  error.code = code;
+  error.details = details;
+  return error;
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function uniqueTexts(values, name) {
+  return [...new Set(values.map((value, index) => requireText(value, `${name}[${index}]`)))];
 }
 
 function normalizeBaseV3FormulaDefinition(field) {
@@ -372,6 +590,16 @@ function baseV3FieldPath(appToken, tableId, fieldId) {
   return `${baseV3FieldCollectionPath(appToken, tableId)}/${encodeURIComponent(requireText(fieldId, 'fieldId'))}`;
 }
 
+function baseV3ViewPath(appToken, tableId, viewId) {
+  return `/open-apis/base/v3/bases/${encodeURIComponent(requireText(appToken, 'appToken'))}`
+    + `/tables/${encodeURIComponent(requireText(tableId, 'tableId'))}`
+    + `/views/${encodeURIComponent(requireText(viewId, 'viewId'))}`;
+}
+
+function baseV3ViewPropertyPath(appToken, tableId, viewId, property) {
+  return `${baseV3ViewPath(appToken, tableId, viewId)}/${encodeURIComponent(requireText(property, 'view property'))}`;
+}
+
 function viewPath(appToken, tableId, viewId) {
   return `/open-apis/bitable/v1/apps/${encodeURIComponent(requireText(appToken, 'appToken'))}`
     + `/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`;
@@ -421,6 +649,12 @@ function requireText(value, name) {
 function requireArray(value, name) {
   if (!Array.isArray(value)) throw new TypeError(`${name} must be an array`);
   return value;
+}
+
+function requirePositiveInteger(value, name) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number <= 0) throw new TypeError(`${name} must be a positive integer`);
+  return number;
 }
 
 function requireFiniteNumber(value, name) {
