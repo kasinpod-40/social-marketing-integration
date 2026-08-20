@@ -34,7 +34,11 @@ function sourceClient() {
   };
 }
 
-function targetClient({ rejectFormula = false } = {}) {
+function targetClient({
+  rejectFormula = false,
+  amount = 5,
+  formulaValue = 10,
+} = {}) {
   const calls = [];
   const fields = [
     {
@@ -54,7 +58,7 @@ function targetClient({ rejectFormula = false } = {}) {
     async listTables() { return [{ tableId: 'target_table', name: 'Metrics' }]; },
     async listFields() { return structuredClone(fields); },
     async listRecords() {
-      return [{ recordId: 'target_record', fields: { key: 'r1', amount: 5, double_amount: 10 } }];
+      return [{ recordId: 'target_record', fields: { key: 'r1', amount, double_amount: formulaValue } }];
     },
     async listViews() {
       return [{ viewId: 'target_view', viewName: 'All', viewType: 'grid', publicLevel: 'Public', property: { hiddenFields: [], filterInfo: null } }];
@@ -93,6 +97,35 @@ test('standalone canonical verifier uses Base v3 GET when legacy Formula express
   assert.equal(result.summary.mismatches, 0);
   assert.equal(result.remoteMutationCount, 0);
   assert.equal(target.calls.length, 1);
+});
+
+test('canonical verifier excludes derived Formula cell output after definition hard gate succeeds', async () => {
+  const target = targetClient({ formulaValue: '10.00%' });
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient: sourceClient(),
+    targetClient: target,
+    expectedTableNames: ['Metrics'],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.mismatches, 0);
+  assert.match(result.coverage.records, /Formula cell outputs are derived/u);
+  assert.equal(target.calls.length, 1);
+});
+
+test('canonical verifier still fails closed when a non-Formula input record value differs', async () => {
+  const target = targetClient({ amount: 6, formulaValue: 12 });
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient: sourceClient(),
+    targetClient: target,
+    expectedTableNames: ['Metrics'],
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.mismatches.some((item) => (
+    item.code === 'CANONICAL_VERIFY_RECORD_VALUE_MISMATCH'
+      && item.message.includes('Metrics.amount')
+  )));
 });
 
 test('standalone canonical verifier fails when Base v3 Formula GET definition differs', async () => {
