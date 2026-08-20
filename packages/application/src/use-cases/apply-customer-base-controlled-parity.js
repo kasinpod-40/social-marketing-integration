@@ -13,6 +13,8 @@ export const CUSTOMER_BASE_CONTROLLED_APPLY_CONFIRMATION = 'CUSTOMER_BASE_CONTRO
 export const CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_VERSION = 'customer_base_controlled_apply_checkpoint_v1';
 
 const FORMULA_FIELD_TYPE = 20;
+const RECORD_RECONCILIATION_EXACT_RETRY = 'exact-retry';
+const RECORD_RECONCILIATION_SOURCE_REFRESH = 'source-refresh';
 
 const DEFAULT_OPERATIONS = Object.freeze({
   applyLarkBaseConsolidation,
@@ -106,6 +108,7 @@ export async function applyCustomerBaseControlledParity(input) {
   const checkpoint = validateCheckpoint(input?.checkpoint);
   const expectedTableNames = normalizeNames(input?.expectedTableNames, 'expectedTableNames');
   const sourceAuthoritySha256 = requireSha256(input?.sourceAuthoritySha256, 'sourceAuthoritySha256');
+  const recordReconciliationMode = normalizeRecordReconciliationMode(input?.recordReconciliationMode);
   const operations = resolveOperations(input?.operations);
 
   if (checkpoint.sourceAuthoritySha256 !== sourceAuthoritySha256) {
@@ -125,6 +128,7 @@ export async function applyCustomerBaseControlledParity(input) {
     targetClient,
     expectedTableNames,
     protectedTables: checkpoint.protectedTables,
+    recordReconciliationMode,
   });
   const consolidationTarget = withFormulaV3ParityRecovery(resumable.client);
 
@@ -180,6 +184,7 @@ export async function applyCustomerBaseControlledParity(input) {
     contractVersion: 'customer_base_controlled_apply_v1',
     mode: 'controlled-resumable-apply',
     sourceAuthoritySha256,
+    recordReconciliationMode,
     checkpointContractVersion: checkpoint.contractVersion,
     phases: {
       consolidation,
@@ -438,6 +443,14 @@ function normalizeNames(value, name) {
   const names = requireArray(value, name).map((item) => requireText(item, name));
   if (names.length === 0 || new Set(names).size !== names.length) throw new TypeError(`${name} must be a non-empty unique array`);
   return Object.freeze(names);
+}
+
+function normalizeRecordReconciliationMode(value) {
+  const mode = optionalText(value) ?? RECORD_RECONCILIATION_EXACT_RETRY;
+  if (mode !== RECORD_RECONCILIATION_EXACT_RETRY && mode !== RECORD_RECONCILIATION_SOURCE_REFRESH) {
+    throw new TypeError(`recordReconciliationMode must be ${RECORD_RECONCILIATION_EXACT_RETRY} or ${RECORD_RECONCILIATION_SOURCE_REFRESH}`);
+  }
+  return mode;
 }
 
 function requireObjectLike(value, name) {
