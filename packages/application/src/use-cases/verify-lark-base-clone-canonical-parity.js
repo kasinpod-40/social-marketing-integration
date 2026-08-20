@@ -147,7 +147,7 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
     coverage: {
       fields: 'full-readable-config-with-relation-remap-formula-definition-hard-gate-and-formula-presentation-manual-evidence',
       records: 'all-readable-field-values-with-relation-record-id-remap',
-      views: 'name-type-public-hidden-filter-with-field-id-remap',
+      views: 'name-type-public-hidden-filter-with-field-id-remap-and-semantic-filter-canonicalization',
       unrelatedTargetTablesIgnored: true,
     },
     manualParity: {
@@ -420,15 +420,7 @@ function canonicalBasicView(view, fieldIdMap) {
   const property = view?.property && typeof view.property === 'object' ? view.property : {};
   const hiddenFields = (Array.isArray(property.hiddenFields) ? property.hiddenFields : []).map(mapFieldId).sort();
   const filterInfo = property.filterInfo
-    ? {
-        conjunction: property.filterInfo.conjunction === 'or' ? 'or' : 'and',
-        conditions: (Array.isArray(property.filterInfo.conditions) ? property.filterInfo.conditions : []).map((condition) => ({
-          fieldId: mapFieldId(condition.fieldId),
-          fieldType: Number(condition.fieldType),
-          operator: condition.operator,
-          value: condition.value === undefined ? null : normalizeGenericValue(condition.value),
-        })),
-      }
+    ? canonicalViewFilterInfo(property.filterInfo, mapFieldId)
     : null;
   return sortObject({
     viewType: normalizeOptionalText(view?.viewType),
@@ -436,6 +428,62 @@ function canonicalBasicView(view, fieldIdMap) {
     hiddenFields,
     filterInfo,
   });
+}
+
+/**
+ * Compare View filters by meaning instead of unstable Lark presentation details.
+ * - 0/1 logical conditions do not depend on the conjunction label.
+ * - values inside one condition are sets for the supported View filter contract.
+ * - SingleSelect any-of may be represented as one multi-value condition in Source
+ *   and as one OR condition per value in Target; group those representations.
+ * - multiple unrelated conditions retain strict AND/OR semantics.
+ */
+function canonicalViewFilterInfo(filterInfo, mapFieldId) {
+  const source = filterInfo && typeof filterInfo === 'object' && !Array.isArray(filterInfo)
+    ? filterInfo
+    : {};
+  const conjunction = source.conjunction === 'or' ? 'or' : 'and';
+  const rawConditions = (Array.isArray(source.conditions) ? source.conditions : []).map((condition) => ({
+    fieldId: mapFieldId(condition?.fieldId),
+    fieldType: Number(condition?.fieldType),
+    operator: normalizeOptionalText(condition?.operator),
+    value: canonicalViewFilterValue(condition?.value),
+  }));
+
+  const groupedSingleSelect = new Map();
+  const conditions = [];
+  for (const condition of rawConditions) {
+    if (conjunction === 'or' && condition.fieldType === 3 && condition.operator === 'is') {
+      const key = `${condition.fieldId}\u0000${condition.fieldType}\u0000${condition.operator}`;
+      const existing = groupedSingleSelect.get(key) ?? { ...condition, value: [] };
+      const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+      existing.value.push(...values.filter((value) => value !== null && value !== undefined));
+      groupedSingleSelect.set(key, existing);
+      continue;
+    }
+    conditions.push(condition);
+  }
+
+  for (const condition of groupedSingleSelect.values()) {
+    condition.value = canonicalViewFilterValue(condition.value);
+    conditions.push(condition);
+  }
+
+  conditions.sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+  return sortObject({
+    conjunction: conditions.length <= 1 ? 'and' : conjunction,
+    conditions,
+  });
+}
+
+function canonicalViewFilterValue(value) {
+  if (value === undefined || value === null) return null;
+  const normalized = normalizeGenericValue(value);
+  if (!Array.isArray(normalized)) return sortObject(normalized);
+  const uniqueByCanonical = new Map();
+  for (const item of normalized) uniqueByCanonical.set(stableJson(sortObject(item)), sortObject(item));
+  return [...uniqueByCanonical.values()]
+    .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
 }
 
 function mergeListedAndDetailedView(listedView, detailedView) {
