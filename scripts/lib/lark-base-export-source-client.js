@@ -282,6 +282,7 @@ function normalizeCellValue(rawCell, field) {
     case 1:
       return normalizeTextSegments(value);
     case 2:
+      return normalizeNumberValue(value, field);
     case 5:
     case 7:
       return value ?? null;
@@ -298,6 +299,20 @@ function normalizeCellValue(rawCell, field) {
     default:
       throw codedError('LARK_BASE_EXPORT_CELL_TYPE_UNSUPPORTED', `Unsupported exported cell type ${field.type}`);
   }
+}
+
+function normalizeNumberValue(value, field) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const number = Number(value.trim());
+    if (Number.isFinite(number)) return number;
+  }
+  throw codedError(
+    'LARK_BASE_EXPORT_NUMBER_CELL_INVALID',
+    `Export Number cell must be a finite numeric value: ${field.fieldName}`,
+    { fieldId: field.fieldId, fieldName: field.fieldName },
+  );
 }
 
 function normalizeTextSegments(value) {
