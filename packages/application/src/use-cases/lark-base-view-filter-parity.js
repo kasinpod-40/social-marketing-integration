@@ -20,52 +20,44 @@ export function projectLarkBaseSourceForAutomaticViewFilterParity(sourceClient) 
 
   const tableNameById = new Map();
   const requirementsByKey = new Map();
+  const client = bindClientSurface(sourceClient);
 
-  const client = new Proxy(sourceClient, {
-    get(target, property, receiver) {
-      if (property === 'listTables' && typeof target.listTables === 'function') {
-        return async (...args) => {
-          const tables = await target.listTables(...args);
-          for (const table of tables ?? []) {
-            if (text(table?.tableId) && text(table?.name)) tableNameById.set(text(table.tableId), text(table.name));
-          }
-          return tables;
-        };
-      }
-      if (property === 'getView') {
-        return async (request) => {
-          const view = structuredClone(await target.getView(request));
-          const classification = classifyLarkBaseViewFilterParity(view?.property?.filterInfo);
-          if (classification.ownership !== OWNERSHIP) return view;
+  client.listTables = async (...args) => {
+    const tables = await sourceClient.listTables(...args);
+    for (const table of tables ?? []) {
+      if (text(table?.tableId) && text(table?.name)) tableNameById.set(text(table.tableId), text(table.name));
+    }
+    return tables;
+  };
 
-          const tableId = text(request?.tableId);
-          const viewId = text(request?.viewId ?? view?.viewId);
-          const viewName = text(view?.viewName) ?? '(unnamed View)';
-          const requirement = Object.freeze({
-            ownership: OWNERSHIP,
-            tableName: tableNameById.get(tableId) ?? null,
-            viewName,
-            conditionCount: classification.conditionCount,
-            dynamicDateTokenCount: classification.dynamicDateTokenCount,
-            dynamicDateTokens: Object.freeze([...classification.dynamicDateTokens]),
-          });
-          requirementsByKey.set(`${tableId ?? ''}\u0000${viewId ?? viewName}`, requirement);
+  client.getView = async (request) => {
+    const view = structuredClone(await sourceClient.getView(request));
+    const classification = classifyLarkBaseViewFilterParity(view?.property?.filterInfo);
+    if (classification.ownership !== OWNERSHIP) return view;
 
-          const propertyValue = view?.property && typeof view.property === 'object' && !Array.isArray(view.property)
-            ? structuredClone(view.property)
-            : {};
-          propertyValue.filterInfo = null;
-          view.property = propertyValue;
-          return view;
-        };
-      }
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
+    const tableId = text(request?.tableId);
+    const viewId = text(request?.viewId ?? view?.viewId);
+    const viewName = text(view?.viewName) ?? '(unnamed View)';
+    const requirement = Object.freeze({
+      ownership: OWNERSHIP,
+      tableName: tableNameById.get(tableId) ?? null,
+      viewName,
+      conditionCount: classification.conditionCount,
+      dynamicDateTokenCount: classification.dynamicDateTokenCount,
+      dynamicDateTokens: Object.freeze([...classification.dynamicDateTokens]),
+    });
+    requirementsByKey.set(`${tableId ?? ''}\u0000${viewId ?? viewName}`, requirement);
+
+    const propertyValue = view?.property && typeof view.property === 'object' && !Array.isArray(view.property)
+      ? structuredClone(view.property)
+      : {};
+    propertyValue.filterInfo = null;
+    view.property = propertyValue;
+    return view;
+  };
 
   return Object.freeze({
-    client,
+    client: Object.freeze(client),
     getRequirements: () => Object.freeze([...requirementsByKey.values()]),
   });
 }
@@ -89,6 +81,17 @@ export function classifyLarkBaseViewFilterParity(filterInfo) {
 }
 
 export const LARK_BASE_MANUAL_DYNAMIC_DATE_VIEW_FILTER_OWNERSHIP = OWNERSHIP;
+
+function bindClientSurface(sourceClient) {
+  const client = {};
+  for (const key of Reflect.ownKeys(sourceClient)) {
+    const descriptor = Object.getOwnPropertyDescriptor(sourceClient, key);
+    if (!descriptor || !('value' in descriptor)) continue;
+    const value = descriptor.value;
+    client[key] = typeof value === 'function' ? value.bind(sourceClient) : value;
+  }
+  return client;
+}
 
 function decodeValues(value) {
   if (value === null || value === undefined) return [];
