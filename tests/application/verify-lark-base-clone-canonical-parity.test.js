@@ -8,6 +8,10 @@ const text = (fieldId, fieldName, primary = false) => ({
 const number = (fieldId, fieldName, formatter = '0') => ({
   fieldId, fieldName, type: 2, uiType: 'Number', description: '', isPrimary: false, property: { formatter },
 });
+const select = (fieldId, fieldName, options) => ({
+  fieldId, fieldName, type: 3, uiType: 'SingleSelect', description: '', isPrimary: false,
+  property: { options: options.map((name, index) => ({ id: `${fieldId}_opt_${index}`, name, color: index })) },
+});
 const relation = (fieldId, fieldName, tableId) => ({
   fieldId, fieldName, type: 18, uiType: 'SingleLink', description: '', isPrimary: false,
   property: { table_id: tableId, table_name: 'derived-name', multiple: true },
@@ -187,6 +191,101 @@ test('canonical verifier accepts deterministic table field record relation formu
   assert.equal(sourceClient.calls.some((call) => call.startsWith('create')), false);
   assert.equal(targetClient.calls.some((call) => call.startsWith('create')), false);
   assert.equal(targetClient.calls.filter((call) => call === 'getBaseFormulaType').length, 1);
+});
+
+test('canonical verifier accepts semantic SingleSelect any-of across source multi-value and target expanded OR conditions', async () => {
+  const sourceClient = sourceFixture();
+  const targetClient = targetFixture();
+  const sourceAccounts = sourceClient.tables.find((table) => table.name === 'Accounts');
+  const targetAccounts = targetClient.tables.find((table) => table.name === 'Accounts');
+  sourceAccounts.fields.push(select('src_connection', 'connection_status', ['connected', 'warning']));
+  targetAccounts.fields.push(select('target_connection', 'connection_status', ['connected', 'warning']));
+  sourceAccounts.records[0].fields.connection_status = 'connected';
+  targetAccounts.records[0].fields.connection_status = 'connected';
+  sourceAccounts.views[0].property.filterInfo = {
+    conjunction: 'or',
+    conditions: [{
+      fieldId: 'src_connection', fieldType: 3, operator: 'is', value: ['connected', 'warning'],
+    }],
+  };
+  targetAccounts.views[0].property.filterInfo = {
+    conjunction: 'or',
+    conditions: [
+      { fieldId: 'target_connection', fieldType: 3, operator: 'is', value: ['warning'] },
+      { fieldId: 'target_connection', fieldType: 3, operator: 'is', value: ['connected'] },
+    ],
+  };
+
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts', 'Campaigns'],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.mismatches, 0);
+});
+
+test('canonical verifier rejects collapsed SingleSelect any-of when one required value is missing', async () => {
+  const sourceClient = sourceFixture();
+  const targetClient = targetFixture();
+  const sourceAccounts = sourceClient.tables.find((table) => table.name === 'Accounts');
+  const targetAccounts = targetClient.tables.find((table) => table.name === 'Accounts');
+  sourceAccounts.fields.push(select('src_connection', 'connection_status', ['connected', 'warning']));
+  targetAccounts.fields.push(select('target_connection', 'connection_status', ['connected', 'warning']));
+  sourceAccounts.records[0].fields.connection_status = 'connected';
+  targetAccounts.records[0].fields.connection_status = 'connected';
+  sourceAccounts.views[0].property.filterInfo = {
+    conjunction: 'or',
+    conditions: [{
+      fieldId: 'src_connection', fieldType: 3, operator: 'is', value: ['connected', 'warning'],
+    }],
+  };
+  targetAccounts.views[0].property.filterInfo = {
+    conjunction: 'and',
+    conditions: [
+      { fieldId: 'target_connection', fieldType: 3, operator: 'is', value: ['connected'] },
+    ],
+  };
+
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts', 'Campaigns'],
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.mismatches.some((item) => item.code === 'CANONICAL_VERIFY_VIEW_CONFIG_MISMATCH'));
+});
+
+test('canonical verifier keeps conjunction strict for multiple unrelated View conditions', async () => {
+  const sourceClient = sourceFixture();
+  const targetClient = targetFixture();
+  const sourceAccounts = sourceClient.tables.find((table) => table.name === 'Accounts');
+  const targetAccounts = targetClient.tables.find((table) => table.name === 'Accounts');
+  sourceAccounts.views[0].property.filterInfo = {
+    conjunction: 'or',
+    conditions: [
+      { fieldId: 'src_account_key', fieldType: 1, operator: 'isNotEmpty', value: null },
+      { fieldId: 'src_name', fieldType: 1, operator: 'contains', value: ['One'] },
+    ],
+  };
+  targetAccounts.views[0].property.filterInfo = {
+    conjunction: 'and',
+    conditions: [
+      { fieldId: 'target_name', fieldType: 1, operator: 'contains', value: ['One'] },
+      { fieldId: 'target_account_key', fieldType: 1, operator: 'isNotEmpty', value: null },
+    ],
+  };
+
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts', 'Campaigns'],
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.mismatches.some((item) => item.code === 'CANONICAL_VERIFY_VIEW_CONFIG_MISMATCH'));
 });
 
 test('canonical verifier keeps Formula presentation drift manual when Target formula_type is not 2', async () => {
