@@ -20,6 +20,7 @@ const DEFAULT_MAX_FILTER_CONDITIONS = 50;
 const TOKEN_SAFETY_WINDOW_MS = 60_000;
 const MAX_REMOTE_ERROR_MESSAGE_LENGTH = 500;
 const INVALID_TENANT_ACCESS_TOKEN_CODE = 99991663;
+const LARK_RATE_LIMIT_CODES = new Set([1254290, 800004135]);
 const VALUELESS_VIEW_FILTER_OPERATORS = new Set(['isEmpty', 'isNotEmpty']);
 
 
@@ -959,7 +960,7 @@ function isInvalidTenantAccessTokenError(error) {
 function shouldRetryWithinRequest(error, retryMode) {
   if (retryMode === 'all_transient') return true;
   if (retryMode === 'rate_limit_only') {
-    return error?.details?.status === 429 || error?.details?.larkCode === 1254290;
+    return isLarkRateLimitError(error?.details?.status, error?.details?.larkCode);
   }
   if (retryMode === 'none') return false;
   throw new TypeError(`Unsupported Lark retryMode: ${retryMode}`);
@@ -1269,10 +1270,14 @@ function withSafeViewMutationDetails(error, body) {
   return error;
 }
 
+function isLarkRateLimitError(status, larkCode) {
+  return Number(status) === 429 || LARK_RATE_LIMIT_CODES.has(Number(larkCode));
+}
+
 function createLarkResponseError(input) {
   const status = input.response.status;
   const larkCode = input.payload?.code;
-  const retryable = status === 429 || status >= 500 || larkCode === 1254290;
+  const retryable = status >= 500 || isLarkRateLimitError(status, larkCode);
   const remoteMessage = safeRemoteMessage(input.payload?.msg ?? input.text ?? 'Unknown error');
   const message = !input.response.ok
     ? `Lark HTTP ${status}: ${remoteMessage}`
@@ -1387,8 +1392,8 @@ function isAmbiguousWriteError(error) {
   if (!error || typeof error !== 'object') return false;
   const status = Number(error.details?.status);
   const larkCode = Number(error.details?.larkCode);
-  // 429 และ Lark 1254290 เป็น Explicit rate-limit rejection จึงยืนยันได้ว่า Chunk ยังไม่ถูกเขียน
-  if (status === 429 || larkCode === 1254290) return false;
+  // Explicit rate-limit rejection ยืนยันได้ว่า Chunk ยังไม่ถูกเขียน
+  if (isLarkRateLimitError(status, larkCode)) return false;
   if (Number.isInteger(status) && status >= 400 && status < 500) return false;
   return error.retryable === true;
 }
