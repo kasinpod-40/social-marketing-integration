@@ -271,6 +271,7 @@ export async function prepareLarkBaseResumableTarget(input) {
           const requestedRecords = requireArray(request?.records, 'batchCreateRecords.records');
           if (requestedRecords.length === 0) return { created: 0 };
           const fields = await target.listFields({ tableId });
+          const fieldByName = indexFieldsByName(fields, tableId);
           const primaries = fields.filter((field) => field?.isPrimary === true);
           if (primaries.length !== 1) {
             throw codedError('CUSTOMER_BASE_RESUME_PRIMARY_COUNT_INVALID', 'Migration-owned table must have exactly one primary field', { tableId, primaryCount: primaries.length });
@@ -296,7 +297,15 @@ export async function prepareLarkBaseResumableTarget(input) {
 
             const differingFields = {};
             for (const [fieldName, value] of Object.entries(payload)) {
-              if (canonicalValue(existing?.fields?.[fieldName]) === canonicalValue(value)) continue;
+              const field = fieldByName.get(fieldName);
+              if (!field) {
+                throw codedError(
+                  'CUSTOMER_BASE_RESUME_RECORD_FIELD_MISSING',
+                  `Requested record field is missing from migration-owned Target schema: ${fieldName}`,
+                  { tableId, fieldName },
+                );
+              }
+              if (recordFieldValuesEqual(existing?.fields?.[fieldName], value, field)) continue;
               if (!allowRecordRefresh) {
                 throw codedError(
                   'CUSTOMER_BASE_RESUME_RECORD_CONFLICT',
@@ -370,7 +379,8 @@ export async function prepareLarkBaseResumableTarget(input) {
                 );
               }
               for (const [fieldName, value] of Object.entries(update.fields)) {
-                if (canonicalValue(readback?.fields?.[fieldName]) !== canonicalValue(value)) {
+                const field = fieldByName.get(fieldName);
+                if (!field || !recordFieldValuesEqual(readback?.fields?.[fieldName], value, field)) {
                   throw codedError(
                     'CUSTOMER_BASE_RESUME_RECORD_REFRESH_READBACK_MISMATCH',
                     `Migration-owned record differs after Source refresh: ${primaryName}=${update.primaryValue}`,
@@ -871,6 +881,40 @@ function collectDifferencePaths(left, right, path = '$', result = []) {
   }
   result.push(path);
   return result;
+}
+
+function indexFieldsByName(fields, tableId) {
+  const result = new Map();
+  for (const field of requireArray(fields, `target fields ${tableId}`)) {
+    const fieldName = requireText(field?.fieldName, `target fieldName ${tableId}`);
+    if (result.has(fieldName)) {
+      throw codedError(
+        'CUSTOMER_BASE_RESUME_TARGET_FIELD_DUPLICATE',
+        `Target migration-owned table contains duplicate field name: ${fieldName}`,
+        { tableId, fieldName },
+      );
+    }
+    result.set(fieldName, field);
+  }
+  return result;
+}
+
+function recordFieldValuesEqual(left, right, field) {
+  const type = Number(field?.type);
+  if (type === 2) {
+    return canonicalNumberRecordValue(left) === canonicalNumberRecordValue(right);
+  }
+  return canonicalValue(left) === canonicalValue(right);
+}
+
+function canonicalNumberRecordValue(value) {
+  if (value === null || value === undefined || value === '') return 'number:null';
+  if (typeof value === 'number' && Number.isFinite(value)) return `number:${JSON.stringify(value)}`;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const number = Number(value.trim());
+    if (Number.isFinite(number)) return `number:${JSON.stringify(number)}`;
+  }
+  return `json:${canonicalValue(value)}`;
 }
 
 function indexRecords(records, primaryName, label) {
