@@ -173,7 +173,7 @@ async function main() {
       },
     );
   }
-  if (JSON.stringify(checkpoint?.expectedTableNames ?? []) !== JSON.stringify(expectedTableNames)) {
+  if (!sameUniqueNameSet(checkpoint?.expectedTableNames ?? [], expectedTableNames)) {
     throw codedError(
       'CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_REFRESH_SCOPE_MISMATCH',
       'Latest Source export changed the clone-scope Table names; Target mutation is blocked until the structural change is reviewed',
@@ -193,13 +193,15 @@ async function main() {
 
   // The checkpoint SHA remains the immutable pre-write Target baseline fence.
   // The current export SHA is separately admitted above as refresh-compatible Source authority.
+  // Use the checkpoint's retained Table-name order after set-equivalence so the original
+  // controlled-Apply contract remains stable even if a newer export reorders tables.
   const result = await applyCustomerBaseControlledParity({
     confirmation,
     sourceClient: cloneSourceClient,
     targetClient,
     permissionSemantics,
     checkpoint,
-    expectedTableNames,
+    expectedTableNames: checkpoint.expectedTableNames,
     sourceAuthoritySha256: checkpoint.sourceAuthoritySha256,
     onProgress: verboseProgress,
   });
@@ -379,6 +381,18 @@ function refreshAuthorityMismatches(inspection) {
   // exact clone-scope Table-name comparison against checkpoint.expectedTableNames
   // before any Target client mutation can start.
   return mismatches;
+}
+
+function sameUniqueNameSet(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length === 0 || left.length !== right.length) return false;
+  const leftNames = left.map((value) => optionalText(value));
+  const rightNames = right.map((value) => optionalText(value));
+  if (leftNames.some((value) => value === null) || rightNames.some((value) => value === null)) return false;
+  const leftSet = new Set(leftNames);
+  const rightSet = new Set(rightNames);
+  if (leftSet.size !== leftNames.length || rightSet.size !== rightNames.length) return false;
+  for (const name of leftSet) if (!rightSet.has(name)) return false;
+  return true;
 }
 
 function fingerprint(value) {
