@@ -35,8 +35,9 @@ const FORMULA_TYPE2_UI_PROPERTY_KEYS = Object.freeze([
  * then createTable() claims the existing table in place. Field/record creates become
  * exact-idempotent so a failure after a partial write can be retried without creating
  * duplicate schema or records. A separately admitted Source refresh may reconcile
- * requested fields on existing migration-owned records by stable primary key. Baseline/
- * unrelated customer tables stay immutable in every mode.
+ * requested fields on existing migration-owned records by stable primary key and
+ * remove migration-owned stale keys that are no longer present in the admitted Source.
+ * Baseline/unrelated customer tables stay immutable in every mode.
  */
 export async function prepareLarkBaseResumableTarget(input) {
   const targetClient = requireClient(input?.targetClient);
@@ -269,7 +270,6 @@ export async function prepareLarkBaseResumableTarget(input) {
         return async (request) => {
           const tableId = requireWritableTable(request?.tableId, 'batchCreateRecords', dynamicProtectedIds, writableIds);
           const requestedRecords = requireArray(request?.records, 'batchCreateRecords.records');
-          if (requestedRecords.length === 0) return { created: 0 };
           const fields = await target.listFields({ tableId });
           const fieldByName = indexFieldsByName(fields, tableId);
           const primaries = fields.filter((field) => field?.isPrimary === true);
@@ -331,6 +331,26 @@ export async function prepareLarkBaseResumableTarget(input) {
             }
           }
 
+          const staleRecords = [...existingByPrimary.entries()]
+            .filter(([primaryValue]) => !seenRequested.has(primaryValue))
+            .map(([primaryValue, record]) => ({
+              primaryValue,
+              recordId: requireText(record?.recordId, `stale recordId ${primaryName}=${primaryValue}`),
+            }));
+
+          if (staleRecords.length > 0 && !allowRecordRefresh) {
+            throw codedError(
+              'CUSTOMER_BASE_RESUME_RECORD_STALE_CONFLICT',
+              `Exact retry found migration-owned records absent from requested Source: ${tableNameById.get(tableId) ?? tableId}`,
+              {
+                tableId,
+                tableName: tableNameById.get(tableId) ?? null,
+                primaryName,
+                staleRecordCount: staleRecords.length,
+              },
+            );
+          }
+
           if (refreshUpdates.length > 0) {
             if (typeof target.batchUpdateRecords !== 'function') {
               throw codedError(
@@ -388,6 +408,58 @@ export async function prepareLarkBaseResumableTarget(input) {
                   );
                 }
               }
+            }
+          }
+
+          if (staleRecords.length > 0) {
+            if (typeof target.batchDeleteRecords !== 'function') {
+              throw codedError(
+                'CUSTOMER_BASE_RESUME_RECORD_STALE_DELETE_CAPABILITY_UNAVAILABLE',
+                'Target client must implement batchDeleteRecords() to remove stale migration-owned records during admitted Source refresh',
+                {
+                  tableId,
+                  tableName: tableNameById.get(tableId) ?? null,
+                  staleRecordCount: staleRecords.length,
+                },
+              );
+            }
+            try {
+              await target.batchDeleteRecords({
+                tableId,
+                recordIds: staleRecords.map(({ recordId }) => recordId),
+              });
+            } catch (error) {
+              throw remoteWriteError(
+                'CUSTOMER_BASE_RESUME_RECORD_STALE_DELETE_REMOTE_REJECTED',
+                `Lark rejected stale migration-owned record deletion: ${tableNameById.get(tableId) ?? tableId}`,
+                error,
+                {
+                  operation: 'batchDeleteRecords',
+                  tableId,
+                  tableName: tableNameById.get(tableId) ?? null,
+                  recordCount: staleRecords.length,
+                },
+              );
+            }
+
+            const deleteReadbackByPrimary = indexRecords(
+              await target.listRecords({ tableId }),
+              primaryName,
+              `target stale-delete readback ${tableId}`,
+            );
+            const remainingStale = staleRecords.filter(({ primaryValue }) => deleteReadbackByPrimary.has(primaryValue));
+            if (remainingStale.length > 0) {
+              throw codedError(
+                'CUSTOMER_BASE_RESUME_RECORD_STALE_DELETE_READBACK_MISMATCH',
+                `Stale migration-owned records remain after Source refresh deletion: ${tableNameById.get(tableId) ?? tableId}`,
+                {
+                  tableId,
+                  tableName: tableNameById.get(tableId) ?? null,
+                  primaryName,
+                  expectedDeleted: staleRecords.length,
+                  remainingStale: remainingStale.length,
+                },
+              );
             }
           }
 
