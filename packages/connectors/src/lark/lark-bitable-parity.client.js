@@ -362,18 +362,37 @@ export function withLarkBaseParityCapabilities(client) {
         { method: 'GET' },
       );
       const actual = normalizeVisibleFieldsResponse(response?.data);
-      // Visibility parity owns membership only. Column order is a separate manual-owned
-      // View dimension, so Base v3 may return the same visible field IDs in View order.
-      // Sort copies for comparison without deduplicating, preserving cardinality fail-closed.
+      // `visible_fields` is a transport representation and may omit/rewrite entries that
+      // the persisted legacy View still exposes as visible. It is useful as a fast exact
+      // readback, but hidden-field parity is the semantic contract the migration owns.
       const expectedComparable = [...visibleFields].sort();
       const actualComparable = [...actual].sort();
       if (stableJson(actualComparable) !== stableJson(expectedComparable)) {
-        throw readbackMismatch('LARK_BASE_V3_VIEW_VISIBLE_FIELDS_READBACK_MISMATCH', 'Base v3 View visible_fields differs after readback', {
-          tableId,
-          viewId,
-          expected: visibleFields,
-          actual,
-        });
+        if (typeof client.getView !== 'function') {
+          throw new TypeError('client must implement getView() for View hidden-field semantic readback');
+        }
+        const semanticView = await client.getView({ tableId, viewId });
+        const semanticHiddenFields = uniqueTexts(
+          requireArray(semanticView?.property?.hiddenFields ?? [], 'View hidden-field semantic readback'),
+          'View hidden-field semantic readback',
+        );
+        const expectedHiddenComparable = [...hiddenFields].sort();
+        const actualHiddenComparable = [...semanticHiddenFields].sort();
+        if (stableJson(actualHiddenComparable) !== stableJson(expectedHiddenComparable)) {
+          throw readbackMismatch(
+            'LARK_VIEW_HIDDEN_FIELDS_SEMANTIC_READBACK_MISMATCH',
+            'Persisted View hidden-field semantics differ after Base v3 visible_fields write',
+            {
+              tableId,
+              viewId,
+              verification: 'base-v3-visible-fields-mismatch-then-view-hidden-fields-semantic-readback',
+              expectedVisibleFieldCount: visibleFields.length,
+              baseV3ActualVisibleFieldCount: actual.length,
+              expectedHiddenFieldCount: hiddenFields.length,
+              actualHiddenFieldCount: semanticHiddenFields.length,
+            },
+          );
+        }
       }
     }
 
