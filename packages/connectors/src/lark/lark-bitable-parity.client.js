@@ -12,6 +12,7 @@ export function withLarkBaseParityCapabilities(client) {
   let formulaTypePromise = null;
   let formulaTableNameByIdPromise = null;
   const formulaFieldNameByTableId = new Map();
+  const viewFieldByIdPromise = new Map();
 
   wrapped.getBaseFormulaType = async () => {
     if (!formulaTypePromise) {
@@ -73,6 +74,80 @@ export function withLarkBaseParityCapabilities(client) {
       );
     }
     return formulaFieldNameByTableId.get(tableId);
+  };
+
+  const getViewFieldById = async (tableId) => {
+    if (!viewFieldByIdPromise.has(tableId)) {
+      if (typeof client.listFields !== 'function') {
+        throw new TypeError('client must implement listFields() for Base v3 View filter translation');
+      }
+      viewFieldByIdPromise.set(
+        tableId,
+        Promise.resolve(client.listFields({ tableId }))
+          .then((fields) => new Map(requireArray(fields, `View fields ${tableId}`).map((field, index) => [
+            requireText(field?.fieldId, `View fields ${tableId}[${index}].fieldId`),
+            field,
+          ])))
+          .catch((error) => {
+            viewFieldByIdPromise.delete(tableId);
+            throw error;
+          }),
+      );
+    }
+    return viewFieldByIdPromise.get(tableId);
+  };
+
+  const resolveTargetViewFilterInfo = async (tableId, value) => {
+    const source = requireObject(value, 'filterInfo');
+    const fields = await getViewFieldById(tableId);
+    return Object.freeze({
+      conjunction: source.conjunction === 'or' ? 'or' : 'and',
+      conditions: Object.freeze(requireArray(source.conditions, 'filterInfo.conditions').map((condition, index) => {
+        const item = requireObject(condition, `filterInfo.conditions[${index}]`);
+        const fieldId = requireText(item?.fieldId ?? item?.field_id, `filterInfo.conditions[${index}].fieldId`);
+        const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `filterInfo.conditions[${index}].fieldType`);
+        const operator = requireText(item?.operator, `filterInfo.conditions[${index}].operator`);
+        if (![3, 4].includes(fieldType) || item?.value === null || item?.value === undefined) {
+          return Object.freeze({ fieldId, fieldType, operator, value: structuredClone(item?.value) });
+        }
+        const field = fields.get(fieldId);
+        if (!field) throw new TypeError(`Base v3 View filter field is not present in Target table: ${fieldId}`);
+        const values = normalizeStringArray(decodeLegacyViewFilterValue(item.value), `View select filter ${fieldId}`);
+        return Object.freeze({
+          fieldId,
+          fieldType,
+          operator,
+          value: Object.freeze(values.map((logicalValue) => resolveTargetSelectOptionId(field, logicalValue))),
+        });
+      })),
+    });
+  };
+
+  const normalizeTargetViewFilterInfo = async (tableId, value) => {
+    if (value === null || value === undefined) return null;
+    const source = requireObject(value, 'view.filterInfo');
+    const fields = await getViewFieldById(tableId);
+    return Object.freeze({
+      conjunction: source.conjunction === 'or' ? 'or' : 'and',
+      conditions: Object.freeze(requireArray(source.conditions ?? [], 'view.filterInfo.conditions').map((condition, index) => {
+        const item = requireObject(condition, `view.filterInfo.conditions[${index}]`);
+        const fieldId = requireText(item?.fieldId ?? item?.field_id, `view.filterInfo.conditions[${index}].fieldId`);
+        const fieldType = requirePositiveInteger(item?.fieldType ?? item?.field_type, `view.filterInfo.conditions[${index}].fieldType`);
+        const operator = requireText(item?.operator, `view.filterInfo.conditions[${index}].operator`);
+        if (item?.value === null || item?.value === undefined) {
+          return Object.freeze({ fieldId, fieldType, operator, value: null });
+        }
+        const decoded = decodeLegacyViewFilterValue(item.value);
+        if (![3, 4].includes(fieldType)) {
+          return Object.freeze({ fieldId, fieldType, operator, value: structuredClone(decoded) });
+        }
+        const field = fields.get(fieldId);
+        if (!field) throw new TypeError(`View filter readback field is not present in Target table: ${fieldId}`);
+        const optionValues = normalizeStringArray(decoded, `View select readback ${fieldId}`)
+          .map((remoteValue) => resolveTargetSelectOptionName(field, remoteValue));
+        return Object.freeze({ fieldId, fieldType, operator, value: Object.freeze(optionValues) });
+      })),
+    });
   };
 
   const toBaseV3FormulaBody = async (input) => {
@@ -204,6 +279,23 @@ export function withLarkBaseParityCapabilities(client) {
     return readBackFormulaLegacy(tableId, body.name);
   };
 
+  wrapped.getView = async (input) => {
+    if (typeof client.getView !== 'function') throw new TypeError('client must implement getView() for View parity readback');
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    const view = structuredClone(await client.getView({ tableId, viewId }));
+    const property = view?.property && typeof view.property === 'object' && !Array.isArray(view.property)
+      ? view.property
+      : {};
+    return Object.freeze({
+      ...view,
+      property: Object.freeze({
+        ...property,
+        filterInfo: await normalizeTargetViewFilterInfo(tableId, property.filterInfo),
+      }),
+    });
+  };
+
   wrapped.updateView = async (input) => {
     const tableId = requireText(input?.tableId, 'tableId');
     const viewId = requireText(input?.viewId, 'viewId');
@@ -257,7 +349,8 @@ export function withLarkBaseParityCapabilities(client) {
 
     let filter = null;
     if (hasFilterInfo) {
-      filter = toBaseV3ViewFilter(input.filterInfo);
+      const resolvedFilterInfo = await resolveTargetViewFilterInfo(tableId, input.filterInfo);
+      filter = toBaseV3ViewFilter(resolvedFilterInfo);
       await client.requestBitableJson(baseV3ViewPropertyPath(client.appToken, tableId, viewId, 'filter'), {
         method: 'PUT',
         body: filter,
@@ -366,6 +459,28 @@ export function withLarkBaseParityCapabilities(client) {
   };
 
   return wrapped;
+}
+
+function resolveTargetSelectOptionId(field, logicalValue) {
+  const value = requireText(String(logicalValue), 'View Select option value');
+  const options = requireArray(field?.property?.options, `View Select options ${field?.fieldName ?? field?.fieldId ?? ''}`);
+  const idMatches = options.filter((option) => optionalText(option?.id) === value);
+  if (idMatches.length === 1) return value;
+  const nameMatches = options.filter((option) => optionalText(option?.name) === value);
+  if (nameMatches.length !== 1) {
+    throw new TypeError(`View Select option name must resolve to exactly one Target option ID: ${value}`);
+  }
+  return requireText(nameMatches[0]?.id, `Target View Select option id ${value}`);
+}
+
+function resolveTargetSelectOptionName(field, remoteValue) {
+  const value = requireText(String(remoteValue), 'View Select readback value');
+  const options = requireArray(field?.property?.options, `View Select options ${field?.fieldName ?? field?.fieldId ?? ''}`);
+  const idMatches = options.filter((option) => optionalText(option?.id) === value);
+  if (idMatches.length === 1) return requireText(idMatches[0]?.name, `View Select option name ${value}`);
+  const nameMatches = options.filter((option) => optionalText(option?.name) === value);
+  if (nameMatches.length === 1) return value;
+  throw new TypeError(`View Select readback value must resolve to exactly one Target option: ${value}`);
 }
 
 function toBaseV3ViewFilter(value) {
