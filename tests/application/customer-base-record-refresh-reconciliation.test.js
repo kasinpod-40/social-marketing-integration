@@ -17,8 +17,9 @@ const primary = () => ({
 });
 
 class RecordRefreshTarget {
-  constructor({ persistUpdates = true } = {}) {
+  constructor({ persistUpdates = true, persistDeletes = true } = {}) {
     this.persistUpdates = persistUpdates;
+    this.persistDeletes = persistDeletes;
     this.calls = [];
     this.tables = [
       {
@@ -97,6 +98,15 @@ class RecordRefreshTarget {
     }
     return { updated: records.length };
   }
+
+  async batchDeleteRecords({ tableId, recordIds }) {
+    this.calls.push({ kind: 'batchDeleteRecords', tableId, recordIds: structuredClone(recordIds) });
+    if (this.persistDeletes) {
+      const deleted = new Set(recordIds);
+      this.table(tableId).records = this.table(tableId).records.filter((record) => !deleted.has(record.recordId));
+    }
+    return { deleted: recordIds.length };
+  }
 }
 
 async function claimedAccounts(target, recordReconciliationMode) {
@@ -155,6 +165,90 @@ test('source-refresh reconciles requested fields by stable primary while preserv
   );
   const existing = target.table('tbl_accounts').records.find((item) => item.recordId === 'rec_existing');
   assert.equal(existing.fields.last_sync_at, 2000);
+});
+
+test('source-refresh deletes only stale migration-owned primary keys absent from the admitted Source and verifies readback', async () => {
+  const target = new RecordRefreshTarget();
+  target.table('tbl_accounts').records.push({
+    recordId: 'rec_stale',
+    fields: { account_key: 'instagram:stale', last_sync_at: 900 },
+  });
+  const client = await claimedAccounts(target, 'source-refresh');
+
+  const result = await client.batchCreateRecords({
+    tableId: 'tbl_accounts',
+    records: [{ account_key: 'facebook:982406442148381', last_sync_at: 1000 }],
+  });
+
+  assert.deepEqual(result, { created: 0 });
+  const deleteCall = target.calls.find((call) => call.kind === 'batchDeleteRecords');
+  assert.deepEqual(deleteCall, {
+    kind: 'batchDeleteRecords',
+    tableId: 'tbl_accounts',
+    recordIds: ['rec_stale'],
+  });
+  assert.deepEqual(
+    target.table('tbl_accounts').records.map((record) => record.fields.account_key),
+    ['facebook:982406442148381'],
+  );
+});
+
+test('exact-retry never deletes a migration-owned record that is absent from the requested Source', async () => {
+  const target = new RecordRefreshTarget();
+  target.table('tbl_accounts').records.push({
+    recordId: 'rec_stale',
+    fields: { account_key: 'instagram:stale', last_sync_at: 900 },
+  });
+  const client = await claimedAccounts(target, 'exact-retry');
+
+  await assert.rejects(
+    () => client.batchCreateRecords({
+      tableId: 'tbl_accounts',
+      records: [{ account_key: 'facebook:982406442148381', last_sync_at: 1000 }],
+    }),
+    (error) => error?.code === 'CUSTOMER_BASE_RESUME_RECORD_STALE_CONFLICT'
+      && error?.details?.staleRecordCount === 1,
+  );
+  assert.equal(target.calls.some((call) => call.kind === 'batchDeleteRecords'), false);
+  assert.equal(target.table('tbl_accounts').records.some((record) => record.recordId === 'rec_stale'), true);
+});
+
+test('source-refresh requires delete capability only when stale migration-owned records exist', async () => {
+  const target = new RecordRefreshTarget();
+  target.table('tbl_accounts').records.push({
+    recordId: 'rec_stale',
+    fields: { account_key: 'instagram:stale', last_sync_at: 900 },
+  });
+  target.batchDeleteRecords = undefined;
+  const client = await claimedAccounts(target, 'source-refresh');
+
+  await assert.rejects(
+    () => client.batchCreateRecords({
+      tableId: 'tbl_accounts',
+      records: [{ account_key: 'facebook:982406442148381', last_sync_at: 1000 }],
+    }),
+    (error) => error?.code === 'CUSTOMER_BASE_RESUME_RECORD_STALE_DELETE_CAPABILITY_UNAVAILABLE'
+      && error?.details?.staleRecordCount === 1,
+  );
+});
+
+test('source-refresh fails closed when stale deletion readback still contains the removed primary key', async () => {
+  const target = new RecordRefreshTarget({ persistDeletes: false });
+  target.table('tbl_accounts').records.push({
+    recordId: 'rec_stale',
+    fields: { account_key: 'instagram:stale', last_sync_at: 900 },
+  });
+  const client = await claimedAccounts(target, 'source-refresh');
+
+  await assert.rejects(
+    () => client.batchCreateRecords({
+      tableId: 'tbl_accounts',
+      records: [{ account_key: 'facebook:982406442148381', last_sync_at: 1000 }],
+    }),
+    (error) => error?.code === 'CUSTOMER_BASE_RESUME_RECORD_STALE_DELETE_READBACK_MISMATCH'
+      && error?.details?.expectedDeleted === 1
+      && error?.details?.remainingStale === 1,
+  );
 });
 
 test('exact-retry does not require a batchUpdateRecords capability', async () => {
