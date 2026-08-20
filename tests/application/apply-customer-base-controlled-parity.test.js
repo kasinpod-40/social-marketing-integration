@@ -132,6 +132,7 @@ test('controlled Apply executes the locked automatic sequence and stops at manua
   assert.equal(result.automaticApplyComplete, true);
   assert.equal(result.finalFullParityComplete, false);
   assert.deepEqual(result.manualParityRequired, [
+    'formula-result-presentation-ui',
     'view-field-order-sort-group-width-row-height-frozen-columns',
     'dashboard-ui-source-reference',
     'workflow-ui-source-reference',
@@ -139,7 +140,7 @@ test('controlled Apply executes the locked automatic sequence and stops at manua
   ]);
 });
 
-test('controlled Apply adopts existing Base v3 Formula and reconciles legacy presentation without duplicate create', async () => {
+test('controlled Apply adopts existing Base v3 Formula and never mutates read-only legacy presentation', async () => {
   const serverExpression = 'bitable::$table[tbl_accounts].$field[fld_budget_micros]/1000000';
   const requestedFormula = {
     fieldName: 'budget',
@@ -192,16 +193,9 @@ test('controlled Apply adopts existing Base v3 Formula and reconciles legacy pre
       calls.push({ kind: 'update-v3' });
       throw new Error('definition is already correct');
     },
-    async updateField({ fieldId, field }) {
-      calls.push({
-        kind: 'update-presentation',
-        fieldId,
-        formulaExpression: field.property.formula_expression,
-        type: structuredClone(field.property.type),
-      });
-      assert.equal(field.property.formula_expression, serverExpression);
-      budget.property = structuredClone(field.property);
-      return structuredClone(budget);
+    async updateField() {
+      calls.push({ kind: 'update-presentation' });
+      throw new Error('legacy Formula presentation must never be mutated automatically');
     },
   };
   const permissionPlan = { ok: true, readyToWrite: true, roles: [] };
@@ -238,11 +232,11 @@ test('controlled Apply adopts existing Base v3 Formula and reconciles legacy pre
   assert.equal(consolidationPass, 1);
   assert.equal(calls.filter((call) => call.kind === 'create-v3').length, 0);
   assert.equal(calls.filter((call) => call.kind === 'update-v3').length, 0);
-  assert.equal(calls.filter((call) => call.kind === 'update-presentation').length, 1);
-  assert.equal(calls.filter((call) => call.kind === 'verify-v3').length, 5);
+  assert.equal(calls.filter((call) => call.kind === 'update-presentation').length, 0);
+  assert.equal(calls.filter((call) => call.kind === 'verify-v3').length, 4);
   assert.deepEqual(budget.property.type, {
-    data_type: 2,
-    ui_type: 'Currency',
-    ui_property: { currency_code: 'THB', formatter: '0.00' },
+    data_type: 1,
+    ui_type: 'Text',
+    ui_property: {},
   });
 });
