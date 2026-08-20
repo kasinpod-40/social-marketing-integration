@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import { withLarkBaseParityCapabilities } from '../../packages/connectors/src/lark/lark-bitable-parity.client.js';
 
 class VisibleFieldsTransport {
-  constructor(readbackTransform = (value) => value) {
+  constructor({
+    readbackTransform = (value) => value,
+    semanticHiddenFields = ['fld_internal'],
+  } = {}) {
     this.appToken = 'app_target';
     this.readbackTransform = readbackTransform;
+    this.semanticHiddenFields = semanticHiddenFields;
     this.visibleFields = [];
   }
 
@@ -17,6 +21,20 @@ class VisibleFieldsTransport {
       { fieldId: 'fld_status', fieldName: 'status', type: 1, property: null },
       { fieldId: 'fld_internal', fieldName: 'internal', type: 1, property: null },
     ];
+  }
+
+  async getView({ tableId, viewId }) {
+    assert.equal(tableId, 'tbl_report');
+    assert.equal(viewId, 'vew_all');
+    return {
+      viewId,
+      viewName: 'All Reports',
+      viewType: 'grid',
+      property: {
+        hiddenFields: [...this.semanticHiddenFields],
+        filterInfo: null,
+      },
+    };
   }
 
   async requestBitableJson(path, options = {}) {
@@ -38,7 +56,9 @@ class VisibleFieldsTransport {
 }
 
 test('visible_fields readback accepts the same membership in a different View order', async () => {
-  const transport = new VisibleFieldsTransport((value) => [...value].reverse());
+  const transport = new VisibleFieldsTransport({
+    readbackTransform: (value) => [...value].reverse(),
+  });
   const client = withLarkBaseParityCapabilities(transport);
 
   const result = await client.updateView({
@@ -50,8 +70,27 @@ test('visible_fields readback accepts the same membership in a different View or
   assert.deepEqual(result.visibleFields, ['fld_primary', 'fld_period', 'fld_status']);
 });
 
-test('visible_fields readback still fails closed when membership differs', async () => {
-  const transport = new VisibleFieldsTransport((value) => value.slice(0, -1));
+test('visible_fields transport mismatch is accepted when persisted hidden-field semantics match', async () => {
+  const transport = new VisibleFieldsTransport({
+    readbackTransform: (value) => value.slice(0, -1),
+    semanticHiddenFields: ['fld_internal'],
+  });
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.updateView({
+    tableId: 'tbl_report',
+    viewId: 'vew_all',
+    hiddenFields: ['fld_internal'],
+  });
+
+  assert.deepEqual(result.visibleFields, ['fld_primary', 'fld_period', 'fld_status']);
+});
+
+test('visible_fields transport mismatch still fails closed when persisted hidden-field semantics differ', async () => {
+  const transport = new VisibleFieldsTransport({
+    readbackTransform: (value) => value.slice(0, -1),
+    semanticHiddenFields: [],
+  });
   const client = withLarkBaseParityCapabilities(transport);
 
   await assert.rejects(
@@ -60,10 +99,10 @@ test('visible_fields readback still fails closed when membership differs', async
       viewId: 'vew_all',
       hiddenFields: ['fld_internal'],
     }),
-    (error) => error?.code === 'LARK_BASE_V3_VIEW_VISIBLE_FIELDS_READBACK_MISMATCH'
-      && Array.isArray(error?.details?.expected)
-      && Array.isArray(error?.details?.actual)
-      && error.details.expected.length === 3
-      && error.details.actual.length === 2,
+    (error) => error?.code === 'LARK_VIEW_HIDDEN_FIELDS_SEMANTIC_READBACK_MISMATCH'
+      && error?.details?.expectedVisibleFieldCount === 3
+      && error?.details?.baseV3ActualVisibleFieldCount === 2
+      && error?.details?.expectedHiddenFieldCount === 1
+      && error?.details?.actualHiddenFieldCount === 0,
   );
 });
