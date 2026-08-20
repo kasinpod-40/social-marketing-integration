@@ -2,6 +2,7 @@ import { normalizeLarkFieldProperty } from '../../../shared/src/lark/lark-field-
 
 const RELATION_FIELD_TYPE = 18;
 const FORMULA_FIELD_TYPE = 20;
+const NUMBER_FIELD_TYPE = 2;
 
 /**
  * GET-only canonical verifier for the clone-scope portion of a customer Base migration.
@@ -367,6 +368,7 @@ function canonicalRecordValue(value, field, context) {
     }
     return ids.sort();
   }
+  if (Number(field?.type) === NUMBER_FIELD_TYPE) return canonicalNumberRecordValue(value);
   if (Number(field?.type) === 1) return canonicalTextValue(value);
   return sortObject(normalizeGenericValue(value));
 }
@@ -376,6 +378,16 @@ function canonicalTextValue(value) {
   if (!Array.isArray(value)) return normalizeGenericValue(value);
   if (value.every((item) => item && typeof item === 'object' && typeof item.text === 'string')) {
     return value.map((item) => item.text).join('');
+  }
+  return normalizeGenericValue(value);
+}
+
+function canonicalNumberRecordValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return Object.is(value, -0) ? 0 : value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const number = Number(value.trim());
+    if (Number.isFinite(number)) return Object.is(number, -0) ? 0 : number;
   }
   return normalizeGenericValue(value);
 }
