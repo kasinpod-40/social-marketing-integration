@@ -181,13 +181,15 @@ test('canonical verifier accepts deterministic table field record relation formu
   assert.equal(result.summary.mappedFields, 6);
   assert.equal(result.summary.mappedRecords, 2);
   assert.equal(result.summary.mismatches, 0);
+  assert.equal(result.summary.manualFormulaPresentationMismatches, 0);
+  assert.equal(result.manualParity.formulaPresentation.required, false);
   assert.equal(result.coverage.unrelatedTargetTablesIgnored, true);
   assert.equal(sourceClient.calls.some((call) => call.startsWith('create')), false);
   assert.equal(targetClient.calls.some((call) => call.startsWith('create')), false);
   assert.equal(targetClient.calls.filter((call) => call === 'getBaseFormulaType').length, 1);
 });
 
-test('canonical verifier ignores Source Formula property.type when Target formula_type is not 2', async () => {
+test('canonical verifier keeps Formula presentation drift manual when Target formula_type is not 2', async () => {
   const sourceClient = sourceFixture();
   const targetClient = targetFixture(1);
   sourceClient.tables.find((table) => table.name === 'Campaigns')
@@ -201,9 +203,12 @@ test('canonical verifier ignores Source Formula property.type when Target formul
 
   assert.equal(result.ok, true);
   assert.equal(result.summary.mismatches, 0);
+  assert.equal(result.manualParity.formulaPresentation.required, true);
+  assert.equal(result.manualParity.formulaPresentation.mismatches.length, 1);
+  assert.equal(result.manualParity.formulaPresentation.mismatches[0].fieldName, 'budget');
 });
 
-test('canonical verifier requires Formula property.type parity when Target formula_type is 2', async () => {
+test('canonical verifier keeps Formula property.type drift manual when Target formula_type is 2', async () => {
   const sourceClient = sourceFixture();
   const targetClient = targetFixture(2);
   sourceClient.tables.find((table) => table.name === 'Campaigns')
@@ -215,11 +220,31 @@ test('canonical verifier requires Formula property.type parity when Target formu
     expectedTableNames: ['Accounts', 'Campaigns'],
   });
 
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.mismatches, 0);
+  assert.equal(result.summary.manualFormulaPresentationMismatches, 1);
+  assert.equal(result.manualParity.formulaPresentation.required, true);
+  assert.equal(result.manualParity.formulaPresentation.targetFormulaType, 2);
+  assert.ok(result.manualParity.formulaPresentation.mismatches[0].differencePaths.length > 0);
+});
+
+test('canonical verifier still fails closed on Formula definition drift', async () => {
+  const sourceClient = sourceFixture();
+  const targetClient = targetFixture(2);
+  targetClient.tables.find((table) => table.name === 'Campaigns')
+    .fields.find((field) => field.fieldName === 'budget').property.formula_expression = 'bitable::$table[target_campaigns].$field[target_budget_micros]/1000';
+
+  const result = await verifyLarkBaseCloneCanonicalParity({
+    sourceClient,
+    targetClient,
+    expectedTableNames: ['Accounts', 'Campaigns'],
+  });
+
   assert.equal(result.ok, false);
   assert.ok(result.mismatches.some((item) => (
     item.code === 'CANONICAL_VERIFY_FIELD_CONFIG_MISMATCH'
       && item.message.includes('Campaigns.budget')
-      && item.details.differencePaths.some((path) => path.includes('property.type'))
+      && item.details.differencePaths.some((path) => path.includes('property.formula_expression'))
   )));
 });
 
