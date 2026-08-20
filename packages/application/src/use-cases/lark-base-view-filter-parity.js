@@ -8,15 +8,22 @@ const OWNERSHIP = 'ui-manual-unsupported-view-dynamic-date-token';
  * automatic Apply can never persist only a subset of the Source predicate.
  */
 export function projectLarkBaseSourceForAutomaticViewFilterParity(sourceClient) {
-  if (!sourceClient || typeof sourceClient.getView !== 'function') {
-    throw new TypeError('sourceClient must implement getView()');
+  if (!sourceClient || typeof sourceClient !== 'object') {
+    throw new TypeError('sourceClient must be an object');
   }
+  if (typeof sourceClient.getView !== 'function') {
+    return Object.freeze({
+      client: sourceClient,
+      getRequirements: () => Object.freeze([]),
+    });
+  }
+
   const tableNameById = new Map();
   const requirementsByKey = new Map();
 
   const client = new Proxy(sourceClient, {
     get(target, property, receiver) {
-      if (property === 'listTables') {
+      if (property === 'listTables' && typeof target.listTables === 'function') {
         return async (...args) => {
           const tables = await target.listTables(...args);
           for (const table of tables ?? []) {
