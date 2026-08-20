@@ -388,12 +388,24 @@ export function withLarkBaseParityCapabilities(client) {
         await normalizeBaseV3ViewFilterForComparison(tableId, response?.data),
       );
       if (stableJson(actualComparable) !== stableJson(expectedComparable)) {
-        throw readbackMismatch('LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH', 'Base v3 View filter differs after readback', {
-          tableId,
-          viewId,
-          expectedComparable,
-          actualComparable,
-        });
+        // Base v3 GET may rewrite the tuple presentation after persisting a filter.
+        // Do not treat that transport representation as a stronger truth than the
+        // View itself: verify the persisted legacy/source-aligned filter semantics
+        // before deciding whether the write actually lost meaning.
+        const semanticView = await wrapped.getView({ tableId, viewId });
+        const expectedSemantic = canonicalSemanticViewFilterInfo(resolvedFilterInfo);
+        const actualSemantic = canonicalSemanticViewFilterInfo(semanticView?.property?.filterInfo);
+        if (stableJson(actualSemantic) !== stableJson(expectedSemantic)) {
+          throw readbackMismatch('LARK_VIEW_FILTER_SEMANTIC_READBACK_MISMATCH', 'Persisted View filter semantics differ after Base v3 write', {
+            tableId,
+            viewId,
+            verification: 'base-v3-presentation-mismatch-then-view-semantic-readback',
+            expectedConditionCount: expectedSemantic.conditions.length,
+            actualConditionCount: actualSemantic.conditions.length,
+            baseV3ExpectedConditionCount: expectedComparable.conditions.length,
+            baseV3ActualConditionCount: actualComparable.conditions.length,
+          });
+        }
       }
     }
 
@@ -658,6 +670,61 @@ function canonicalFilterSetValue(value) {
   if (!Array.isArray(value)) return sortCanonicalObject(value);
   return value
     .map((item) => sortCanonicalObject(item))
+    .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+}
+
+/**
+ * Compare persisted legacy/source-aligned View filters by meaning. This mirrors the
+ * canonical clone verifier so Base v3 tuple presentation can never be a stronger gate
+ * than the View semantics that the migration is required to preserve.
+ */
+function canonicalSemanticViewFilterInfo(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const conjunction = source.conjunction === 'or' ? 'or' : 'and';
+  const rawConditions = requireArray(source.conditions ?? [], 'semantic View filter conditions').map((condition, index) => {
+    const item = requireObject(condition, `semantic View filter condition ${index}`);
+    return {
+      fieldId: requireText(item?.fieldId ?? item?.field_id, `semantic View filter condition ${index} fieldId`),
+      fieldType: requirePositiveInteger(item?.fieldType ?? item?.field_type, `semantic View filter condition ${index} fieldType`),
+      operator: requireText(item?.operator, `semantic View filter condition ${index} operator`),
+      value: canonicalSemanticViewFilterValue(item?.value),
+    };
+  });
+
+  const groupedSingleSelect = new Map();
+  const conditions = [];
+  for (const condition of rawConditions) {
+    if (conjunction === 'or' && condition.fieldType === 3 && condition.operator === 'is') {
+      const key = `${condition.fieldId}\u0000${condition.fieldType}\u0000${condition.operator}`;
+      const existing = groupedSingleSelect.get(key) ?? { ...condition, value: [] };
+      const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+      existing.value.push(...values.filter((item) => item !== null && item !== undefined));
+      groupedSingleSelect.set(key, existing);
+      continue;
+    }
+    conditions.push(condition);
+  }
+  for (const condition of groupedSingleSelect.values()) {
+    condition.value = canonicalSemanticViewFilterValue(condition.value);
+    conditions.push(condition);
+  }
+  conditions.sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+  return Object.freeze({
+    conjunction: conditions.length <= 1 ? 'and' : conjunction,
+    conditions: Object.freeze(conditions.map((condition) => Object.freeze(condition))),
+  });
+}
+
+function canonicalSemanticViewFilterValue(value) {
+  if (value === undefined || value === null) return null;
+  const decoded = decodeLegacyViewFilterValue(value);
+  if (!Array.isArray(decoded)) return sortCanonicalObject(decoded);
+  const uniqueByCanonical = new Map();
+  for (const item of decoded) {
+    const canonical = sortCanonicalObject(item);
+    uniqueByCanonical.set(stableJson(canonical), canonical);
+  }
+  return [...uniqueByCanonical.values()]
     .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
 }
 
