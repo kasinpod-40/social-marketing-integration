@@ -90,6 +90,130 @@ test('parity decorator writes hidden fields and Select filters through documente
   ]);
 });
 
+test('parity decorator accepts Lark one-condition OR to AND readback canonicalization', async () => {
+  class CanonicalizingTransport extends FakeViewV3Transport {
+    async requestBitableJson(path, options = {}) {
+      if (path.endsWith('/filter') && options.method === 'GET') {
+        this.calls.push({ path, options: structuredClone(options) });
+        return { code: 0, data: { ...structuredClone(this.filter), logic: 'and' } };
+      }
+      return super.requestBitableJson(path, options);
+    }
+  }
+  const transport = new CanonicalizingTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.updateView({
+    tableId: 'tbl_accounts',
+    viewId: 'vew_all',
+    filterInfo: {
+      conjunction: 'or',
+      conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active'] }],
+    },
+  });
+
+  assert.equal(result.filter.logic, 'or');
+  assert.equal(result.filter.conditions.length, 1);
+});
+
+test('parity decorator expands SingleSelect multi-value any-of into one OR condition per Target option ID', async () => {
+  class ReorderingTransport extends FakeViewV3Transport {
+    async requestBitableJson(path, options = {}) {
+      if (path.endsWith('/filter') && options.method === 'GET') {
+        this.calls.push({ path, options: structuredClone(options) });
+        return {
+          code: 0,
+          data: {
+            logic: this.filter.logic,
+            conditions: [...this.filter.conditions].reverse(),
+          },
+        };
+      }
+      return super.requestBitableJson(path, options);
+    }
+  }
+  const transport = new ReorderingTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.updateView({
+    tableId: 'tbl_accounts',
+    viewId: 'vew_all',
+    filterInfo: {
+      conjunction: 'or',
+      conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active', 'Paused'] }],
+    },
+  });
+
+  assert.deepEqual(result.filter, {
+    logic: 'or',
+    conditions: [
+      ['fld_status', 'intersects', ['opt_active_target']],
+      ['fld_status', 'intersects', ['opt_paused_target']],
+    ],
+  });
+});
+
+test('parity decorator rejects a collapsed one-value SingleSelect readback for a required multi-value set', async () => {
+  class CollapsingTransport extends FakeViewV3Transport {
+    async requestBitableJson(path, options = {}) {
+      if (path.endsWith('/filter') && options.method === 'GET') {
+        this.calls.push({ path, options: structuredClone(options) });
+        return {
+          code: 0,
+          data: {
+            logic: 'or',
+            conditions: this.filter.conditions.slice(0, 1),
+          },
+        };
+      }
+      return super.requestBitableJson(path, options);
+    }
+  }
+  const transport = new CollapsingTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  await assert.rejects(
+    () => client.updateView({
+      tableId: 'tbl_accounts',
+      viewId: 'vew_all',
+      filterInfo: {
+        conjunction: 'or',
+        conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active', 'Paused'] }],
+      },
+    }),
+    (error) => error.code === 'LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH',
+  );
+});
+
+test('parity decorator keeps conjunction strict when multiple conditions are present', async () => {
+  class WrongLogicTransport extends FakeViewV3Transport {
+    async requestBitableJson(path, options = {}) {
+      if (path.endsWith('/filter') && options.method === 'GET') {
+        this.calls.push({ path, options: structuredClone(options) });
+        return { code: 0, data: { ...structuredClone(this.filter), logic: 'and' } };
+      }
+      return super.requestBitableJson(path, options);
+    }
+  }
+  const transport = new WrongLogicTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  await assert.rejects(
+    () => client.updateView({
+      tableId: 'tbl_accounts',
+      viewId: 'vew_all',
+      filterInfo: {
+        conjunction: 'or',
+        conditions: [
+          { fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active'] },
+          { fieldId: 'fld_primary', fieldType: 1, operator: 'contains', value: ['chemistry'] },
+        ],
+      },
+    }),
+    (error) => error.code === 'LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH',
+  );
+});
+
 test('parity decorator exposes Target Select View filters by semantic option name for canonical verification', async () => {
   const transport = new FakeViewV3Transport();
   const client = withLarkBaseParityCapabilities(transport);
