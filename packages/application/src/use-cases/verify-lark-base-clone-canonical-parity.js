@@ -4,6 +4,7 @@ import {
   projectLarkBaseSourceForAutomaticViewFilterParity,
 } from './lark-base-view-filter-parity.js';
 
+const RELATION_FIELD_TYPE = 18;
 const FORMULA_FIELD_TYPE = 20;
 
 /**
@@ -14,19 +15,26 @@ const FORMULA_FIELD_TYPE = 20;
  * legacy field readback can omit Formula expression even after a correct Base v3
  * write, so the verifier confirms the definition through the existing Base v3 GET
  * capability and projects only that verified expression into comparison memory.
+ *
+ * Empty relation values are also normalized in read-only comparison memory because
+ * the local export and Lark record API can represent the same no-link state as an
+ * omitted/null value or as an empty array. Non-empty relations are left untouched so
+ * the core verifier still performs strict record-ID remap comparison.
  */
 export async function verifyLarkBaseCloneCanonicalParity(input) {
-  const sourceProjection = projectLarkBaseSourceForAutomaticViewFilterParity(input?.sourceClient);
-  const targetProjection = await projectTargetFormulaReadbackForCanonicalParity({
+  const sourceViewProjection = projectLarkBaseSourceForAutomaticViewFilterParity(input?.sourceClient);
+  const sourceProjection = projectEmptyRelationReadbackForCanonicalParity(sourceViewProjection.client);
+  const targetFormulaProjection = await projectTargetFormulaReadbackForCanonicalParity({
     sourceClient: sourceProjection.client,
     targetClient: input?.targetClient,
   });
+  const targetProjection = projectEmptyRelationReadbackForCanonicalParity(targetFormulaProjection.client);
   const result = await verifyCore({
     ...input,
     sourceClient: sourceProjection.client,
     targetClient: targetProjection.client,
   });
-  const requirements = sourceProjection.getRequirements();
+  const requirements = sourceViewProjection.getRequirements();
   if (requirements.length === 0) return result;
   return deepFreeze({
     ...result,
@@ -47,6 +55,62 @@ export async function verifyLarkBaseCloneCanonicalParity(input) {
       },
     },
   });
+}
+
+function projectEmptyRelationReadbackForCanonicalParity(clientValue) {
+  const client = requireReadClient(clientValue, 'relation readback client');
+  const fieldsPromiseByTableId = new Map();
+
+  const readFields = async (tableIdValue) => {
+    const tableId = requireText(tableIdValue, 'relation readback tableId');
+    if (!fieldsPromiseByTableId.has(tableId)) {
+      fieldsPromiseByTableId.set(
+        tableId,
+        Promise.resolve(client.listFields({ tableId })).then((fields) => structuredClone(fields)),
+      );
+    }
+    return structuredClone(await fieldsPromiseByTableId.get(tableId));
+  };
+
+  return Object.freeze({
+    client: Object.freeze({
+      listTables: bindRequired(client, 'listTables'),
+      listFields: async ({ tableId }) => readFields(tableId),
+      listRecords: async ({ tableId }) => {
+        const [fields, records] = await Promise.all([
+          readFields(tableId),
+          client.listRecords({ tableId }),
+        ]);
+        const relationFieldNames = fields
+          .filter((field) => Number(field?.type) === RELATION_FIELD_TYPE)
+          .map((field) => requireText(field?.fieldName, 'relation fieldName'));
+        if (relationFieldNames.length === 0) return structuredClone(records);
+        return structuredClone(records).map((record) => {
+          const copy = structuredClone(record ?? {});
+          copy.fields = copy?.fields && typeof copy.fields === 'object' && !Array.isArray(copy.fields)
+            ? structuredClone(copy.fields)
+            : {};
+          for (const fieldName of relationFieldNames) {
+            if (isEmptyRelationValue(copy.fields[fieldName])) copy.fields[fieldName] = [];
+          }
+          return copy;
+        });
+      },
+      listViews: bindRequired(client, 'listViews'),
+      ...(typeof client.getView === 'function' ? { getView: client.getView.bind(client) } : {}),
+      ...(typeof client.getBaseFormulaType === 'function'
+        ? { getBaseFormulaType: client.getBaseFormulaType.bind(client) }
+        : {}),
+    }),
+    remoteMutationCount: 0,
+  });
+}
+
+function isEmptyRelationValue(value) {
+  return value === undefined
+    || value === null
+    || value === ''
+    || (Array.isArray(value) && value.length === 0);
 }
 
 async function projectTargetFormulaReadbackForCanonicalParity(input) {
@@ -211,6 +275,14 @@ function uniqueBy(items, keyOf, label) {
 function bindRequired(client, method) {
   if (typeof client?.[method] !== 'function') throw new TypeError(`targetClient must implement ${method}()`);
   return client[method].bind(client);
+}
+
+function requireReadClient(client, name) {
+  const value = requireClient(client, name);
+  for (const method of ['listTables', 'listFields', 'listRecords', 'listViews']) {
+    if (typeof value[method] !== 'function') throw new TypeError(`${name} must implement ${method}()`);
+  }
+  return value;
 }
 
 function requireClient(client, name) {
