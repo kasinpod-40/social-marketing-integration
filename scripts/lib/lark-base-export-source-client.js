@@ -151,7 +151,7 @@ async function loadCanonicalExportModel(filePath) {
     const viewMap = requireObject(tableData?.viewMap ?? {}, `viewMap ${tableId}`);
     const preferredViewOrder = Array.isArray(tableData?.views) ? tableData.views : Object.keys(viewMap);
     for (const [viewId, rawView] of Object.entries(viewMap)) {
-      const normalized = normalizeView({ viewId, rawView });
+      const normalized = normalizeView({ viewId, rawView, fields: table.fields });
       mergeEntity(table.views, table.viewOrder, viewId, normalized, `view ${tableId}.${viewId}`, false);
     }
     table.viewOrder = stableOrderedIds(preferredViewOrder, table.views.keys());
@@ -372,7 +372,7 @@ function normalizeView(input) {
     .filter(([, info]) => info?.hidden === true)
     .map(([fieldId]) => fieldId)
     .sort();
-  const filterInfo = normalizeFilterInfo(property?.filterInfo);
+  const filterInfo = normalizeFilterInfo(property?.filterInfo, input.fields);
   return deepFreeze({
     viewId: input.viewId,
     viewName: requireText(raw?.name, `view name ${input.viewId}`),
@@ -396,18 +396,53 @@ function normalizeView(input) {
   });
 }
 
-function normalizeFilterInfo(value) {
+function normalizeFilterInfo(value, fields) {
   if (!value) return null;
   const source = requireObject(value, 'view.filterInfo');
+  const fieldMap = fields instanceof Map ? fields : new Map();
   return deepFreeze({
     conjunction: source?.conjunction === 'or' ? 'or' : 'and',
-    conditions: (Array.isArray(source?.conditions) ? source.conditions : []).map((condition) => ({
-      fieldId: requireText(condition?.fieldId, 'view filter fieldId'),
-      fieldType: Number(condition?.fieldType),
-      operator: requireText(condition?.operator, 'view filter operator'),
-      value: condition?.value === undefined ? null : structuredClone(condition.value),
-    })),
+    conditions: (Array.isArray(source?.conditions) ? source.conditions : []).map((condition) => {
+      const fieldId = requireText(condition?.fieldId, 'view filter fieldId');
+      const fieldType = Number(condition?.fieldType);
+      const field = fieldMap.get(fieldId) ?? null;
+      if (field && Number(field.type) !== fieldType) {
+        throw codedError('LARK_BASE_EXPORT_VIEW_FILTER_FIELD_TYPE_MISMATCH', `View filter Field type differs from exported schema: ${field.fieldName}`, {
+          fieldId,
+          conditionFieldType: fieldType,
+          schemaFieldType: Number(field.type),
+        });
+      }
+      return {
+        fieldId,
+        fieldType,
+        operator: requireText(condition?.operator, 'view filter operator'),
+        value: normalizeViewFilterValue(condition?.value, field, fieldType),
+      };
+    }),
   });
+}
+
+function normalizeViewFilterValue(value, field, fieldType) {
+  if (value === undefined) return null;
+  if (![3, 4].includes(fieldType)) return structuredClone(value);
+  if (!field) {
+    throw codedError('LARK_BASE_EXPORT_VIEW_FILTER_FIELD_MISSING', 'Select View filter Field is missing from exported schema');
+  }
+  const decoded = decodeViewFilterValue(value);
+  const values = Array.isArray(decoded) ? decoded : [decoded];
+  return values.map((optionId) => selectOptionName(field, requireText(String(optionId), 'view select filter option id')));
+}
+
+function decodeViewFilterValue(value) {
+  if (typeof value !== 'string') return structuredClone(value);
+  const text = value.trim();
+  if (!text) return text;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 function normalizeDescription(value) {
