@@ -195,7 +195,7 @@ test('parity decorator keeps documented Select multi-value any-of as one interse
   });
 });
 
-test('parity decorator rejects a collapsed one-value Select readback for a required multi-value set', async () => {
+test('parity decorator rejects a collapsed Select when both Base v3 and persisted semantic readback lose a required value', async () => {
   class CollapsingTransport extends FakeViewV3Transport {
     async requestBitableJson(path, options = {}) {
       if (path.endsWith('/filter') && options.method === 'GET') {
@@ -224,11 +224,11 @@ test('parity decorator rejects a collapsed one-value Select readback for a requi
         conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active', 'Paused'] }],
       },
     }),
-    (error) => error.code === 'LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH',
+    (error) => error.code === 'LARK_VIEW_FILTER_SEMANTIC_READBACK_MISMATCH',
   );
 });
 
-test('parity decorator keeps conjunction strict when multiple conditions are present', async () => {
+test('parity decorator keeps conjunction strict when multiple persisted semantic conditions are required', async () => {
   class WrongLogicTransport extends FakeViewV3Transport {
     async requestBitableJson(path, options = {}) {
       if (path.endsWith('/filter') && options.method === 'GET') {
@@ -253,7 +253,7 @@ test('parity decorator keeps conjunction strict when multiple conditions are pre
         ],
       },
     }),
-    (error) => error.code === 'LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH',
+    (error) => error.code === 'LARK_VIEW_FILTER_SEMANTIC_READBACK_MISMATCH',
   );
 });
 
@@ -330,8 +330,8 @@ test('parity decorator fails closed before View write for unmapped hidden field 
   assert.deepEqual(transport.calls, []);
 });
 
-test('parity decorator verifies Base v3 View readback instead of trusting PUT success', async () => {
-  class BadReadbackTransport extends FakeViewV3Transport {
+test('parity decorator accepts Base v3 presentation mismatch when persisted View semantics match', async () => {
+  class PresentationMismatchTransport extends FakeViewV3Transport {
     async requestBitableJson(path, options = {}) {
       if (path.endsWith('/filter') && options.method === 'GET') {
         this.calls.push({ path, options: structuredClone(options) });
@@ -340,7 +340,90 @@ test('parity decorator verifies Base v3 View readback instead of trusting PUT su
       return super.requestBitableJson(path, options);
     }
   }
-  const transport = new BadReadbackTransport();
+  const transport = new PresentationMismatchTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.updateView({
+    tableId: 'tbl_accounts',
+    viewId: 'vew_all',
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: '["Active"]' }],
+    },
+  });
+
+  assert.deepEqual(result.filter.conditions, [['fld_status', 'intersects', ['Active']]]);
+});
+
+test('parity decorator accepts split SingleSelect OR readback when persisted View semantics preserve the same any-of set', async () => {
+  class SplitSemanticTransport extends FakeViewV3Transport {
+    async requestBitableJson(path, options = {}) {
+      if (path.endsWith('/filter') && options.method === 'GET') {
+        this.calls.push({ path, options: structuredClone(options) });
+        return { code: 0, data: { logic: 'and', conditions: [] } };
+      }
+      return super.requestBitableJson(path, options);
+    }
+
+    async getView({ tableId, viewId }) {
+      assert.equal(tableId, 'tbl_accounts');
+      assert.equal(viewId, 'vew_all');
+      return {
+        viewId,
+        viewName: 'All Accounts',
+        viewType: 'grid',
+        publicLevel: 'Public',
+        property: {
+          hiddenFields: [],
+          filterInfo: {
+            conjunction: 'or',
+            conditions: [
+              { fieldId: 'fld_status', fieldType: 3, operator: 'is', value: '["opt_paused_target"]' },
+              { fieldId: 'fld_status', fieldType: 3, operator: 'is', value: '["opt_active_target"]' },
+            ],
+          },
+        },
+      };
+    }
+  }
+  const transport = new SplitSemanticTransport();
+  const client = withLarkBaseParityCapabilities(transport);
+
+  const result = await client.updateView({
+    tableId: 'tbl_accounts',
+    viewId: 'vew_all',
+    filterInfo: {
+      conjunction: 'or',
+      conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: ['Active', 'Paused'] }],
+    },
+  });
+
+  assert.deepEqual(result.filter.conditions, [['fld_status', 'intersects', ['Active', 'Paused']]]);
+});
+
+test('parity decorator still fails closed when Base v3 and persisted semantic readback both differ', async () => {
+  class BadSemanticReadbackTransport extends FakeViewV3Transport {
+    async requestBitableJson(path, options = {}) {
+      if (path.endsWith('/filter') && options.method === 'GET') {
+        this.calls.push({ path, options: structuredClone(options) });
+        return { code: 0, data: { logic: 'and', conditions: [] } };
+      }
+      return super.requestBitableJson(path, options);
+    }
+
+    async getView({ tableId, viewId }) {
+      assert.equal(tableId, 'tbl_accounts');
+      assert.equal(viewId, 'vew_all');
+      return {
+        viewId,
+        viewName: 'All Accounts',
+        viewType: 'grid',
+        publicLevel: 'Public',
+        property: { hiddenFields: [], filterInfo: { conjunction: 'and', conditions: [] } },
+      };
+    }
+  }
+  const transport = new BadSemanticReadbackTransport();
   const client = withLarkBaseParityCapabilities(transport);
 
   await assert.rejects(
@@ -352,6 +435,8 @@ test('parity decorator verifies Base v3 View readback instead of trusting PUT su
         conditions: [{ fieldId: 'fld_status', fieldType: 3, operator: 'is', value: '["Active"]' }],
       },
     }),
-    (error) => error.code === 'LARK_BASE_V3_VIEW_FILTER_READBACK_MISMATCH',
+    (error) => error.code === 'LARK_VIEW_FILTER_SEMANTIC_READBACK_MISMATCH'
+      && error.details?.expectedConditionCount === 1
+      && error.details?.actualConditionCount === 0,
   );
 });
