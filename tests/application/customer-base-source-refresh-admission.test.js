@@ -11,7 +11,7 @@ async function operatorSource() {
 test('Source refresh admission does not require Target-only identity anchors', async () => {
   const source = await operatorSource();
   const start = source.indexOf('function refreshAuthorityMismatches(inspection)');
-  const end = source.indexOf('\nfunction fingerprint(value)', start);
+  const end = source.indexOf('\nfunction sameUniqueNameSet', start);
 
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
@@ -22,14 +22,16 @@ test('Source refresh admission does not require Target-only identity anchors', a
   assert.equal(refreshAdmission.includes('BASELINE_COUNTS.records'), true);
 });
 
-test('latest Source clone-scope names are still fenced by the original checkpoint before Apply', async () => {
+test('latest Source clone-scope names remain exact but order-insensitive before Apply', async () => {
   const source = await operatorSource();
 
   assert.match(
     source,
-    /JSON\.stringify\(checkpoint\?\.expectedTableNames \?\? \[\]\) !== JSON\.stringify\(expectedTableNames\)/u,
+    /!sameUniqueNameSet\(checkpoint\?\.expectedTableNames \?\? \[\], expectedTableNames\)/u,
   );
   assert.match(source, /CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_REFRESH_SCOPE_MISMATCH/u);
+  assert.match(source, /expectedTableNames: checkpoint\.expectedTableNames/u);
+  assert.match(source, /function sameUniqueNameSet\(left, right\)/u);
   assert.match(source, /checkpoint\?\.targetIdentityAnchorTableNames/u);
   assert.match(source, /CUSTOMER_BASE_CONTROLLED_APPLY_TARGET_ANCHOR_MISMATCH/u);
 });
