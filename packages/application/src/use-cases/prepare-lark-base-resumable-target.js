@@ -13,6 +13,8 @@ const WRITE_METHODS = Object.freeze([
   'updateViewHierarchy',
 ]);
 const FORMULA_FIELD_TYPE = 20;
+const RECORD_RECONCILIATION_EXACT_RETRY = 'exact-retry';
+const RECORD_RECONCILIATION_SOURCE_REFRESH = 'source-refresh';
 const FORMULA_TYPE2_UI_PROPERTY_KEYS = Object.freeze([
   'currency_code',
   'formatter',
@@ -32,12 +34,16 @@ const FORMULA_TYPE2_UI_PROPERTY_KEYS = Object.freeze([
  * recovery candidate. Recovery candidates are hidden from consolidation preflight,
  * then createTable() claims the existing table in place. Field/record creates become
  * exact-idempotent so a failure after a partial write can be retried without creating
- * duplicate schema or records. Baseline/unrelated customer tables stay immutable.
+ * duplicate schema or records. A separately admitted Source refresh may reconcile
+ * requested fields on existing migration-owned records by stable primary key. Baseline/
+ * unrelated customer tables stay immutable in every mode.
  */
 export async function prepareLarkBaseResumableTarget(input) {
   const targetClient = requireClient(input?.targetClient);
   const expectedTableNames = normalizeNames(input?.expectedTableNames, 'expectedTableNames');
   const protectedTables = normalizeProtectedTables(input?.protectedTables ?? []);
+  const recordReconciliationMode = normalizeRecordReconciliationMode(input?.recordReconciliationMode);
+  const allowRecordRefresh = recordReconciliationMode === RECORD_RECONCILIATION_SOURCE_REFRESH;
   const expectedNameSet = new Set(expectedTableNames);
   const protectedByName = new Map(protectedTables.map((table) => [table.name, table]));
   const protectedIds = new Set(protectedTables.map((table) => table.tableId));
@@ -263,7 +269,7 @@ export async function prepareLarkBaseResumableTarget(input) {
         return async (request) => {
           const tableId = requireWritableTable(request?.tableId, 'batchCreateRecords', dynamicProtectedIds, writableIds);
           const requestedRecords = requireArray(request?.records, 'batchCreateRecords.records');
-          if (requestedRecords.length === 0) return { created: 0 };
+          if (requestedRecords.length === 0) return { created: 0, updated: 0 };
           const fields = await target.listFields({ tableId });
           const primaries = fields.filter((field) => field?.isPrimary === true);
           if (primaries.length !== 1) {
@@ -273,6 +279,7 @@ export async function prepareLarkBaseResumableTarget(input) {
           const existingRecords = await target.listRecords({ tableId });
           const existingByPrimary = indexRecords(existingRecords, primaryName, `target ${tableId}`);
           const missing = [];
+          const refreshUpdates = [];
           const seenRequested = new Set();
           for (const requested of requestedRecords) {
             const payload = requireObject(requested, 'record payload');
@@ -286,33 +293,106 @@ export async function prepareLarkBaseResumableTarget(input) {
               missing.push(payload);
               continue;
             }
+
+            const differingFields = {};
             for (const [fieldName, value] of Object.entries(payload)) {
-              if (canonicalValue(existing?.fields?.[fieldName]) !== canonicalValue(value)) {
+              if (canonicalValue(existing?.fields?.[fieldName]) === canonicalValue(value)) continue;
+              if (!allowRecordRefresh) {
                 throw codedError(
                   'CUSTOMER_BASE_RESUME_RECORD_CONFLICT',
                   `Existing migration-owned record differs from requested Source payload: ${primaryName}=${key}`,
                   { tableId, primaryName, primaryValue: key, fieldName },
                 );
               }
+              if (fieldName === primaryName) {
+                throw codedError(
+                  'CUSTOMER_BASE_RESUME_RECORD_PRIMARY_REFRESH_BLOCKED',
+                  `Source refresh cannot rewrite the stable primary key: ${primaryName}=${key}`,
+                  { tableId, primaryName, primaryValue: key },
+                );
+              }
+              differingFields[fieldName] = structuredClone(value);
+            }
+            if (Object.keys(differingFields).length > 0) {
+              refreshUpdates.push({
+                recordId: requireText(existing?.recordId, `recordId ${primaryName}=${key}`),
+                primaryValue: key,
+                fields: differingFields,
+              });
             }
           }
-          if (missing.length === 0) return { created: 0 };
-          try {
-            return await target.batchCreateRecords({ ...request, records: missing });
-          } catch (error) {
-            throw remoteWriteError(
-              'CUSTOMER_BASE_RESUME_RECORD_CREATE_REMOTE_REJECTED',
-              `Lark rejected migration record batch create: ${tableNameById.get(tableId) ?? tableId}`,
-              error,
-              {
-                operation: 'batchCreateRecords',
+
+          let updated = 0;
+          if (refreshUpdates.length > 0) {
+            try {
+              const result = await target.batchUpdateRecords({
                 tableId,
-                tableName: tableNameById.get(tableId) ?? null,
-                recordCount: missing.length,
-                fieldNames: collectRecordFieldNames(missing),
-              },
+                records: refreshUpdates.map(({ recordId, fields: updateFields }) => ({ recordId, fields: updateFields })),
+                ...(typeof request?.beforeChunk === 'function' ? { beforeChunk: request.beforeChunk } : {}),
+              });
+              updated = Number(result?.updated ?? 0);
+            } catch (error) {
+              throw remoteWriteError(
+                'CUSTOMER_BASE_RESUME_RECORD_REFRESH_REMOTE_REJECTED',
+                `Lark rejected migration-owned record refresh: ${tableNameById.get(tableId) ?? tableId}`,
+                error,
+                {
+                  operation: 'batchUpdateRecords',
+                  tableId,
+                  tableName: tableNameById.get(tableId) ?? null,
+                  recordCount: refreshUpdates.length,
+                  fieldNames: collectRecordUpdateFieldNames(refreshUpdates),
+                },
+              );
+            }
+
+            const readbackByPrimary = indexRecords(
+              await target.listRecords({ tableId }),
+              primaryName,
+              `target refresh readback ${tableId}`,
             );
+            for (const update of refreshUpdates) {
+              const readback = readbackByPrimary.get(update.primaryValue);
+              if (!readback) {
+                throw codedError(
+                  'CUSTOMER_BASE_RESUME_RECORD_REFRESH_READBACK_MISSING',
+                  `Migration-owned record missing after Source refresh: ${primaryName}=${update.primaryValue}`,
+                  { tableId, primaryName, primaryValue: update.primaryValue },
+                );
+              }
+              for (const [fieldName, value] of Object.entries(update.fields)) {
+                if (canonicalValue(readback?.fields?.[fieldName]) !== canonicalValue(value)) {
+                  throw codedError(
+                    'CUSTOMER_BASE_RESUME_RECORD_REFRESH_READBACK_MISMATCH',
+                    `Migration-owned record differs after Source refresh: ${primaryName}=${update.primaryValue}`,
+                    { tableId, primaryName, primaryValue: update.primaryValue, fieldName },
+                  );
+                }
+              }
+            }
           }
+
+          let created = 0;
+          if (missing.length > 0) {
+            try {
+              const result = await target.batchCreateRecords({ ...request, records: missing });
+              created = Number(result?.created ?? 0);
+            } catch (error) {
+              throw remoteWriteError(
+                'CUSTOMER_BASE_RESUME_RECORD_CREATE_REMOTE_REJECTED',
+                `Lark rejected migration record batch create: ${tableNameById.get(tableId) ?? tableId}`,
+                error,
+                {
+                  operation: 'batchCreateRecords',
+                  tableId,
+                  tableName: tableNameById.get(tableId) ?? null,
+                  recordCount: missing.length,
+                  fieldNames: collectRecordFieldNames(missing),
+                },
+              );
+            }
+          }
+          return { created, updated };
         };
       }
 
@@ -395,7 +475,10 @@ export async function prepareLarkBaseResumableTarget(input) {
       contractVersion: 'customer_base_resumable_target_v1',
       protectedTables: Object.freeze(protectedTables.map((table) => Object.freeze(structuredClone(table)))),
       recoveryCandidateTables: Object.freeze([...resumeByName.keys()].sort()),
-      rule: 'baseline-and-unrelated-tables-immutable-clone-scope-partials-exact-idempotent',
+      recordReconciliationMode,
+      rule: allowRecordRefresh
+        ? 'baseline-and-unrelated-tables-immutable-clone-scope-partials-refresh-requested-fields-by-stable-primary'
+        : 'baseline-and-unrelated-tables-immutable-clone-scope-partials-exact-idempotent',
     }),
   });
 }
@@ -668,6 +751,14 @@ function collectRecordFieldNames(records) {
   return [...names].sort();
 }
 
+function collectRecordUpdateFieldNames(records) {
+  const names = new Set();
+  for (const record of records) {
+    for (const fieldName of Object.keys(requireObject(record?.fields, 'record update fields'))) names.add(fieldName);
+  }
+  return [...names].sort();
+}
+
 function remoteWriteError(code, message, error, details = {}) {
   const causeDetails = error?.details && typeof error.details === 'object' && !Array.isArray(error.details)
     ? error.details
@@ -834,8 +925,16 @@ function normalizeNames(value, name) {
   return Object.freeze(items);
 }
 
+function normalizeRecordReconciliationMode(value) {
+  const mode = optionalText(value) ?? RECORD_RECONCILIATION_EXACT_RETRY;
+  if (mode !== RECORD_RECONCILIATION_EXACT_RETRY && mode !== RECORD_RECONCILIATION_SOURCE_REFRESH) {
+    throw new TypeError(`recordReconciliationMode must be ${RECORD_RECONCILIATION_EXACT_RETRY} or ${RECORD_RECONCILIATION_SOURCE_REFRESH}`);
+  }
+  return mode;
+}
+
 function requireClient(client) {
-  for (const method of ['listTables', 'listFields', 'listRecords', 'listViews', 'createTable', 'createField', 'updateField', 'batchCreateRecords']) {
+  for (const method of ['listTables', 'listFields', 'listRecords', 'listViews', 'createTable', 'createField', 'updateField', 'batchCreateRecords', 'batchUpdateRecords']) {
     if (!client || typeof client[method] !== 'function') throw new TypeError(`targetClient must implement ${method}()`);
   }
   return client;
