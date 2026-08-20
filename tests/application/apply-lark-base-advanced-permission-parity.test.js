@@ -44,6 +44,21 @@ function plan() {
   };
 }
 
+test('advanced permission apply is a zero-request no-op when no active Source roles are planned', async () => {
+  const result = await applyLarkBaseAdvancedPermissionParity({
+    plan: { ok: true, readyToWrite: true, roles: [] },
+    targetClient: {},
+    protectedRoleNames: ['Customer Admin'],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'inactive-source-roles-zero-request-noop');
+  assert.equal(result.createdRoles, 0);
+  assert.equal(result.reusedExactRoles, 0);
+  assert.equal(result.remoteRequestCount, 0);
+  assert.equal(result.remoteMutationCount, 0);
+});
+
 test('advanced permission apply creates missing roles and verifies each readback', async () => {
   const client = new FakeRoleClient();
   const result = await applyLarkBaseAdvancedPermissionParity({
