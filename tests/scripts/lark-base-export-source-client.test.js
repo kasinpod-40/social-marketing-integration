@@ -179,7 +179,7 @@ test('export source adapter exposes consolidator-compatible tables, fields, reco
     assert.deepEqual(view.property.hiddenFields, ['fldUrl']);
     assert.deepEqual(view.property.fieldOrder, ['fldKey', 'fldStatus', 'fldTags', 'fldUrl']);
     assert.deepEqual(view.property.sortInfo, [{ fieldId: 'fldKey', desc: false }]);
-    assert.equal(view.property.filterInfo.conditions[0].value[0], 'optActive');
+    assert.deepEqual(view.property.filterInfo.conditions[0].value, ['active']);
 
     const resources = client.getExportResources();
     assert.equal(resources.dashboards.length, 1);
