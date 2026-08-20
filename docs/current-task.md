@@ -3,7 +3,7 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = SOURCE_REFRESH_ADMISSION_RECOVERY_CI_PENDING
+TASK_STATUS                         = SOURCE_REFRESH_RECORD_RECONCILIATION_CI_VERIFIED
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
@@ -17,27 +17,43 @@ CURRENT_SOURCE_PATH                 = /Users/wasanjantawong/Desktop/Social MKT D
 TARGET_MUTATION                     = PARTIAL_CONTROLLED_APPLY_WRITES_PRESENT
 FORMULA_DEFINITION                  = LIVE_BASE_V3_VERIFIED
 FORMULA_PRESENTATION                = MANUAL_UI_PARITY
-NEXT_REMOTE_PHASE                   = VIEW_BASE_V3
-LATEST_LIVE_RESULT                  = SOURCE_REFRESH_FALSE_BLOCK_BEFORE_TARGET_WRITE
 VIEW_RECOVERY                       = BASE_V3_FILTER_VISIBLE_FIELDS_IMPLEMENTED
+LATEST_LIVE_BLOCKER                 = MKT_ACCOUNTS_STABLE_KEY_RECORD_LAST_SYNC_AT_REFRESH
+RECORD_REFRESH_RECOVERY             = STABLE_PRIMARY_BATCH_UPDATE_PLUS_GET_READBACK
 FOLDER_PLACEMENT                    = COMPLETE_BY_USER
 DRAFT_PR                            = 661
 PRODUCTION                          = BLOCKED_PENDING_NEXT_CONTROLLED_APPLY_AND_FINAL_PARITY
 ```
 
-## Source refresh authority
+## Objective
 
-The user replaced `/Users/wasanjantawong/Desktop/Social MKT Data Hub.base` with a newer export containing the latest data on 2026-08-20.
+Finish the export-driven migration of the approved Social MKT Data Hub structure and current data into customer Base `✨Marketing Content Calendar`, while preserving all pre-existing customer resources and every migration-owned partial write already proven successful.
 
-Current Source SHA-256:
+The existing `consolidate-lark-base.js` remains the only Table migration engine. Recovery extends only the existing resumable Target adapter and Lark parity transport; no second clone engine or destructive reset is allowed.
+
+## Immutable Target recovery baseline
+
+The original checkpoint is the only valid pre-write Target ownership fence:
+
+- checkpoint file: `$HOME/Downloads/customer-base-controlled-apply-checkpoint.json`
+- checkpoint SHA-256: `7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053`
+- historical Source SHA retained by checkpoint: `c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643`
+- protected external Table: `🎵 RAW_TikTok_Creator_Videos`
+- folder placement is already complete under `Setup Phase | Social MKT Data Hub`
+
+**Never run `--prepare-checkpoint` again.**
+
+Do not delete/recreate the 32 migration-owned clone Tables, successful ordinary/Relation fields, Records, or Formula `📣 MKT_Ads_Campaigns.budget` (`fldA1bzPlX`).
+
+## Current Source refresh authority
+
+The user replaced `/Users/wasanjantawong/Desktop/Social MKT Data Hub.base` with the latest export for 2026-08-20.
+
+Current SHA-256:
 
 `1571cefabb3b881dceeb71ccc2c6e879ad0c912b58072a7549825022704d80b7`
 
-The original checkpoint remains the immutable pre-write **Target ownership fence** and must never be recreated. Its retained historical Source SHA remains:
-
-`c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643`
-
-For `--apply`, a refreshed Source may have a different SHA and a larger Record count, but the migration structure remains fail-closed:
+A refreshed Source may have a different SHA and a larger Record count, but Apply admission remains fail-closed:
 
 - Tables = 33
 - Fields = 723
@@ -48,125 +64,137 @@ For `--apply`, a refreshed Source may have a different SHA and a larger Record c
 - Workflows = 2
 - Advanced Permission roles = 4
 - Records >= 35,528 baseline
-- after excluding protected external `🎵 RAW_TikTok_Creator_Videos`, the exact unique set of 32 clone-scope Table names must equal the original checkpoint scope
+- after excluding `🎵 RAW_TikTok_Creator_Videos`, the exact unique set of 32 clone-scope Table names must equal the checkpoint scope
 
-Table order in a refreshed export is not semantic. The name set must be exact, but reordering alone is allowed. After set-equivalence succeeds, the controlled Apply receives the original checkpoint Table-name order so its retained contract stays stable.
+Table order is not semantic. After set-equivalence succeeds, controlled Apply uses the checkpoint's retained Table-name order.
 
-### Target anchors are not Source requirements
+Target identity anchors `(VDO) Content Creator`, `(Graphic) Content Creator` and `คำถามจาก Sale & Support` are Target/checkpoint protection evidence, not Source refresh requirements.
 
-The checkpoint/Target identity anchors are:
+## Retained automatic recovery state
 
-- `🎵 RAW_TikTok_Creator_Videos`
-- `(VDO) Content Creator`
-- `(Graphic) Content Creator`
-- `คำถามจาก Sale & Support`
+### Formula
 
-These identify and protect the customer Target. They must remain validated against the original checkpoint/Target fence, but they are **not** all required to exist in the refreshed Source export.
+Base v3 Formula definition is the automatic write boundary. `budget` exists as `fldA1bzPlX` and its definition has been live-verified. Legacy Formula result presentation is manual/UI parity only; never retry Bitable v1 Formula presentation PUT.
 
-The previous refresh admission incorrectly required all four names in Source. The current Source passed every structural count/Record gate and failed only on the three Target-only names above. That was an operator admission defect, not a Source incompatibility.
+### View
 
-The repaired refresh gate no longer references `REQUIRED_PROTECTED_TABLE_NAMES`; clone-scope names are checked independently against `checkpoint.expectedTableNames` before controlled Target mutation.
+The previous live View blocker was legacy `updateView` HTTP 400 / Lark `1254001` on `🪪 MKT_Accounts`.
 
-**Never run `--prepare-checkpoint` again.**
-
-## Latest live evidence — no Target mutation
-
-The latest operator run used Source SHA `1571cefabb3b881dceeb71ccc2c6e879ad0c912b58072a7549825022704d80b7` and stopped with:
-
-```text
-code  CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_MISMATCH
-message Source export is not refresh-compatible with the approved migration structure
-```
-
-The only reported mismatches were Source requirements for these Target-only anchors:
-
-```text
-(VDO) Content Creator
-(Graphic) Content Creator
-คำถามจาก Sale & Support
-```
-
-Because this stop occurs during local Source authority resolution, it happened before controlled Target mutation. No successful Target state from earlier runs was changed by this attempt.
-
-## Retained successful Target state
-
-Do not delete or recreate successful migration-owned state:
-
-- 32 clone-scope Tables already created/claimed;
-- ordinary fields progressed;
-- Relation fields progressed;
-- Formula definitions progressed using Base v3;
-- `📣 MKT_Ads_Campaigns.budget` exists as `fldA1bzPlX` and must be reused;
-- Formula result presentation is manual/UI parity only;
-- controlled Apply previously reached the View phase.
-
-## View blocker and repair
-
-The last remote blocker before the Source file was refreshed was:
-
-```text
-operation   updateView
-Table       🪪 MKT_Accounts
-Table ID    tblVB102JoqSfgHa
-HTTP        400
-Lark code   1254001
-```
-
-The rejected path was the old combined legacy View PATCH. It must not be retried.
-
-The existing parity decorator now owns documented Base v3 View property writes through the same authenticated/retried transport:
+The existing parity decorator now uses documented Base v3 property operations:
 
 ```text
 PUT /open-apis/base/v3/bases/:base_token/tables/:table_id/views/:view_id/visible_fields
 PUT /open-apis/base/v3/bases/:base_token/tables/:table_id/views/:view_id/filter
 ```
 
-Automatic View recovery:
+Each write receives immediate GET readback. Legacy combined View PATCH must not be retried.
 
-- computes visible Target field IDs from live fields and Source hidden fields;
-- rejects unknown Target field IDs before write;
-- translates Source filters to Base v3 tuple DSL;
-- preserves Boolean checkbox values;
-- writes filter and visible fields separately;
-- GET-verifies each property immediately after write;
-- stays behind the original resumable/checkpoint fence.
+## Latest live blocker — refreshed Record differs from retained migration state
 
-Unsupported View layout dimensions remain manual parity.
-
-## Current code milestone
-
-Source admission fixes after the live SHA `1571cefa...` failure:
+After Source refresh admission was repaired, controlled Apply progressed into Record reconciliation and stopped on:
 
 ```text
-5ac438745f6fec0728cd08ccf461e4780cda0969  target anchors removed from Source refresh gate
-f0f259f1a2bb56e6d0e2a77d79ffe213f72eb4ff  clone-scope comparison made order-insensitive
-66109d9145f90c3537a386df40abe3b4ceee10d3  regression coverage for both rules
+code          CUSTOMER_BASE_RESUME_RECORD_CONFLICT
+Table         🪪 MKT_Accounts
+Table ID      tblVB102JoqSfgHa
+primary       account_key
+primary value facebook:982406442148381
+field         last_sync_at
 ```
 
-Branch Verification for the latest code/test HEAD is Run `32326133414`, Job `96297655016` and must be SUCCESS before the next customer Apply.
+This proves the refreshed export is reaching the existing migration-owned Record path. The stable identity is unchanged; a current mutable Source field differs from the value retained by an earlier partial Apply.
+
+The old resumable contract was intentionally create-only/exact-idempotent: an existing stable-key Record had to match every requested field. That remains correct for retrying the exact baseline Source, but it cannot materialize an explicitly admitted newer Source export.
+
+## Record reconciliation ownership
+
+Recovery now has two explicit modes.
+
+### `exact-retry`
+
+Used when the current Source SHA equals the checkpoint Source baseline.
+
+- existing stable-key Record must exactly match requested Source fields;
+- any difference remains `CUSTOMER_BASE_RESUME_RECORD_CONFLICT`;
+- no update path is enabled.
+
+### `source-refresh`
+
+Enabled only by the controlled operator after the current Source has passed structural/scope admission and its SHA differs from the checkpoint baseline.
+
+For migration-owned clone-scope Tables only:
+
+1. resolve the existing Record by the same primary/stable key;
+2. never rewrite the primary key;
+3. collect only requested Source fields whose canonical values differ;
+4. call the existing shared `batchUpdateRecords({ recordId, fields })` transport;
+5. immediately GET/list Records again;
+6. verify every updated field by stable primary key;
+7. fail closed on missing/mismatching readback;
+8. create only stable keys still missing from Target.
+
+There is no delete path. Pre-existing/protected/unowned customer Tables stay behind the same checkpoint write fence.
+
+The shared `batchCreateRecords()` public result remains its historical `{ created }` shape. `batchUpdateRecords` is required only when admitted `source-refresh` actually has existing differing Records; exact retry does not gain a new capability requirement.
+
+## Regression coverage
+
+Focused regression now proves:
+
+- exact retry still rejects `last_sync_at` drift;
+- source refresh updates `last_sync_at` for the same stable `account_key` without sending the primary field in the update;
+- missing stable keys still use create;
+- update readback mismatch fails closed;
+- exact retry does not require `batchUpdateRecords`;
+- source refresh requires update capability only when an update is necessary;
+- controlled Apply threads `source-refresh` only through the existing resumable adapter;
+- historical `batchCreateRecords()` result shape remains `{ created }`.
+
+## Verification milestone
+
+Compatibility-preserving record-refresh HEAD:
+
+```text
+HEAD  1c641e1e65be865ceb451261a12f29723f4a6e9a
+Run   32327719737
+Job   96302287010
+PASS  every Branch Verification step
+```
+
+Passed:
+
+- locked dependencies;
+- syntax / architecture / hygiene;
+- focused Report / Meta / Woo / Chatwoot / TikTok suites;
+- Unit + Workers runtime;
+- Report reliability;
+- dependency audit;
+- Wrangler dry-run;
+- diff whitespace / diagnostics / post steps.
+
+The preceding HEAD `92d670491a0f4e182e380719aea60cca21cc4c06` failed Unit + Workers runtime and must not be used for live Apply. Its public-contract compatibility regression was corrected before the milestone above.
 
 ## No-repeat rules
 
 1. Never prepare a new checkpoint.
-2. Never delete/recreate the 32 partial clone Tables.
-3. Never delete/recreate `fldA1bzPlX`.
-4. Never retry Bitable v1 Formula presentation PUT.
-5. Never retry the combined legacy View filter/hidden PATCH.
-6. Never require Target-only identity anchors to exist in refreshed Source authority.
-7. Never treat refreshed export Table ordering as schema drift; compare exact unique names instead.
-8. Never weaken Tables/Fields/Views/Relation/Formula/Dashboard/Workflow/Role structural gates merely to accept a newer export.
+2. Never delete/recreate migration-owned Tables/Fields/Records or `fldA1bzPlX`.
+3. Never retry legacy Formula presentation PUT.
+4. Never retry combined legacy View filter/hidden PATCH.
+5. Never require Target-only anchors in refreshed Source.
+6. Never treat refreshed Table ordering as schema drift; compare exact unique names.
+7. Never turn exact retry into permissive update behavior.
+8. Never update a primary/stable key during Source refresh.
 9. Never mutate Source, Worker, D1, Queue, schedule or deployment state in this recovery.
+10. Preserve all successful phases after any later failure and resume with the same original checkpoint.
 
 ## Next controlled sequence
 
-1. Require Branch Verification SUCCESS on the final HEAD.
+1. Require Branch Verification SUCCESS on the final documentation + code HEAD.
 2. Pull that exact HEAD on the operator Mac.
-3. Verify the original checkpoint SHA remains `7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053`.
-4. Use the current Source file at the same Desktop path; do not restore the old export.
-5. Run only controlled `--apply` with the existing confirmation token.
-6. Interpret the next result literally:
-   - Source structural/scope mismatch → stop before Target mutation;
-   - View v3 rejection/readback mismatch → retain all prior state and fix only that View contract;
-   - Views pass → continue hierarchy, Advanced Permission and canonical verification;
-   - automatic Apply completes → perform retained manual Formula/View/Dashboard/Workflow parity and final Target export verification.
-7. Ready/Merge PR #661 only after automatic and manual parity gates close.
+3. Verify the original checkpoint SHA and current Source SHA.
+4. Run only controlled `--apply` with the existing confirmation token.
+5. Expect `source-refresh` Record reconciliation to update changed migration-owned values such as `last_sync_at`, create only missing stable keys, and GET-verify updates.
+6. If Records pass, continue to the already-repaired Base v3 View phase, hierarchy, Advanced Permission and canonical verification.
+7. Interpret any later blocker literally and preserve all completed state.
+8. After automatic completion, finish manual Formula presentation, View layout, 6 Dashboards / 75 charts, 2 Workflows and final Target export verification.
+9. Ready/Merge PR #661 only after automatic and manual parity gates close.
