@@ -140,7 +140,7 @@ test('controlled Apply executes the locked automatic sequence and stops at manua
   ]);
 });
 
-test('controlled Apply adopts existing Base v3 Formula and never mutates read-only legacy presentation', async () => {
+test('controlled Apply adopts existing Base v3 Formula without requiring or mutating legacy presentation metadata', async () => {
   const serverExpression = 'bitable::$table[tbl_accounts].$field[fld_budget_micros]/1000000';
   const requestedFormula = {
     fieldName: 'budget',
@@ -151,11 +151,6 @@ test('controlled Apply adopts existing Base v3 Formula and never mutates read-on
       formula_expression: 'bitable::$table[tbl_accounts].$field[fld_budget_micros]/1000000',
       formatter: '฿#,##0.00',
       currency_code: 'THB',
-      type: {
-        data_type: 2,
-        ui_type: 'Currency',
-        ui_property: {},
-      },
     },
   };
   const budget = {
