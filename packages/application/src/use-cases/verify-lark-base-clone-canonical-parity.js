@@ -235,14 +235,19 @@ function canonicalField(field, context) {
 }
 
 function canonicalFieldProperty(type, property, context) {
-  const normalized = normalizeLarkFieldProperty(type, property);
+  const rawProperty = Number(type) === FORMULA_FIELD_TYPE
+    && context?.targetFormulaType !== 2
+    && property
+    && typeof property === 'object'
+    && !Array.isArray(property)
+    ? structuredClone(property)
+    : property;
+  if (rawProperty !== property) delete rawProperty.type;
+  const normalized = normalizeLarkFieldProperty(type, rawProperty);
   const result = normalized ? structuredClone(normalized) : {};
   if (Number(type) === 5) {
     result.date_formatter = normalizeOptionalText(result.date_formatter) ?? 'yyyy/MM/dd';
     result.auto_fill = result.auto_fill === true;
-  }
-  if (Number(type) === FORMULA_FIELD_TYPE && context?.targetFormulaType !== 2) {
-    delete result.type;
   }
   if (Array.isArray(result.options)) {
     result.options = result.options.map((option) => {
