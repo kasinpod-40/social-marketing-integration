@@ -362,7 +362,12 @@ export function withLarkBaseParityCapabilities(client) {
         { method: 'GET' },
       );
       const actual = normalizeVisibleFieldsResponse(response?.data);
-      if (stableJson(actual) !== stableJson(visibleFields)) {
+      // Visibility parity owns membership only. Column order is a separate manual-owned
+      // View dimension, so Base v3 may return the same visible field IDs in View order.
+      // Sort copies for comparison without deduplicating, preserving cardinality fail-closed.
+      const expectedComparable = [...visibleFields].sort();
+      const actualComparable = [...actual].sort();
+      if (stableJson(actualComparable) !== stableJson(expectedComparable)) {
         throw readbackMismatch('LARK_BASE_V3_VIEW_VISIBLE_FIELDS_READBACK_MISMATCH', 'Base v3 View visible_fields differs after readback', {
           tableId,
           viewId,
