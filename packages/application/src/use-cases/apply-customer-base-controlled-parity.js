@@ -89,8 +89,8 @@ export async function prepareCustomerBaseControlledApplyCheckpoint(input) {
  * confirmation token. Every retry replays the same phases: the resumable target
  * adapter claims exact partial clone tables, hierarchy writes are idempotent,
  * Advanced Permission creation reuses exact migration-owned roles, and canonical
- * verification remains GET-only. Manual View/Dashboard/Workflow parity is never
- * guessed or written by this function.
+ * verification remains GET-only. Manual Formula presentation/View/Dashboard/Workflow
+ * parity is never guessed or written by this function.
  */
 export async function applyCustomerBaseControlledParity(input) {
   if (input?.confirmation !== CUSTOMER_BASE_CONTROLLED_APPLY_CONFIRMATION) {
@@ -190,6 +190,7 @@ export async function applyCustomerBaseControlledParity(input) {
       canonicalVerification,
     },
     manualParityRequired: Object.freeze([
+      'formula-result-presentation-ui',
       'view-field-order-sort-group-width-row-height-frozen-columns',
       'dashboard-ui-source-reference',
       'workflow-ui-source-reference',
@@ -201,10 +202,12 @@ export async function applyCustomerBaseControlledParity(input) {
 }
 
 /**
- * Bridges the two documented Formula APIs without weakening the existing checkpoint fence.
- * Base v3 owns Formula definition (name/expression/description). Bitable v1 owns the
- * formula_type=2 presentation metadata exposed by the Source export. All writes below
- * are invoked through the resumable client, so protected/unowned Tables remain blocked.
+ * Bridges the legacy export model to the documented Base v3 Formula API without
+ * weakening the existing checkpoint fence. Base v3 owns Formula definition
+ * (name/expression/description). Formula result presentation exposed by the legacy
+ * export is retained for manual parity verification because current Base v3 field
+ * writes do not expose Formula style/result metadata and Bitable v1 rejects those
+ * Formula PUTs. All automatic Formula writes therefore stop at v3 definition parity.
  */
 function withFormulaV3ParityRecovery(client) {
   const verifiedLegacyExpressionByTableAndName = new Map();
@@ -265,7 +268,7 @@ function withFormulaV3ParityRecovery(client) {
             });
           }
 
-          const reconciled = await reconcileFormulaPresentationV1(target, {
+          const verified = await verifyFormulaAutomaticDefinitionOnly(target, {
             tableId,
             fieldName,
             current,
@@ -275,7 +278,7 @@ function withFormulaV3ParityRecovery(client) {
             `${tableId}:${fieldName}`,
             requireText(requested?.property?.formula_expression, `Formula expression ${fieldName}`),
           );
-          return reconciled;
+          return verified;
         };
       }
 
@@ -378,7 +381,7 @@ async function verifyFormulaDefinitionV3(target, input) {
   }
 }
 
-async function reconcileFormulaPresentationV1(target, input) {
+async function verifyFormulaAutomaticDefinitionOnly(target, input) {
   const fieldId = requireText(input?.current?.fieldId, `Formula fieldId ${input.fieldName}`);
   await verifyFormulaDefinitionV3(target, {
     tableId: input.tableId,
@@ -386,129 +389,7 @@ async function reconcileFormulaPresentationV1(target, input) {
     fieldName: input.fieldName,
     requested: input.requested,
   });
-
-  const initial = compareFormulaPresentation(input.current, input.requested);
-  if (initial.ok) return structuredClone(input.current);
-
-  const currentExpression = requireText(
-    input?.current?.property?.formula_expression,
-    `Formula readback expression ${input.fieldName}`,
-  );
-  const updateField = structuredClone(input.requested);
-  updateField.property = updateField.property && typeof updateField.property === 'object'
-    ? structuredClone(updateField.property)
-    : {};
-  // Legacy v1 is used only for presentation. Preserve the server's current expression
-  // byte-for-byte so this update cannot rewrite Formula definition through the old API.
-  updateField.property.formula_expression = currentExpression;
-
-  try {
-    await target.updateField({
-      tableId: input.tableId,
-      fieldId,
-      field: updateField,
-    });
-  } catch (error) {
-    throw formulaRemoteError(
-      'CUSTOMER_BASE_FORMULA_PRESENTATION_UPDATE_REJECTED',
-      `Lark rejected Formula presentation update: ${input.fieldName}`,
-      error,
-      {
-        tableId: input.tableId,
-        fieldId,
-        fieldName: input.fieldName,
-        differencePaths: initial.differencePaths,
-      },
-    );
-  }
-
-  await verifyFormulaDefinitionV3(target, {
-    tableId: input.tableId,
-    fieldId,
-    fieldName: input.fieldName,
-    requested: input.requested,
-  });
-  const fields = await target.listFields({ tableId: input.tableId });
-  const readback = fields.find((item) => item?.fieldId === fieldId)
-    ?? fields.find((item) => item?.fieldName === input.fieldName)
-    ?? null;
-  if (!readback) {
-    throw codedError(
-      'CUSTOMER_BASE_FORMULA_PRESENTATION_READBACK_MISSING',
-      `Formula missing after presentation update: ${input.fieldName}`,
-      { tableId: input.tableId, fieldId, fieldName: input.fieldName },
-    );
-  }
-  const finalComparison = compareFormulaPresentation(readback, input.requested);
-  if (!finalComparison.ok) {
-    throw codedError(
-      'CUSTOMER_BASE_FORMULA_PRESENTATION_READBACK_MISMATCH',
-      `Formula presentation differs after legacy update: ${input.fieldName}`,
-      {
-        tableId: input.tableId,
-        fieldId,
-        fieldName: input.fieldName,
-        differencePaths: finalComparison.differencePaths,
-      },
-    );
-  }
-  return structuredClone(readback);
-}
-
-function compareFormulaPresentation(existing, requested) {
-  const left = formulaPresentationShape(existing, 'existing');
-  const right = formulaPresentationShape(requested, 'requested');
-  const differencePaths = collectDifferencePaths(left, right);
-  return Object.freeze({
-    ok: differencePaths.length === 0,
-    differencePaths: Object.freeze(differencePaths.slice(0, 24)),
-  });
-}
-
-function formulaPresentationShape(field, label) {
-  const value = requireObject(field, `${label} Formula field`);
-  const property = normalizeLarkFieldProperty(FORMULA_FIELD_TYPE, value?.property);
-  const presentation = property ? structuredClone(property) : {};
-  delete presentation.formula_expression;
-  return sortJson({
-    fieldName: requireText(value?.fieldName, `${label} Formula fieldName`),
-    type: Number(value?.type),
-    property: Object.keys(presentation).length > 0 ? presentation : null,
-  });
-}
-
-function collectDifferencePaths(left, right, path = '$', result = []) {
-  if (Object.is(left, right)) return result;
-  const leftArray = Array.isArray(left);
-  const rightArray = Array.isArray(right);
-  if (leftArray || rightArray) {
-    if (!(leftArray && rightArray)) {
-      result.push(path);
-      return result;
-    }
-    if (left.length !== right.length) result.push(`${path}.length`);
-    const length = Math.min(left.length, right.length);
-    for (let index = 0; index < length; index += 1) {
-      collectDifferencePaths(left[index], right[index], `${path}[${index}]`, result);
-    }
-    return result;
-  }
-  const leftObject = left !== null && typeof left === 'object';
-  const rightObject = right !== null && typeof right === 'object';
-  if (leftObject || rightObject) {
-    if (!(leftObject && rightObject)) {
-      result.push(path);
-      return result;
-    }
-    const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
-    for (const key of keys) {
-      if (!(key in left) || !(key in right)) result.push(`${path}.${key}`);
-      else collectDifferencePaths(left[key], right[key], `${path}.${key}`, result);
-    }
-    return result;
-  }
-  result.push(path);
-  return result;
+  return structuredClone(input.current);
 }
 
 function formulaRemoteError(code, message, error, details = {}) {
@@ -601,12 +482,6 @@ function requireArray(value, name) {
 function requireObject(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${name} must be an object`);
   return value;
-}
-
-function sortJson(value) {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortJson(value[key])]));
 }
 
 function codedError(code, message, details = {}) {
