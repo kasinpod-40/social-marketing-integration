@@ -4,9 +4,13 @@ const SUPPORTED_TABLE_PERMS = Object.freeze(new Set([0, 1, 2, 4]));
  * Builds a deterministic, read-only Advanced Permission materialization plan from
  * the redacted local-export semantic inventory.
  *
- * This does not call Lark and does not write anything. Orphaned export table-role
- * references are retained as forensic evidence but are never materialized because
- * the approved current Source snapshot has no Table to remap them to.
+ * Unassigned exported role definitions have no effective access-control impact and
+ * are therefore retained as inactive evidence instead of being materialized. Active
+ * roles remain fail-closed until member/dashboard assignment semantics are supported.
+ *
+ * Orphaned export table-role references are retained as forensic evidence but are
+ * never materialized because the approved current Source snapshot has no Table to
+ * remap them to.
  *
  * `base_rule` is intentionally omitted only when every exported base permission
  * point is enabled. Feishu v2 documents omission as granting all base permission
@@ -20,11 +24,23 @@ export function planLarkBaseAdvancedPermissionParity(input) {
   const blockers = [];
   const orphanedFingerprints = new Set();
   const plans = [];
+  const inactiveRoles = [];
 
   for (const role of roles) {
     const roleName = requireText(role?.roleName, 'roleName');
     const memberCount = nonNegativeInteger(role?.memberCount, `${roleName}.memberCount`);
     const dashboardRoleCount = nonNegativeInteger(role?.dashboardRoleCount, `${roleName}.dashboardRoleCount`);
+
+    if (memberCount === 0 && dashboardRoleCount === 0) {
+      inactiveRoles.push(Object.freeze({
+        roleName,
+        memberCount,
+        dashboardRoleCount,
+        classification: 'inactive_unassigned_source_role_no_effective_access',
+      }));
+      continue;
+    }
+
     if (memberCount !== 0) blockers.push(problem('ADVANCED_PERMISSION_MEMBERS_UNSUPPORTED', `${roleName} has exported members`, { roleName, memberCount }));
     if (dashboardRoleCount !== 0) blockers.push(problem('ADVANCED_PERMISSION_DASHBOARD_RULES_UNSUPPORTED', `${roleName} has exported dashboard rules`, { roleName, dashboardRoleCount }));
 
@@ -98,8 +114,11 @@ export function planLarkBaseAdvancedPermissionParity(input) {
     mode: 'read-only',
     semanticsContractVersion: semantics.contractVersion ?? null,
     roles: plans,
+    inactiveRoles,
     summary: {
+      sourceRoleCount: roles.length,
       roleCount: plans.length,
+      inactiveRoleCount: inactiveRoles.length,
       tableRoleCount: plans.reduce((sum, role) => sum + role.tableRoles.length, 0),
       orphanedTableRoleCount: plans.reduce((sum, role) => sum + role.orphanedTableRoles.length, 0),
       orphanedTableReferenceCount: orphanedFingerprints.size,
