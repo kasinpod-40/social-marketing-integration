@@ -26,15 +26,21 @@ Before the Formula blocker, controlled Apply had already completed/advanced thes
 5. Formula phase reached `📣 MKT_Ads_Campaigns.budget`;
 6. Record materialization had not started.
 
-Do not delete or recreate successful partial Tables/Fields. Downstream Records, relation cells, Views, hierarchy, Advanced Permission and canonical verification remain pending until later operator output proves them complete.
+The live Base v3 recovery subsequently established an existing migration-owned Formula:
+
+```text
+Table    📣 MKT_Ads_Campaigns
+Field    budget
+Field ID fldA1bzPlX
+```
+
+Do not delete or recreate successful partial Tables/Fields or `fldA1bzPlX`. Downstream Records, relation cells, Views, hierarchy, Advanced Permission and canonical verification remain pending until later operator output proves them complete.
 
 ## Live Formula failure chronology
 
-All live failures below were executed through the legacy Bitable v1 field-write path and stopped before Record materialization.
-
 ### 1. Full legacy Formula create
 
-A type-20 Formula create carrying the exported Formula property set was rejected with Lark `99992402`.
+A type-20 Formula create carrying the exported Formula property set through Bitable v1 was rejected with Lark `99992402`.
 
 ### 2. Legacy shell with presentation metadata
 
@@ -67,27 +73,49 @@ HTTP           400
 Lark code      99992402
 ```
 
-This fourth result rules out the prior hypothesis that top-level Formula presentation metadata or `formula_expression` alone caused the legacy CREATE rejection. It also proves that continuing to probe more Bitable v1 Formula property variants is not justified.
+This fourth result ruled out further Bitable v1 Formula CREATE payload probing.
 
-## Confirmed repository transport/schema defect
+### 5. Base v3 definition accepted; legacy presentation PUT rejected
 
-Repository inspection showed the shared legacy field writer still used:
+A later controlled recovery used Base v3 Formula definition semantics and successfully retained/reused `budget` as `fldA1bzPlX`. The operator advanced past Formula definition validation and failed only when it attempted to mutate legacy result-presentation metadata through Bitable v1:
+
+```text
+operator code  CUSTOMER_BASE_FORMULA_PRESENTATION_UPDATE_REJECTED
+Table          📣 MKT_Ads_Campaigns
+Table ID       tbl32Hfkfd4HjvFr
+Field          budget
+Field ID       fldA1bzPlX
+HTTP           400
+Lark code      99992402
+```
+
+Reported presentation differences were limited to:
+
+```text
+$.property.type.data_type
+$.property.type.ui_property.currency_code
+$.property.type.ui_property.formatter
+```
+
+This is the decisive live evidence: **Base v3 Formula definition is the correct automatic write boundary; the legacy Formula result-presentation PUT is not a supported automatic mutation path for this customer Base.**
+
+## Confirmed transport and ownership model
+
+The old shared field writer used legacy Bitable v1 field writes:
 
 ```text
 POST /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields
 PUT  /open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields/:field_id
 ```
 
-with the legacy field model (`field_name`, numeric `type`, optional `ui_type`, `property`).
-
-The current official Lark 2026 Base field-write implementation uses Base v3:
+Current Base v3 Formula definition writes use:
 
 ```text
 POST /open-apis/base/v3/bases/:base_token/tables/:table_id/fields
 PUT  /open-apis/base/v3/bases/:base_token/tables/:table_id/fields/:field_id
 ```
 
-and its Formula write schema is based on:
+with the modern Formula definition shape:
 
 ```json
 {
@@ -97,60 +125,72 @@ and its Formula write schema is based on:
 }
 ```
 
-rather than a numeric type-20 Bitable v1 mutation body.
+The current official Base v3 field schema exposes Formula definition (`type`, `name`, `expression`, optional common description) but no Formula result-style supplement comparable to the legacy export's `property.type`/currency/formatter metadata.
 
-This is a confirmed repository defect in the previous Formula transport/schema selection. Per repository rules, it is **not yet called the complete live root cause of `99992402`** until the customer Target accepts and exactly reads back the Base v3 Formula.
+Therefore ownership is frozen as follows:
+
+- **automatic hard gate:** Formula identity + expression/definition through Base v3;
+- **manual/UI parity evidence:** legacy Formula result presentation such as result data type, Currency, currency code, formatter and related UI metadata;
+- **forbidden automatic fallback:** Bitable v1 Formula CREATE/PUT payload probing.
+
+The original checkpoint remains valid because it freezes Target resource ownership; moving Formula presentation from automatic to manual ownership does not create or adopt any new Target resource.
 
 ## Base v3 recovery implementation
 
 The migration engine remains `consolidate-lark-base.js`; no second clone engine was created.
 
-The existing parity decorator now owns the Formula-only Base v3 boundary while reusing the same authenticated/retried shared Lark transport:
+The existing shared/parity path owns the Formula-only Base v3 boundary while reusing the same authenticated/retried transport:
 
 - `createFormulaFieldV3({ tableId, field })`
 - `updateFormulaFieldV3({ tableId, fieldId, field })`
+- `verifyFormulaFieldV3Definition({ tableId, fieldId, field })`
 
-The internal/export Formula contract remains unchanged so existing remap/verifier logic can remain stable. At the HTTP boundary only:
+At the Base v3 HTTP boundary:
 
-1. require legacy internal Formula type `20` and `property.formula_expression`;
+1. require internal Formula type `20` and `property.formula_expression`;
 2. resolve current Target Table IDs to exact Target Table names;
 3. resolve current Target Field IDs to exact Target Field names;
-4. translate `bitable::$table[targetTableId].$field[targetFieldId]` references:
-   - same Table → `[FieldName]`;
-   - another Table → `[TableName].[FieldName]`;
-5. fail closed if any legacy `bitable::`, `$table[...]` or `$field[...]` token remains unresolved;
-6. submit only documented Base v3 Formula fields: `type`, `name`, `expression`, and optional `description`;
-7. immediately read the resulting Formula through the existing normalized `listFields()` path;
-8. compare that readback against the Source-derived internal semantic Formula field.
+4. translate legacy target-ID references to modern Formula field/table references;
+5. fail closed if a legacy unresolved table/field token remains;
+6. submit only documented Base v3 Formula definition fields;
+7. immediately verify Formula definition readback.
 
-The resumable adapter behavior is now:
+Controlled recovery behavior is now:
 
-- exact existing Formula → zero-write reuse;
-- fresh Formula + Base v3 capability → Base v3 CREATE only; never legacy Formula CREATE fallback;
-- historical recoverable shell + Base v3 capability → Base v3 PUT;
-- v3 CREATE rejection → `CUSTOMER_BASE_RESUME_FORMULA_V3_CREATE_REMOTE_REJECTED` with safe diagnostics;
-- v3 successful CREATE but semantic mismatch → `CUSTOMER_BASE_RESUME_FORMULA_V3_READBACK_MISMATCH`; preserve the created Formula and recover from the same original checkpoint;
-- a different non-empty existing expression remains a hard conflict.
+- exact existing Formula definition → zero-write reuse;
+- missing Formula definition → Base v3 CREATE;
+- recoverable historical shell → Base v3 PUT;
+- Base v3 definition mismatch → hard fail;
+- Formula result-presentation mismatch → retain as explicit manual/UI parity evidence, **no automatic Formula presentation PUT**;
+- Source Formula automatic admission requires an expression only; legacy `property.type` is not required for Base v3 definition parity.
 
-The two Base v3 mutation capabilities are also included in the same existing checkpoint write fence as other migration writes, preventing direct calls against protected or unowned Tables.
+The Base v3 mutation capabilities remain inside the existing checkpoint write fence, preventing direct calls against protected or unowned Tables.
+
+## Canonical verifier ownership
+
+Canonical verification continues to fail closed on Formula definition/expression drift after Source→Target Table/Field ID remap.
+
+Legacy Formula result-presentation differences no longer make automatic canonical verification fail. They are reported separately under Formula manual parity evidence, including the exact Table, Field, Target `formula_type`, difference paths and Source/Target presentation snapshots.
+
+This is not a silent ignore: automatic definition correctness and manual presentation correctness remain separately observable.
 
 ## Regression coverage
 
-New regressions prove code behavior without claiming live Target success:
+Regression coverage now proves:
 
-- Base v3 Formula POST endpoint and request body;
-- Base v3 Formula PUT endpoint;
-- current-table target-ID reference → `[FieldName]`;
-- cross-table target-ID reference → `[TableName].[FieldName]`;
-- unresolved target ID fails before remote write;
-- resumable fresh Formula selects `createFormulaFieldV3` and never invokes legacy Formula `createField/updateField`;
-- historical shell selects `updateFormulaFieldV3`;
-- v3 rejection retains redacted operation/Table/Field/Lark-code diagnostics;
-- existing Formula semantic comparison/reuse remains intact.
+- Base v3 Formula POST/PUT endpoints and modern definition body;
+- current-table and cross-table Formula reference conversion;
+- unresolved IDs fail before remote write;
+- existing exact Formula definition is reused without duplicate creation;
+- Base v3 definition mismatch remains a hard failure;
+- automatic controlled Apply never invokes legacy `updateField()` merely to reconcile Formula presentation;
+- Target `formula_type=2` does not require Source legacy `property.type` for automatic Formula definition;
+- Formula presentation drift is emitted as manual parity evidence;
+- non-Formula field, Relation, Record and View canonical drift remain hard failures.
 
 ## Verified milestones
 
-Base v3 implementation milestone:
+Earlier Base v3 implementation milestone:
 
 ```text
 HEAD  1660ecaa638dd17e32e15ed0dca3729b10927665
@@ -159,29 +199,39 @@ Job   96112717530
 PASS  every Branch Verification step
 ```
 
-Safety + repository-truth milestone:
+Pre-live presentation-reconciliation milestone:
 
 ```text
-HEAD  627df1fae25adb0ff31fa54f9036c8b36c700db2
-Run   32267549092
-Job   96115748843
+HEAD  48d8f2c798df577d6d855ba52a06384677800e5e
+Run   32319484689
+Job   96278639550
 PASS  every Branch Verification step
 ```
 
-The intervening safety commit `a09857e5bc78d69e019b333d9d899dd7cbc812bd` added only two entries to the existing write-method fence: `createFormulaFieldV3` and `updateFormulaFieldV3`. Subsequent documentation commits align `docs/current-task.md`, this incident record and `CHANGELOG.md` with the real partial Target state.
+That HEAD produced the live `CUSTOMER_BASE_FORMULA_PRESENTATION_UPDATE_REJECTED` evidence above and must not be rerun unchanged.
 
-The next customer Apply must still be run only from the final branch HEAD after the documentation-only closure commit has completed Branch Verification; no live Base v3 Target mutation has occurred yet.
+Automatic/manual Formula ownership correction milestone:
+
+```text
+HEAD  fb71cb38242d37b6eef70c91de4676c6a1507434
+Run   32321387600
+Job   96284132980
+PASS  every Branch Verification step
+```
+
+A subsequent cleanup removes the stale automatic `property.type` requirement and is subject to the final Branch Verification before the next customer Apply.
 
 ## No-repeat rules
 
 - Never create a new checkpoint.
 - Never delete/recreate the 32 migration-owned partial Tables.
+- Never delete/recreate `fldA1bzPlX`.
 - Never delete successful ordinary/Relation fields.
-- Do not retry any previous Bitable v1 Formula payload shape.
-- Do not fall back from Base v3 Formula failure to a guessed legacy request.
+- Do not retry any previous Bitable v1 Formula CREATE payload shape.
+- Do not use Bitable v1 Formula PUT to reconcile result presentation.
+- Do not fall back from Base v3 Formula definition failure to a guessed legacy request.
 - Do not mutate Source, Worker, D1, Queue, schedule or deployment state in this recovery.
-- Do not describe the Base v3 transport correction as the complete live root cause until `budget` passes on the customer Target.
-- If Base v3 creates `budget` but readback comparison fails, preserve that Formula and diagnose the exact difference paths on the next recovery.
+- Formula definition mismatch is always a hard stop; presentation drift is retained for manual/UI closure.
 
 ## Next live evidence required
 
@@ -189,7 +239,7 @@ Run controlled `--apply` only from the final CI-verified branch HEAD while valid
 
 Interpret the next operator result literally:
 
-- `budget` created and exact readback passes → Formula transport hypothesis is live-confirmed for that field and the operator may proceed to remaining Formulas/downstream phases;
-- `CUSTOMER_BASE_RESUME_FORMULA_V3_CREATE_REMOTE_REJECTED` → inspect the new Lark code. A permission/scope error is an external prerequisite; another `99992402` means Base v3 transport was necessary but not sufficient;
-- `CUSTOMER_BASE_RESUME_FORMULA_V3_READBACK_MISMATCH` → Formula exists; do not delete it. Preserve Target state and use the reported semantic difference paths;
-- any later-phase failure → retain all prior successful state and continue only from the same checkpoint.
+- `budget` definition verifies again → reuse `fldA1bzPlX` with zero Formula presentation write and continue to remaining Formulas/downstream phases;
+- a later Base v3 Formula definition rejection/mismatch → preserve all existing Formula fields and diagnose only that field;
+- Record/Relation-cell/View/Permission/canonical failure → retain all prior successful state and continue only from the same checkpoint;
+- automatic Apply completes → use `canonicalVerification.manualParity.formulaPresentation` as the exact UI Formula-presentation closure manifest, then proceed with retained manual View/Dashboard/Workflow parity.
