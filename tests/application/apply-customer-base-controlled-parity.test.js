@@ -239,7 +239,7 @@ test('controlled Apply adopts existing Base v3 Formula and reconciles legacy pre
   assert.equal(calls.filter((call) => call.kind === 'create-v3').length, 0);
   assert.equal(calls.filter((call) => call.kind === 'update-v3').length, 0);
   assert.equal(calls.filter((call) => call.kind === 'update-presentation').length, 1);
-  assert.equal(calls.filter((call) => call.kind === 'verify-v3').length, 3);
+  assert.equal(calls.filter((call) => call.kind === 'verify-v3').length, 5);
   assert.deepEqual(budget.property.type, {
     data_type: 2,
     ui_type: 'Currency',
