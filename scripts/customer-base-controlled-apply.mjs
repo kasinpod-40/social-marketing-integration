@@ -15,8 +15,8 @@ import {
 import { withLarkBaseParityCapabilities } from '../packages/connectors/src/lark/lark-bitable-parity.client.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 
-const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
-const SOURCE_EXPORT_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
+const BASELINE_SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub(20260818-030125).base';
+const BASELINE_SOURCE_EXPORT_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
 const SOURCE_EXPORT_NAME_PATTERN = /^Social MKT Data Hub.*\.base$/u;
 const TARGET_LABEL = '✨Marketing Content Calendar';
 const REQUIRED_PROTECTED_TABLE_NAMES = Object.freeze([
@@ -26,7 +26,7 @@ const REQUIRED_PROTECTED_TABLE_NAMES = Object.freeze([
   'คำถามจาก Sale & Support',
 ]);
 const PROTECTED_EXTERNAL_TABLE_NAMES = Object.freeze(['🎵 RAW_TikTok_Creator_Videos']);
-const EXPECTED_COUNTS = Object.freeze({
+const BASELINE_COUNTS = Object.freeze({
   tables: 33,
   fields: 723,
   records: 35_528,
@@ -36,6 +36,16 @@ const EXPECTED_COUNTS = Object.freeze({
   dashboards: 6,
   workflows: 2,
   advancedPermissionRoles: 4,
+});
+const REFRESH_STRUCTURAL_COUNTS = Object.freeze({
+  tables: BASELINE_COUNTS.tables,
+  fields: BASELINE_COUNTS.fields,
+  views: BASELINE_COUNTS.views,
+  relationFields: BASELINE_COUNTS.relationFields,
+  formulaFields: BASELINE_COUNTS.formulaFields,
+  dashboards: BASELINE_COUNTS.dashboards,
+  workflows: BASELINE_COUNTS.workflows,
+  advancedPermissionRoles: BASELINE_COUNTS.advancedPermissionRoles,
 });
 const DEFAULT_CHECKPOINT_FILE = join(homedir(), 'Downloads', 'customer-base-controlled-apply-checkpoint.json');
 
@@ -57,9 +67,10 @@ async function main() {
   const customerProdVarsFile = process.env.CUSTOMER_PROD_VARS_FILE ?? '.customer.prod.vars';
   const fileEnv = await readDevVars(customerProdVarsFile);
   const env = { ...fileEnv, ...process.env };
-  const sourceAuthority = await resolveSourceAuthority(env);
+  const sourceAuthority = await resolveSourceAuthority(env, { allowRefresh: mode === 'apply' });
   const sourceExportFile = sourceAuthority.filePath;
   const inspection = sourceAuthority.inspection;
+  const currentSourceSha256 = requireSha256(inspection?.file?.sha256, 'current Source export sha256');
   const checkpointFile = optionalText(env.CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_FILE) ?? DEFAULT_CHECKPOINT_FILE;
 
   const fullSourceClient = await createLarkBaseExportSourceClient(sourceExportFile);
@@ -81,12 +92,18 @@ async function main() {
   }));
 
   if (mode === 'prepare-checkpoint') {
+    if (sourceAuthority.authorityMode !== 'exact-baseline') {
+      throw codedError(
+        'CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_REQUIRES_BASELINE_SOURCE',
+        'Checkpoint preparation is allowed only with the exact immutable baseline Source export',
+      );
+    }
     const checkpoint = await prepareCustomerBaseControlledApplyCheckpoint({
       targetClient,
       expectedTableNames,
       requiredProtectedTableNames: REQUIRED_PROTECTED_TABLE_NAMES,
       protectedExternalTableNames: PROTECTED_EXTERNAL_TABLE_NAMES,
-      sourceAuthoritySha256: SOURCE_EXPORT_SHA256,
+      sourceAuthoritySha256: BASELINE_SOURCE_EXPORT_SHA256,
     });
     const persistedCheckpoint = Object.freeze({
       ...checkpoint,
@@ -100,9 +117,11 @@ async function main() {
       action: 'prepare-checkpoint',
       mode: 'read-only',
       sourceAuthority: {
-        fileName: inspection?.file?.fileName ?? basename(sourceExportFile),
+        authorityMode: sourceAuthority.authorityMode,
+        fileName: basename(sourceExportFile),
         filePath: sourceExportFile,
-        fileSha256: SOURCE_EXPORT_SHA256,
+        fileSha256: currentSourceSha256,
+        counts: inspection?.counts ?? null,
       },
       target: TARGET_LABEL,
       targetIdentity: {
@@ -144,12 +163,36 @@ async function main() {
       'Controlled Apply checkpoint does not contain the approved Target identity anchors',
     );
   }
+  if (checkpoint?.sourceAuthoritySha256 !== BASELINE_SOURCE_EXPORT_SHA256) {
+    throw codedError(
+      'CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_BASELINE_MISMATCH',
+      'Controlled Apply checkpoint is not the original approved baseline checkpoint',
+      {
+        expectedBaselineSha256: BASELINE_SOURCE_EXPORT_SHA256,
+        checkpointSha256: checkpoint?.sourceAuthoritySha256 ?? null,
+      },
+    );
+  }
+  if (JSON.stringify(checkpoint?.expectedTableNames ?? []) !== JSON.stringify(expectedTableNames)) {
+    throw codedError(
+      'CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_REFRESH_SCOPE_MISMATCH',
+      'Latest Source export changed the clone-scope Table names; Target mutation is blocked until the structural change is reviewed',
+      {
+        checkpointTableNames: checkpoint?.expectedTableNames ?? [],
+        currentSourceTableNames: expectedTableNames,
+        currentSourceSha256,
+      },
+    );
+  }
+
   const resources = fullSourceClient.getExportResources();
   const permissionSemantics = inspectLarkBaseExportPermissionSemantics({
     roles: resources.roles,
     sourceTables: await fullSourceClient.listTables(),
   });
 
+  // The checkpoint SHA remains the immutable pre-write Target baseline fence.
+  // The current export SHA is separately admitted above as refresh-compatible Source authority.
   const result = await applyCustomerBaseControlledParity({
     confirmation,
     sourceClient: cloneSourceClient,
@@ -157,12 +200,23 @@ async function main() {
     permissionSemantics,
     checkpoint,
     expectedTableNames,
-    sourceAuthoritySha256: SOURCE_EXPORT_SHA256,
+    sourceAuthoritySha256: checkpoint.sourceAuthoritySha256,
     onProgress: verboseProgress,
   });
 
   printJson({
     ...result,
+    sourceAuthoritySha256: currentSourceSha256,
+    checkpointSourceAuthoritySha256: checkpoint.sourceAuthoritySha256,
+    sourceAuthority: {
+      authorityMode: sourceAuthority.authorityMode,
+      fileName: basename(sourceExportFile),
+      filePath: sourceExportFile,
+      currentSha256: currentSourceSha256,
+      checkpointBaselineSha256: checkpoint.sourceAuthoritySha256,
+      refreshedFromCheckpointSource: currentSourceSha256 !== checkpoint.sourceAuthoritySha256,
+      counts: inspection?.counts ?? null,
+    },
     action: 'apply',
     target: TARGET_LABEL,
     targetIdentity: {
@@ -178,7 +232,8 @@ async function main() {
   });
 }
 
-async function resolveSourceAuthority(env) {
+async function resolveSourceAuthority(env, options = {}) {
+  const allowRefresh = options?.allowRefresh === true;
   const configured = optionalText(env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE);
   if (configured) {
     let inspection;
@@ -191,15 +246,15 @@ async function resolveSourceAuthority(env) {
         { configuredPath: configured, causeCode: error?.code ?? null },
       );
     }
-    assertAuthority(inspection);
-    return Object.freeze({ filePath: configured, inspection });
+    const authorityMode = assertAuthority(inspection, { allowRefresh });
+    return Object.freeze({ filePath: configured, inspection, authorityMode });
   }
 
   const searchDirectories = Object.freeze([
     join(homedir(), 'Desktop'),
     join(homedir(), 'Downloads'),
   ]);
-  const preferredNames = [SOURCE_EXPORT_FILENAME, 'Social MKT Data Hub.base'];
+  const preferredNames = [BASELINE_SOURCE_EXPORT_FILENAME, 'Social MKT Data Hub.base'];
   const candidatePaths = [];
 
   for (const directory of searchDirectories) {
@@ -227,23 +282,29 @@ async function resolveSourceAuthority(env) {
       continue;
     }
 
-    const mismatches = authorityMismatches(inspection);
+    const assessment = assessAuthority(inspection, { allowRefresh });
     checkedFiles.push(Object.freeze({
       filePath,
-      status: mismatches.length === 0 ? 'exact_authority' : 'authority_mismatch',
+      status: assessment.ok ? assessment.authorityMode : 'authority_mismatch',
       sha256: inspection?.file?.sha256 ?? null,
+      records: inspection?.counts?.records ?? null,
+      mismatches: assessment.mismatches,
     }));
-    if (mismatches.length === 0) return Object.freeze({ filePath, inspection });
+    if (assessment.ok) {
+      return Object.freeze({ filePath, inspection, authorityMode: assessment.authorityMode });
+    }
   }
 
   throw codedError(
     'CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_NOT_FOUND',
-    'No local Social MKT Data Hub .base file matches the exact approved Source authority SHA/counts',
+    allowRefresh
+      ? 'No local Social MKT Data Hub .base file matches the approved refresh-compatible Source structure'
+      : 'No local Social MKT Data Hub .base file matches the exact approved baseline Source authority',
     {
       searchedDirectories: searchDirectories,
-      expectedSha256: SOURCE_EXPORT_SHA256,
+      baselineSha256: BASELINE_SOURCE_EXPORT_SHA256,
       checkedFiles,
-      hint: 'Keep the exact approved export on Desktop/Downloads or set LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE to its exact path.',
+      hint: 'Keep the current Social MKT Data Hub export on Desktop/Downloads or set LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE to its exact path.',
     },
   );
 }
@@ -253,21 +314,71 @@ async function writePrivateCheckpoint(filePath, checkpoint) {
   await chmod(filePath, 0o600);
 }
 
-function assertAuthority(inspection) {
-  const mismatches = authorityMismatches(inspection);
-  if (mismatches.length > 0) {
-    throw codedError('CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_MISMATCH', 'Source export is not the exact approved authority', { mismatches });
+function assertAuthority(inspection, options = {}) {
+  const assessment = assessAuthority(inspection, options);
+  if (!assessment.ok) {
+    throw codedError(
+      'CUSTOMER_BASE_CONTROLLED_APPLY_SOURCE_AUTHORITY_MISMATCH',
+      options?.allowRefresh === true
+        ? 'Source export is not refresh-compatible with the approved migration structure'
+        : 'Source export is not the exact approved baseline authority',
+      {
+        mismatches: assessment.mismatches,
+        baselineSha256: BASELINE_SOURCE_EXPORT_SHA256,
+        actualSha256: inspection?.file?.sha256 ?? null,
+      },
+    );
   }
+  return assessment.authorityMode;
 }
 
-function authorityMismatches(inspection) {
-  const mismatches = [];
-  if (inspection?.file?.sha256 !== SOURCE_EXPORT_SHA256) {
-    mismatches.push({ dimension: 'sha256', expected: SOURCE_EXPORT_SHA256, actual: inspection?.file?.sha256 ?? null });
+function assessAuthority(inspection, options = {}) {
+  const baselineMismatches = baselineAuthorityMismatches(inspection);
+  if (baselineMismatches.length === 0) {
+    return Object.freeze({ ok: true, authorityMode: 'exact-baseline', mismatches: Object.freeze([]) });
   }
-  for (const [dimension, expected] of Object.entries(EXPECTED_COUNTS)) {
+  if (options?.allowRefresh !== true) {
+    return Object.freeze({ ok: false, authorityMode: null, mismatches: Object.freeze(baselineMismatches) });
+  }
+  const refreshMismatches = refreshAuthorityMismatches(inspection);
+  return Object.freeze({
+    ok: refreshMismatches.length === 0,
+    authorityMode: refreshMismatches.length === 0 ? 'refresh-compatible' : null,
+    mismatches: Object.freeze(refreshMismatches),
+  });
+}
+
+function baselineAuthorityMismatches(inspection) {
+  const mismatches = [];
+  if (inspection?.file?.sha256 !== BASELINE_SOURCE_EXPORT_SHA256) {
+    mismatches.push({ dimension: 'sha256', expected: BASELINE_SOURCE_EXPORT_SHA256, actual: inspection?.file?.sha256 ?? null });
+  }
+  for (const [dimension, expected] of Object.entries(BASELINE_COUNTS)) {
     const actual = inspection?.counts?.[dimension];
     if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
+  }
+  return mismatches;
+}
+
+function refreshAuthorityMismatches(inspection) {
+  const mismatches = [];
+  for (const [dimension, expected] of Object.entries(REFRESH_STRUCTURAL_COUNTS)) {
+    const actual = inspection?.counts?.[dimension];
+    if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
+  }
+  const records = Number(inspection?.counts?.records);
+  if (!Number.isInteger(records) || records < BASELINE_COUNTS.records) {
+    mismatches.push({
+      dimension: 'records',
+      expectedMinimum: BASELINE_COUNTS.records,
+      actual: Number.isFinite(records) ? records : null,
+    });
+  }
+  const tableNames = new Set(Array.isArray(inspection?.names?.tables) ? inspection.names.tables : []);
+  for (const tableName of REQUIRED_PROTECTED_TABLE_NAMES) {
+    if (!tableNames.has(tableName)) {
+      mismatches.push({ dimension: 'requiredTable', expected: tableName, actual: 'missing' });
+    }
   }
   return mismatches;
 }
@@ -305,6 +416,12 @@ function optionalText(value) {
 function requireText(value, name) {
   const text = optionalText(value);
   if (!text) throw new TypeError(`${name} is required`);
+  return text;
+}
+
+function requireSha256(value, name) {
+  const text = requireText(value, name).toLowerCase();
+  if (!/^[a-f0-9]{64}$/u.test(text)) throw new TypeError(`${name} must be a SHA-256 hex digest`);
   return text;
 }
 
