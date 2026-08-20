@@ -53,6 +53,46 @@ test('projects the entire mixed platform + TheLastMonth filter out of automatic 
   }]);
 });
 
+test('projects a frozen export-style Source client without violating property invariants', async () => {
+  const source = Object.freeze({
+    sourceKind: 'local-lark-base-export',
+    appToken: 'LOCAL_EXPORT_SOURCE',
+    async listTables() {
+      return [{ tableId: 'src_ads', name: '📈 MKT_Ads_Daily' }];
+    },
+    async listFields({ tableId }) {
+      assert.equal(this, source);
+      assert.equal(tableId, 'src_ads');
+      return [{ fieldId: 'fld_date', fieldName: 'metric_date', type: 5 }];
+    },
+    async listRecords() { return []; },
+    async listViews() { return [{ viewId: 'vew_google_30d', viewName: '📈 Google Ads Daily 30D' }]; },
+    async getView({ tableId, viewId }) {
+      assert.equal(this, source);
+      assert.equal(tableId, 'src_ads');
+      assert.equal(viewId, 'vew_google_30d');
+      return {
+        viewId,
+        viewName: '📈 Google Ads Daily 30D',
+        viewType: 'grid',
+        publicLevel: 'Public',
+        property: { hiddenFields: [], filterInfo: dynamicFilter() },
+      };
+    },
+  });
+
+  const projection = projectLarkBaseSourceForAutomaticViewFilterParity(source);
+  assert.notEqual(projection.client, source);
+  assert.equal(Object.isFrozen(projection.client), true);
+  assert.deepEqual(await projection.client.listFields({ tableId: 'src_ads' }), [
+    { fieldId: 'fld_date', fieldName: 'metric_date', type: 5 },
+  ]);
+  await projection.client.listTables();
+  const view = await projection.client.getView({ tableId: 'src_ads', viewId: 'vew_google_30d' });
+  assert.equal(view.property.filterInfo, null);
+  assert.equal(projection.getRequirements().length, 1);
+});
+
 class ReadClient {
   constructor(filterInfo) {
     this.filterInfo = filterInfo;
