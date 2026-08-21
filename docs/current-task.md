@@ -117,54 +117,69 @@ This is an exact revision admission, not a relaxation of the retained parity gat
 
 The first live runner started on `127.0.0.1:4173`, but Lark's extension panel remained on `Loading…`; the runner UI never rendered, so no Base JS SDK preflight or mutation began.
 
-A LAN-bound recovery then proved transport reachability: Lark caused the Mac runner to receive `GET /` and `GET /app.js` on `192.168.x.x:4173`. That isolated the blocker to browser-side SDK bootstrap rather than host/IP reachability.
+A LAN-bound recovery proved transport reachability: Lark caused the Mac runner to receive `GET /` and `GET /app.js` on `192.168.x.x:4173`. That isolated the blocker to browser-side SDK bootstrap rather than host/IP reachability.
 
 The next recovery moved SDK fetching server-side, but the exact live attempt failed before server READY with:
 
 ```text
-code = CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE
-reason = pinned esm.sh response contained 2 unresolved module paths
-Source mutation = 0
-Target read = 0
-Target mutation = 0
+HEAD                         da100d17df8234b43bb4d2bbb066feea109fd0ce
+Branch Verification Run      32446409807
+Branch Verification Job      96666723346
+CI                            SUCCESS
+code                          CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE
+reason                        pinned esm.sh response contained 2 unresolved module paths
+Source mutation               0
+Target read                   0
+Target mutation               0
 ```
 
-That failure proved the package cannot safely be treated as a single-file standalone module. The current recovery therefore mirrors the **actual published ESM module graph** of `@lark-base-open/js-sdk@1.0.2` instead of weakening the check or adding another runtime engine.
+That path is retired and has been removed from the live server. Do not retry it.
+
+## Exact-version published SDK graph mirror
+
+The runner now mirrors the package's real published ESM graph rather than forcing it into one file.
 
 Pinned graph contract:
 
-- package/version is exact: `@lark-base-open/js-sdk@1.0.2`;
-- upstream root is exact: `https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.2/dist/`;
-- published package main is `dist/index.mjs`;
-- before `server.listen()` and before any `READY`, the Mac runner recursively fetches the entry and every literal relative ESM dependency;
-- every dependency must remain under the exact versioned jsDelivr `dist/` root; any absolute/bare/external import fails closed;
-- graph is bounded to 256 modules / 4 MB and must contain the `bitable` shape with at least 100 KB total source;
-- all module specifiers are rewritten to same-origin `/lark-base-js-sdk/...` paths;
-- browser entry remains `/lark-base-js-sdk.mjs` and therefore the Lark iframe performs **zero CDN requests**;
-- READY/health expose `sdkDeliveryMode=same-origin-pinned-jsdelivr-module-graph`, SDK version, graph SHA-256, byte count and module count;
-- `client-event?stage=html-executed` proves served HTML ran;
-- `client-event?stage=browser-module-loaded` occurs only after the same-origin mirrored graph imported successfully;
-- neither boot marker calls a Base API, so Target reads/writes still do not begin before the user clicks the runner button.
+- SDK/version exact: `@lark-base-open/js-sdk@1.0.2`;
+- upstream root exact: `https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.2/dist/`;
+- entry exact: `dist/index.mjs`;
+- the Mac resolves the full literal-relative ESM graph **before** `server.listen()` and before `READY`;
+- every child URL must remain under the exact versioned jsDelivr `dist/` root;
+- bare, absolute, cross-origin or cross-version imports fail closed;
+- graph hard limits: 256 modules / 4 MB;
+- integrity floor: >=100 KB total source and retained `bitable` shape;
+- accepted import specifiers are rewritten to same-origin `/lark-base-js-sdk/...` paths;
+- browser entry remains `/lark-base-js-sdk.mjs`, so Lark performs no CDN request;
+- graph fingerprint is deterministic over sorted local-path/body hashes.
 
-LAN transport safety remains:
+READY/health must expose:
 
-- default host remains `127.0.0.1` for standalone/local inspection;
-- live Lark extension recovery binds only to the Mac's current LAN IPv4 via `CUSTOMER_BASE_VIEW_UI_HOST`;
-- the same address is emitted through `CUSTOMER_BASE_VIEW_UI_PUBLIC_HOST` as the URL to paste into Lark;
-- CORS is reflected only for HTTPS `*.larksuite.com` / `*.feishu.cn` origins;
-- only `GET`, `HEAD`, and `OPTIONS` are exposed;
-- every incoming request is logged as `[view-ui-local] ...`.
+```text
+sdkDeliveryMode = same-origin-pinned-jsdelivr-module-graph
+sdkVersion      = 1.0.2
+sdkSha256       = <graph SHA-256>
+sdkBytes        = <mirrored byte count>
+sdkModuleCount  = <mirrored module count>
+```
+
+Transport-only boot markers:
+
+- `/client-event?stage=html-executed` — HTML executed;
+- `/client-event?stage=browser-module-loaded` — the same-origin SDK graph imported and browser module started.
+
+Neither marker calls Base APIs. Target reads begin only after a user clicks runner action; mutations remain blocked until complete preflight passes.
 
 ## Operators
 
 - `scripts/lib/lark-base-view-js-sdk-parity.js` — names-only plan projection, structural admission and exact layout-revision authority;
-- `scripts/lib/lark-base-js-sdk-local-mirror.js` — exact-version jsDelivr ESM graph mirror + same-origin rewrite/fences;
-- `scripts/customer-base-view-ui-parity-server.mjs` — checkpoint fence, Source discovery/admission, LAN transport, pinned SDK graph serving and runner;
+- `scripts/lib/lark-base-js-sdk-local-mirror.js` — exact-version jsDelivr ESM graph mirror, same-origin rewrite and graph fences;
+- `scripts/customer-base-view-ui-parity-server.mjs` — checkpoint fence, Source discovery/admission, LAN transport and mirrored SDK graph serving;
 - `scripts/customer-base-view-ui-parity.browser.js` — same-origin SDK bootstrap, exact Target preflight + supported SDK mutation/readback;
 - `scripts/customer-base-view-ui-source-diagnostic.mjs` — local read-only Source/layout diagnostic using the same authority function;
 - `tests/scripts/lark-base-view-js-sdk-parity.test.js` — normalization, structural admission and exact 42-sort inventory regressions;
-- `tests/scripts/lark-base-js-sdk-local-mirror.test.js` — graph traversal/rewrite/origin fail-closed tests;
-- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` — same-origin graph delivery and pre-READY localization regression.
+- `tests/scripts/lark-base-js-sdk-local-mirror.test.js` — graph traversal/rewrite/origin fail-closed regressions;
+- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` — same-origin graph delivery, boot markers and explicit rejection of legacy standalone fallback.
 
 ## Full preflight before first UI mutation
 
@@ -212,9 +227,9 @@ Official Base JS SDK exposes ordered field readback but no documented setter for
 ## Required closure sequence
 
 1. Require full Branch Verification SUCCESS on the final runner/docs HEAD.
-2. Resolve the Mac's LAN IPv4 and start `scripts/customer-base-view-ui-parity-server.mjs` with that address as both bind/public host; require `status=READY`, exact Source SHA `9c24...`, `sourcePlanAuthorityMode=exact-refresh-layout-revision-facebook-content-published-at-desc`, `sortViews=42`, `sdkDeliveryMode=same-origin-pinned-jsdelivr-module-graph`, `sdkVersion=1.0.2`, and non-empty SDK graph SHA/byte/module-count evidence.
-3. Reopen the existing Base extension script inside the exact customer Target Base using the emitted LAN URL; the URL need not change if the Mac LAN IP is unchanged.
-4. Before clicking anything, require Terminal evidence for `/client-event?stage=html-executed`, `/app.js`, `/lark-base-js-sdk.mjs`, mirrored `/lark-base-js-sdk/...` requests, and `/client-event?stage=browser-module-loaded`, and require the runner UI to render inside Lark.
+2. Resolve the Mac's LAN IPv4 and start `scripts/customer-base-view-ui-parity-server.mjs`; require `status=READY`, exact Source SHA `9c24...`, `sourcePlanAuthorityMode=exact-refresh-layout-revision-facebook-content-published-at-desc`, `sortViews=42`, `sdkDeliveryMode=same-origin-pinned-jsdelivr-module-graph`, `sdkVersion=1.0.2`, and non-empty SDK graph SHA/byte/module-count evidence.
+3. Reopen the existing Base extension inside the exact customer Target using the emitted LAN URL; the URL need not change if the Mac LAN IP is unchanged.
+4. Before clicking anything, require Terminal evidence for `/client-event?stage=html-executed`, `/app.js`, `/lark-base-js-sdk.mjs`, mirrored `/lark-base-js-sdk/...` requests and `/client-event?stage=browser-module-loaded`, and require the runner UI to render inside Lark.
 5. Run supported View UI parity once and retain its compact summary JSON.
 6. Use the reported field-order mismatch count to finish only actual remaining field-order work; frozen columns remain manual.
 7. Complete Formula presentation 4 and dynamic-date filter 1.
