@@ -6,8 +6,8 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
-import { buildLarkBaseViewManualParityManifest } from './lib/lark-base-view-manual-parity-manifest.js';
 import { loadPinnedLarkBaseJsSdkMirror } from './lib/lark-base-js-sdk-local-mirror.js';
+import { buildLarkBaseViewManualParityManifest } from './lib/lark-base-view-manual-parity-manifest.js';
 import {
   assessLarkBaseViewUiPlanAuthority,
   assessLarkBaseViewUiRefreshSourceAuthority,
@@ -16,10 +16,6 @@ import {
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 4173;
-const LARK_BASE_JS_SDK_VERSION = '1.0.2';
-const LARK_BASE_JS_SDK_ENTRY_URL = `https://esm.sh/@lark-base-open/js-sdk@${LARK_BASE_JS_SDK_VERSION}?standalone&target=es2022`;
-const LARK_BASE_JS_SDK_MIN_BYTES = 20_000;
-const LARK_BASE_JS_SDK_MAX_MODULE_HOPS = 3;
 const BASELINE_SOURCE_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
 const CHECKPOINT_SHA256 = '7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053';
 const DEFAULT_CHECKPOINT_FILE = join(homedir(), 'Downloads', 'customer-base-controlled-apply-checkpoint.json');
@@ -158,112 +154,6 @@ try {
     remoteMutationCount: 0,
   }, null, 2));
   process.exitCode = 1;
-}
-
-async function loadPinnedLarkBaseJsSdk() {
-  let currentUrl = LARK_BASE_JS_SDK_ENTRY_URL;
-  let body = '';
-  let resolvedUrl = null;
-
-  for (let hop = 0; hop <= LARK_BASE_JS_SDK_MAX_MODULE_HOPS; hop += 1) {
-    let response;
-    try {
-      response = await fetch(currentUrl, {
-        redirect: 'follow',
-        signal: AbortSignal.timeout(20_000),
-        headers: {
-          Accept: 'text/javascript, application/javascript;q=0.9, */*;q=0.1',
-          'User-Agent': 'social-marketing-integration/customer-base-view-ui-parity',
-        },
-      });
-    } catch (error) {
-      throw codedError(
-        'CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED',
-        'Unable to fetch the pinned Base JS SDK before starting the local runner',
-        { sdkVersion: LARK_BASE_JS_SDK_VERSION, cause: error?.message ?? String(error) },
-      );
-    }
-
-    if (!response.ok) {
-      throw codedError(
-        'CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED',
-        'Pinned Base JS SDK fetch returned a non-success response',
-        { sdkVersion: LARK_BASE_JS_SDK_VERSION, status: response.status },
-      );
-    }
-
-    resolvedUrl = response.url;
-    body = await response.text();
-    const moduleSpecifiers = extractModuleSpecifiers(body);
-    const rootRelative = [...new Set(moduleSpecifiers.filter((specifier) => specifier.startsWith('/')))];
-
-    if (rootRelative.length === 0) break;
-    if (rootRelative.length !== 1) {
-      throw codedError(
-        'CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE',
-        'Pinned Base JS SDK resolver returned multiple unresolved module paths',
-        { sdkVersion: LARK_BASE_JS_SDK_VERSION, unresolvedModuleCount: rootRelative.length },
-      );
-    }
-    if (hop === LARK_BASE_JS_SDK_MAX_MODULE_HOPS) {
-      throw codedError(
-        'CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE',
-        'Pinned Base JS SDK did not resolve to a standalone browser module',
-        { sdkVersion: LARK_BASE_JS_SDK_VERSION },
-      );
-    }
-
-    const nextUrl = new URL(rootRelative[0], resolvedUrl);
-    if (nextUrl.protocol !== 'https:' || nextUrl.hostname !== 'esm.sh') {
-      throw codedError(
-        'CUSTOMER_BASE_VIEW_UI_SDK_ORIGIN_MISMATCH',
-        'Pinned Base JS SDK resolver attempted to leave the approved esm.sh origin',
-        { sdkVersion: LARK_BASE_JS_SDK_VERSION, hostname: nextUrl.hostname },
-      );
-    }
-    currentUrl = nextUrl.href;
-  }
-
-  const unresolved = extractModuleSpecifiers(body);
-  if (unresolved.length > 0) {
-    throw codedError(
-      'CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE',
-      'Pinned Base JS SDK still contains browser module dependencies after standalone resolution',
-      { sdkVersion: LARK_BASE_JS_SDK_VERSION, unresolvedModuleCount: unresolved.length },
-    );
-  }
-  if (Buffer.byteLength(body, 'utf8') < LARK_BASE_JS_SDK_MIN_BYTES || !body.includes('bitable')) {
-    throw codedError(
-      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLE_INVALID',
-      'Pinned Base JS SDK bundle failed the local integrity shape check',
-      {
-        sdkVersion: LARK_BASE_JS_SDK_VERSION,
-        minimumBytes: LARK_BASE_JS_SDK_MIN_BYTES,
-        actualBytes: Buffer.byteLength(body, 'utf8'),
-      },
-    );
-  }
-
-  return Object.freeze({
-    version: LARK_BASE_JS_SDK_VERSION,
-    body,
-    bytes: Buffer.byteLength(body, 'utf8'),
-    sha256: fingerprint(body),
-    resolvedUrl,
-  });
-}
-
-function extractModuleSpecifiers(source) {
-  const specifiers = new Set();
-  const patterns = [
-    /\bfrom\s*["']([^"']+)["']/gu,
-    /\bimport\s*["']([^"']+)["']/gu,
-    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu,
-  ];
-  for (const pattern of patterns) {
-    for (const match of source.matchAll(pattern)) specifiers.add(match[1]);
-  }
-  return [...specifiers];
 }
 
 async function resolveSourceAuthority({ checkpoint }) {
