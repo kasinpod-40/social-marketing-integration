@@ -73,12 +73,12 @@ export function calculateOrganicPeriodMetrics(input = {}) {
       outputField,
       baseline.covered ? subtractKnown(current[sourceField], baseline.snapshot[sourceField]) : null,
     ]));
-    const periodEngagement = sumStrict([
+    const periodEngagement = sumObserved([
       deltas.periodLikes,
       deltas.periodComments,
       deltas.periodShares,
     ]);
-    const latestEngagement = sumStrict([current.likes, current.comments, current.shares]);
+    const latestEngagement = sumObserved([current.likes, current.comments, current.shares]);
     usedObservationIds.add(observationIdentity(current));
     if (baseline.sourceObservation) usedObservationIds.add(observationIdentity(baseline.sourceObservation));
     rows.push(Object.freeze({
@@ -302,13 +302,12 @@ function subtractKnown(current, baseline) {
   return left === null || right === null ? null : left - right;
 }
 
-function sumField(rows, fieldName) { return sumStrict(rows.map((row) => row[fieldName])); }
-function sumCurrentField(rows, fieldName) { return sumStrict(rows.map((row) => row.current?.[fieldName])); }
-function sumStrict(values) {
-  if (values.length === 0) return null;
-  const normalized = values.map(normalizeMetric);
-  if (normalized.some((value) => value === null)) return null;
-  return normalized.reduce((sum, value) => sum + value, 0);
+function sumField(rows, fieldName) { return sumObserved(rows.map((row) => row[fieldName])); }
+function sumCurrentField(rows, fieldName) { return sumObserved(rows.map((row) => row.current?.[fieldName])); }
+function sumObserved(values) {
+  const observed = values.map(normalizeMetric).filter((value) => value !== null);
+  if (observed.length === 0) return null;
+  return observed.reduce((sum, value) => sum + value, 0);
 }
 
 function weightedAverageStrict(rows, metricField, weightField) {
