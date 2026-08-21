@@ -16,7 +16,14 @@
 - Refresh is stable-ID-only and D1-backed. It performs zero Facebook Provider refetch, zero manual Lark patch, one private D1 backup before Queue mutation, bounded D1↔Lark verification for every window, and exact runtime-flag restoration after execution.
 - Recorded deploy/send attempts block blind rerun. Recovery may restore the exact captured runtime and verify completed reports, but sends zero Queue jobs.
 - PR #663 passed final Branch Verification on head `c2c73ebe1117018c73375f9903e152c6430c8848` (Run `32446529335`, Job `96667104644`) and merged to `main` at exact SHA `55435bbabbf5788a2cb76790ed5e0b3d137587fb`.
-- Repository implementation is complete; controlled Live Integration rematerialization remains pending from a clean current `main` with real Lark/Cloudflare credentials. Repository CI is not treated as live evidence.
+
+### Live preflight JSON-Boolean binding hotfix
+
+- Controlled Integration execution remained fail-closed before any remote mutation when the active Worker exposed `MKT_CONNECTOR_FACEBOOK_ENABLED` as a Cloudflare `json` Boolean binding. The original rollout helper incorrectly admitted only `plain_text` execution flags.
+- Updated remote flag readback to accept both reviewed Cloudflare forms: `plain_text` containing strict `true`/`false`, and `json` containing the actual Boolean `true`/`false`. JSON strings, objects, numbers, secret bindings and all other execution binding types remain rejected.
+- Baseline and temporary Report-overlay configs now preserve each local Wrangler flag's Boolean-vs-string representation instead of coercing every captured flag into text.
+- The failed live attempts produced zero Provider requests, zero Production mutation and no recorded deploy/send attempt evidence; no recovery/rollback was required.
+- Hotfix Branch Verification and merge remain required before the next controlled live attempt.
 - Customer-owned Production and PR #661 remain out of scope with zero mutation.
 
 ## Historical changelog
