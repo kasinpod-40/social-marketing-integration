@@ -22,10 +22,6 @@ const ORGANIC_STAGES = Object.freeze([
 ]);
 const ADS_STAGES = Object.freeze([
   'account',
-  'campaigns',
-  'ad_sets',
-  'ads',
-  'creatives',
   'daily',
   'complete',
 ]);
@@ -56,7 +52,7 @@ export async function processMetaEndToEndSync(input = {}) {
 
   const fingerprint = await createStableFingerprint({
     schemaVersion: connectorKey === ADS_CONNECTOR
-      ? 'meta_ads_full_inventory_lark_parity_operation_v1'
+      ? 'meta_ads_report_range_activity_operation_v1'
       : 'meta_end_to_end_runtime_operation_v1',
     connectorKey,
     sourceAccountId,
@@ -345,21 +341,10 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
   }
   const adsDatasets = {
     account: 'meta_ads.account.latest',
-    campaigns: 'meta_ads.campaigns.inventory',
-    ad_sets: 'meta_ads.ad_sets.inventory',
-    ads: 'meta_ads.ads.inventory',
-    creatives: 'meta_ads.creatives.inventory',
     daily: 'meta_ads.performance.daily',
   };
-  const datasetKey = adsDatasets[state.stage];
-  if (!datasetKey) {
-    throw permanentError('Meta Ads durable source stage has no dataset mapping', {
-      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
-      details: { stage: state.stage },
-    });
-  }
   return {
-    datasetKey,
+    datasetKey: adsDatasets[state.stage],
     state: pageState,
     ...(state.stage === 'daily' ? { dateRange } : {}),
   };
@@ -402,26 +387,29 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
       sourceWatermark: state.sourceWatermark,
     });
   }
-  const adsRowsFor = (datasetKey) => staged
-    .filter((entry) => entry.datasetKey === datasetKey)
+  const account = staged
+    .filter((entry) => entry.datasetKey === 'meta_ads.account.latest')
     .flatMap((entry) => entry.rows);
-  const account = adsRowsFor('meta_ads.account.latest');
   if (account.length !== 1) {
     throw permanentError('Meta Ads account source must contain exactly one resource', {
       code: 'META_END_TO_END_SOURCE_ACCOUNT_INVALID',
     });
   }
+  const dailyInsights = staged
+    .filter((entry) => entry.datasetKey === 'meta_ads.performance.daily')
+    .flatMap((entry) => entry.rows);
+  const activity = deriveMetaAdsActivityEntities(dailyInsights);
   return deepFreeze({
     connectorKey,
     sourceAccountId,
     accountResource: account[0],
-    campaigns: adsRowsFor('meta_ads.campaigns.inventory'),
-    adSets: adsRowsFor('meta_ads.ad_sets.inventory'),
-    ads: adsRowsFor('meta_ads.ads.inventory'),
-    creatives: adsRowsFor('meta_ads.creatives.inventory'),
-    dailyInsights: adsRowsFor('meta_ads.performance.daily'),
-    entityScopeMode: 'full_inventory',
-    larkProjectionMode: 'detailed',
+    campaigns: activity.campaigns,
+    adSets: activity.adSets,
+    ads: activity.ads,
+    creatives: [],
+    dailyInsights,
+    entityScopeMode: 'report_range',
+    larkProjectionMode: 'curated_reports',
     sourceWatermark: state.sourceWatermark,
   });
 }
@@ -507,6 +495,81 @@ async function buildWriteSet(input) {
     periodStart: input.dateRange.since,
     periodEnd: input.dateRange.until,
   });
+}
+
+function deriveMetaAdsActivityEntities(rows) {
+  const campaigns = new Map();
+  const adSets = new Map();
+  const ads = new Map();
+  const ordered = requireArray(rows, 'Meta Ads activity insights')
+    .map((row) => requireObject(row, 'Meta Ads activity insight'))
+    .sort((left, right) => activityRowSortKey(left).localeCompare(activityRowSortKey(right)));
+
+  for (const row of ordered) {
+    const campaignId = requireText(row.campaign_id, 'Meta Ads activity campaign_id');
+    const adSetId = requireText(row.adset_id, 'Meta Ads activity adset_id');
+    const adId = requireText(row.ad_id, 'Meta Ads activity ad_id');
+    const metricDate = requireDate(row.date_start, 'Meta Ads activity date_start');
+    upsertActivityEntity(campaigns, campaignId, {
+      id: campaignId,
+      name: optionalText(row.campaign_name),
+      objective: optionalText(row.objective),
+      metricDate,
+    }, []);
+    upsertActivityEntity(adSets, adSetId, {
+      id: adSetId,
+      campaign_id: campaignId,
+      name: optionalText(row.adset_name),
+      metricDate,
+    }, ['campaign_id']);
+    upsertActivityEntity(ads, adId, {
+      id: adId,
+      campaign_id: campaignId,
+      adset_id: adSetId,
+      name: optionalText(row.ad_name),
+      metricDate,
+    }, ['campaign_id', 'adset_id']);
+  }
+
+  return deepFreeze({
+    campaigns: activityValues(campaigns),
+    adSets: activityValues(adSets),
+    ads: activityValues(ads),
+  });
+}
+
+function upsertActivityEntity(target, id, candidate, parentFields) {
+  const existing = target.get(id);
+  if (existing) {
+    for (const field of parentFields) {
+      if (existing[field] !== candidate[field]) {
+        throw permanentError('Meta Ads activity hierarchy changed inside one report range', {
+          code: 'META_ADS_ACTIVITY_IDENTITY_DRIFT',
+          details: { entityId: id, field },
+        });
+      }
+    }
+  }
+  if (!existing || candidate.metricDate >= existing.metricDate) target.set(id, candidate);
+}
+
+function activityValues(values) {
+  return Object.freeze([...values.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(({ metricDate: _metricDate, ...value }) => Object.freeze(value)));
+}
+
+function activityRowSortKey(row) {
+  return [
+    optionalText(row.date_start) ?? '',
+    optionalText(row.campaign_id) ?? '',
+    optionalText(row.adset_id) ?? '',
+    optionalText(row.ad_id) ?? '',
+    optionalText(row.publisher_platform) ?? '',
+    optionalText(row.campaign_name) ?? '',
+    optionalText(row.adset_name) ?? '',
+    optionalText(row.ad_name) ?? '',
+  ].join(':');
 }
 
 async function readAllStagedUnits({
