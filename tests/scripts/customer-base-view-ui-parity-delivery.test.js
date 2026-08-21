@@ -22,14 +22,12 @@ test('View UI browser loads Base JS SDK only from the same local origin', async 
   );
 });
 
-test('View UI server mirrors the exact pinned SDK module graph before READY and serves every module locally', async () => {
+test('View UI server resolves the exact pinned SDK bundle before READY and serves it locally', async () => {
   const source = await readFile(serverFile, 'utf8');
 
   assert.match(source, /loadPinnedLarkBaseJsSdkMirror/u);
   assert.match(source, /const sdkBundle = await loadPinnedLarkBaseJsSdkMirror\(\);/u);
   assert.match(source, /path === '\/lark-base-js-sdk\.mjs'/u);
-  assert.match(source, /path\.startsWith\('\/lark-base-js-sdk\/'\)/u);
-  assert.match(source, /sdkBundle\.modules\.get\(path\)/u);
   assert.match(source, /sdkDeliveryMode: sdkBundle\.deliveryMode/u);
   assert.match(source, /sdkModuleCount: sdkBundle\.moduleCount/u);
   assert.match(source, /stage=html-executed/u);
@@ -39,5 +37,20 @@ test('View UI server mirrors the exact pinned SDK module graph before READY and 
 
   const resolveIndex = source.indexOf('const sdkBundle = await loadPinnedLarkBaseJsSdkMirror();');
   const listenIndex = source.indexOf('server.listen(port, host');
-  assert.ok(resolveIndex >= 0 && listenIndex > resolveIndex, 'SDK graph must resolve before the server can report READY');
+  assert.ok(resolveIndex >= 0 && listenIndex > resolveIndex, 'SDK bundle must resolve before the server can report READY');
+});
+
+test('View UI semantic runner never mutates cosmetic row height or column width', async () => {
+  const source = await readFile(browserFile, 'utf8');
+
+  assert.match(source, /กำลังจัด sort \/ group/u);
+  assert.match(source, /getSortInfo/u);
+  assert.match(source, /addSort/u);
+  assert.match(source, /getGroupInfo/u);
+  assert.match(source, /addGroup/u);
+  assert.doesNotMatch(source, /setRowHeight/u);
+  assert.doesNotMatch(source, /setFieldWidth/u);
+  assert.doesNotMatch(source, /getFieldWidth/u);
+  assert.match(source, /ignoredCosmetic/u);
+  assert.match(source, /non-authoritative presentation only/u);
 });
