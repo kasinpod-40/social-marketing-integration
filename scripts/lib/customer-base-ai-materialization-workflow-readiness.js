@@ -7,6 +7,7 @@ const EXPECTED_STEP_TYPES = Object.freeze([
   'GenerateAiTextWithSkyLarkAction',
   'SetRecordAction',
 ]);
+const CANONICAL_WORKFLOW_TITLE = canonicalWorkflowTitle(WORKFLOW_TITLE);
 
 export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sourceClient }) {
   requireSourceClient(sourceClient);
@@ -22,19 +23,41 @@ export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sour
 
   const references = await buildSourceReferenceMaps(sourceClient);
   const matches = [];
-  for (const rawWorkflow of workflows) {
+  const resolutionCandidates = [];
+  for (const [index, rawWorkflow] of workflows.entries()) {
     const draft = parseMaybeJson(rawWorkflow?.Draft ?? rawWorkflow?.draft, 'workflow Draft');
-    if (optionalText(draft?.title) === WORKFLOW_TITLE) matches.push({ rawWorkflow, draft });
+    const sourceTitle = optionalText(draft?.title);
+    const stepTypes = Array.isArray(draft?.steps)
+      ? draft.steps.map((step) => optionalText(step?.type) ?? '')
+      : [];
+    const titleMatch = canonicalWorkflowTitle(sourceTitle) === CANONICAL_WORKFLOW_TITLE;
+    const reviewedStepSignatureMatch = sameArray(stepTypes, EXPECTED_STEP_TYPES);
+    resolutionCandidates.push({
+      sourceOrdinal: index + 1,
+      hasDraft: Boolean(draft),
+      titleMatch,
+      reviewedStepSignatureMatch,
+      stepTypes,
+    });
+    if (titleMatch || reviewedStepSignatureMatch) {
+      matches.push({
+        rawWorkflow,
+        draft,
+        sourceResolutionMode: titleMatch
+          ? 'canonical-title'
+          : 'unique-reviewed-step-signature',
+      });
+    }
   }
   if (matches.length !== 1) {
     throw codedError(
       'CUSTOMER_BASE_AI_WORKFLOW_SOURCE_RESOLUTION_FAILED',
       'AI Materialization workflow must resolve exactly once in Source',
-      { matches: matches.length },
+      { matches: matches.length, candidates: resolutionCandidates },
     );
   }
 
-  const { rawWorkflow, draft } = matches[0];
+  const { rawWorkflow, draft, sourceResolutionMode } = matches[0];
   const sourceStatus = normalizeSourceWorkflowStatus(rawWorkflow);
   const steps = requireArray(draft.steps, 'AI Materialization workflow steps');
   const stepTypes = steps.map((step) => optionalText(step?.type) ?? '');
@@ -118,6 +141,7 @@ export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sour
     contractVersion: 'customer_base_ai_materialization_workflow_readiness_v1',
     mode: 'local-source-read-only',
     title: WORKFLOW_TITLE,
+    sourceResolutionMode,
     sourceStatus,
     sourceWorkflowCount: workflows.length,
     stepCount: steps.length,
@@ -230,23 +254,41 @@ function normalizeSourceWorkflowStatus(raw) {
   return value ?? null;
 }
 
-function parseMaybeJson(value, label) {
+function parseMaybeJson(value, label, depth = 0) {
+  if (depth > 4) {
+    throw codedError(
+      'CUSTOMER_BASE_AI_WORKFLOW_SOURCE_JSON_NESTING_INVALID',
+      `${label} exceeded supported JSON wrapper depth`,
+    );
+  }
   if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    if (
-      value.encoding === 'json'
-      && value.value
-      && typeof value.value === 'object'
-      && !Array.isArray(value.value)
-    ) return value.value;
+    if (value.encoding === 'json' && Object.prototype.hasOwnProperty.call(value, 'value')) {
+      return parseMaybeJson(value.value, label, depth + 1);
+    }
     return value;
   }
   if (typeof value !== 'string') return null;
-  try { return JSON.parse(value); } catch (error) {
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'string'
+      ? parseMaybeJson(parsed, label, depth + 1)
+      : parsed;
+  } catch (error) {
     throw codedError('CUSTOMER_BASE_AI_WORKFLOW_SOURCE_JSON_INVALID', `${label} is not valid JSON`, {
       cause: error?.message ?? String(error),
     });
   }
+}
+
+function canonicalWorkflowTitle(value) {
+  const text = optionalText(value);
+  if (!text) return null;
+  return text
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
 }
 
 function walk(value, visitor, path = '$', parent = null) {
