@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assessLarkBaseViewUiPlanAuthority,
   assessLarkBaseViewUiRefreshSourceAuthority,
   buildLarkBaseViewJsSdkParityPlan,
+  LARK_BASE_VIEW_UI_APPROVED_REFRESH_LAYOUT_SOURCE_SHA256,
 } from '../../scripts/lib/lark-base-view-js-sdk-parity.js';
 
 test('projects retained View manifest into documented Base JS SDK mutations', () => {
@@ -146,6 +148,136 @@ test('rejects View UI Source when structure or record floor differs', () => {
     { dimension: 'records', expectedMinimum: 35_528, actual: 35_000 },
   ]);
 });
+
+test('admits the exact refreshed layout only with the evidence-backed 42-sort inventory', () => {
+  const assessment = assessLarkBaseViewUiPlanAuthority(approvedRefreshPlan(), {
+    sourceSha256: LARK_BASE_VIEW_UI_APPROVED_REFRESH_LAYOUT_SOURCE_SHA256,
+  });
+
+  assert.equal(assessment.ok, true);
+  assert.equal(
+    assessment.authorityMode,
+    'exact-refresh-layout-revision-facebook-content-published-at-desc',
+  );
+  assert.equal(
+    assessment.sortInventoryFingerprintSha256,
+    '961936df36fdf70b4cb2df434638630e699b573c26166b4aff04f0f58ecfbf88',
+  );
+  assert.deepEqual(assessment.mismatches, []);
+});
+
+test('rejects the approved refresh SHA if any sorted View identity changes', () => {
+  const plan = approvedRefreshPlan();
+  plan.tables[0].views[0].mutate.sort[0].fieldName = 'created_at';
+
+  const assessment = assessLarkBaseViewUiPlanAuthority(plan, {
+    sourceSha256: LARK_BASE_VIEW_UI_APPROVED_REFRESH_LAYOUT_SOURCE_SHA256,
+  });
+
+  assert.equal(assessment.ok, false);
+  assert.equal(assessment.authorityMode, null);
+  assert.deepEqual(assessment.mismatches.map((item) => item.dimension), [
+    'sortInventoryFingerprintSha256',
+  ]);
+});
+
+test('does not admit a 42-sort plan for an unapproved refresh SHA', () => {
+  const assessment = assessLarkBaseViewUiPlanAuthority(approvedRefreshPlan(), {
+    sourceSha256: 'another-refresh-sha',
+  });
+
+  assert.equal(assessment.ok, false);
+  assert.equal(assessment.authorityMode, null);
+  assert.deepEqual(assessment.mismatches, [
+    { dimension: 'sortViews', expected: 41, actual: 42 },
+  ]);
+});
+
+test('retained count gate also fails closed on hidden-state inventory drift', () => {
+  const plan = approvedRefreshPlan();
+  plan.summary.sortViews = 41;
+  plan.summary.hiddenVerificationAssignments = 84;
+
+  const assessment = assessLarkBaseViewUiPlanAuthority(plan, {
+    sourceSha256: 'retained-compatible-refresh-sha',
+  });
+
+  assert.equal(assessment.ok, false);
+  assert.deepEqual(assessment.mismatches, [
+    { dimension: 'hiddenVerificationAssignments', expected: 85, actual: 84 },
+  ]);
+});
+
+function approvedRefreshPlan() {
+  const inventory = [
+    ['🎬 MKT_Content', '🔵 Facebook Content', 'published_at', true],
+    ['🏆 MKT_Report_Top_Content', '🏅 Weekly Top Content', 'rank', false],
+    ['🏆 MKT_Report_Top_Content', '🏆 Daily Top Content', 'rank', false],
+    ['🏆 MKT_Report_Top_Content', '🏆 Top Content', 'rank', false],
+    ['🏢 MKT_Conversation_Account_Daily', '📋 All Account Daily', 'metric_date', true],
+    ['👥 MKT_Commerce_Customers', '📋 All Customers', 'last_order_at', true],
+    ['💬 MKT_Conversations', '📋 All Conversations', 'last_activity_at', true],
+    ['📅 MKT_Commerce_Daily', '📋 All Commerce Daily', 'metric_date', true],
+    ['📅 MKT_Content_Daily', '▶️ Latest YouTube Metrics', 'metric_date', true],
+    ['📅 MKT_Content_Daily', '🎵 Latest TikTok Metrics', 'metric_date', true],
+    ['📅 MKT_Content_Daily', '📋 All Content Daily', 'metric_date', true],
+    ['📅 MKT_Content_Daily', '🔵 Latest Facebook Metrics', 'metric_date', true],
+    ['📅 MKT_Content_Daily', '🟣 Latest Instagram Metrics', 'metric_date', true],
+    ['📅 MKT_Conversation_Daily', '📋 All Conversation Daily', 'metric_date', true],
+    ['📆 MKT_Account_Daily', '📋 All Account Daily', 'metric_date', true],
+    ['📈 MKT_Ads_Daily', '⚠️ Spend With ROAS Below 1', 'metric_date', true],
+    ['📈 MKT_Ads_Daily', '🎵 TikTok Ads Daily', 'metric_date', true],
+    ['📈 MKT_Ads_Daily', '📈 Google Ads Daily 30D', 'metric_date', true],
+    ['📈 MKT_Ads_Daily', '📋 All Ads Daily', 'metric_date', true],
+    ['📈 MKT_Ads_Daily', '🔎 Google Ads Daily', 'metric_date', true],
+    ['📈 MKT_Ads_Daily', '🔵 Meta Ads Daily', 'metric_date', true],
+    ['📊 MKT_Report_Metric_Values', '📈 Weekly Metrics', 'rank', false],
+    ['📊 MKT_Report_Metric_Values', '📊 Client Metrics', 'rank', true],
+    ['📊 MKT_Report_Metric_Values', '📊 Daily Metrics', 'rank', false],
+    ['📥 MKT_Inbox_Daily', '📋 All Inbox Daily', 'metric_date', true],
+    ['📦 MKT_Commerce_Product_Daily', '📋 All Product Daily', 'metric_date', true],
+    ['🧑‍💼 MKT_Agent_Daily', '📋 All Agent Daily', 'metric_date', true],
+    ['🧠 MKT_AI_Report_Runs', '⚠️ Missing / Partial Data', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '✅ Notification Eligible', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '❌ AI Generation Failures', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '🌐 All Channel Readiness', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '📆 Monthly Reports', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '📊 Dashboard Channel Status', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '📊 Executive Summaries', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '🕘 Latest Reports', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '🗓️ Weekly Reports', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '🧪 Preview Runs', 'generated_at', true],
+    ['🧠 MKT_AI_Report_Runs', '🧾 Yearly Reports', 'generated_at', true],
+    ['🧾 MKT_Commerce_Orders', '📋 All Orders', 'source_created_at', true],
+    ['🧾 MKT_Report_Snapshots', '📋 All Report Snapshots', 'generated_at', true],
+    ['🧾 MKT_Report_Snapshots', '🕘 Latest Snapshots', 'generated_at', true],
+    ['🛍️ MKT_Commerce_Products', '📋 All Products', 'source_modified_at', true],
+  ];
+  const tables = new Map();
+  for (const [tableName, viewName, fieldName, desc] of inventory) {
+    if (!tables.has(tableName)) tables.set(tableName, []);
+    tables.get(tableName).push({
+      viewName,
+      mutate: { sort: [{ fieldName, desc }] },
+    });
+  }
+  return {
+    summary: {
+      tableCount: 32,
+      viewCount: 110,
+      fieldOrderAuditViews: 110,
+      hiddenVerificationViews: 11,
+      hiddenVerificationAssignments: 85,
+      sortViews: 42,
+      groupViews: 4,
+      columnWidthViews: 70,
+      columnWidthAssignments: 898,
+      rowHeightViews: 110,
+      frozenColumnManualViews: 110,
+    },
+    tables: [...tables.entries()].map(([tableName, views]) => ({ tableName, views })),
+  };
+}
 
 function fixtureManifest(manual) {
   return {
