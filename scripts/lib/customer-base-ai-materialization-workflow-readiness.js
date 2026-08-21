@@ -8,6 +8,8 @@ const EXPECTED_STEP_TYPES = Object.freeze([
   'SetRecordAction',
 ]);
 const CANONICAL_WORKFLOW_TITLE = canonicalWorkflowTitle(WORKFLOW_TITLE);
+const MAX_WORKFLOW_ENVELOPE_DEPTH = 10;
+const MAX_WORKFLOW_ENVELOPE_STRING_BYTES = 4 * 1024 * 1024;
 
 export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sourceClient }) {
   requireSourceClient(sourceClient);
@@ -25,29 +27,39 @@ export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sour
   const matches = [];
   const resolutionCandidates = [];
   for (const [index, rawWorkflow] of workflows.entries()) {
-    const draft = parseMaybeJson(rawWorkflow?.Draft ?? rawWorkflow?.draft, 'workflow Draft');
-    const sourceTitle = optionalText(draft?.title);
-    const stepTypes = Array.isArray(draft?.steps)
-      ? draft.steps.map((step) => optionalText(step?.type) ?? '')
-      : [];
-    const titleMatch = canonicalWorkflowTitle(sourceTitle) === CANONICAL_WORKFLOW_TITLE;
-    const reviewedStepSignatureMatch = sameArray(stepTypes, EXPECTED_STEP_TYPES);
+    const draftCandidates = findWorkflowDraftCandidates(rawWorkflow);
+    const candidateDiagnostics = [];
+    for (const candidate of draftCandidates) {
+      const sourceTitle = optionalText(candidate.draft?.title);
+      const stepTypes = Array.isArray(candidate.draft?.steps)
+        ? candidate.draft.steps.map((step) => optionalText(step?.type) ?? '')
+        : [];
+      const titleMatch = canonicalWorkflowTitle(sourceTitle) === CANONICAL_WORKFLOW_TITLE;
+      const reviewedStepSignatureMatch = sameArray(stepTypes, EXPECTED_STEP_TYPES);
+      candidateDiagnostics.push({
+        draftPath: candidate.path,
+        titleMatch,
+        reviewedStepSignatureMatch,
+        stepTypes,
+      });
+      if (titleMatch || reviewedStepSignatureMatch) {
+        matches.push({
+          rawWorkflow,
+          draft: candidate.draft,
+          statusContainer: candidate.statusContainer,
+          draftPath: candidate.path,
+          sourceResolutionMode: titleMatch
+            ? 'canonical-title-nested-draft'
+            : 'unique-reviewed-step-signature-nested-draft',
+        });
+      }
+    }
     resolutionCandidates.push({
       sourceOrdinal: index + 1,
-      hasDraft: Boolean(draft),
-      titleMatch,
-      reviewedStepSignatureMatch,
-      stepTypes,
+      hasDraft: draftCandidates.length > 0,
+      draftCandidateCount: draftCandidates.length,
+      candidates: candidateDiagnostics,
     });
-    if (titleMatch || reviewedStepSignatureMatch) {
-      matches.push({
-        rawWorkflow,
-        draft,
-        sourceResolutionMode: titleMatch
-          ? 'canonical-title'
-          : 'unique-reviewed-step-signature',
-      });
-    }
   }
   if (matches.length !== 1) {
     throw codedError(
@@ -57,8 +69,14 @@ export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sour
     );
   }
 
-  const { rawWorkflow, draft, sourceResolutionMode } = matches[0];
-  const sourceStatus = normalizeSourceWorkflowStatus(rawWorkflow);
+  const {
+    rawWorkflow,
+    draft,
+    statusContainer,
+    draftPath,
+    sourceResolutionMode,
+  } = matches[0];
+  const sourceStatus = normalizeSourceWorkflowStatus(rawWorkflow, statusContainer);
   const steps = requireArray(draft.steps, 'AI Materialization workflow steps');
   const stepTypes = steps.map((step) => optionalText(step?.type) ?? '');
   if (!sameArray(stepTypes, EXPECTED_STEP_TYPES)) {
@@ -142,6 +160,7 @@ export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sour
     mode: 'local-source-read-only',
     title: WORKFLOW_TITLE,
     sourceResolutionMode,
+    sourceDraftPath: draftPath,
     sourceStatus,
     sourceWorkflowCount: workflows.length,
     stepCount: steps.length,
@@ -172,6 +191,55 @@ export async function buildCustomerBaseAiMaterializationWorkflowReadiness({ sour
     aiCallCount: 0,
     recordMutationCount: 0,
   });
+}
+
+function findWorkflowDraftCandidates(rawWorkflow) {
+  const candidates = [];
+  const visitedObjects = new WeakSet();
+
+  visit(rawWorkflow, '$', 0);
+  return candidates;
+
+  function visit(value, path, depth) {
+    if (depth > MAX_WORKFLOW_ENVELOPE_DEPTH || value === null || value === undefined) return;
+    if (typeof value === 'string') {
+      const parsed = tryParseEnvelopeJson(value);
+      if (parsed !== null) visit(parsed, `${path}.$json`, depth + 1);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${path}[${index}]`, depth + 1));
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (visitedObjects.has(value)) return;
+    visitedObjects.add(value);
+
+    for (const [key, nested] of Object.entries(value)) {
+      const childPath = `${path}.${key}`;
+      if (/^draft$/iu.test(key)) {
+        const draft = parseMaybeJson(nested, 'workflow Draft');
+        if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
+          candidates.push({ draft, path: childPath, statusContainer: value });
+        }
+        continue;
+      }
+      visit(nested, childPath, depth + 1);
+    }
+  }
+}
+
+function tryParseEnvelopeJson(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || Buffer.byteLength(text, 'utf8') > MAX_WORKFLOW_ENVELOPE_STRING_BYTES) return null;
+  if (!['{', '[', '"'].includes(text[0])) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'string') return tryParseEnvelopeJson(parsed);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function collectFieldAssignments(root, references) {
@@ -247,11 +315,25 @@ async function buildSourceReferenceMaps(sourceClient) {
   return { tableById, fieldById, optionById };
 }
 
-function normalizeSourceWorkflowStatus(raw) {
-  const value = raw?.Status ?? raw?.status;
-  if (value === 1 || value === '1' || String(value).toLowerCase() === 'enabled' || String(value).toLowerCase() === 'enable') return 'enabled';
-  if (value === 0 || value === '0' || String(value).toLowerCase() === 'disabled' || String(value).toLowerCase() === 'disable') return 'disabled';
-  return value ?? null;
+function normalizeSourceWorkflowStatus(raw, statusContainer = null) {
+  const values = [
+    statusContainer?.Status,
+    statusContainer?.status,
+    statusContainer?.workflowStatus,
+    statusContainer?.workflow_status,
+    raw?.Status,
+    raw?.status,
+    raw?.workflowStatus,
+    raw?.workflow_status,
+  ];
+  for (const value of values) {
+    if (value === 1 || value === '1' || value === true) return 'enabled';
+    if (value === 0 || value === '0' || value === false) return 'disabled';
+    const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (['enabled', 'enable', 'active', 'on'].includes(text)) return 'enabled';
+    if (['disabled', 'disable', 'inactive', 'off'].includes(text)) return 'disabled';
+  }
+  return null;
 }
 
 function parseMaybeJson(value, label, depth = 0) {
