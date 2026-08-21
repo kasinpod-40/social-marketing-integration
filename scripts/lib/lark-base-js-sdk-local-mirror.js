@@ -89,10 +89,10 @@ export async function loadPinnedLarkBaseJsSdkMirror({ fetchImpl = globalThis.fet
       if (!seen.has(childUrl)) queue.push(childUrl);
     }
 
-    const localPath = resolvedUrl === LARK_BASE_JS_SDK_ENTRY_URL
+    const requestedLocalPath = requestedUrl === LARK_BASE_JS_SDK_ENTRY_URL
       ? LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH
-      : localPathForPinnedModule(resolvedUrl);
-    modules.set(localPath, rewriteModuleSpecifiers(originalBody, replacements));
+      : localPathForPinnedModule(requestedUrl);
+    modules.set(requestedLocalPath, rewriteModuleSpecifiers(originalBody, replacements));
   }
 
   const entryBody = modules.get(LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH);
@@ -107,6 +107,8 @@ export async function loadPinnedLarkBaseJsSdkMirror({ fetchImpl = globalThis.fet
       containsBitable,
     });
   }
+
+  assertMirroredGraphClosure(modules);
 
   const graphFingerprint = createHash('sha256');
   for (const [path, body] of [...modules.entries()].sort(([left], [right]) => left.localeCompare(right))) {
@@ -158,6 +160,27 @@ export function rewriteModuleSpecifiers(source, replacements) {
     cursor = record.end;
   }
   return result + source.slice(cursor);
+}
+
+export function assertMirroredGraphClosure(modules) {
+  for (const [modulePath, body] of modules.entries()) {
+    for (const specifier of extractModuleSpecifiers(body)) {
+      if (!specifier.startsWith(LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX)) {
+        throw codedError(
+          'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_NOT_CLOSED',
+          'Mirrored Base JS SDK still contains a module import outside the same-origin module graph',
+          { sdkVersion: LARK_BASE_JS_SDK_VERSION, modulePath, specifier },
+        );
+      }
+      if (!modules.has(specifier)) {
+        throw codedError(
+          'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_NOT_CLOSED',
+          'Mirrored Base JS SDK references a same-origin module that is absent from the local graph',
+          { sdkVersion: LARK_BASE_JS_SDK_VERSION, modulePath, missingLocalPath: specifier },
+        );
+      }
+    }
+  }
 }
 
 function scanModuleSpecifierRecords(source) {
