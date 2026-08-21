@@ -1,5 +1,7 @@
 import { bitable } from '/lark-base-js-sdk.mjs';
 
+void fetch('/client-event?stage=browser-module-loaded', { cache: 'no-store' }).catch(() => {});
+
 const REQUIRED_TARGET_ANCHORS = Object.freeze([
   '🎵 RAW_TikTok_Creator_Videos',
   '(VDO) Content Creator',
