@@ -1,5 +1,16 @@
 const CONTRACT_VERSION = 'customer_base_view_js_sdk_parity_plan_v1';
 const MANIFEST_VERSION = 'customer_base_view_manual_parity_manifest_v1';
+const DEFAULT_SOURCE_STRUCTURAL_COUNTS = Object.freeze({
+  tables: 33,
+  fields: 723,
+  views: 111,
+  relationFields: 12,
+  formulaFields: 4,
+  dashboards: 6,
+  workflows: 2,
+  advancedPermissionRoles: 4,
+});
+const DEFAULT_SOURCE_MIN_RECORDS = 35_528;
 
 /**
  * Converts the retained names-only View manifest into a Base JS SDK execution plan.
@@ -91,6 +102,41 @@ export function buildLarkBaseViewJsSdkParityPlan(manifest) {
     },
     tables,
     summary,
+  });
+}
+
+/**
+ * Matches the controlled Apply refresh-admission boundary for the local Source file.
+ * The View UI runner must not pin one historical SHA after automatic Apply has already
+ * admitted a newer export. Structural resources stay exact while record count may grow.
+ */
+export function assessLarkBaseViewUiRefreshSourceAuthority(inspection, options = {}) {
+  const structuralCounts = plainObject(options?.structuralCounts)
+    ? options.structuralCounts
+    : DEFAULT_SOURCE_STRUCTURAL_COUNTS;
+  const minimumRecords = options?.minimumRecords ?? DEFAULT_SOURCE_MIN_RECORDS;
+  const mismatches = [];
+
+  for (const [dimension, expected] of Object.entries(structuralCounts)) {
+    const actual = inspection?.counts?.[dimension];
+    if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
+  }
+
+  const records = Number(inspection?.counts?.records);
+  if (!Number.isInteger(records) || records < minimumRecords) {
+    mismatches.push({
+      dimension: 'records',
+      expectedMinimum: minimumRecords,
+      actual: Number.isFinite(records) ? records : null,
+    });
+  }
+
+  return deepFreeze({
+    ok: mismatches.length === 0,
+    authorityMode: mismatches.length === 0 ? 'refresh-compatible' : null,
+    fileSha256: optionalText(inspection?.file?.sha256),
+    records: Number.isInteger(records) ? records : null,
+    mismatches,
   });
 }
 
