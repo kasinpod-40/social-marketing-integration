@@ -21,9 +21,6 @@ const RETAINED_PLAN_SUMMARY = Object.freeze({
   hiddenVerificationAssignments: 85,
   sortViews: 41,
   groupViews: 4,
-  columnWidthViews: 70,
-  columnWidthAssignments: 898,
-  rowHeightViews: 110,
   frozenColumnManualViews: 110,
 });
 const APPROVED_REFRESH_LAYOUT_REVISION = Object.freeze({
@@ -37,13 +34,14 @@ const APPROVED_REFRESH_LAYOUT_REVISION = Object.freeze({
 });
 
 /**
- * Converts the retained names-only View manifest into a Base JS SDK execution plan.
+ * Converts the retained names-only View manifest into the functional View parity plan.
  *
- * Server OpenAPI remains the authority for hidden/filter/hierarchy parity. This plan
- * owns only documented Base frontend-plugin mutations that were previously UI-only:
- * sort, group, explicit column width, and row height. Field order and frozen columns
- * remain audit/manual because the Base JS SDK exposes no documented reorder/freeze
- * setter. No generated Table/View/Field IDs are persisted in this plan.
+ * Server OpenAPI remains the authority for hidden/filter/hierarchy parity. The Base JS SDK
+ * runner owns only sort and group because those change how records are presented/organized
+ * functionally and both have readback. Column width and row height are intentionally ignored:
+ * they are user-adjustable cosmetics from the Source and are not migration authority. Field
+ * order and frozen columns remain audit/manual because the Base JS SDK exposes no documented
+ * reorder/freeze setter. No generated Table/View/Field IDs are persisted in this plan.
  */
 export function buildLarkBaseViewJsSdkParityPlan(manifest) {
   const source = requireManifest(manifest);
@@ -56,9 +54,6 @@ export function buildLarkBaseViewJsSdkParityPlan(manifest) {
     hiddenVerificationAssignments: 0,
     sortViews: 0,
     groupViews: 0,
-    columnWidthViews: 0,
-    columnWidthAssignments: 0,
-    rowHeightViews: 0,
     frozenColumnManualViews: 0,
   };
 
@@ -73,8 +68,6 @@ export function buildLarkBaseViewJsSdkParityPlan(manifest) {
       const hiddenFieldNames = explicitHiddenFields(manual.colInfos);
       const sort = normalizeDirectionalRules(manual.sortInfo, `${tableName}.${viewName}.sortInfo`);
       const group = normalizeDirectionalRules(manual.group, `${tableName}.${viewName}.group`);
-      const columnWidths = explicitColumnWidths(manual.colInfos, `${tableName}.${viewName}.colInfos`);
-      const rowHeightLevel = normalizeRowHeight(manual.rowHeightLevel, `${tableName}.${viewName}.rowHeightLevel`);
       const frozenColCount = normalizeFrozenCount(manual.frozenColCount, `${tableName}.${viewName}.frozenColCount`);
 
       if (fieldOrder.length > 0) summary.fieldOrderAuditViews += 1;
@@ -84,11 +77,6 @@ export function buildLarkBaseViewJsSdkParityPlan(manifest) {
       }
       if (sort.length > 0) summary.sortViews += 1;
       if (group.length > 0) summary.groupViews += 1;
-      if (Object.keys(columnWidths).length > 0) {
-        summary.columnWidthViews += 1;
-        summary.columnWidthAssignments += Object.keys(columnWidths).length;
-      }
-      if (rowHeightLevel !== null) summary.rowHeightViews += 1;
       if (frozenColCount !== null) summary.frozenColumnManualViews += 1;
 
       views.push(deepFreeze({
@@ -101,8 +89,6 @@ export function buildLarkBaseViewJsSdkParityPlan(manifest) {
         mutate: {
           sort,
           group,
-          columnWidths,
-          rowHeightLevel,
         },
         remainingManual: {
           frozenColCount,
@@ -121,7 +107,8 @@ export function buildLarkBaseViewJsSdkParityPlan(manifest) {
     mode: 'base-js-sdk-ui-owned-only',
     ownership: {
       automaticServerOpenApiVerifyOnly: ['hiddenFields', 'filters', 'hierarchy'],
-      baseJsSdkMutations: ['sort', 'group', 'columnWidth', 'rowHeight'],
+      baseJsSdkMutations: ['sort', 'group'],
+      ignoredCosmetic: ['columnWidth', 'rowHeight'],
       remainingManual: ['fieldOrder', 'frozenColumns'],
     },
     tables,
@@ -165,11 +152,12 @@ export function assessLarkBaseViewUiRefreshSourceAuthority(inspection, options =
 }
 
 /**
- * Keeps the retained View layout as the default gate while admitting one evidence-backed
- * refresh revision by exact Source SHA. The approved revision changes only sort ownership:
- * `🎬 MKT_Content → 🔵 Facebook Content → published_at DESC` is present in addition to the
- * retained 41 sorted Views. The complete 42-View sort inventory is fingerprinted so an
- * unrelated sort replacement cannot pass merely because the aggregate count is still 42.
+ * Keeps the retained functional View layout as the default gate while admitting one
+ * evidence-backed refresh revision by exact Source SHA. The approved revision changes only
+ * sort ownership: `🎬 MKT_Content → 🔵 Facebook Content → published_at DESC` is present in
+ * addition to the retained 41 sorted Views. The complete 42-View sort inventory is
+ * fingerprinted so an unrelated sort replacement cannot pass merely because the aggregate
+ * count is still 42. Cosmetic width/row-height values never participate in this authority.
  */
 export function assessLarkBaseViewUiPlanAuthority(plan, options = {}) {
   const sourceSha256 = optionalText(options?.sourceSha256);
@@ -253,19 +241,6 @@ function normalizeDirection(rule, name) {
   throw new TypeError(`${name} must contain desc:boolean or order asc/desc`);
 }
 
-function explicitColumnWidths(value, name) {
-  if (!plainObject(value)) return {};
-  return Object.fromEntries(Object.entries(value)
-    .filter(([, info]) => plainObject(info) && info.width !== null && info.width !== undefined)
-    .map(([fieldName, info]) => {
-      const safeName = requireText(fieldName, `${name} fieldName`);
-      const width = Number(info.width);
-      if (!Number.isFinite(width) || width <= 0) throw new TypeError(`${name}.${safeName}.width must be positive`);
-      return [safeName, width];
-    })
-    .sort(([left], [right]) => left.localeCompare(right)));
-}
-
 function explicitHiddenFields(value) {
   if (!plainObject(value)) return [];
   return Object.entries(value)
@@ -279,13 +254,6 @@ function normalizeNameList(value, name) {
   const names = requireArray(value, name).map((item, index) => requireText(item, `${name}[${index}]`));
   if (new Set(names).size !== names.length) throw new TypeError(`${name} must contain unique field names`);
   return names;
-}
-
-function normalizeRowHeight(value, name) {
-  if (value === null || value === undefined) return null;
-  const level = Number(value);
-  if (!Number.isInteger(level) || level < 1 || level > 4) throw new TypeError(`${name} must be an integer from 1 to 4`);
-  return level;
 }
 
 function normalizeFrozenCount(value, name) {
