@@ -100,6 +100,34 @@ test('Organic preflight selects exact datasets and historical Connector alerts d
   })), true);
 });
 
+test('Report DLQ guard is target-scoped while unknown payloads still fail closed', () => {
+  const facebook = resolveReviewedReportRuntimeCloseoutTarget({
+    MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'facebook',
+  });
+  const sql = buildReportRuntimePreflightSql({
+    target: { ...facebook, customerKey: 'chemistry_k' },
+  });
+  assert.match(sql, /json_valid\(payload_json\) = 0/u);
+  assert.match(sql, /json_extract\(payload_json, '\$\.platformScope'\) IS NULL/u);
+  assert.match(sql, /json_extract\(payload_json, '\$\.platformScope'\) = 'facebook'/u);
+  assert.doesNotMatch(sql, /json_extract\(payload_json, '\$\.platformScope'\) = 'meta_ads'/u);
+
+  assert.throws(() => assertReviewedReportRuntimeCloseoutPreflight(readyRow({
+    coverage_status: 'complete',
+    source_watermark: 'facebook-account-watermark',
+    period_end: '2026-07-31',
+    source_scope: 'account',
+    content_state_count: 0,
+    observation_count: 0,
+    account_fact_count: 2,
+    open_report_dlq: 1,
+  }), facebook), (error) => (
+    error.code === 'REPORT_RUNTIME_CLOSEOUT_D1_PREFLIGHT_NOT_READY'
+      && error.details.platformScope === 'facebook'
+      && error.details.openReportDlq === 1
+  ));
+});
+
 test('Paid Ads preflight follows Meta detailed ad and Google campaign source grains', () => {
   const meta = resolveReviewedReportRuntimeCloseoutTarget({
     MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'meta_ads',
