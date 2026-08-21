@@ -15,6 +15,10 @@ import {
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 4173;
+const LARK_BASE_JS_SDK_VERSION = '1.0.2';
+const LARK_BASE_JS_SDK_ENTRY_URL = `https://esm.sh/@lark-base-open/js-sdk@${LARK_BASE_JS_SDK_VERSION}?standalone&target=es2022`;
+const LARK_BASE_JS_SDK_MIN_BYTES = 20_000;
+const LARK_BASE_JS_SDK_MAX_MODULE_HOPS = 3;
 const BASELINE_SOURCE_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
 const CHECKPOINT_SHA256 = '7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053';
 const DEFAULT_CHECKPOINT_FILE = join(homedir(), 'Downloads', 'customer-base-controlled-apply-checkpoint.json');
@@ -32,6 +36,7 @@ try {
   const port = resolvePort(process.env.CUSTOMER_BASE_VIEW_UI_PORT);
   const publicUrl = `http://${formatUrlHost(publicHost)}:${port}`;
 
+  const sdkBundle = await loadPinnedLarkBaseJsSdk();
   const browserScript = await readFile(
     fileURLToPath(new URL('./customer-base-view-ui-parity.browser.js', import.meta.url)),
     'utf8',
@@ -55,8 +60,9 @@ try {
       return;
     }
 
-    const path = new URL(request.url ?? '/', publicUrl).pathname;
-    console.log(`[view-ui-local] ${request.method ?? 'GET'} ${path} origin=${request.headers.origin ?? '-'}`);
+    const requestUrl = new URL(request.url ?? '/', publicUrl);
+    const path = requestUrl.pathname;
+    console.log(`[view-ui-local] ${request.method ?? 'GET'} ${path}${requestUrl.search} origin=${request.headers.origin ?? '-'}`);
 
     if (path === '/' || path === '/index.html') {
       send(response, 200, 'text/html; charset=utf-8', html, request.method);
@@ -64,6 +70,14 @@ try {
     }
     if (path === '/app.js') {
       send(response, 200, 'text/javascript; charset=utf-8', browserScript, request.method);
+      return;
+    }
+    if (path === '/lark-base-js-sdk.mjs') {
+      send(response, 200, 'text/javascript; charset=utf-8', sdkBundle.body, request.method);
+      return;
+    }
+    if (path === '/client-event') {
+      send(response, 204, 'text/plain; charset=utf-8', '', request.method);
       return;
     }
     if (path === '/plan.json') {
@@ -77,6 +91,10 @@ try {
         mode: 'local-refresh-compatible-source-plan-plus-base-js-sdk-ui',
         bindHost: host,
         publicUrl,
+        sdkDeliveryMode: 'same-origin-pinned-standalone',
+        sdkVersion: sdkBundle.version,
+        sdkSha256: sdkBundle.sha256,
+        sdkBytes: sdkBundle.bytes,
         sourceFileName: basename(sourceFile),
         sourceSha256: inspection.file.sha256,
         sourceSelectionMode: sourceAuthority.selectionMode,
@@ -97,6 +115,10 @@ try {
       status: 'READY',
       bindHost: host,
       url: publicUrl,
+      sdkDeliveryMode: 'same-origin-pinned-standalone',
+      sdkVersion: sdkBundle.version,
+      sdkSha256: sdkBundle.sha256,
+      sdkBytes: sdkBundle.bytes,
       sourceFileName: basename(sourceFile),
       sourceSha256: inspection.file.sha256,
       sourceSelectionMode: sourceAuthority.selectionMode,
@@ -124,6 +146,112 @@ try {
     remoteMutationCount: 0,
   }, null, 2));
   process.exitCode = 1;
+}
+
+async function loadPinnedLarkBaseJsSdk() {
+  let currentUrl = LARK_BASE_JS_SDK_ENTRY_URL;
+  let body = '';
+  let resolvedUrl = null;
+
+  for (let hop = 0; hop <= LARK_BASE_JS_SDK_MAX_MODULE_HOPS; hop += 1) {
+    let response;
+    try {
+      response = await fetch(currentUrl, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(20_000),
+        headers: {
+          Accept: 'text/javascript, application/javascript;q=0.9, */*;q=0.1',
+          'User-Agent': 'social-marketing-integration/customer-base-view-ui-parity',
+        },
+      });
+    } catch (error) {
+      throw codedError(
+        'CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED',
+        'Unable to fetch the pinned Base JS SDK before starting the local runner',
+        { sdkVersion: LARK_BASE_JS_SDK_VERSION, cause: error?.message ?? String(error) },
+      );
+    }
+
+    if (!response.ok) {
+      throw codedError(
+        'CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED',
+        'Pinned Base JS SDK fetch returned a non-success response',
+        { sdkVersion: LARK_BASE_JS_SDK_VERSION, status: response.status },
+      );
+    }
+
+    resolvedUrl = response.url;
+    body = await response.text();
+    const moduleSpecifiers = extractModuleSpecifiers(body);
+    const rootRelative = [...new Set(moduleSpecifiers.filter((specifier) => specifier.startsWith('/')))];
+
+    if (rootRelative.length === 0) break;
+    if (rootRelative.length !== 1) {
+      throw codedError(
+        'CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE',
+        'Pinned Base JS SDK resolver returned multiple unresolved module paths',
+        { sdkVersion: LARK_BASE_JS_SDK_VERSION, unresolvedModuleCount: rootRelative.length },
+      );
+    }
+    if (hop === LARK_BASE_JS_SDK_MAX_MODULE_HOPS) {
+      throw codedError(
+        'CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE',
+        'Pinned Base JS SDK did not resolve to a standalone browser module',
+        { sdkVersion: LARK_BASE_JS_SDK_VERSION },
+      );
+    }
+
+    const nextUrl = new URL(rootRelative[0], resolvedUrl);
+    if (nextUrl.protocol !== 'https:' || nextUrl.hostname !== 'esm.sh') {
+      throw codedError(
+        'CUSTOMER_BASE_VIEW_UI_SDK_ORIGIN_MISMATCH',
+        'Pinned Base JS SDK resolver attempted to leave the approved esm.sh origin',
+        { sdkVersion: LARK_BASE_JS_SDK_VERSION, hostname: nextUrl.hostname },
+      );
+    }
+    currentUrl = nextUrl.href;
+  }
+
+  const unresolved = extractModuleSpecifiers(body);
+  if (unresolved.length > 0) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE',
+      'Pinned Base JS SDK still contains browser module dependencies after standalone resolution',
+      { sdkVersion: LARK_BASE_JS_SDK_VERSION, unresolvedModuleCount: unresolved.length },
+    );
+  }
+  if (Buffer.byteLength(body, 'utf8') < LARK_BASE_JS_SDK_MIN_BYTES || !body.includes('bitable')) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLE_INVALID',
+      'Pinned Base JS SDK bundle failed the local integrity shape check',
+      {
+        sdkVersion: LARK_BASE_JS_SDK_VERSION,
+        minimumBytes: LARK_BASE_JS_SDK_MIN_BYTES,
+        actualBytes: Buffer.byteLength(body, 'utf8'),
+      },
+    );
+  }
+
+  return Object.freeze({
+    version: LARK_BASE_JS_SDK_VERSION,
+    body,
+    bytes: Buffer.byteLength(body, 'utf8'),
+    sha256: fingerprint(body),
+    resolvedUrl,
+  });
+}
+
+function extractModuleSpecifiers(source) {
+  const specifiers = new Set();
+  const patterns = [
+    /\bfrom\s*["']([^"']+)["']/gu,
+    /\bimport\s*["']([^"']+)["']/gu,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu,
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) specifiers.add(match[1]);
+  }
+  return [...specifiers];
 }
 
 async function resolveSourceAuthority({ checkpoint }) {
@@ -355,6 +483,7 @@ function renderHtml({ sourceSha256, sourceFileName, sourceSelectionMode, sourceP
     <pre>${escapeHtml(summary)}</pre>
   </details>
   <pre id="output"></pre>
+  <script>fetch('/client-event?stage=html-executed', { cache: 'no-store' }).catch(() => {});</script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>`;
