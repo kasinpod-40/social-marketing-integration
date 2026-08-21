@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
 import { buildLarkBaseViewManualParityManifest } from './lib/lark-base-view-manual-parity-manifest.js';
+import { loadPinnedLarkBaseJsSdkMirror } from './lib/lark-base-js-sdk-local-mirror.js';
 import {
   assessLarkBaseViewUiPlanAuthority,
   assessLarkBaseViewUiRefreshSourceAuthority,
@@ -36,7 +37,7 @@ try {
   const port = resolvePort(process.env.CUSTOMER_BASE_VIEW_UI_PORT);
   const publicUrl = `http://${formatUrlHost(publicHost)}:${port}`;
 
-  const sdkBundle = await loadPinnedLarkBaseJsSdk();
+  const sdkBundle = await loadPinnedLarkBaseJsSdkMirror();
   const browserScript = await readFile(
     fileURLToPath(new URL('./customer-base-view-ui-parity.browser.js', import.meta.url)),
     'utf8',
@@ -73,7 +74,16 @@ try {
       return;
     }
     if (path === '/lark-base-js-sdk.mjs') {
-      send(response, 200, 'text/javascript; charset=utf-8', sdkBundle.body, request.method);
+      send(response, 200, 'text/javascript; charset=utf-8', sdkBundle.entryBody, request.method);
+      return;
+    }
+    if (path.startsWith('/lark-base-js-sdk/')) {
+      const sdkModule = sdkBundle.modules.get(path);
+      if (!sdkModule) {
+        send(response, 404, 'text/plain; charset=utf-8', 'Pinned SDK module not found\n', request.method);
+        return;
+      }
+      send(response, 200, 'text/javascript; charset=utf-8', sdkModule, request.method);
       return;
     }
     if (path === '/client-event') {
@@ -91,10 +101,11 @@ try {
         mode: 'local-refresh-compatible-source-plan-plus-base-js-sdk-ui',
         bindHost: host,
         publicUrl,
-        sdkDeliveryMode: 'same-origin-pinned-standalone',
+        sdkDeliveryMode: sdkBundle.deliveryMode,
         sdkVersion: sdkBundle.version,
         sdkSha256: sdkBundle.sha256,
         sdkBytes: sdkBundle.bytes,
+        sdkModuleCount: sdkBundle.moduleCount,
         sourceFileName: basename(sourceFile),
         sourceSha256: inspection.file.sha256,
         sourceSelectionMode: sourceAuthority.selectionMode,
@@ -115,10 +126,11 @@ try {
       status: 'READY',
       bindHost: host,
       url: publicUrl,
-      sdkDeliveryMode: 'same-origin-pinned-standalone',
+      sdkDeliveryMode: sdkBundle.deliveryMode,
       sdkVersion: sdkBundle.version,
       sdkSha256: sdkBundle.sha256,
       sdkBytes: sdkBundle.bytes,
+      sdkModuleCount: sdkBundle.moduleCount,
       sourceFileName: basename(sourceFile),
       sourceSha256: inspection.file.sha256,
       sourceSelectionMode: sourceAuthority.selectionMode,
