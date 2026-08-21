@@ -11,6 +11,7 @@ import {
   applyCustomerBaseNotificationWorkflowParity,
   buildCustomerBaseNotificationWorkflowPlan,
 } from './lib/customer-base-notification-workflow-parity.js';
+import { inspectOrApplyCustomerBaseWorkflowPlacement } from './lib/customer-base-workflow-placement.js';
 
 const CURRENT_SOURCE_SHA256 = '9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7';
 const TARGET_LABEL = '✨Marketing Content Calendar';
@@ -72,8 +73,15 @@ async function main() {
     })),
   });
 
+  const placement = await inspectOrApplyCustomerBaseWorkflowPlacement({
+    targetClient,
+    workflowId: result.workflowId,
+    mode,
+  });
+
   printJson({
     ...result,
+    placement,
     sourceAuthority: {
       file: sourceFile,
       sha256: sourceSha256,
@@ -89,6 +97,7 @@ async function main() {
       workflowUpdateCount: result.workflowUpdateCount,
       workflowStatusChangeCount: result.workflowStatusChangeCount,
       workflowEnableCount: result.workflowEnableCount,
+      workflowPlacementMutationCount: placement.workflowPlacementMutationCount,
       notificationSendCount: result.notificationSendCount,
       aiCallCount: result.aiCallCount,
       recordMutationCount: result.recordMutationCount,
