@@ -8,6 +8,7 @@ import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
 import { buildLarkBaseViewManualParityManifest } from './lib/lark-base-view-manual-parity-manifest.js';
 import {
+  assessLarkBaseViewUiPlanAuthority,
   assessLarkBaseViewUiRefreshSourceAuthority,
   buildLarkBaseViewJsSdkParityPlan,
 } from './lib/lark-base-view-js-sdk-parity.js';
@@ -36,6 +37,7 @@ try {
     sourceSha256: inspection.file.sha256,
     sourceFileName: basename(sourceFile),
     sourceSelectionMode: sourceAuthority.selectionMode,
+    sourcePlanAuthorityMode: sourceAuthority.planAuthorityMode,
     plan,
   });
 
@@ -64,6 +66,7 @@ try {
         sourceFileName: basename(sourceFile),
         sourceSha256: inspection.file.sha256,
         sourceSelectionMode: sourceAuthority.selectionMode,
+        sourcePlanAuthorityMode: sourceAuthority.planAuthorityMode,
         tables: plan.summary.tableCount,
         views: plan.summary.viewCount,
       })}\n`);
@@ -82,9 +85,11 @@ try {
       sourceFileName: basename(sourceFile),
       sourceSha256: inspection.file.sha256,
       sourceSelectionMode: sourceAuthority.selectionMode,
+      sourcePlanAuthorityMode: sourceAuthority.planAuthorityMode,
       sourceRecords: inspection.counts.records,
       tables: plan.summary.tableCount,
       views: plan.summary.viewCount,
+      sortViews: plan.summary.sortViews,
       baseJsSdkMutations: plan.ownership.baseJsSdkMutations,
       remainingManual: plan.ownership.remainingManual,
       sourceMutationCount: 0,
@@ -123,13 +128,14 @@ async function resolveSourceAuthority({ checkpoint }) {
       });
       const manifest = await buildLarkBaseViewManualParityManifest({ sourceClient });
       const plan = buildLarkBaseViewJsSdkParityPlan(manifest);
-      assertPlan(plan);
+      const planAuthority = assertPlan(plan, inspection.file.sha256);
       assertCloneScope(plan, expectedTableNames);
       const metadata = await stat(sourceFile);
       compatible.push(Object.freeze({
         sourceFile,
         inspection,
         plan,
+        planAuthorityMode: planAuthority.authorityMode,
         planFingerprintSha256: fingerprint(JSON.stringify(plan)),
         mtimeMs: Number(metadata.mtimeMs),
       }));
@@ -138,6 +144,7 @@ async function resolveSourceAuthority({ checkpoint }) {
         status: 'compatible',
         sha256: inspection.file.sha256,
         records: inspection.counts.records,
+        planAuthorityMode: planAuthority.authorityMode,
       }));
     } catch (error) {
       checked.push(Object.freeze({
@@ -145,6 +152,7 @@ async function resolveSourceAuthority({ checkpoint }) {
         status: 'rejected',
         sha256: inspection?.file?.sha256 ?? null,
         code: error?.code ?? 'SOURCE_REJECTED',
+        details: error?.details ?? {},
       }));
     }
   }
@@ -167,6 +175,7 @@ async function resolveSourceAuthority({ checkpoint }) {
           fileName: basename(item.sourceFile),
           sha256: item.inspection.file.sha256,
           records: item.inspection.counts.records,
+          planAuthorityMode: item.planAuthorityMode,
           planFingerprintSha256: item.planFingerprintSha256,
         })),
       },
@@ -242,20 +251,18 @@ function requireExpectedTableNames(value) {
   return value.map((item) => item.trim());
 }
 
-function assertPlan(plan) {
-  const mismatches = [];
-  if (plan?.summary?.tableCount !== 32) mismatches.push({ dimension: 'cloneTables', expected: 32, actual: plan?.summary?.tableCount ?? null });
-  if (plan?.summary?.viewCount !== 110) mismatches.push({ dimension: 'cloneViews', expected: 110, actual: plan?.summary?.viewCount ?? null });
-  if (plan?.summary?.fieldOrderAuditViews !== 110) mismatches.push({ dimension: 'fieldOrderViews', expected: 110, actual: plan?.summary?.fieldOrderAuditViews ?? null });
-  if (plan?.summary?.sortViews !== 41) mismatches.push({ dimension: 'sortViews', expected: 41, actual: plan?.summary?.sortViews ?? null });
-  if (plan?.summary?.groupViews !== 4) mismatches.push({ dimension: 'groupViews', expected: 4, actual: plan?.summary?.groupViews ?? null });
-  if (plan?.summary?.columnWidthViews !== 70) mismatches.push({ dimension: 'columnWidthViews', expected: 70, actual: plan?.summary?.columnWidthViews ?? null });
-  if (plan?.summary?.columnWidthAssignments !== 898) mismatches.push({ dimension: 'columnWidthAssignments', expected: 898, actual: plan?.summary?.columnWidthAssignments ?? null });
-  if (plan?.summary?.rowHeightViews !== 110) mismatches.push({ dimension: 'rowHeightViews', expected: 110, actual: plan?.summary?.rowHeightViews ?? null });
-  if (plan?.summary?.frozenColumnManualViews !== 110) mismatches.push({ dimension: 'frozenColumnViews', expected: 110, actual: plan?.summary?.frozenColumnManualViews ?? null });
-  if (mismatches.length > 0) {
-    throw codedError('CUSTOMER_BASE_VIEW_UI_PLAN_COUNT_MISMATCH', 'Generated View UI plan differs from retained parity evidence', { mismatches });
-  }
+function assertPlan(plan, sourceSha256) {
+  const assessment = assessLarkBaseViewUiPlanAuthority(plan, { sourceSha256 });
+  if (assessment.ok) return assessment;
+  throw codedError(
+    'CUSTOMER_BASE_VIEW_UI_PLAN_AUTHORITY_MISMATCH',
+    'Generated View UI plan is outside the retained or exact evidence-backed refresh layout authority',
+    {
+      sourceSha256,
+      mismatches: assessment.mismatches,
+      sortInventoryFingerprintSha256: assessment.sortInventoryFingerprintSha256,
+    },
+  );
 }
 
 function freezeSelection(item, selectionMode) {
@@ -263,6 +270,7 @@ function freezeSelection(item, selectionMode) {
     sourceFile: item.sourceFile,
     inspection: item.inspection,
     plan: item.plan,
+    planAuthorityMode: item.planAuthorityMode,
     selectionMode,
   });
 }
@@ -279,11 +287,12 @@ function sameUniqueNameSet(left, right) {
   return true;
 }
 
-function renderHtml({ sourceSha256, sourceFileName, sourceSelectionMode, plan }) {
+function renderHtml({ sourceSha256, sourceFileName, sourceSelectionMode, sourcePlanAuthorityMode, plan }) {
   const summary = JSON.stringify({
     sourceFileName,
     sourceSha256,
     sourceSelectionMode,
+    sourcePlanAuthorityMode,
     tables: plan.summary.tableCount,
     views: plan.summary.viewCount,
     sdk: {
