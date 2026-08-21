@@ -51,7 +51,7 @@ export async function loadPinnedLarkBaseJsSdkMirror({
   const plugin = {
     name: 'customer-base-pinned-lark-sdk',
     setup(build) {
-      build.onResolve({ filter: /.*/u }, (args) => {
+      build.onResolve({ filter: /.*/ }, (args) => {
         if (args.kind === 'entry-point') {
           return { path: VIRTUAL_ENTRY_PATH, namespace: SDK_NAMESPACE };
         }
@@ -82,7 +82,7 @@ export async function loadPinnedLarkBaseJsSdkMirror({
         return { path: targetPath, namespace: SDK_NAMESPACE };
       });
 
-      build.onLoad({ filter: /.*/u, namespace: SDK_NAMESPACE }, async (args) => {
+      build.onLoad({ filter: /.*/, namespace: SDK_NAMESPACE }, async (args) => {
         if (sourceByVirtualPath.has(args.path)) {
           return { contents: sourceByVirtualPath.get(args.path), loader: 'js' };
         }
