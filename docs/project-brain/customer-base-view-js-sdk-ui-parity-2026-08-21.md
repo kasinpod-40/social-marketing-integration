@@ -144,7 +144,7 @@ Target read                  0
 Target mutation              0
 ```
 
-This is retained as negative evidence. Do not retry or weaken the single-file `esm.sh standalone` path.
+This is retained as negative evidence. The rejected loader and its `esm.sh standalone` constants were removed from the live server; tests explicitly forbid restoring them.
 
 ## Exact-version published ESM graph mirror
 
@@ -234,7 +234,7 @@ These remain manual/audit. Formula presentation 4, one dynamic-date filter, Dash
 
 - `tests/scripts/lark-base-view-js-sdk-parity.test.js` keeps structural/layout authority fail-closed, including exact 42-sort revision inventory;
 - `tests/scripts/lark-base-js-sdk-local-mirror.test.js` covers recursive graph traversal, exact-version path scoping, same-origin rewrites and external-import rejection;
-- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` requires the browser to import only `/lark-base-js-sdk.mjs`, requires the mirrored graph to finish before `server.listen()`, requires child-module serving and locks both boot-stage markers.
+- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` requires the browser to import only `/lark-base-js-sdk.mjs`, requires the mirrored graph to finish before `server.listen()`, requires child-module serving, locks both boot-stage markers, and forbids the rejected `esm.sh standalone` fallback.
 
 ## No-repeat rules
 
@@ -244,5 +244,5 @@ These remain manual/audit. Formula presentation 4, one dynamic-date filter, Dash
 - never mutate Source, Worker, D1, Queue, schedule or deployment here;
 - never rewrite hidden/filter/hierarchy through the JS SDK runner;
 - never guess undocumented setters for field order, frozen columns, Dashboard or Workflow;
-- never retry the rejected single-file `esm.sh standalone` SDK resolver;
+- never retry or restore the rejected single-file `esm.sh standalone` SDK resolver;
 - PR #661 remains Draft/Open/Unmerged until all UI/manual and final-export gates close.
