@@ -1,4 +1,4 @@
-import { bitable } from 'https://esm.sh/@lark-base-open/js-sdk@1.0.2';
+import { bitable } from '/lark-base-js-sdk.mjs';
 
 const REQUIRED_TARGET_ANCHORS = Object.freeze([
   '🎵 RAW_TikTok_Creator_Videos',
