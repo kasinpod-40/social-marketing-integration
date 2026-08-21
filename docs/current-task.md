@@ -30,7 +30,8 @@ DASHBOARD_CONTAINERS                = PASS_6_OF_6
 DASHBOARD_DOCUMENTED_BLOCKS         = PASS_66_OF_66_MISMATCH_0_DO_NOT_RERUN
 DASHBOARD_UNSUPPORTED_COMPONENTS    = REMAINDER_7_SLICER_2_TABLE_VIEW
 DASHBOARD_THEME                     = DEFERRED_CURRENT_GENERIC_CONTAINER_SPECIALIZED_ROUTE_CODE_1
-WORKFLOWS                           = PENDING_2
+WORKFLOW_NOTIFICATION               = DOCUMENTED_API_OPERATOR_STAGED_PREVIEW_PENDING
+WORKFLOW_AI_MATERIALIZATION         = DOCUMENTED_API_SEMANTIC_CONVERSION_PENDING
 DRAFT_PR                            = 661
 PRODUCTION                          = BLOCKED_PENDING_REMAINDER_WORKFLOW_FINAL_EXPORT
 ```
@@ -157,7 +158,52 @@ Two Source Workflows remain:
 1. `AI Materialization → MKT_AI_Report_Runs`
 2. `Eligible AI Run → Lark Group Notification`
 
-Use only a documented/proven workflow definition-write contract. Do not replay raw Draft/FlowSchema/auth/generated IDs from the export.
+Current official Lark CLI Base Workflow SSOT now proves public list/get/create/update/enable/disable contracts. Raw Source Draft/FlowSchema/auth/generated IDs still must never be replayed directly.
+
+### Notification Workflow — documented API operator staged
+
+Current Source semantic definition is exactly:
+
+```text
+Eligible AI Run → Lark Group Notification
+status: disabled
+AddRecordTrigger
+  🧠 MKT_AI_Report_Runs.ai_run_key
+  controls: pasteUpdate / automationBatchUpdate / openAPIBatchUpdate
+→ Delay 1 minute
+```
+
+The current Source contains no message-send action in this Workflow. Parity must not invent one.
+
+Staged operator:
+
+- `scripts/lib/customer-base-notification-workflow-parity.js`
+- `scripts/customer-base-notification-workflow-parity.mjs`
+- `tests/scripts/customer-base-notification-workflow-parity.test.js`
+- `docs/project-brain/customer-base-notification-workflow-documented-api-parity-2026-08-21.md`
+
+Contract:
+
+- exact Source SHA and exact Source two-Workflow fence;
+- Source Table/Field IDs resolved locally to semantic names;
+- Target protected anchors + `🧠 MKT_AI_Report_Runs.ai_run_key` preflight;
+- public Workflow list/get only in preview;
+- duplicate/conflicting same-title Workflow fails closed;
+- absent Workflow is planned for one disabled create only;
+- new Workflow remains disabled; operator has no enable path;
+- readback verifies exact AddRecordTrigger → Delay definition and disabled status;
+- rerun reuses an exact existing disabled Workflow with zero writes;
+- no notification send, AI call, record mutation, update, delete, Worker/D1/Queue/schedule/deploy mutation.
+
+Exact create confirmation:
+
+`APPLY_CUSTOMER_BASE_NOTIFICATION_WORKFLOW_PARITY_V1`
+
+Focused synthetic regression passed 5/5 before repository staging. No customer Target Workflow mutation was executed while preparing this operator.
+
+### AI Materialization Workflow
+
+Still pending semantic conversion to the documented public Workflow schema. It contains a SetRecordTrigger, four native AI generation actions, output bindings and a final SetRecordAction. Convert from current Source semantic authority and Target Field IDs; do not replay Source/internal step IDs or raw Draft/FlowSchema payloads.
 
 ## No-repeat rules
 
@@ -172,12 +218,15 @@ Use only a documented/proven workflow definition-write contract. Do not replay r
 9. Never restore Width/RowHeight as parity requirements.
 10. Never mutate Source, Worker, D1, Queue, schedule or deployment for this workstream.
 11. Never invent undocumented Slicer/Table View/Workflow write payloads.
-12. PR #661 remains Draft/Open/Unmerged until explicit final authorization.
+12. Never enable `Eligible AI Run → Lark Group Notification` during parity; current Source status is disabled.
+13. PR #661 remains Draft/Open/Unmerged until explicit final authorization.
 
 ## Required next sequence
 
-1. Validate the new Theme fail-closed regression locally and Branch Verification on its exact HEAD; no Target Theme write is required.
-2. Investigate/close 7 Slicer + 2 Table View only through documented/proven capability.
-3. Close Workflow 2 through documented/proven workflow API or supported UI.
-4. Export Target once and run final parity verification.
-5. Ready/Merge PR #661 only on explicit user instruction.
+1. Run focused notification Workflow regression + read-only preview on exact Source/Target.
+2. Run Branch Verification on the same exact HEAD.
+3. If preview and CI pass, perform one controlled disabled-only notification Workflow create/readback; never enable it.
+4. Convert/close `AI Materialization → MKT_AI_Report_Runs` only through documented Workflow schema and current Source semantic authority.
+5. Close 7 Slicer + 2 Table View + Theme through minimal supported UI unless a new proven API contract appears.
+6. Export Target once and run final parity verification.
+7. Ready/Merge PR #661 only on explicit user instruction.
