@@ -104,7 +104,7 @@ test('AI workflow readiness maps six reviewed step types and isolates null-clear
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.sourceResolutionMode, 'canonical-title');
+  assert.equal(result.sourceResolutionMode, 'canonical-title-nested-draft');
   assert.equal(result.sourceStatus, 'enabled');
   assert.equal(result.stepCount, 6);
   assert.deepEqual(result.sourceStepTypes, [
@@ -137,7 +137,7 @@ test('AI workflow readiness resolves the unique reviewed six-step signature inde
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.sourceResolutionMode, 'unique-reviewed-step-signature');
+  assert.equal(result.sourceResolutionMode, 'unique-reviewed-step-signature-nested-draft');
   assert.deepEqual(result.sourceStepTypes, [
     'SetRecordTrigger',
     'GenerateAiTextWithSkyLarkAction',
