@@ -7,7 +7,7 @@ import {
   LARK_BASE_VIEW_UI_APPROVED_REFRESH_LAYOUT_SOURCE_SHA256,
 } from '../../scripts/lib/lark-base-view-js-sdk-parity.js';
 
-test('projects retained View manifest into documented Base JS SDK mutations', () => {
+test('projects retained View manifest into functional Base JS SDK mutations only', () => {
   const plan = buildLarkBaseViewJsSdkParityPlan(fixtureManifest({
     fieldOrder: ['Status', 'Name'],
     sortInfo: [{ fieldId: 'Name', order: 'desc' }],
@@ -24,7 +24,8 @@ test('projects retained View manifest into documented Base JS SDK mutations', ()
   assert.equal(plan.contractVersion, 'customer_base_view_js_sdk_parity_plan_v1');
   assert.deepEqual(plan.ownership, {
     automaticServerOpenApiVerifyOnly: ['hiddenFields', 'filters', 'hierarchy'],
-    baseJsSdkMutations: ['sort', 'group', 'columnWidth', 'rowHeight'],
+    baseJsSdkMutations: ['sort', 'group'],
+    ignoredCosmetic: ['columnWidth', 'rowHeight'],
     remainingManual: ['fieldOrder', 'frozenColumns'],
   });
   assert.deepEqual(plan.summary, {
@@ -35,9 +36,6 @@ test('projects retained View manifest into documented Base JS SDK mutations', ()
     hiddenVerificationAssignments: 1,
     sortViews: 1,
     groupViews: 1,
-    columnWidthViews: 1,
-    columnWidthAssignments: 1,
-    rowHeightViews: 1,
     frozenColumnManualViews: 1,
   });
   assert.deepEqual(plan.tables, [{
@@ -52,8 +50,6 @@ test('projects retained View manifest into documented Base JS SDK mutations', ()
       mutate: {
         sort: [{ fieldName: 'Name', desc: true }],
         group: [{ fieldName: 'Status', desc: false }],
-        columnWidths: { Status: 240 },
-        rowHeightLevel: 1,
       },
       remainingManual: {
         frozenColCount: 1,
@@ -74,7 +70,7 @@ test('accepts desc boolean and normalizes ascending order', () => {
   const view = plan.tables[0].views[0];
   assert.deepEqual(view.mutate.sort, [{ fieldName: 'Name', desc: false }]);
   assert.deepEqual(view.mutate.group, [{ fieldName: 'Name', desc: true }]);
-  assert.equal(view.mutate.rowHeightLevel, 2);
+  assert.equal(Object.hasOwn(view.mutate, 'rowHeightLevel'), false);
   assert.equal(view.remainingManual.frozenColCount, 0);
 });
 
@@ -87,19 +83,20 @@ test('fails closed on unknown directional representation', () => {
   );
 });
 
-test('omits null widths and rejects unsafe row height', () => {
+test('ignores cosmetic column widths and row height instead of validating or gating them', () => {
   const plan = buildLarkBaseViewJsSdkParityPlan(fixtureManifest({
     colInfos: {
-      Name: { width: null },
-      Status: { width: 180 },
+      Name: { hidden: false, width: -999 },
+      Status: { hidden: true, width: 999999 },
     },
+    rowHeightLevel: 999,
   }));
-  assert.deepEqual(plan.tables[0].views[0].mutate.columnWidths, { Status: 180 });
 
-  assert.throws(
-    () => buildLarkBaseViewJsSdkParityPlan(fixtureManifest({ rowHeightLevel: 5 })),
-    /must be an integer from 1 to 4/u,
-  );
+  assert.deepEqual(plan.tables[0].views[0].mutate, { sort: [], group: [] });
+  assert.deepEqual(plan.tables[0].views[0].verifyOnly.hiddenFieldNames, ['Status']);
+  assert.equal(Object.hasOwn(plan.summary, 'columnWidthViews'), false);
+  assert.equal(Object.hasOwn(plan.summary, 'columnWidthAssignments'), false);
+  assert.equal(Object.hasOwn(plan.summary, 'rowHeightViews'), false);
 });
 
 test('admits a different Source SHA when controlled refresh structure remains exact', () => {
@@ -208,6 +205,20 @@ test('retained count gate also fails closed on hidden-state inventory drift', ()
   ]);
 });
 
+test('cosmetic sizing drift cannot change plan authority', () => {
+  const plan = approvedRefreshPlan();
+  plan.summary.columnWidthViews = 999;
+  plan.summary.columnWidthAssignments = 9999;
+  plan.summary.rowHeightViews = 999;
+
+  const assessment = assessLarkBaseViewUiPlanAuthority(plan, {
+    sourceSha256: LARK_BASE_VIEW_UI_APPROVED_REFRESH_LAYOUT_SOURCE_SHA256,
+  });
+
+  assert.equal(assessment.ok, true);
+  assert.deepEqual(assessment.mismatches, []);
+});
+
 function approvedRefreshPlan() {
   const inventory = [
     ['🎬 MKT_Content', '🔵 Facebook Content', 'published_at', true],
@@ -270,9 +281,6 @@ function approvedRefreshPlan() {
       hiddenVerificationAssignments: 85,
       sortViews: 42,
       groupViews: 4,
-      columnWidthViews: 70,
-      columnWidthAssignments: 898,
-      rowHeightViews: 110,
       frozenColumnManualViews: 110,
     },
     tables: [...tables.entries()].map(([tableName, views]) => ({ tableName, views })),
