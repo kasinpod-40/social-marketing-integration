@@ -3,6 +3,9 @@ import {
   validateGoogleAdsManagerDeliveryRun,
 } from '../../../config/src/google-ads-manager-script-delivery-contract.js';
 import {
+  createAdsDailyRow,
+} from '../../../domain/src/entities/ads.js';
+import {
   createAdsEntityKey,
   createAdsFactKey,
   createCoverageEntityKey,
@@ -293,29 +296,34 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
     status: normalizeGoogleAdsStatus(row.status),
     source_content_id: row.youtubeVideoId,
   }));
-  const daily = run.datasets.campaignDailyMetrics.map((row) => compact({
-    ads_daily_key: `${canonicalEntityKey(run.customerId, 'campaign', row.externalEntityId)}:${row.metricDate}`,
-    metric_date: larkMetricDate(row.metricDate, run.sourceTimezone),
-    platform: 'google_ads',
-    ad_channel: canonicalDailyChannel(row, campaignById),
-    account_id: run.customerId,
-    entity_type: row.reportLevel ?? 'campaign',
-    external_entity_id: row.externalEntityId,
-    external_campaign_id: row.campaignId,
-    external_ad_group_id: row.adGroupId,
-    external_ad_id: row.adId,
-    external_creative_id: null,
-    currency: row.currency,
-    spend_micros: nullableInteger(row.spendMicros),
-    impressions: nullableInteger(row.impressions),
-    reach: null,
-    clicks: nullableInteger(row.clicks),
-    conversions: nullableNumber(row.conversions),
-    conversion_value_micros: nullableInteger(row.conversionValueMicros),
-    video_views: nullableInteger(row.videoViews),
-    video_view_rate: nullableNumber(row.videoViewRate),
-    average_cpv: microsToCurrencyUnits(row.averageCpvMicros),
-  }));
+  const daily = run.datasets.campaignDailyMetrics.map((row) => {
+    const canonical = createAdsDailyRow({
+      platform: 'google_ads',
+      accountId: run.customerId,
+      entityType: row.reportLevel ?? 'campaign',
+      externalEntityId: row.externalEntityId,
+      metricDate: row.metricDate,
+      sourceTimezone: run.sourceTimezone,
+      adChannel: canonicalDailyChannel(row, campaignById),
+      externalCampaignId: row.campaignId,
+      externalAdGroupId: row.adGroupId,
+      externalAdId: row.adId,
+      externalCreativeId: null,
+      currency: row.currency,
+      spendMicros: row.spendMicros,
+      impressions: row.impressions,
+      reach: null,
+      clicks: row.clicks,
+      conversions: row.conversions,
+      conversionValueMicros: row.conversionValueMicros,
+    });
+    return compact({
+      ...canonical,
+      video_views: nullableInteger(row.videoViews),
+      video_view_rate: nullableNumber(row.videoViewRate),
+      average_cpv: microsToCurrencyUnits(row.averageCpvMicros),
+    });
+  });
 
   return deepFreeze({
     canonical: { accounts, campaigns, adGroups, ads, creatives, daily },

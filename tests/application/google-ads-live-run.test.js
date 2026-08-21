@@ -78,12 +78,18 @@ const CANONICAL_FIELD_ALLOWLISTS = Object.freeze({
   ]),
   daily: Object.freeze([
     'account_id',
+    'actual_roas',
     'ad_channel',
     'ads_daily_key',
     'average_cpv',
     'clicks',
+    'conversion_value',
     'conversion_value_micros',
     'conversions',
+    'cpa',
+    'cpc',
+    'cpm',
+    'ctr',
     'currency',
     'entity_type',
     'external_ad_group_id',
@@ -95,6 +101,7 @@ const CANONICAL_FIELD_ALLOWLISTS = Object.freeze({
     'metric_date',
     'platform',
     'reach',
+    'spend',
     'spend_micros',
     'video_view_rate',
     'video_views',
@@ -225,6 +232,13 @@ test('Lark write set matches Canonical Ads v2 fields and preserves source identi
   assert.equal(writeSet.canonical.daily[0].entity_type, 'campaign');
   assert.equal(writeSet.canonical.daily[0].external_entity_id, '10');
   assert.equal(writeSet.canonical.daily[0].currency, 'THB');
+  assert.equal(writeSet.canonical.daily[0].spend, 1);
+  assert.equal(writeSet.canonical.daily[0].conversion_value, 3);
+  assert.equal(writeSet.canonical.daily[0].ctr, 0.1);
+  assert.equal(writeSet.canonical.daily[0].cpc, 0.1);
+  assert.equal(writeSet.canonical.daily[0].cpm, 10);
+  assert.equal(writeSet.canonical.daily[0].cpa, 0.4);
+  assert.equal(writeSet.canonical.daily[0].actual_roas, 3);
   assert.equal(writeSet.canonical.daily[0].average_cpv, 0);
 
   assert.equal(writeSet.canonical.daily[0].metric_date, BANGKOK_METRIC_DATE_EPOCH);

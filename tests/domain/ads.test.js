@@ -31,15 +31,17 @@ test('ads derived metrics use raw components and preserve null for zero denomina
     spend_micros: 100 * ADS_MONEY_SCALE,
     impressions: 10_000,
     clicks: 200,
+    conversions: 4,
     conversion_value_micros: 500 * ADS_MONEY_SCALE,
-  }), { ctr: 0.02, cpc: 0.5, cpm: 10, actual_roas: 5 });
+  }), { ctr: 0.02, cpc: 0.5, cpm: 10, cpa: 25, actual_roas: 5 });
   assert.deepEqual(calculateAdsDerivedMetrics({
     spend_micros: 0,
     impressions: 0,
     clicks: 0,
+    conversions: 0,
     conversion_value_micros: 0,
   }), {
-    ctr: null, cpc: null, cpm: null, actual_roas: null,
+    ctr: null, cpc: null, cpm: null, cpa: null, actual_roas: null,
   });
 });
 
