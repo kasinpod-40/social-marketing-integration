@@ -48,7 +48,7 @@ function reportFor(contents, observations) {
   });
 }
 
-test('aggregates observed values without converting source-level missing metrics to zero', () => {
+test('aggregates observed values under complete coverage without converting source nulls to zero', () => {
   const report = reportFor(
     [content('legacy-a'), content('observed-b')],
     [
@@ -95,7 +95,8 @@ test('aggregates observed values without converting source-level missing metrics
   assert.equal(legacy.current.comments, null);
   assert.equal(legacy.periodLikes, null);
   assert.equal(legacy.periodComments, null);
-  assert.equal(legacy.latestEngagement, 5);
+  assert.equal(legacy.periodEngagement, null);
+  assert.equal(legacy.latestEngagement, null);
 });
 
 test('keeps an entirely unobserved metric null and marks it not observed', () => {
@@ -120,6 +121,25 @@ test('keeps an entirely unobserved metric null and marks it not observed', () =>
   });
   assert.equal(payload['facebook:period_likes'].availabilityStatus, 'not_observed');
   assert.equal(payload['facebook:latest_total_likes'].availabilityStatus, 'not_observed');
+});
+
+test('preserves strict null aggregate evidence when source coverage is not complete', () => {
+  const report = calculateOrganicPeriodMetrics({
+    platform: 'facebook',
+    contents: [content('observed'), content('missing')],
+    observations: [
+      observation('observed', '2026-08-13', { views: 10, likes: 2 }),
+      observation('observed', '2026-08-20', { views: 20, likes: 5 }),
+      observation('missing', '2026-08-13', { views: 30, likes: null }),
+      observation('missing', '2026-08-20', { views: 40, likes: null }),
+    ],
+    periodStart: '2026-08-14',
+    periodEnd: '2026-08-20',
+    coverageStatus: 'partial',
+  });
+
+  assert.equal(report.metrics.period_likes, null);
+  assert.equal(report.metrics.latest_total_likes, null);
 });
 
 test('preserves observed zero and negative corrections', () => {
