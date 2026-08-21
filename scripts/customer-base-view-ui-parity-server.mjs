@@ -7,25 +7,18 @@ import { fileURLToPath } from 'node:url';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
 import { buildLarkBaseViewManualParityManifest } from './lib/lark-base-view-manual-parity-manifest.js';
-import { buildLarkBaseViewJsSdkParityPlan } from './lib/lark-base-view-js-sdk-parity.js';
+import {
+  assessLarkBaseViewUiRefreshSourceAuthority,
+  buildLarkBaseViewJsSdkParityPlan,
+} from './lib/lark-base-view-js-sdk-parity.js';
 
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 4173;
-const PREFERRED_SOURCE_SHA256 = '1571cefabb3b881dceeb71ccc2c6e879ad0c912b58072a7549825022704d80b7';
 const BASELINE_SOURCE_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
 const CHECKPOINT_SHA256 = '7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053';
 const DEFAULT_CHECKPOINT_FILE = join(homedir(), 'Downloads', 'customer-base-controlled-apply-checkpoint.json');
 const SOURCE_NAME_PATTERN = /^Social MKT Data Hub.*\.base$/u;
 const PROTECTED_EXTERNAL_TABLE = '🎵 RAW_TikTok_Creator_Videos';
-const STRUCTURAL_COUNTS = Object.freeze({
-  tables: 33,
-  fields: 723,
-  views: 111,
-  relationFields: 12,
-  formulaFields: 4,
-  dashboards: 6,
-  workflows: 2,
-});
 
 try {
   const checkpointFile = process.env.CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_FILE
@@ -89,6 +82,7 @@ try {
       sourceFileName: basename(sourceFile),
       sourceSha256: inspection.file.sha256,
       sourceSelectionMode: sourceAuthority.selectionMode,
+      sourceRecords: inspection.counts.records,
       tables: plan.summary.tableCount,
       views: plan.summary.viewCount,
       baseJsSdkMutations: plan.ownership.baseJsSdkMutations,
@@ -143,6 +137,7 @@ async function resolveSourceAuthority({ checkpoint }) {
         fileName: basename(sourceFile),
         status: 'compatible',
         sha256: inspection.file.sha256,
+        records: inspection.counts.records,
       }));
     } catch (error) {
       checked.push(Object.freeze({
@@ -157,13 +152,10 @@ async function resolveSourceAuthority({ checkpoint }) {
   if (compatible.length === 0) {
     throw codedError(
       'CUSTOMER_BASE_VIEW_UI_SOURCE_AUTHORITY_NOT_FOUND',
-      'No Desktop/Downloads Source export is structurally and clone-scope compatible with the retained checkpoint',
+      'No Desktop/Downloads Source export is refresh-compatible and clone-scope compatible with the retained checkpoint',
       { checked },
     );
   }
-
-  const preferred = compatible.find((item) => item.inspection?.file?.sha256 === PREFERRED_SOURCE_SHA256);
-  if (preferred) return freezeSelection(preferred, 'preferred-previously-verified-source');
 
   const layoutFingerprints = new Set(compatible.map((item) => item.planFingerprintSha256));
   if (layoutFingerprints.size > 1) {
@@ -174,6 +166,7 @@ async function resolveSourceAuthority({ checkpoint }) {
         candidates: compatible.map((item) => ({
           fileName: basename(item.sourceFile),
           sha256: item.inspection.file.sha256,
+          records: item.inspection.counts.records,
           planFingerprintSha256: item.planFingerprintSha256,
         })),
       },
@@ -181,9 +174,10 @@ async function resolveSourceAuthority({ checkpoint }) {
   }
 
   compatible.sort((left, right) => right.mtimeMs - left.mtimeMs || left.sourceFile.localeCompare(right.sourceFile));
-  return freezeSelection(compatible[0], compatible.length === 1
-    ? 'single-compatible-source'
-    : 'same-layout-newest-source');
+  return freezeSelection(
+    compatible[0],
+    compatible.length === 1 ? 'single-compatible-source' : 'same-layout-newest-source',
+  );
 }
 
 async function discoverSourceCandidates() {
@@ -218,18 +212,13 @@ async function readVerifiedCheckpoint(filePath) {
 }
 
 function assertStructuralAuthority(inspection) {
-  const mismatches = [];
-  for (const [dimension, expected] of Object.entries(STRUCTURAL_COUNTS)) {
-    const actual = inspection?.counts?.[dimension];
-    if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
-  }
-  if (mismatches.length > 0) {
-    throw codedError(
-      'CUSTOMER_BASE_VIEW_UI_SOURCE_STRUCTURE_MISMATCH',
-      'View UI runner Source export is not refresh-compatible with the approved structure',
-      { mismatches },
-    );
-  }
+  const assessment = assessLarkBaseViewUiRefreshSourceAuthority(inspection);
+  if (assessment.ok) return;
+  throw codedError(
+    'CUSTOMER_BASE_VIEW_UI_SOURCE_STRUCTURE_MISMATCH',
+    'View UI runner Source export is not refresh-compatible with the approved controlled-Apply structure',
+    { mismatches: assessment.mismatches },
+  );
 }
 
 function assertCloneScope(plan, expectedTableNames) {
