@@ -43,11 +43,13 @@ reviewed continuation instead of replaying automatically.
 
 ## Repository implementation
 
-Branch:
+Implementation branch:
 `work/facebook-organic-live-rematerialization-rollout-v1`
 
-PR:
-`#663`
+PR #663 merged to `main`.
+
+Exact merge SHA:
+`55435bbabbf5788a2cb76790ed5e0b3d137587fb`
 
 Files:
 
@@ -63,13 +65,20 @@ Report calculation engine.
 
 ## Verification evidence
 
-Implementation commit before closure documentation:
+Implementation code/test commit before closure docs:
 `1ba7928f9e2529d1291efb073fc54bea7d2448a8`
 
-Branch Verification:
+Pre-closure Branch Verification:
 
 - Run `32446106165`
 - Job `96665851523`
+- Result: `SUCCESS`
+
+Final documentation-closure Branch Verification on PR #663 head
+`c2c73ebe1117018c73375f9903e152c6430c8848`:
+
+- Run `32446529335`
+- Job `96667104644`
 - Result: `SUCCESS`
 - Syntax/architecture/hygiene: pass
 - focused source/readiness regressions: pass
@@ -79,14 +88,21 @@ Branch Verification:
 - Wrangler dry run: pass
 - diff whitespace check: pass
 
-A final Branch Verification must pass again after closure documentation before merge.
+## Current boundary
 
-## Safety boundary
+Repository implementation is complete and merged. Live Integration execution has
+not yet occurred.
 
-This repository workstream performs no Integration live mutation by itself. Live
-execution is allowed only after PR #663 merges and the operator runs from clean
-`main == origin/main` with the exact confirmation token.
+The live operator must run from a clean current `main == origin/main` on a machine
+that has the real `.dev.vars`, Lark credentials and Cloudflare/Wrangler authorization.
+This ChatGPT session has neither a Cloudflare/Lark connector nor a GitHub Actions
+workflow carrying those live credentials, so repository CI is not a valid substitute
+for the controlled live execution.
+
+Do not claim closure until live evidence proves all four Facebook windows, D1↔Lark
+zero drift, observed aggregate repair, zero Report DLQ/critical alert/lock and exact
+pre/post runtime flag equality.
 
 Customer-owned Production remains blocked. PR #661 and branch
-`work/customer-base-consolidation-v1` are outside this workstream and receive zero
+`work/customer-base-consolidation-v1` remain outside this workstream and receive zero
 mutation.
