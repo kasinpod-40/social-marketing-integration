@@ -11,6 +11,12 @@ const REQUIRED_TRIGGER_CONTROLS = Object.freeze([
   'automationBatchUpdate',
   'openAPIBatchUpdate',
 ]);
+const EXPECTED_NOTIFICATION_STEP_TYPES = Object.freeze(['AddRecordTrigger', 'Delay']);
+const CANONICAL_NOTIFICATION_WORKFLOW_TITLE = canonicalWorkflowTitle(
+  CUSTOMER_BASE_NOTIFICATION_WORKFLOW_TITLE,
+);
+const MAX_WORKFLOW_ENVELOPE_DEPTH = 10;
+const MAX_WORKFLOW_ENVELOPE_STRING_BYTES = 4 * 1024 * 1024;
 
 const REQUIRED_TARGET_ANCHORS = Object.freeze([
   '🎵 RAW_TikTok_Creator_Videos',
@@ -33,22 +39,59 @@ export async function buildCustomerBaseNotificationWorkflowPlan({ sourceClient }
 
   const refs = await buildSourceReferenceMaps(sourceClient);
   const matches = [];
-  for (const rawWorkflow of workflows) {
-    const draft = parseMaybeJson(rawWorkflow?.Draft ?? rawWorkflow?.draft, 'workflow Draft');
-    if (optionalText(draft?.title) === CUSTOMER_BASE_NOTIFICATION_WORKFLOW_TITLE) {
-      matches.push({ rawWorkflow, draft });
+  const resolutionCandidates = [];
+  for (const [index, rawWorkflow] of workflows.entries()) {
+    const draftCandidates = findWorkflowDraftCandidates(rawWorkflow);
+    const candidateDiagnostics = [];
+    for (const candidate of draftCandidates) {
+      const sourceTitle = optionalText(candidate.draft?.title);
+      const stepTypes = Array.isArray(candidate.draft?.steps)
+        ? candidate.draft.steps.map((step) => optionalText(step?.type) ?? '')
+        : [];
+      const titleMatch = canonicalWorkflowTitle(sourceTitle)
+        === CANONICAL_NOTIFICATION_WORKFLOW_TITLE;
+      const reviewedStepSignatureMatch = sameArray(stepTypes, EXPECTED_NOTIFICATION_STEP_TYPES);
+      candidateDiagnostics.push({
+        draftPath: candidate.path,
+        titleMatch,
+        reviewedStepSignatureMatch,
+        stepTypes,
+      });
+      if (titleMatch || reviewedStepSignatureMatch) {
+        matches.push({
+          rawWorkflow,
+          draft: candidate.draft,
+          statusContainer: candidate.statusContainer,
+          draftPath: candidate.path,
+          sourceResolutionMode: titleMatch
+            ? 'canonical-title-nested-draft'
+            : 'unique-reviewed-step-signature-nested-draft',
+        });
+      }
     }
+    resolutionCandidates.push({
+      sourceOrdinal: index + 1,
+      hasDraft: draftCandidates.length > 0,
+      draftCandidateCount: draftCandidates.length,
+      candidates: candidateDiagnostics,
+    });
   }
   if (matches.length !== 1) {
     throw codedError(
       'CUSTOMER_BASE_NOTIFICATION_WORKFLOW_SOURCE_RESOLUTION_FAILED',
       'Notification workflow must resolve exactly once in Source',
-      { matches: matches.length },
+      { matches: matches.length, candidates: resolutionCandidates },
     );
   }
 
-  const { rawWorkflow, draft } = matches[0];
-  const sourceStatus = normalizeSourceWorkflowStatus(rawWorkflow);
+  const {
+    rawWorkflow,
+    draft,
+    statusContainer,
+    draftPath,
+    sourceResolutionMode,
+  } = matches[0];
+  const sourceStatus = normalizeSourceWorkflowStatus(rawWorkflow, statusContainer);
   if (sourceStatus !== 'disabled') {
     throw codedError(
       'CUSTOMER_BASE_NOTIFICATION_WORKFLOW_SOURCE_STATUS_MISMATCH',
@@ -138,6 +181,8 @@ export async function buildCustomerBaseNotificationWorkflowPlan({ sourceClient }
     contractVersion: 'customer_base_notification_workflow_plan_v1',
     sourceWorkflowCount: workflows.length,
     sourceStatus,
+    sourceResolutionMode,
+    sourceDraftPath: draftPath,
     title: CUSTOMER_BASE_NOTIFICATION_WORKFLOW_TITLE,
     trigger: {
       tableName,
@@ -427,8 +472,60 @@ async function buildSourceReferenceMaps(sourceClient) {
   return { tableById, fieldById };
 }
 
-function normalizeSourceWorkflowStatus(rawWorkflow) {
+function findWorkflowDraftCandidates(rawWorkflow) {
+  const candidates = [];
+  const visitedObjects = new WeakSet();
+  visit(rawWorkflow, '$', 0);
+  return candidates;
+
+  function visit(value, path, depth) {
+    if (depth > MAX_WORKFLOW_ENVELOPE_DEPTH || value === null || value === undefined) return;
+    if (typeof value === 'string') {
+      const parsed = tryParseEnvelopeJson(value);
+      if (parsed !== null) visit(parsed, `${path}.$json`, depth + 1);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${path}[${index}]`, depth + 1));
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (visitedObjects.has(value)) return;
+    visitedObjects.add(value);
+
+    for (const [key, nested] of Object.entries(value)) {
+      const childPath = `${path}.${key}`;
+      if (/^draft$/iu.test(key)) {
+        const draft = parseMaybeJson(nested, 'workflow Draft');
+        if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
+          candidates.push({ draft, path: childPath, statusContainer: value });
+        }
+        continue;
+      }
+      visit(nested, childPath, depth + 1);
+    }
+  }
+}
+
+function tryParseEnvelopeJson(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || Buffer.byteLength(text, 'utf8') > MAX_WORKFLOW_ENVELOPE_STRING_BYTES) return null;
+  if (!['{', '[', '"'].includes(text[0])) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'string') return tryParseEnvelopeJson(parsed);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSourceWorkflowStatus(rawWorkflow, statusContainer = null) {
   const candidates = [
+    statusContainer?.status,
+    statusContainer?.Status,
+    statusContainer?.workflowStatus,
+    statusContainer?.workflow_status,
     rawWorkflow?.status,
     rawWorkflow?.Status,
     rawWorkflow?.workflowStatus,
@@ -515,20 +612,40 @@ function sameStringSet(a, b) {
   return [...new Set(a)].sort().join('\0') === [...new Set(b)].sort().join('\0');
 }
 
-function parseMaybeJson(value, label) {
+function sameArray(a, b) {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function canonicalWorkflowTitle(value) {
+  const text = optionalText(value);
+  if (!text) return null;
+  return text
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function parseMaybeJson(value, label, depth = 0) {
+  if (depth > 4) {
+    throw codedError(
+      'CUSTOMER_BASE_NOTIFICATION_WORKFLOW_SOURCE_DRAFT_NESTING_INVALID',
+      `${label} exceeded supported JSON wrapper depth`,
+    );
+  }
   if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    if (
-      value.encoding === 'json'
-      && value.value
-      && typeof value.value === 'object'
-      && !Array.isArray(value.value)
-    ) return value.value;
+    if (value.encoding === 'json' && Object.prototype.hasOwnProperty.call(value, 'value')) {
+      return parseMaybeJson(value.value, label, depth + 1);
+    }
     return value;
   }
   if (typeof value !== 'string') return null;
   try {
-    return JSON.parse(value);
+    const parsed = JSON.parse(value);
+    return typeof parsed === 'string'
+      ? parseMaybeJson(parsed, label, depth + 1)
+      : parsed;
   } catch (cause) {
     throw codedError(
       'CUSTOMER_BASE_NOTIFICATION_WORKFLOW_SOURCE_DRAFT_INVALID',
