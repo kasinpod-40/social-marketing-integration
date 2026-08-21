@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const CONTRACT_VERSION = 'customer_base_view_js_sdk_parity_plan_v1';
 const MANIFEST_VERSION = 'customer_base_view_manual_parity_manifest_v1';
 const DEFAULT_SOURCE_STRUCTURAL_COUNTS = Object.freeze({
@@ -11,6 +13,28 @@ const DEFAULT_SOURCE_STRUCTURAL_COUNTS = Object.freeze({
   advancedPermissionRoles: 4,
 });
 const DEFAULT_SOURCE_MIN_RECORDS = 35_528;
+const RETAINED_PLAN_SUMMARY = Object.freeze({
+  tableCount: 32,
+  viewCount: 110,
+  fieldOrderAuditViews: 110,
+  hiddenVerificationViews: 11,
+  hiddenVerificationAssignments: 85,
+  sortViews: 41,
+  groupViews: 4,
+  columnWidthViews: 70,
+  columnWidthAssignments: 898,
+  rowHeightViews: 110,
+  frozenColumnManualViews: 110,
+});
+const APPROVED_REFRESH_LAYOUT_REVISION = Object.freeze({
+  sourceSha256: '9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7',
+  authorityMode: 'exact-refresh-layout-revision-facebook-content-published-at-desc',
+  summary: Object.freeze({
+    ...RETAINED_PLAN_SUMMARY,
+    sortViews: 42,
+  }),
+  sortInventoryFingerprintSha256: '961936df36fdf70b4cb2df434638630e699b573c26166b4aff04f0f58ecfbf88',
+});
 
 /**
  * Converts the retained names-only View manifest into a Base JS SDK execution plan.
@@ -140,7 +164,74 @@ export function assessLarkBaseViewUiRefreshSourceAuthority(inspection, options =
   });
 }
 
+/**
+ * Keeps the retained View layout as the default gate while admitting one evidence-backed
+ * refresh revision by exact Source SHA. The approved revision changes only sort ownership:
+ * `🎬 MKT_Content → 🔵 Facebook Content → published_at DESC` is present in addition to the
+ * retained 41 sorted Views. The complete 42-View sort inventory is fingerprinted so an
+ * unrelated sort replacement cannot pass merely because the aggregate count is still 42.
+ */
+export function assessLarkBaseViewUiPlanAuthority(plan, options = {}) {
+  const sourceSha256 = optionalText(options?.sourceSha256);
+  const revision = sourceSha256 === APPROVED_REFRESH_LAYOUT_REVISION.sourceSha256
+    ? APPROVED_REFRESH_LAYOUT_REVISION
+    : null;
+  const expectedSummary = revision?.summary ?? RETAINED_PLAN_SUMMARY;
+  const mismatches = compareSummary(plan?.summary, expectedSummary);
+  const sortInventoryFingerprintSha256 = fingerprintSortInventory(plan);
+
+  if (revision && sortInventoryFingerprintSha256 !== revision.sortInventoryFingerprintSha256) {
+    mismatches.push({
+      dimension: 'sortInventoryFingerprintSha256',
+      expected: revision.sortInventoryFingerprintSha256,
+      actual: sortInventoryFingerprintSha256,
+    });
+  }
+
+  return deepFreeze({
+    ok: mismatches.length === 0,
+    authorityMode: mismatches.length === 0
+      ? revision?.authorityMode ?? 'retained-layout-counts'
+      : null,
+    sourceSha256,
+    expectedSummary,
+    sortInventoryFingerprintSha256,
+    mismatches,
+  });
+}
+
 export const LARK_BASE_VIEW_JS_SDK_PARITY_PLAN_VERSION = CONTRACT_VERSION;
+export const LARK_BASE_VIEW_UI_APPROVED_REFRESH_LAYOUT_SOURCE_SHA256 = APPROVED_REFRESH_LAYOUT_REVISION.sourceSha256;
+
+function compareSummary(summary, expectedSummary) {
+  const mismatches = [];
+  for (const [dimension, expected] of Object.entries(expectedSummary)) {
+    const actual = summary?.[dimension];
+    if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
+  }
+  return mismatches;
+}
+
+function fingerprintSortInventory(plan) {
+  const rowHashes = [];
+  for (const table of Array.isArray(plan?.tables) ? plan.tables : []) {
+    const tableName = requireText(table?.tableName, 'plan tableName');
+    for (const view of Array.isArray(table?.views) ? table.views : []) {
+      const sort = Array.isArray(view?.mutate?.sort) ? view.mutate.sort : [];
+      if (sort.length === 0) continue;
+      const row = {
+        tableName,
+        viewName: requireText(view?.viewName, `${tableName}.viewName`),
+        sort: sort.map((rule, index) => ({
+          fieldName: requireText(rule?.fieldName, `${tableName}.sort[${index}].fieldName`),
+          desc: requireBoolean(rule?.desc, `${tableName}.sort[${index}].desc`),
+        })),
+      };
+      rowHashes.push(fingerprint(JSON.stringify(row)));
+    }
+  }
+  return fingerprint(rowHashes.sort().join('\n'));
+}
 
 function normalizeDirectionalRules(value, name) {
   if (value === null || value === undefined) return [];
@@ -229,6 +320,15 @@ function requireText(value, name) {
   const result = optionalText(value);
   if (!result) throw new TypeError(`${name} is required`);
   return result;
+}
+
+function requireBoolean(value, name) {
+  if (typeof value !== 'boolean') throw new TypeError(`${name} must be boolean`);
+  return value;
+}
+
+function fingerprint(value) {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function deepFreeze(value) {
