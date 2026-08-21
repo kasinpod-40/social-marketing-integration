@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  LARK_BASE_JS_SDK_CDN_ROOT,
   LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH,
   LARK_BASE_JS_SDK_ENTRY_URL,
+  assertMirroredGraphClosure,
   extractModuleSpecifiers,
   loadPinnedLarkBaseJsSdkMirror,
   localPathForPinnedModule,
@@ -43,6 +45,38 @@ test('mirrors a pinned relative SDK module graph and rewrites imports to same-or
   assert.match(mirror.modules.get('/lark-base-js-sdk/chunk-b.mjs'), /from '\/lark-base-js-sdk\/nested\/chunk-c\.mjs'/u);
   assert.equal(typeof mirror.sha256, 'string');
   assert.equal(mirror.sha256.length, 64);
+});
+
+test('stores a mirrored module under the requested browser path even if the CDN resolves another in-root URL', async () => {
+  const childRequestedUrl = new URL('./chunk-a.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href;
+  const childResolvedUrl = `${LARK_BASE_JS_SDK_CDN_ROOT}canonical/chunk-a.mjs`;
+  const rootBody = `export { bitable } from './chunk-a.mjs';\n${'x'.repeat(70_000)}`;
+  const childBody = `export const bitable = {};\n${'a'.repeat(40_000)}`;
+
+  const mirror = await loadPinnedLarkBaseJsSdkMirror({
+    fetchImpl: async (url) => {
+      if (url === LARK_BASE_JS_SDK_ENTRY_URL) return response(url, rootBody);
+      if (url === childRequestedUrl) return response(childResolvedUrl, childBody);
+      return response(url, '', 404);
+    },
+  });
+
+  assert.equal(mirror.moduleCount, 2);
+  assert.ok(mirror.modules.has('/lark-base-js-sdk/chunk-a.mjs'));
+  assert.equal(mirror.modules.has('/lark-base-js-sdk/canonical/chunk-a.mjs'), false);
+  assert.doesNotThrow(() => assertMirroredGraphClosure(mirror.modules));
+});
+
+test('fails closed when a rewritten same-origin SDK import has no mirrored module', () => {
+  const modules = new Map([
+    [LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH, `import '/lark-base-js-sdk/chunk-missing.mjs';`],
+  ]);
+
+  assert.throws(
+    () => assertMirroredGraphClosure(modules),
+    (error) => error?.code === 'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_NOT_CLOSED'
+      && error?.details?.missingLocalPath === '/lark-base-js-sdk/chunk-missing.mjs',
+  );
 });
 
 test('fails closed when the pinned graph imports outside the exact versioned dist root', async () => {
