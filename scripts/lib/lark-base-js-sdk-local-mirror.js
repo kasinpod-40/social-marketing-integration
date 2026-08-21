@@ -165,6 +165,7 @@ export async function loadPinnedLarkBaseJsSdkMirror({
       write: false,
       sourcemap: false,
       minify: false,
+      treeShaking: false,
       legalComments: 'none',
       metafile: true,
       logLevel: 'silent',
@@ -264,8 +265,7 @@ export function localPathForPinnedModule(urlValue) {
 }
 
 function virtualPathForPinnedModule(urlValue) {
-  const localPath = localPathForPinnedModule(urlValue);
-  return localPath;
+  return localPathForPinnedModule(urlValue);
 }
 
 function upstreamUrlForVirtualPath(virtualPath) {
