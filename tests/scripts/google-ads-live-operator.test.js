@@ -6,7 +6,9 @@ import {
   assertGoogleAdsLiveOperatorConfirmation,
   buildGoogleAdsConnectionGateSql,
   buildGoogleAdsRunVerificationSql,
+  compareGoogleAdsLarkDailyNumber,
   compareGoogleAdsRerunVerification,
+  GOOGLE_ADS_LARK_DAILY_NUMBER_FORMATTERS,
   loadGoogleAdsLiveOperatorTarget,
   parseGoogleAdsLiveOperatorArgs,
   validateGoogleAdsConnectionGateRow,
@@ -183,6 +185,43 @@ test('LIVE verification requires complete reconciliation and exact rerun count s
     ),
     (error) => error.code === 'GOOGLE_ADS_OPERATOR_RERUN_DRIFT',
   );
+});
+
+test('Lark daily parity honors field formatter precision without weakening canonical facts', () => {
+  assert.deepEqual(GOOGLE_ADS_LARK_DAILY_NUMBER_FORMATTERS.conversions, {
+    formatter: '0.0',
+    decimalPlaces: 1,
+  });
+
+  const liveDisplayCases = [
+    ['cpc', 19.38, 19.3759582, 19.38],
+    ['cpm', 16.91, 16.91337133379888, 16.91],
+    ['spend', 180.61, 180.612355, 180.61],
+    ['conversion_value', 2.01, 2.011443, 2.01],
+    ['ctr', 0.035, 0.0350794027020621, 0.035],
+    ['conversions', 2, 2.011443, 2],
+  ];
+
+  for (const [field, actual, expected, expectedDisplay] of liveDisplayCases) {
+    const result = compareGoogleAdsLarkDailyNumber(field, actual, expected);
+    assert.equal(result.matches, true, `${field} should match its Lark display precision`);
+    assert.equal(result.mode, 'lark-display');
+    assert.equal(result.expectedCanonical, expected);
+    assert.equal(result.expectedDisplay, expectedDisplay);
+  }
+
+  const conversionDrift = compareGoogleAdsLarkDailyNumber('conversions', 2.1, 2.011443);
+  assert.equal(conversionDrift.matches, false);
+  assert.equal(conversionDrift.expectedDisplay, 2);
+
+  const microsDrift = compareGoogleAdsLarkDailyNumber('spend_micros', 180612354, 180612355);
+  assert.equal(microsDrift.matches, false);
+  assert.equal(microsDrift.mode, 'canonical-exact');
+  assert.equal(microsDrift.formatter, null);
+
+  const nullParity = compareGoogleAdsLarkDailyNumber('cpa', null, null);
+  assert.equal(nullParity.matches, true);
+  assert.equal(compareGoogleAdsLarkDailyNumber('cpa', null, 1.25).matches, false);
 });
 
 test('operator default invocation is plan-only and performs no external command', () => {
