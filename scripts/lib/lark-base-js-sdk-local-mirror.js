@@ -5,127 +5,246 @@ export const LARK_BASE_JS_SDK_CDN_ROOT = `https://cdn.jsdelivr.net/npm/@lark-bas
 export const LARK_BASE_JS_SDK_ENTRY_URL = `${LARK_BASE_JS_SDK_CDN_ROOT}index.mjs`;
 export const LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH = '/lark-base-js-sdk.mjs';
 export const LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX = '/lark-base-js-sdk/';
+export const LARK_BASE_JS_SDK_ESBUILD_VERSION = '0.28.1';
 
+const VIRTUAL_ENTRY_PATH = `${LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX}index.mjs`;
+const SDK_NAMESPACE = 'customer-base-lark-sdk';
 const MAX_MODULES = 256;
-const MAX_TOTAL_BYTES = 4_000_000;
-const MIN_TOTAL_BYTES = 100_000;
+const MAX_TOTAL_SOURCE_BYTES = 4_000_000;
+const MIN_TOTAL_SOURCE_BYTES = 100_000;
+const MIN_BUNDLE_BYTES = 100_000;
 
-export async function loadPinnedLarkBaseJsSdkMirror({ fetchImpl = globalThis.fetch } = {}) {
+export async function loadPinnedLarkBaseJsSdkMirror({
+  fetchImpl = globalThis.fetch,
+  esbuildImpl = null,
+} = {}) {
   if (typeof fetchImpl !== 'function') {
-    throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_FETCH_UNAVAILABLE', 'A fetch implementation is required to mirror the pinned Base JS SDK');
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_FETCH_UNAVAILABLE',
+      'A fetch implementation is required to bundle the pinned Base JS SDK',
+    );
   }
 
-  const queue = [LARK_BASE_JS_SDK_ENTRY_URL];
-  const seen = new Set();
-  const modules = new Map();
-  let totalBytes = 0;
+  const esbuild = esbuildImpl ?? await loadLockedEsbuild();
+  if (typeof esbuild?.build !== 'function') {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLER_UNAVAILABLE',
+      'The locked esbuild implementation is unavailable',
+      { expectedEsbuildVersion: LARK_BASE_JS_SDK_ESBUILD_VERSION },
+    );
+  }
+  if (typeof esbuild.version === 'string' && esbuild.version !== LARK_BASE_JS_SDK_ESBUILD_VERSION) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLER_VERSION_MISMATCH',
+      'The installed esbuild version does not match the repository lock authority',
+      {
+        expectedEsbuildVersion: LARK_BASE_JS_SDK_ESBUILD_VERSION,
+        actualEsbuildVersion: esbuild.version,
+      },
+    );
+  }
+
+  const sourceByVirtualPath = new Map();
+  let totalSourceBytes = 0;
   let containsBitable = false;
 
-  while (queue.length > 0) {
-    const requestedUrl = queue.shift();
-    if (seen.has(requestedUrl)) continue;
-    if (seen.size >= MAX_MODULES) {
-      throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_TOO_LARGE', 'Pinned Base JS SDK module graph exceeds the fail-closed module limit', {
-        sdkVersion: LARK_BASE_JS_SDK_VERSION,
-        maxModules: MAX_MODULES,
+  const plugin = {
+    name: 'customer-base-pinned-lark-sdk',
+    setup(build) {
+      build.onResolve({ filter: /.*/u }, (args) => {
+        if (args.kind === 'entry-point') {
+          return { path: VIRTUAL_ENTRY_PATH, namespace: SDK_NAMESPACE };
+        }
+
+        let targetPath = null;
+        if (args.path.startsWith('./') || args.path.startsWith('../')) {
+          const importerUrl = upstreamUrlForVirtualPath(args.importer);
+          const targetUrl = new URL(args.path, importerUrl).href;
+          assertPinnedCdnUrl(targetUrl);
+          targetPath = virtualPathForPinnedModule(targetUrl);
+        } else if (args.path.startsWith(LARK_BASE_JS_SDK_CDN_ROOT)) {
+          assertPinnedCdnUrl(args.path);
+          targetPath = virtualPathForPinnedModule(args.path);
+        } else if (args.path.startsWith(LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX)) {
+          targetPath = args.path;
+        } else {
+          throw codedError(
+            'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_EXTERNAL_IMPORT',
+            'Pinned Base JS SDK contains an import outside the exact versioned package graph',
+            {
+              sdkVersion: LARK_BASE_JS_SDK_VERSION,
+              importer: args.importer,
+              specifier: args.path,
+            },
+          );
+        }
+
+        return { path: targetPath, namespace: SDK_NAMESPACE };
       });
-    }
-    seen.add(requestedUrl);
 
-    let response;
-    try {
-      response = await fetchImpl(requestedUrl, {
-        redirect: 'follow',
-        signal: AbortSignal.timeout(20_000),
-        headers: {
-          Accept: 'text/javascript, application/javascript;q=0.9, */*;q=0.1',
-          'User-Agent': 'social-marketing-integration/customer-base-view-ui-parity',
-        },
+      build.onLoad({ filter: /.*/u, namespace: SDK_NAMESPACE }, async (args) => {
+        if (sourceByVirtualPath.has(args.path)) {
+          return { contents: sourceByVirtualPath.get(args.path), loader: 'js' };
+        }
+        if (sourceByVirtualPath.size >= MAX_MODULES) {
+          throw codedError(
+            'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_TOO_LARGE',
+            'Pinned Base JS SDK exceeds the fail-closed module limit',
+            { sdkVersion: LARK_BASE_JS_SDK_VERSION, maxModules: MAX_MODULES },
+          );
+        }
+
+        const requestedUrl = upstreamUrlForVirtualPath(args.path);
+        let response;
+        try {
+          response = await fetchImpl(requestedUrl, {
+            redirect: 'follow',
+            signal: AbortSignal.timeout(20_000),
+            headers: {
+              Accept: 'text/javascript, application/javascript;q=0.9, */*;q=0.1',
+              'User-Agent': 'social-marketing-integration/customer-base-view-ui-parity',
+            },
+          });
+        } catch (error) {
+          throw codedError(
+            'CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED',
+            'Unable to fetch the pinned Base JS SDK while producing the local single bundle',
+            {
+              sdkVersion: LARK_BASE_JS_SDK_VERSION,
+              requestedUrl,
+              cause: error?.message ?? String(error),
+            },
+          );
+        }
+
+        if (!response?.ok) {
+          throw codedError(
+            'CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED',
+            'Pinned Base JS SDK module fetch returned a non-success response',
+            {
+              sdkVersion: LARK_BASE_JS_SDK_VERSION,
+              requestedUrl,
+              status: response?.status ?? null,
+            },
+          );
+        }
+
+        const resolvedUrl = response.url || requestedUrl;
+        assertPinnedCdnUrl(resolvedUrl);
+        assertRedirectCompatibility(requestedUrl, resolvedUrl);
+
+        const source = await response.text();
+        const sourceBytes = Buffer.byteLength(source, 'utf8');
+        totalSourceBytes += sourceBytes;
+        if (totalSourceBytes > MAX_TOTAL_SOURCE_BYTES) {
+          throw codedError(
+            'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_TOO_LARGE',
+            'Pinned Base JS SDK exceeds the fail-closed source byte limit',
+            {
+              sdkVersion: LARK_BASE_JS_SDK_VERSION,
+              maxBytes: MAX_TOTAL_SOURCE_BYTES,
+              actualBytes: totalSourceBytes,
+            },
+          );
+        }
+        if (source.includes('bitable')) containsBitable = true;
+        sourceByVirtualPath.set(args.path, source);
+        return { contents: source, loader: 'js' };
       });
-    } catch (error) {
-      throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED', 'Unable to fetch the pinned Base JS SDK module graph before starting the local runner', {
-        sdkVersion: LARK_BASE_JS_SDK_VERSION,
-        requestedUrl,
-        cause: error?.message ?? String(error),
-      });
-    }
+    },
+  };
 
-    if (!response?.ok) {
-      throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_FETCH_FAILED', 'Pinned Base JS SDK module fetch returned a non-success response', {
-        sdkVersion: LARK_BASE_JS_SDK_VERSION,
-        requestedUrl,
-        status: response?.status ?? null,
-      });
-    }
-
-    const resolvedUrl = response.url || requestedUrl;
-    assertPinnedCdnUrl(resolvedUrl);
-    const originalBody = await response.text();
-    const originalBytes = Buffer.byteLength(originalBody, 'utf8');
-    totalBytes += originalBytes;
-    if (totalBytes > MAX_TOTAL_BYTES) {
-      throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_TOO_LARGE', 'Pinned Base JS SDK module graph exceeds the fail-closed byte limit', {
-        sdkVersion: LARK_BASE_JS_SDK_VERSION,
-        maxBytes: MAX_TOTAL_BYTES,
-        actualBytes: totalBytes,
-      });
-    }
-    if (originalBody.includes('bitable')) containsBitable = true;
-
-    const specifiers = extractModuleSpecifiers(originalBody);
-    const replacements = new Map();
-    for (const specifier of specifiers) {
-      if (!specifier.startsWith('./') && !specifier.startsWith('../')) {
-        throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_EXTERNAL_IMPORT', 'Pinned Base JS SDK contains a non-relative module import outside the mirrored package graph', {
-          sdkVersion: LARK_BASE_JS_SDK_VERSION,
-          moduleUrl: resolvedUrl,
-          specifier,
-        });
-      }
-      const childUrl = new URL(specifier, resolvedUrl).href;
-      assertPinnedCdnUrl(childUrl);
-      const localPath = localPathForPinnedModule(childUrl);
-      replacements.set(specifier, localPath);
-      if (!seen.has(childUrl)) queue.push(childUrl);
-    }
-
-    const requestedLocalPath = requestedUrl === LARK_BASE_JS_SDK_ENTRY_URL
-      ? LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH
-      : localPathForPinnedModule(requestedUrl);
-    modules.set(requestedLocalPath, rewriteModuleSpecifiers(originalBody, replacements));
-  }
-
-  const entryBody = modules.get(LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH);
-  if (!entryBody) {
-    throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_ENTRY_MISSING', 'Pinned Base JS SDK entry module was not mirrored');
-  }
-  if (totalBytes < MIN_TOTAL_BYTES || !containsBitable) {
-    throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_INVALID', 'Pinned Base JS SDK mirrored graph failed the local integrity shape check', {
-      sdkVersion: LARK_BASE_JS_SDK_VERSION,
-      minimumBytes: MIN_TOTAL_BYTES,
-      actualBytes: totalBytes,
-      containsBitable,
+  let result;
+  try {
+    result = await esbuild.build({
+      entryPoints: [VIRTUAL_ENTRY_PATH],
+      bundle: true,
+      format: 'esm',
+      platform: 'browser',
+      target: ['es2022'],
+      write: false,
+      sourcemap: false,
+      minify: false,
+      legalComments: 'none',
+      metafile: true,
+      logLevel: 'silent',
+      plugins: [plugin],
     });
+  } catch (error) {
+    const codedDetail = error?.errors?.find((item) => item?.detail?.code)?.detail;
+    if (codedDetail?.code) throw codedDetail;
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLE_FAILED',
+      'Unable to bundle the exact pinned Base JS SDK into one browser module',
+      {
+        sdkVersion: LARK_BASE_JS_SDK_VERSION,
+        expectedEsbuildVersion: LARK_BASE_JS_SDK_ESBUILD_VERSION,
+        cause: error?.message ?? String(error),
+      },
+    );
   }
 
-  assertMirroredGraphClosure(modules);
+  if (totalSourceBytes < MIN_TOTAL_SOURCE_BYTES || !containsBitable) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_INVALID',
+      'Pinned Base JS SDK source graph failed the integrity shape check',
+      {
+        sdkVersion: LARK_BASE_JS_SDK_VERSION,
+        minimumBytes: MIN_TOTAL_SOURCE_BYTES,
+        actualBytes: totalSourceBytes,
+        containsBitable,
+      },
+    );
+  }
 
-  const graphFingerprint = createHash('sha256');
-  for (const [path, body] of [...modules.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-    graphFingerprint.update(path);
-    graphFingerprint.update('\0');
-    graphFingerprint.update(createHash('sha256').update(body).digest('hex'));
-    graphFingerprint.update('\n');
+  const outputFiles = Array.isArray(result?.outputFiles) ? result.outputFiles : [];
+  if (outputFiles.length !== 1) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLE_NOT_SINGLE_FILE',
+      'Pinned Base JS SDK bundler did not produce exactly one browser module',
+      { sdkVersion: LARK_BASE_JS_SDK_VERSION, outputFileCount: outputFiles.length },
+    );
+  }
+
+  const remainingImports = Object.values(result?.metafile?.outputs ?? {})
+    .flatMap((output) => output?.imports ?? []);
+  if (remainingImports.length !== 0) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLE_NOT_STANDALONE',
+      'Pinned Base JS SDK single bundle still contains runtime module imports',
+      {
+        sdkVersion: LARK_BASE_JS_SDK_VERSION,
+        remainingImportCount: remainingImports.length,
+        remainingImports: remainingImports.slice(0, 10).map((item) => item.path),
+      },
+    );
+  }
+
+  const entryBody = outputFiles[0].text;
+  const bundleBytes = Buffer.byteLength(entryBody, 'utf8');
+  if (bundleBytes < MIN_BUNDLE_BYTES || !entryBody.includes('bitable')) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLE_INVALID',
+      'Pinned Base JS SDK single bundle failed the output integrity shape check',
+      {
+        sdkVersion: LARK_BASE_JS_SDK_VERSION,
+        minimumBytes: MIN_BUNDLE_BYTES,
+        actualBytes: bundleBytes,
+        containsBitable: entryBody.includes('bitable'),
+      },
+    );
   }
 
   return Object.freeze({
     version: LARK_BASE_JS_SDK_VERSION,
-    deliveryMode: 'same-origin-pinned-jsdelivr-module-graph',
+    deliveryMode: 'same-origin-pinned-esbuild-single-bundle',
     entryBody,
-    modules,
-    moduleCount: modules.size,
-    bytes: totalBytes,
-    sha256: graphFingerprint.digest('hex'),
+    modules: new Map(),
+    moduleCount: sourceByVirtualPath.size,
+    bytes: bundleBytes,
+    sourceBytes: totalSourceBytes,
+    sha256: createHash('sha256').update(entryBody).digest('hex'),
+    esbuildVersion: esbuild.version ?? LARK_BASE_JS_SDK_ESBUILD_VERSION,
   });
 }
 
@@ -135,275 +254,86 @@ export function localPathForPinnedModule(urlValue) {
   const root = new URL(LARK_BASE_JS_SDK_CDN_ROOT);
   const relativePath = url.pathname.slice(root.pathname.length);
   if (!relativePath || relativePath.includes('..')) {
-    throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_PATH_INVALID', 'Pinned Base JS SDK module path is outside the approved dist root', {
-      sdkVersion: LARK_BASE_JS_SDK_VERSION,
-      url: url.href,
-    });
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_PATH_INVALID',
+      'Pinned Base JS SDK module path is outside the approved dist root',
+      { sdkVersion: LARK_BASE_JS_SDK_VERSION, url: url.href },
+    );
   }
   return `${LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX}${relativePath}`;
 }
 
-export function extractModuleSpecifiers(source) {
-  return [...new Set(scanModuleSpecifierRecords(source).map((record) => record.specifier))];
+function virtualPathForPinnedModule(urlValue) {
+  const localPath = localPathForPinnedModule(urlValue);
+  return localPath;
 }
 
-export function rewriteModuleSpecifiers(source, replacements) {
-  const records = scanModuleSpecifierRecords(source)
-    .filter((record) => replacements.has(record.specifier));
-  if (records.length === 0) return source;
-
-  let cursor = 0;
-  let result = '';
-  for (const record of records) {
-    result += source.slice(cursor, record.start);
-    result += replacements.get(record.specifier);
-    cursor = record.end;
+function upstreamUrlForVirtualPath(virtualPath) {
+  if (virtualPath === VIRTUAL_ENTRY_PATH) return LARK_BASE_JS_SDK_ENTRY_URL;
+  if (!virtualPath.startsWith(LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX)) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_PATH_INVALID',
+      'Virtual Base JS SDK module path is outside the approved local namespace',
+      { sdkVersion: LARK_BASE_JS_SDK_VERSION, virtualPath },
+    );
   }
-  return result + source.slice(cursor);
-}
-
-export function assertMirroredGraphClosure(modules) {
-  for (const [modulePath, body] of modules.entries()) {
-    for (const specifier of extractModuleSpecifiers(body)) {
-      if (!specifier.startsWith(LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX)) {
-        throw codedError(
-          'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_NOT_CLOSED',
-          'Mirrored Base JS SDK still contains a module import outside the same-origin module graph',
-          { sdkVersion: LARK_BASE_JS_SDK_VERSION, modulePath, specifier },
-        );
-      }
-      if (!modules.has(specifier)) {
-        throw codedError(
-          'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_NOT_CLOSED',
-          'Mirrored Base JS SDK references a same-origin module that is absent from the local graph',
-          { sdkVersion: LARK_BASE_JS_SDK_VERSION, modulePath, missingLocalPath: specifier },
-        );
-      }
-    }
+  const relativePath = virtualPath.slice(LARK_BASE_JS_SDK_MODULE_LOCAL_PREFIX.length);
+  if (!relativePath || relativePath.includes('..')) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_PATH_INVALID',
+      'Virtual Base JS SDK module path is invalid',
+      { sdkVersion: LARK_BASE_JS_SDK_VERSION, virtualPath },
+    );
   }
+  const url = `${LARK_BASE_JS_SDK_CDN_ROOT}${relativePath}`;
+  assertPinnedCdnUrl(url);
+  return url;
 }
 
-function scanModuleSpecifierRecords(source) {
-  const records = [];
-  let index = 0;
-
-  while (index < source.length) {
-    const char = source[index];
-    if (isWhitespace(char)) {
-      index += 1;
-      continue;
-    }
-    if (char === '/' && source[index + 1] === '/') {
-      index = skipLineComment(source, index + 2);
-      continue;
-    }
-    if (char === '/' && source[index + 1] === '*') {
-      index = skipBlockComment(source, index + 2);
-      continue;
-    }
-    if (char === '\'' || char === '"') {
-      index = skipQuotedLiteral(source, index);
-      continue;
-    }
-    if (char === '`') {
-      index = skipTemplateLiteral(source, index);
-      continue;
-    }
-    if (!isIdentifierStart(char)) {
-      index += 1;
-      continue;
-    }
-
-    const token = readIdentifier(source, index);
-    if (token.value === 'import') {
-      const record = parseImportSpecifier(source, token.end);
-      if (record) records.push(record);
-    } else if (token.value === 'export') {
-      const record = parseExportSpecifier(source, token.end);
-      if (record) records.push(record);
-    }
-    index = token.end;
+function assertRedirectCompatibility(requestedUrl, resolvedUrl) {
+  const requested = new URL(requestedUrl);
+  const resolved = new URL(resolvedUrl);
+  if (requested.pathname !== resolved.pathname) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_REDIRECT_PATH_CHANGED',
+      'Pinned Base JS SDK CDN redirected a module to a different package path',
+      {
+        sdkVersion: LARK_BASE_JS_SDK_VERSION,
+        requestedUrl,
+        resolvedUrl,
+      },
+    );
   }
-
-  return records.sort((left, right) => left.start - right.start);
-}
-
-function parseImportSpecifier(source, afterKeyword) {
-  let cursor = skipTrivia(source, afterKeyword);
-  if (source[cursor] === '.') return null;
-  if (source[cursor] === '\'' || source[cursor] === '"') return readModuleString(source, cursor);
-
-  if (source[cursor] === '(') {
-    cursor = skipTrivia(source, cursor + 1);
-    if (source[cursor] !== '\'' && source[cursor] !== '"') {
-      throw codedError(
-        'CUSTOMER_BASE_VIEW_UI_SDK_DYNAMIC_IMPORT_UNSUPPORTED',
-        'Pinned Base JS SDK contains a non-literal dynamic import that cannot be mirrored fail-closed',
-        { sdkVersion: LARK_BASE_JS_SDK_VERSION },
-      );
-    }
-    return readModuleString(source, cursor);
-  }
-
-  return findFromModuleSpecifier(source, cursor);
-}
-
-function parseExportSpecifier(source, afterKeyword) {
-  const cursor = skipTrivia(source, afterKeyword);
-  if (source[cursor] !== '*' && source[cursor] !== '{') return null;
-  return findFromModuleSpecifier(source, cursor);
-}
-
-function findFromModuleSpecifier(source, start) {
-  let cursor = start;
-  while (cursor < source.length) {
-    const char = source[cursor];
-    if (char === ';') return null;
-    if (char === '/' && source[cursor + 1] === '/') {
-      cursor = skipLineComment(source, cursor + 2);
-      continue;
-    }
-    if (char === '/' && source[cursor + 1] === '*') {
-      cursor = skipBlockComment(source, cursor + 2);
-      continue;
-    }
-    if (char === '\'' || char === '"') {
-      cursor = skipQuotedLiteral(source, cursor);
-      continue;
-    }
-    if (char === '`') {
-      cursor = skipTemplateLiteral(source, cursor);
-      continue;
-    }
-    if (!isIdentifierStart(char)) {
-      cursor += 1;
-      continue;
-    }
-
-    const token = readIdentifier(source, cursor);
-    if (token.value === 'from') {
-      const quoteIndex = skipTrivia(source, token.end);
-      if (source[quoteIndex] !== '\'' && source[quoteIndex] !== '"') return null;
-      return readModuleString(source, quoteIndex);
-    }
-    cursor = token.end;
-  }
-  return null;
-}
-
-function readModuleString(source, quoteIndex) {
-  const quote = source[quoteIndex];
-  let cursor = quoteIndex + 1;
-  while (cursor < source.length) {
-    const char = source[cursor];
-    if (char === '\\') {
-      throw codedError(
-        'CUSTOMER_BASE_VIEW_UI_SDK_SPECIFIER_ESCAPE_UNSUPPORTED',
-        'Pinned Base JS SDK module specifier contains an escape sequence and is not mirrored by textual guesswork',
-        { sdkVersion: LARK_BASE_JS_SDK_VERSION },
-      );
-    }
-    if (char === quote) {
-      return Object.freeze({
-        specifier: source.slice(quoteIndex + 1, cursor),
-        start: quoteIndex + 1,
-        end: cursor,
-      });
-    }
-    if (char === '\n' || char === '\r') break;
-    cursor += 1;
-  }
-  throw codedError(
-    'CUSTOMER_BASE_VIEW_UI_SDK_SPECIFIER_INVALID',
-    'Pinned Base JS SDK contains an unterminated module specifier',
-    { sdkVersion: LARK_BASE_JS_SDK_VERSION },
-  );
-}
-
-function skipTrivia(source, start) {
-  let cursor = start;
-  while (cursor < source.length) {
-    if (isWhitespace(source[cursor])) {
-      cursor += 1;
-      continue;
-    }
-    if (source[cursor] === '/' && source[cursor + 1] === '/') {
-      cursor = skipLineComment(source, cursor + 2);
-      continue;
-    }
-    if (source[cursor] === '/' && source[cursor + 1] === '*') {
-      cursor = skipBlockComment(source, cursor + 2);
-      continue;
-    }
-    break;
-  }
-  return cursor;
-}
-
-function skipQuotedLiteral(source, quoteIndex) {
-  const quote = source[quoteIndex];
-  let cursor = quoteIndex + 1;
-  while (cursor < source.length) {
-    if (source[cursor] === '\\') {
-      cursor += 2;
-      continue;
-    }
-    if (source[cursor] === quote) return cursor + 1;
-    cursor += 1;
-  }
-  return source.length;
-}
-
-function skipTemplateLiteral(source, tickIndex) {
-  let cursor = tickIndex + 1;
-  while (cursor < source.length) {
-    if (source[cursor] === '\\') {
-      cursor += 2;
-      continue;
-    }
-    if (source[cursor] === '`') return cursor + 1;
-    cursor += 1;
-  }
-  return source.length;
-}
-
-function skipLineComment(source, start) {
-  let cursor = start;
-  while (cursor < source.length && source[cursor] !== '\n' && source[cursor] !== '\r') cursor += 1;
-  return cursor;
-}
-
-function skipBlockComment(source, start) {
-  const end = source.indexOf('*/', start);
-  return end === -1 ? source.length : end + 2;
-}
-
-function readIdentifier(source, start) {
-  let end = start + 1;
-  while (end < source.length && isIdentifierPart(source[end])) end += 1;
-  return { value: source.slice(start, end), end };
-}
-
-function isWhitespace(char) {
-  return char === ' ' || char === '\t' || char === '\n' || char === '\r' || char === '\f';
-}
-
-function isIdentifierStart(char) {
-  return typeof char === 'string' && /[A-Za-z_$]/u.test(char);
-}
-
-function isIdentifierPart(char) {
-  return typeof char === 'string' && /[A-Za-z0-9_$]/u.test(char);
 }
 
 function assertPinnedCdnUrl(urlValue) {
   const url = new URL(urlValue);
   const root = new URL(LARK_BASE_JS_SDK_CDN_ROOT);
   if (url.protocol !== 'https:' || url.hostname !== root.hostname || !url.pathname.startsWith(root.pathname)) {
-    throw codedError('CUSTOMER_BASE_VIEW_UI_SDK_ORIGIN_MISMATCH', 'Pinned Base JS SDK module graph attempted to leave the exact versioned jsDelivr dist root', {
-      sdkVersion: LARK_BASE_JS_SDK_VERSION,
-      url: url.href,
-    });
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_ORIGIN_MISMATCH',
+      'Pinned Base JS SDK attempted to leave the exact versioned jsDelivr dist root',
+      { sdkVersion: LARK_BASE_JS_SDK_VERSION, url: url.href },
+    );
+  }
+}
+
+async function loadLockedEsbuild() {
+  try {
+    const module = await import('esbuild');
+    return {
+      build: module.build ?? module.default?.build,
+      version: module.version ?? module.default?.version,
+    };
+  } catch (error) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLER_UNAVAILABLE',
+      'Repository-locked esbuild could not be loaded',
+      {
+        expectedEsbuildVersion: LARK_BASE_JS_SDK_ESBUILD_VERSION,
+        cause: error?.message ?? String(error),
+      },
+    );
   }
 }
 
