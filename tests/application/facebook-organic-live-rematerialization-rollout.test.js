@@ -55,19 +55,51 @@ test('active Worker version requires exactly one 100-percent deployment', () => 
   );
 });
 
-test('remote flag extraction reads only MKT enabled plain-text bindings', () => {
+test('remote flag extraction reads Cloudflare plain-text and JSON boolean bindings', () => {
   const flags = extractRemoteExecutionFlagMap([
     { type: 'plain_text', name: 'MKT_REPORT_D1_READ_ENABLED', text: 'true' },
+    { type: 'json', name: 'MKT_CONNECTOR_FACEBOOK_ENABLED', json: true },
+    { type: 'json', name: 'MKT_CONNECTOR_INSTAGRAM_ENABLED', json: false },
     { type: 'plain_text', name: 'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED', text: 'false' },
     { type: 'plain_text', name: 'MKT_SCHEDULE_DAILY_REPORT_ENABLED', text: 'true' },
     { type: 'plain_text', name: 'MKT_ENV', text: 'development' },
     { type: 'secret_text', name: 'LARK_APP_SECRET' },
   ]);
   assert.deepEqual(flags, {
+    MKT_CONNECTOR_FACEBOOK_ENABLED: true,
+    MKT_CONNECTOR_INSTAGRAM_ENABLED: false,
     MKT_REPORT_D1_READ_ENABLED: true,
     MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: false,
     MKT_SCHEDULE_DAILY_REPORT_ENABLED: true,
   });
+});
+
+test('remote flag extraction rejects JSON non-booleans and unsupported execution binding types', () => {
+  assert.throws(
+    () => extractRemoteExecutionFlagMap([
+      { type: 'json', name: 'MKT_CONNECTOR_FACEBOOK_ENABLED', json: 'true' },
+    ]),
+    {
+      code: 'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_VALUE_INVALID',
+      details: {
+        flagName: 'MKT_CONNECTOR_FACEBOOK_ENABLED',
+        bindingType: 'json',
+        valueType: 'string',
+      },
+    },
+  );
+  assert.throws(
+    () => extractRemoteExecutionFlagMap([
+      { type: 'secret_text', name: 'MKT_CONNECTOR_FACEBOOK_ENABLED' },
+    ]),
+    {
+      code: 'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_BINDING_TYPE_INVALID',
+      details: {
+        flagName: 'MKT_CONNECTOR_FACEBOOK_ENABLED',
+        bindingType: 'secret_text',
+      },
+    },
+  );
 });
 
 test('baseline preserves exact remote flags and overlay changes Report flags only', () => {
@@ -96,6 +128,29 @@ test('baseline preserves exact remote flags and overlay changes Report flags onl
     'MKT_REPORT_D1_READ_ENABLED',
     'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
   ]);
+});
+
+test('baseline and overlay preserve local Wrangler boolean-vs-string representation', () => {
+  const mixedSource = SOURCE
+    .replace('"MKT_FACEBOOK_SYNC_ENABLED": "false"', '"MKT_FACEBOOK_SYNC_ENABLED": false')
+    .replace('"MKT_REPORT_D1_READ_ENABLED": "false"', '"MKT_REPORT_D1_READ_ENABLED": false');
+  const result = buildExactRuntimePreservingConfigs(mixedSource, {
+    MKT_FACEBOOK_SYNC_ENABLED: true,
+    MKT_REPORT_D1_READ_ENABLED: false,
+    MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: false,
+    MKT_SCHEDULE_DAILY_REPORT_ENABLED: false,
+    MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: false,
+  });
+  const baseline = JSON.parse(result.baselineText);
+  const overlay = JSON.parse(result.overlayText);
+  assert.equal(baseline.vars.MKT_FACEBOOK_SYNC_ENABLED, true);
+  assert.equal(typeof baseline.vars.MKT_FACEBOOK_SYNC_ENABLED, 'boolean');
+  assert.equal(baseline.vars.MKT_REPORT_D1_READ_ENABLED, false);
+  assert.equal(typeof baseline.vars.MKT_REPORT_D1_READ_ENABLED, 'boolean');
+  assert.equal(overlay.vars.MKT_REPORT_D1_READ_ENABLED, true);
+  assert.equal(typeof overlay.vars.MKT_REPORT_D1_READ_ENABLED, 'boolean');
+  assert.equal(baseline.vars.MKT_REPORT_PRESET_MATERIALIZATION_ENABLED, 'false');
+  assert.equal(overlay.vars.MKT_REPORT_PRESET_MATERIALIZATION_ENABLED, 'true');
 });
 
 test('already-active Report runtime needs no temporary overlay deploy', () => {

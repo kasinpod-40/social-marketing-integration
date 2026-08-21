@@ -21,20 +21,27 @@ baseline.
 
 The Facebook rollout therefore:
 
-1. reads the exact active Worker version and every remote `MKT_*_ENABLED` plain-text
-   binding before mutation;
+1. reads the exact active Worker version and every remote `MKT_*_ENABLED` Boolean
+   binding before mutation; Cloudflare may expose string vars as `plain_text` and
+   non-string Boolean vars as `json`, so both reviewed forms are admitted while any
+   other binding type or non-Boolean JSON value fails closed;
 2. requires every remote execution flag to still exist in current `main` and permits
    local-only new flags only when their source default is false;
 3. deploys current `main` once with the exact captured execution-flag vector;
-4. if the two Shared Report execution flags are not both active, temporarily enables
+4. preserves each local Wrangler flag's Boolean-vs-string representation when
+   constructing baseline/overlay configs so a JSON Boolean source flag is not
+   silently rewritten to a text binding;
+5. verifies deployed Worker execution flags using the same semantic Boolean parser,
+   including JSON Boolean flags rather than silently ignoring them;
+6. if the two Shared Report execution flags are not both active, temporarily enables
    only `MKT_REPORT_D1_READ_ENABLED` and `MKT_REPORT_PRESET_MATERIALIZATION_ENABLED`;
-5. refreshes only the existing stable Facebook Organic Report identities for
+7. refreshes only the existing stable Facebook Organic Report identities for
    1D/3D/7D/30D from D1 through the existing Queue/materializer;
-6. performs no Facebook Provider request and no manual Lark metric patch;
-7. verifies D1 ↔ Lark metric parity plus numeric observed Facebook aggregate totals;
-8. restores the exact captured runtime flag vector and verifies zero runtime drift;
-9. records private attempt evidence before each remote mutation and forbids blind
-   rerun after any recorded deploy/send attempt.
+8. performs no Facebook Provider request and no manual Lark metric patch;
+9. verifies D1 ↔ Lark metric parity plus numeric observed Facebook aggregate totals;
+10. restores the exact captured runtime flag vector and verifies zero runtime drift;
+11. records private attempt evidence before each remote mutation and forbids blind
+    rerun after any recorded deploy/send attempt.
 
 Recovery mode is intentionally conservative: it may restore the exact captured
 baseline and verify already-produced D1/Lark reports, but it sends zero Queue jobs.
@@ -43,7 +50,7 @@ reviewed continuation instead of replaying automatically.
 
 ## Repository implementation
 
-Implementation branch:
+Primary rollout branch:
 `work/facebook-organic-live-rematerialization-rollout-v1`
 
 PR #663 merged to `main`.
@@ -62,6 +69,53 @@ The operator reuses the existing Shared Report candidate/job builder, Facebook
 reviewed target binding, D1/Lark state runtime, Cloudflare Queue/deployment runtime,
 Lark client and stable Report parity checks. It does not create a Facebook-specific
 Report calculation engine.
+
+## Live preflight incident — JSON Boolean Worker binding
+
+Controlled attempts on 2026-08-21 were fail-closed before any remote mutation.
+After exact main and local Integration config validation, the latest attempt stopped
+at `local-config-and-current-runtime` with
+`FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_BINDING_TYPE_INVALID` for
+`MKT_CONNECTOR_FACEBOOK_ENABLED`. The failure output proved
+`overlayDeploymentAttempted=false`, Provider request count 0 and Production mutation
+count 0; no deploy/send attempt evidence existed.
+
+Root cause is repository-side readback strictness, not a broken active Worker value.
+Wrangler's binding conversion maps string `vars` to `plain_text`, but non-string
+`vars` to `json`; Workers API metadata exposes JSON vars through `binding.json`.
+The original live helper accepted only `plain_text`, so a legitimate JSON Boolean
+feature flag was rejected before deployment.
+
+Audit of the next execution boundary found the same assumption in the shared
+`report-runtime-closeout-reviewed-remote.js` deployment verifier. Leaving that code
+unchanged would let a future attempt pass preflight, deploy the baseline, and then
+misreport any true JSON Boolean flag as absent. Because that failure would occur
+after a remote mutation, the hotfix must repair both readback surfaces before another
+live attempt is allowed.
+
+Hotfix branch:
+`work/facebook-organic-json-flag-binding-hotfix-v1`
+
+Hotfix PR:
+`#665`
+
+Hotfix contract:
+
+- admit `plain_text` only when its value parses to true/false;
+- admit `json` only when `binding.json`/fallback value is the actual Boolean
+  `true` or `false`;
+- reject JSON strings such as `"true"`, objects, numbers and all unsupported/secret
+  execution binding types;
+- reject conflicting duplicate execution flags;
+- make shared post-deploy true-flag verification use the same semantic parser;
+- preserve local Boolean-vs-string Wrangler representation while applying the
+  captured value and temporary Report overlay;
+- keep all existing remote-only/local-only/overlay/runtime-restoration fail-closed
+  checks unchanged.
+
+Focused tests cover both the rollout readback helper and the shared deployment
+verifier, including JSON Boolean acceptance, non-Boolean rejection, unsupported
+binding rejection, duplicate conflicts and local representation preservation.
 
 ## Verification evidence
 
@@ -88,16 +142,19 @@ Final documentation-closure Branch Verification on PR #663 head
 - Wrangler dry run: pass
 - diff whitespace check: pass
 
+PR #665 final verification remains pending until Branch Verification completes on
+its exact final head.
+
 ## Current boundary
 
-Repository implementation is complete and merged. Live Integration execution has
-not yet occurred.
+Live Integration execution has not completed. The latest controlled attempt stopped
+before remote mutation on a repository readback compatibility guard, so no recovery
+or rollback is required for that attempt.
 
-The live operator must run from a clean current `main == origin/main` on a machine
-that has the real `.dev.vars`, Lark credentials and Cloudflare/Wrangler authorization.
-This ChatGPT session has neither a Cloudflare/Lark connector nor a GitHub Actions
-workflow carrying those live credentials, so repository CI is not a valid substitute
-for the controlled live execution.
+Do not rerun the old merged operator. First merge PR #665 after exact-head Branch
+Verification succeeds, then run the controlled live execution from a clean updated
+`main` on a machine that has the real `.dev.vars`, retained Integration config
+authority, Lark credentials and Cloudflare/Wrangler authorization.
 
 Do not claim closure until live evidence proves all four Facebook windows, D1↔Lark
 zero drift, observed aggregate repair, zero Report DLQ/critical alert/lock and exact
