@@ -464,7 +464,12 @@ function runtimeSafetySql(platformScope, accountKey) {
         AND l.expires_at > (unixepoch() * 1000)) AS active_report_locks,
     (SELECT COUNT(*) FROM dead_letter_jobs
       WHERE job_type = 'report.materialization.generate'
-        AND status IN ('open', 'redrive_pending')) AS open_report_dlq,
+        AND status IN ('open', 'redrive_pending')
+        AND (
+          json_valid(payload_json) = 0
+          OR json_extract(payload_json, '$.platformScope') IS NULL
+          OR json_extract(payload_json, '$.platformScope') = '${platformScope}'
+        )) AS open_report_dlq,
     (SELECT COUNT(*) FROM system_alerts a
       WHERE a.platform = '${platformScope}' AND a.severity = 'critical' AND a.status = 'open'
         AND EXISTS (${currentReportIncidentSql})) AS open_report_critical_alerts,
