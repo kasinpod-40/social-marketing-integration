@@ -65,12 +65,13 @@ test('collects exactly four approved Formula presentations without formula expre
 
   assert.equal(result.ok, true);
   assert.equal(result.formulaCount, 4);
-  assert.deepEqual(result.formulas.map(({ tableName, fieldName }) => ({ tableName, fieldName })), [
-    { tableName: '📈 MKT_Ads_Daily', fieldName: 'all_conversion_value' },
-    { tableName: '📈 MKT_Ads_Daily', fieldName: 'conversion_rate' },
-    { tableName: '📈 MKT_Ads_Daily', fieldName: 'cost_per_conversion' },
-    { tableName: '📣 MKT_Ads_Campaigns', fieldName: 'budget' },
-  ]);
+  const identities = new Set(result.formulas.map(({ tableName, fieldName }) => `${tableName}\u0000${fieldName}`));
+  assert.deepEqual(identities, new Set([
+    '📣 MKT_Ads_Campaigns\u0000budget',
+    '📈 MKT_Ads_Daily\u0000all_conversion_value',
+    '📈 MKT_Ads_Daily\u0000cost_per_conversion',
+    '📈 MKT_Ads_Daily\u0000conversion_rate',
+  ]));
   assert.equal(JSON.stringify(result).includes('formula_expression'), false);
   assert.equal(result.remoteRequestCount, 0);
   assert.equal(result.remoteMutationCount, 0);
