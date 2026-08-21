@@ -60,6 +60,45 @@ export async function applyCustomerBaseDashboardThemeParity({
     targets.push({ name: authority.name, dashboardId, documentedBlockCount: blocks.length });
   }
 
+  // Dashboard containers created through the generic Base Block lifecycle can
+  // host Dashboard components yet still reject the specialized Dashboard
+  // detail/update route with Lark code=1. Probe the specialized GET route for
+  // every target before the first PATCH so a known unsupported container shape
+  // can never leave a partial theme write behind.
+  const detailProbe = await probeDashboardDetailRoute(targetClient, targets);
+  if (!detailProbe.supported) {
+    return deepFreeze({
+      ok: true,
+      contractVersion: 'customer_base_dashboard_theme_parity_v1',
+      action: mode,
+      status: 'DASHBOARD_THEME_DEFERRED_CONTAINER_UPDATE_UNSUPPORTED',
+      targetFolder: folderName,
+      expectedThemeStyle: themeStyle,
+      dashboards: targets.map((item) => ({
+        ...item,
+        themeMutationPlanned: false,
+        specializedDashboardRouteSupported: false,
+      })),
+      deferred: {
+        reason: 'specialized_dashboard_get_rejected_current_container',
+        stage: detailProbe.stage,
+        dashboardName: detailProbe.dashboardName,
+        causeCode: detailProbe.causeCode,
+        causeMessage: detailProbe.causeMessage,
+        larkCode: detailProbe.larkCode,
+      },
+      dashboardThemeMutationCount: 0,
+      dashboardBlockMutationCount: 0,
+      tableMutationCount: 0,
+      fieldMutationCount: 0,
+      recordMutationCount: 0,
+      viewMutationCount: 0,
+      formulaMutationCount: 0,
+      roleMutationCount: 0,
+      workflowMutationCount: 0,
+    });
+  }
+
   if (mode === 'preview') {
     return deepFreeze({
       ok: true,
@@ -68,7 +107,11 @@ export async function applyCustomerBaseDashboardThemeParity({
       status: 'DASHBOARD_THEME_PREVIEW_READY',
       targetFolder: folderName,
       expectedThemeStyle: themeStyle,
-      dashboards: targets.map((item) => ({ ...item, themeMutationPlanned: true })),
+      dashboards: targets.map((item) => ({
+        ...item,
+        themeMutationPlanned: true,
+        specializedDashboardRouteSupported: true,
+      })),
       dashboardThemeMutationCount: 0,
       dashboardBlockMutationCount: 0,
       tableMutationCount: 0,
@@ -134,6 +177,58 @@ export async function applyCustomerBaseDashboardThemeParity({
     roleMutationCount: 0,
     workflowMutationCount: 0,
   });
+}
+
+async function probeDashboardDetailRoute(client, targets) {
+  for (const target of targets) {
+    try {
+      const response = await client.requestBitableJson(
+        `/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/dashboards/${encodeURIComponent(target.dashboardId)}`,
+        { method: 'GET' },
+      );
+      const detail = response?.data?.dashboard ?? response?.data ?? response ?? {};
+      const detailId = optionalText(detail?.dashboard_id ?? detail?.id ?? detail?.block_id);
+      const detailName = optionalText(detail?.name);
+      if (detailId && detailId !== target.dashboardId) {
+        throw codedError('CUSTOMER_BASE_DASHBOARD_THEME_DETAIL_ID_MISMATCH', 'Dashboard detail resolved a different Dashboard id', {
+          dashboardName: target.name,
+          expected: target.dashboardId,
+          actual: detailId,
+        });
+      }
+      if (detailName && detailName !== target.name) {
+        throw codedError('CUSTOMER_BASE_DASHBOARD_THEME_DETAIL_NAME_MISMATCH', 'Dashboard detail resolved a different Dashboard name', {
+          dashboardName: target.name,
+          actual: detailName,
+        });
+      }
+    } catch (error) {
+      if (isCurrentContainerUnsupportedError(error)) {
+        return {
+          supported: false,
+          stage: `get_dashboard_detail:${target.name}`,
+          dashboardName: target.name,
+          causeCode: error?.code ?? null,
+          causeMessage: error?.message ?? String(error),
+          larkCode: Number(error?.details?.larkCode) || null,
+        };
+      }
+      throw codedError('CUSTOMER_BASE_DASHBOARD_THEME_DETAIL_PREFLIGHT_FAILED', 'Dashboard specialized detail preflight failed', {
+        stage: `get_dashboard_detail:${target.name}`,
+        dashboardName: target.name,
+        causeCode: error?.code ?? null,
+        causeMessage: error?.message ?? String(error),
+        larkCode: Number(error?.details?.larkCode) || null,
+      });
+    }
+  }
+  return { supported: true };
+}
+
+function isCurrentContainerUnsupportedError(error) {
+  return error?.code === 'LARK_PERMANENT_API_ERROR'
+    && Number(error?.details?.status) === 200
+    && Number(error?.details?.larkCode) === 1;
 }
 
 async function listDashboards(client) {
