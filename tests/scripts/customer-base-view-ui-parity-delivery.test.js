@@ -48,6 +48,8 @@ test('View UI recovery owns only the exact Google Ads 30D dynamic filter', async
   assert.match(source, /const TARGET_VIEW = '📈 Google Ads Daily 30D'/u);
   assert.match(source, /const PLATFORM_OPTION = 'google_ads'/u);
   assert.match(source, /FilterDuration\.TheLastMonth/u);
+  assert.match(source, /table\.getField\(platformFieldId\)/u);
+  assert.match(source, /platformField\.getOptions\(\)/u);
   assert.match(source, /getFilterInfo/u);
   assert.match(source, /addFilterCondition/u);
   assert.match(source, /setFilterConjunction/u);
@@ -55,6 +57,7 @@ test('View UI recovery owns only the exact Google Ads 30D dynamic filter', async
   assert.match(source, /DYNAMIC_DATE_FILTER_EXISTING_STATE_CONFLICT/u);
   assert.match(source, /already contains a non-empty filter that differs from Source; refusing to overwrite it/u);
 
+  assert.doesNotMatch(source, /platformMeta\?\.property\?\.options/u);
   assert.doesNotMatch(source, /addSort|deleteSort|addGroup|deleteGroup/u);
   assert.doesNotMatch(source, /setFieldWidth|getFieldWidth|setRowHeight/u);
   assert.doesNotMatch(source, /deleteFilterCondition|updateFilterCondition/u);
