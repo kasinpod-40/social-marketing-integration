@@ -3,11 +3,11 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = DASHBOARD_THEME_PREVIEW_AND_CI_PENDING
+TASK_STATUS                         = DASHBOARD_REMAINDER_AND_WORKFLOW_CLOSURE
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
-FOLDER_PLACEMENT                    = COMPLETE
+FOLDER_PLACEMENT                    = COMPLETE_BY_USER
 CLONE_TABLES                        = 32
 CLONE_VIEWS                         = 110
 PROTECTED_EXTERNAL_TABLES           = 1
@@ -26,141 +26,158 @@ VIEW_FROZEN_COLUMNS                 = PRESENTATION_ONLY_110_VIEWS
 FORMULA_DEFINITION                  = AUTOMATIC_PASS_DO_NOT_REWRITE
 FORMULA_PRESENTATION                = COMPLETE_4_OF_4
 DYNAMIC_DATE_VIEW_FILTER            = LIVE_PASS_DO_NOT_RERUN
-DASHBOARD_DOCUMENTED_BLOCKS         = LIVE_PASS_66_OF_66
-DASHBOARD_UNSUPPORTED_REMAINDER     = 7_SLICER_PLUS_2_TABLE_VIEW
-DASHBOARD_THEME                     = SUMMER_BREEZE_PENDING_SEPARATE_PHASE
-WORKFLOWS                           = RECONSTRUCTION_PENDING_2
+DASHBOARD_CONTAINERS                = PASS_6_OF_6
+DASHBOARD_DOCUMENTED_BLOCKS         = PASS_66_OF_66_MISMATCH_0_DO_NOT_RERUN
+DASHBOARD_UNSUPPORTED_COMPONENTS    = REMAINDER_7_SLICER_2_TABLE_VIEW
+DASHBOARD_THEME                     = DEFERRED_CURRENT_GENERIC_CONTAINER_SPECIALIZED_ROUTE_CODE_1
+WORKFLOWS                           = PENDING_2
 DRAFT_PR                            = 661
-PRODUCTION                          = BLOCKED_PENDING_DASHBOARD_REMAINDER_WORKFLOWS_FINAL_EXPORT
+PRODUCTION                          = BLOCKED_PENDING_REMAINDER_WORKFLOW_FINAL_EXPORT
 ```
 
 ## Closed — never rerun
 
-The following stages are closed and must not be repeated unless a later read-only audit proves drift:
+The controlled automatic migration is closed. Final canonical verification passed with mismatch count `0`. The original checkpoint is immutable and must never be recreated.
 
-- controlled automatic migration / retained checkpoint;
-- canonical parity mismatch `0`;
-- protected `🎵 RAW_TikTok_Creator_Videos` zero-write;
-- View hidden parity;
-- View Sort `42/42` and Group `4/4` live PASS;
-- Formula definitions and Formula presentation `4/4`;
-- dynamic `📈 Google Ads Daily 30D` filter live PASS;
-- Dashboard documented API materialization `66/66` blocks.
+Closed state also includes:
 
-Never run `--prepare-checkpoint` again. Never rerun automatic Apply, Sort/Group, Formula presentation, Dynamic Date Filter, or the 66-block Dashboard materialization.
+- 32 clone Tables and all migration-owned Fields/Records;
+- Relations and Formula definitions;
+- supported View filters/hierarchy and hidden fields;
+- Advanced Permission parity covered by the controlled migration;
+- protected `🎵 RAW_TikTok_Creator_Videos` remains zero-write;
+- folder placement under `Setup Phase | Social MKT Data Hub` is complete;
+- View Sort 42 / Group 4 live write+readback PASS;
+- Formula presentation 4/4 complete;
+- Dynamic Date Filter live PASS;
+- six Dashboard containers materialized under the approved folder;
+- 66 documented Dashboard blocks materialized with mismatch count `0`.
 
-## Dashboard live authority
+Do not rerun automatic Apply, Sort/Group, Formula presentation, Dynamic Date Filter, or Dashboard documented-block materialization.
 
-Current Source authority remains:
+## Dashboard documented API closure
 
-```text
-Social MKT Data Hub.base
-SHA-256 9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7
-6 Dashboards / 75 total widgets
-```
+Current Source contains exactly six Dashboards / 75 blocks:
 
-Live Target now contains all six Dashboard navigation blocks and all 66 documented API widgets:
+1. `💬 Customer Service & Leads` — 11
+2. `🛡️ Data Quality & Operations` — 8
+3. `📊 Executive Marketing Overview` — 11
+4. `🌱 Organic Performance` — 22
+5. `💰 Paid Ads Performance` — 13
+6. `🛒 Commerce & Conversion` — 10
 
-```text
-💬 Customer Service & Leads       10 documented + 1 slicer remainder
-🛡️ Data Quality & Operations       6 documented + 2 table_view remainder
-📊 Executive Marketing Overview   10 documented + 1 slicer remainder
-🌱 Organic Performance             20 documented + 2 slicer remainder
-💰 Paid Ads Performance            11 documented + 2 slicer remainder
-🛒 Commerce & Conversion            9 documented + 1 slicer remainder
-TOTAL                               66 documented + 9 remainder
-```
-
-Live resumable apply terminal status:
+Exact current Source block-kind boundary:
 
 ```text
-DASHBOARD_DOCUMENTED_API_BLOCKS_PASS_WITH_UNSUPPORTED_REMAINDER
+statistics     39   documented API — PASS
+text           18   documented API — PASS
+column          9   documented API — PASS
+slicer          7   public Dashboard block enum absent
+table_view      2   public Dashboard block enum absent
+TOTAL          75
 ```
 
-Readback mismatch for documented blocks = `0`.
-
-Branch Verification for the materialization head:
+Live materialization result on exact branch HEAD `e40b23083126d8f6c8937683762985f5be73a486`:
 
 ```text
-HEAD e40b23083126d8f6c8937683762985f5be73a486
-Run  32480035425
-Job  96764194928
-SUCCESS all gates
+status                         DASHBOARD_DOCUMENTED_API_BLOCKS_PASS_WITH_UNSUPPORTED_REMAINDER
+Dashboard containers           6 / 6
+Documented blocks              66 / 66
+Documented mismatch            0
+Unsupported remainder          9
+  slicer                       7
+  table_view                   2
+Table mutation                 0
+Field mutation                 0
+Record mutation                0
+View mutation                  0
+Formula mutation               0
+Role mutation                  0
+Workflow mutation              0
 ```
 
-The first Dashboard `💬 Customer Service & Leads` had been created by an earlier interrupted run and was reused without duplication. Five additional Dashboards and 66 documented blocks were created in the successful resume. No Table, Field, Record, View, Formula, Role or Workflow mutation occurred.
-
-## Dashboard remainder
-
-Nine Source widgets are not in the current public Dashboard block enum:
+Branch Verification for that live materialization gate:
 
 ```text
-slicer       7
-table_view   2
+Run 32480035425
+Job 96764194928
+SUCCESS
 ```
 
-Exact Table View semantic mapping:
+The documented-block stage is closed. Never rerun it unless a later read-only final audit proves drift.
 
-- `🔄 Latest Sync Runs` → `🔄 MKT_Sync_Log` → `📊 Dashboard Sync Health`
-- `🚨 Recent System Alerts` → `🚨 MKT_System_Alerts` → `📊 Dashboard Alerts`
+## Dashboard theme incident and rule
 
-Do not replay internal snapshot block types or invent undocumented payloads. Current Base JS SDK exposes UI navigation such as `switchBlock` but no documented Dashboard component creation API, so these nine remain fail-closed until a proven supported contract is found or a minimal supported UI path is explicitly accepted.
-
-## Dashboard theme parity
-
-Source theme authority is:
-
-```text
-summerBreeze
-```
-
-Official Lark Base v3 Dashboard update contract supports:
+Source theme is `summerBreeze`. Lark public Dashboard update documentation confirms this is a valid public enum and documents:
 
 ```text
 PATCH /open-apis/base/v3/bases/{base_token}/dashboards/{dashboard_id}
 body = {"theme":{"theme_style":"summerBreeze"}}
-scope = base:dashboard:update
 ```
 
-Theme parity is deliberately separated from the already-closed 66-block materialization.
-
-New narrow phase:
+However the six customer Dashboards were materialized through the generic Base Block lifecycle so they could be created directly inside the approved Folder without staging elsewhere. Those containers successfully host all 66 Dashboard components through `/dashboards/{id}/blocks`, but the specialized Dashboard detail/update route rejects the same current container identity with:
 
 ```text
-scripts/lib/customer-base-dashboard-theme-parity.js
-scripts/customer-base-dashboard-theme-parity.mjs
-tests/scripts/customer-base-dashboard-theme-parity.test.js
+HTTP 200
+Lark code 1
 ```
 
-Safety behavior:
+The first live Theme PATCH failed on `💬 Customer Service & Leads` with `completedDashboards=[]`; therefore confirmed Theme mutation count is `0`.
 
-1. preview/read-only first;
-2. resolve all six Dashboard names exactly once;
-3. require all six remain under `Setup Phase | Social MKT Data Hub`;
-4. require documented block counts `10/6/10/20/11/9` before any theme write;
-5. Apply requires exact confirmation `APPLY_CUSTOMER_BASE_DASHBOARD_THEME_PARITY_V1`;
-6. PATCH one Dashboard at a time;
-7. verify expected `summerBreeze` through PATCH response echo;
-8. on failure report exact Dashboard stage plus completed ledger for safe resume;
-9. zero Dashboard-block/Table/Field/Record/View/Formula/Role/Workflow mutation;
-10. no delete path.
+Do not retry the Theme PATCH on the current containers.
+
+The Theme operator now has a mandatory specialized Dashboard `GET` preflight before any PATCH. If the current container shape returns the known `HTTP 200 / Lark code 1`, the operator must terminate safely with:
+
+```text
+DASHBOARD_THEME_DEFERRED_CONTAINER_UPDATE_UNSUPPORTED
+```
+
+and all mutation counts `0`.
+
+Theme parity remains an explicit presentation remainder. Do not delete/recreate the six Dashboards or the 66 passed components just to set theme. Only reopen Theme if a documented conversion/attachment/update route for the current generic-created Dashboard container is proven.
+
+## Dashboard unsupported component remainder
+
+Current remainder remains exactly:
+
+- 7 Slicers
+- 2 Table View widgets
+
+Do not send guessed internal chart kinds or decoded snapshot payloads to production. Close only through a documented/proven Dashboard component contract or minimal supported UI if the user explicitly chooses that path.
+
+Known Table View semantic mappings:
+
+- `🔄 Latest Sync Runs` → `🔄 MKT_Sync_Log` → `📊 Dashboard Sync Health`
+- `🚨 Recent System Alerts` → `🚨 MKT_System_Alerts` → `📊 Dashboard Alerts`
 
 ## Workflows
 
-Two Source Workflows remain separate:
+Two Source Workflows remain:
 
 1. `AI Materialization → MKT_AI_Report_Runs`
 2. `Eligible AI Run → Lark Group Notification`
 
-Do not replay raw Draft/FlowSchema/auth/generated IDs. Preserve intended enabled/disabled state and reconstruct only through a documented/proven definition-write contract or supported UI.
+Use only a documented/proven workflow definition-write contract. Do not replay raw Draft/FlowSchema/auth/generated IDs from the export.
+
+## No-repeat rules
+
+1. Never create a new automatic-migration checkpoint.
+2. Never rerun controlled automatic Apply.
+3. Never delete/recreate migration-owned Tables/Fields/Records.
+4. Never rewrite the four Formula definitions.
+5. Never rerun the passed Sort/Group runner.
+6. Never rerun the passed Dynamic Date Filter mutation.
+7. Never rerun Dashboard 66-block materialization.
+8. Never retry Theme PATCH on the current generic-created Dashboard containers without a proven conversion/update route.
+9. Never restore Width/RowHeight as parity requirements.
+10. Never mutate Source, Worker, D1, Queue, schedule or deployment for this workstream.
+11. Never invent undocumented Slicer/Table View/Workflow write payloads.
+12. PR #661 remains Draft/Open/Unmerged until explicit final authorization.
 
 ## Required next sequence
 
-1. run focused theme regression tests on current exact branch HEAD;
-2. run theme operator preview/read-only; require six Dashboards and 66 documented blocks unchanged;
-3. require Branch Verification SUCCESS on that same exact HEAD;
-4. run one resumable Theme Apply; require `DASHBOARD_THEME_PASS` and six response echoes = `summerBreeze`;
-5. close the 7 Slicer + 2 Table View remainder only through a proven supported path;
-6. close Workflow 2;
-7. export Target once and run final parity verification;
-8. Ready/Merge PR #661 only after explicit user instruction.
+1. Validate the new Theme fail-closed regression locally and Branch Verification on its exact HEAD; no Target Theme write is required.
+2. Investigate/close 7 Slicer + 2 Table View only through documented/proven capability.
+3. Close Workflow 2 through documented/proven workflow API or supported UI.
+4. Export Target once and run final parity verification.
+5. Ready/Merge PR #661 only on explicit user instruction.
