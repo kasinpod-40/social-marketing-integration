@@ -3,7 +3,7 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = AUTOMATIC_PASS_VIEW_UI_LIVE_LAN_RECOVERY
+TASK_STATUS                         = AUTOMATIC_PASS_VIEW_UI_SAME_ORIGIN_SDK_RECOVERY
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
@@ -20,7 +20,7 @@ CURRENT_SOURCE_SEARCH               = Desktop + Downloads / Social MKT Data Hub*
 AUTOMATIC_CANONICAL_VERIFY          = PASS_MISMATCH_COUNT_0
 AUTOMATIC_APPLY                     = CLOSED_DO_NOT_RERUN
 VIEW_HIDDEN_FILTER_HIERARCHY        = AUTOMATIC_PASS
-VIEW_JS_SDK_UI_PARITY               = LAN_EXTENSION_RECOVERY_PENDING_BRANCH_VERIFICATION
+VIEW_JS_SDK_UI_PARITY               = SAME_ORIGIN_SDK_RECOVERY_PENDING_BRANCH_VERIFICATION
 VIEW_FIELD_ORDER                    = SDK_AUDIT_NO_DOCUMENTED_SETTER
 VIEW_FROZEN_COLUMNS                 = MANUAL_NO_DOCUMENTED_SETTER
 FORMULA_PRESENTATION                = MANUAL_UI_4
@@ -113,27 +113,43 @@ Admission rules in `assessLarkBaseViewUiPlanAuthority()`:
 
 This is an exact revision admission, not a relaxation of the retained parity gate.
 
-## Local Base extension transport recovery
+## Local Base extension transport and SDK bootstrap recovery
 
 The first live runner started successfully on `127.0.0.1:4173`, but Lark's extension side panel remained on `Loading…`; the runner UI itself never rendered, so no Base JS SDK preflight or mutation began.
 
-Lark's official Base JS SDK local-development procedure uses `Add script` with a local development URL, and its official HTML template exposes the dev server beyond loopback (`host: 0.0.0.0`). The runner now supports an explicit bind/public host instead of hard-pinning loopback:
+A LAN-bound recovery then proved transport reachability: the Lark extension caused the Mac runner to receive `GET /` and `GET /app.js` on the emitted `192.168.x.x:4173` address. The panel still remained on `Loading…`, which isolates the remaining blocker to browser-side SDK bootstrap rather than host/IP reachability.
 
-- default remains `127.0.0.1` for standalone/local inspection;
+The official Lark HTML template imports `@lark-base-open/js-sdk` as a build dependency and bundles it into the plugin. The previous runner instead imported `https://esm.sh/@lark-base-open/js-sdk@1.0.2` directly inside the Lark iframe. The recovery now removes that cross-origin runtime dependency from the browser:
+
+- SDK version remains pinned to `@lark-base-open/js-sdk 1.0.2`;
+- before `server.listen()` and before any `READY` status, the Mac runner fetches the pinned `esm.sh` standalone build server-side;
+- root-relative `esm.sh` module stubs are resolved server-side, with a hard hop limit and origin fence;
+- unresolved browser module dependencies, non-success fetches, undersized bundles, or bundles without the `bitable` export shape fail closed before the runner starts;
+- the resolved SDK body is held in memory and served locally as `/lark-base-js-sdk.mjs`;
+- the browser imports only `/lark-base-js-sdk.mjs`, so the Base iframe does not need to reach `esm.sh` at runtime;
+- READY/health expose `sdkDeliveryMode=same-origin-pinned-standalone`, exact SDK version, SHA-256 and byte count;
+- `client-event?stage=html-executed` proves the iframe executed the served HTML;
+- `client-event?stage=browser-module-loaded` occurs only after the same-origin SDK module imported successfully;
+- neither boot marker calls a Base API, so Target reads/writes still do not begin before the user clicks the runner button;
+- Target mutation remains impossible until the extension UI loads and the user explicitly clicks the runner button, after which the existing full preflight still runs first.
+
+LAN transport safety remains:
+
+- default host remains `127.0.0.1` for standalone/local inspection;
 - live Lark extension recovery binds only to the Mac's current LAN IPv4 via `CUSTOMER_BASE_VIEW_UI_HOST`;
 - the same address is emitted through `CUSTOMER_BASE_VIEW_UI_PUBLIC_HOST` as the URL to paste into Lark;
 - CORS is reflected only for HTTPS `*.larksuite.com` / `*.feishu.cn` origins;
 - only `GET`, `HEAD`, and `OPTIONS` are exposed;
-- every incoming request is logged as `[view-ui-local] ...` so reachability is proven before any SDK action;
-- Target mutation remains impossible until the extension UI loads and the user explicitly clicks the runner button, after which the existing full preflight still runs first.
+- every incoming request is logged as `[view-ui-local] ...`.
 
 ## Operators
 
 - `scripts/lib/lark-base-view-js-sdk-parity.js` — names-only plan projection, structural admission and exact layout-revision authority;
-- `scripts/customer-base-view-ui-parity-server.mjs` — checkpoint fence, Source discovery/admission and configurable local/LAN runner transport;
-- `scripts/customer-base-view-ui-parity.browser.js` — exact Target preflight + supported SDK mutation/readback;
+- `scripts/customer-base-view-ui-parity-server.mjs` — checkpoint fence, Source discovery/admission, LAN transport, pinned SDK localization and localhost runner;
+- `scripts/customer-base-view-ui-parity.browser.js` — same-origin SDK bootstrap, exact Target preflight + supported SDK mutation/readback;
 - `scripts/customer-base-view-ui-source-diagnostic.mjs` — local read-only Source/layout diagnostic using the same authority function;
-- `tests/scripts/lark-base-view-js-sdk-parity.test.js` — normalization, structural admission and exact 42-sort inventory regressions.
+- `tests/scripts/lark-base-view-js-sdk-parity.test.js` — normalization, structural admission and exact 42-sort inventory regressions;
+- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` — same-origin SDK delivery and pre-READY localization regression.
 
 ## Full preflight before first UI mutation
 
@@ -180,9 +196,9 @@ Official Base JS SDK exposes ordered field readback but no documented setter for
 ## Required closure sequence
 
 1. Require full Branch Verification SUCCESS on the final runner/docs HEAD.
-2. Resolve the Mac's LAN IPv4 and start `scripts/customer-base-view-ui-parity-server.mjs` with that address as both bind/public host; require `status=READY`, exact Source SHA `9c24...`, `sourcePlanAuthorityMode=exact-refresh-layout-revision-facebook-content-published-at-desc`, and `sortViews=42`.
-3. Edit/recreate the Base extension script inside the exact customer Target Base using the emitted LAN URL, not `127.0.0.1`.
-4. Confirm Terminal receives `[view-ui-local]` requests and the runner UI renders inside Lark before clicking anything.
+2. Resolve the Mac's LAN IPv4 and start `scripts/customer-base-view-ui-parity-server.mjs` with that address as both bind/public host; require `status=READY`, exact Source SHA `9c24...`, `sourcePlanAuthorityMode=exact-refresh-layout-revision-facebook-content-published-at-desc`, `sortViews=42`, `sdkDeliveryMode=same-origin-pinned-standalone`, `sdkVersion=1.0.2`, and non-empty SDK SHA/byte evidence.
+3. Reopen the existing Base extension script inside the exact customer Target Base using the emitted LAN URL; the URL need not change if the Mac LAN IP is unchanged.
+4. Before clicking anything, require Terminal evidence for `/client-event?stage=html-executed`, `/app.js`, `/lark-base-js-sdk.mjs`, and `/client-event?stage=browser-module-loaded`, and require the runner UI to render inside Lark.
 5. Run supported View UI parity once and retain its compact summary JSON.
 6. Use the reported field-order mismatch count to finish only actual remaining field-order work; frozen columns remain manual.
 7. Complete Formula presentation 4 and dynamic-date filter 1.
