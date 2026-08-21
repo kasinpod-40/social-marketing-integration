@@ -48,13 +48,23 @@ Current official Lark CLI Base Workflow SSOT documents:
 - `Delay` uses `duration` in minutes
 - activation is a separate API and is not part of this operator
 
+Workflow is also a Base Block. Current official Base Block SSOT documents:
+
+- topology: `POST /open-apis/base/v3/bases/{base_token}/blocks/list`
+- placement: `POST /open-apis/base/v3/bases/{base_token}/blocks/{workflow_id}/move`
+- Workflow block `id` is the corresponding `workflow_id`
+
+The Workflow create API does not accept a folder `parent_id`, so placement is a separate documented phase after create.
+
 ## Operator
 
 Files:
 
 - `scripts/lib/customer-base-notification-workflow-parity.js`
+- `scripts/lib/customer-base-workflow-placement.js`
 - `scripts/customer-base-notification-workflow-parity.mjs`
 - `tests/scripts/customer-base-notification-workflow-parity.test.js`
+- `tests/scripts/customer-base-workflow-placement.test.js`
 
 The planner reads the exact `.base` locally and resolves Source Table/Field IDs to semantic names. Source IDs are not copied into the public Workflow body.
 
@@ -67,11 +77,13 @@ Behavior:
 3. Target identity-anchor and watched-field preflight;
 4. list Workflow inventory by public API;
 5. duplicate same-title Workflow → fail closed;
-6. existing exact disabled definition → reuse, zero writes;
+6. existing exact disabled definition → reuse, zero workflow-definition writes;
 7. absent definition in preview → report disabled-create readiness, zero writes;
 8. controlled apply → create once, disabled by platform default;
 9. list + get readback verifies exact two-step semantic definition and disabled status;
-10. no enable, update, notification send, AI call, record write, or delete path exists in this operator.
+10. Base Block topology is then inspected and the Workflow is moved under `Setup Phase | Social MKT Data Hub` only when needed;
+11. placement move receives an immediate topology readback;
+12. no enable, update, notification send, AI call, record write, or delete path exists in this operator.
 
 Create confirmation:
 
@@ -81,7 +93,9 @@ Create confirmation:
 
 Create uses a deterministic `client_token` for this single intended workflow and the shared Lark client with `retryMode: rate_limit_only`.
 
-If a create result is ambiguous, rerun starts with public Workflow list discovery. If the exact workflow exists, it is reused and no second create is issued. Conflicting or duplicate definitions fail closed.
+If a create result is ambiguous, rerun starts with public Workflow list discovery. If the exact workflow exists, it is reused and no second create is issued.
+
+If create succeeds but folder placement fails, rerun reuses the exact disabled Workflow and performs only the missing Base Block move. Conflicting or duplicate definitions fail closed.
 
 ## Verification staged before Target mutation
 
@@ -91,7 +105,10 @@ Focused synthetic regression covers:
 - read-only preview;
 - wrong confirmation causing zero create;
 - one disabled create + exact readback;
-- rerun reuse with zero writes and zero enable.
+- rerun reuse with zero definition writes and zero enable;
+- folder existence/read-only preview;
+- missing placement detection;
+- move-only recovery with topology readback.
 
 No customer Target Workflow mutation was executed while preparing this operator.
 
