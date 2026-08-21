@@ -142,26 +142,235 @@ export function localPathForPinnedModule(urlValue) {
 }
 
 export function extractModuleSpecifiers(source) {
-  const specifiers = new Set();
-  const patterns = [
-    /\bfrom\s*["']([^"']+)["']/gu,
-    /\bimport\s*["']([^"']+)["']/gu,
-    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu,
-  ];
-  for (const pattern of patterns) {
-    for (const match of source.matchAll(pattern)) specifiers.add(match[1]);
-  }
-  return [...specifiers];
+  return [...new Set(scanModuleSpecifierRecords(source).map((record) => record.specifier))];
 }
 
 export function rewriteModuleSpecifiers(source, replacements) {
-  let result = source;
-  for (const [specifier, replacement] of replacements.entries()) {
-    result = result
-      .replaceAll(`'${specifier}'`, `'${replacement}'`)
-      .replaceAll(`"${specifier}"`, `"${replacement}"`);
+  const records = scanModuleSpecifierRecords(source)
+    .filter((record) => replacements.has(record.specifier));
+  if (records.length === 0) return source;
+
+  let cursor = 0;
+  let result = '';
+  for (const record of records) {
+    result += source.slice(cursor, record.start);
+    result += replacements.get(record.specifier);
+    cursor = record.end;
   }
-  return result;
+  return result + source.slice(cursor);
+}
+
+function scanModuleSpecifierRecords(source) {
+  const records = [];
+  let index = 0;
+
+  while (index < source.length) {
+    const char = source[index];
+    if (isWhitespace(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === '/' && source[index + 1] === '/') {
+      index = skipLineComment(source, index + 2);
+      continue;
+    }
+    if (char === '/' && source[index + 1] === '*') {
+      index = skipBlockComment(source, index + 2);
+      continue;
+    }
+    if (char === '\'' || char === '"') {
+      index = skipQuotedLiteral(source, index);
+      continue;
+    }
+    if (char === '`') {
+      index = skipTemplateLiteral(source, index);
+      continue;
+    }
+    if (!isIdentifierStart(char)) {
+      index += 1;
+      continue;
+    }
+
+    const token = readIdentifier(source, index);
+    if (token.value === 'import') {
+      const record = parseImportSpecifier(source, token.end);
+      if (record) records.push(record);
+    } else if (token.value === 'export') {
+      const record = parseExportSpecifier(source, token.end);
+      if (record) records.push(record);
+    }
+    index = token.end;
+  }
+
+  return records.sort((left, right) => left.start - right.start);
+}
+
+function parseImportSpecifier(source, afterKeyword) {
+  let cursor = skipTrivia(source, afterKeyword);
+  if (source[cursor] === '.') return null;
+  if (source[cursor] === '\'' || source[cursor] === '"') return readModuleString(source, cursor);
+
+  if (source[cursor] === '(') {
+    cursor = skipTrivia(source, cursor + 1);
+    if (source[cursor] !== '\'' && source[cursor] !== '"') {
+      throw codedError(
+        'CUSTOMER_BASE_VIEW_UI_SDK_DYNAMIC_IMPORT_UNSUPPORTED',
+        'Pinned Base JS SDK contains a non-literal dynamic import that cannot be mirrored fail-closed',
+        { sdkVersion: LARK_BASE_JS_SDK_VERSION },
+      );
+    }
+    return readModuleString(source, cursor);
+  }
+
+  return findFromModuleSpecifier(source, cursor);
+}
+
+function parseExportSpecifier(source, afterKeyword) {
+  const cursor = skipTrivia(source, afterKeyword);
+  if (source[cursor] !== '*' && source[cursor] !== '{') return null;
+  return findFromModuleSpecifier(source, cursor);
+}
+
+function findFromModuleSpecifier(source, start) {
+  let cursor = start;
+  while (cursor < source.length) {
+    const char = source[cursor];
+    if (char === ';') return null;
+    if (char === '/' && source[cursor + 1] === '/') {
+      cursor = skipLineComment(source, cursor + 2);
+      continue;
+    }
+    if (char === '/' && source[cursor + 1] === '*') {
+      cursor = skipBlockComment(source, cursor + 2);
+      continue;
+    }
+    if (char === '\'' || char === '"') {
+      cursor = skipQuotedLiteral(source, cursor);
+      continue;
+    }
+    if (char === '`') {
+      cursor = skipTemplateLiteral(source, cursor);
+      continue;
+    }
+    if (!isIdentifierStart(char)) {
+      cursor += 1;
+      continue;
+    }
+
+    const token = readIdentifier(source, cursor);
+    if (token.value === 'from') {
+      const quoteIndex = skipTrivia(source, token.end);
+      if (source[quoteIndex] !== '\'' && source[quoteIndex] !== '"') return null;
+      return readModuleString(source, quoteIndex);
+    }
+    cursor = token.end;
+  }
+  return null;
+}
+
+function readModuleString(source, quoteIndex) {
+  const quote = source[quoteIndex];
+  let cursor = quoteIndex + 1;
+  while (cursor < source.length) {
+    const char = source[cursor];
+    if (char === '\\') {
+      throw codedError(
+        'CUSTOMER_BASE_VIEW_UI_SDK_SPECIFIER_ESCAPE_UNSUPPORTED',
+        'Pinned Base JS SDK module specifier contains an escape sequence and is not mirrored by textual guesswork',
+        { sdkVersion: LARK_BASE_JS_SDK_VERSION },
+      );
+    }
+    if (char === quote) {
+      return Object.freeze({
+        specifier: source.slice(quoteIndex + 1, cursor),
+        start: quoteIndex + 1,
+        end: cursor,
+      });
+    }
+    if (char === '\n' || char === '\r') break;
+    cursor += 1;
+  }
+  throw codedError(
+    'CUSTOMER_BASE_VIEW_UI_SDK_SPECIFIER_INVALID',
+    'Pinned Base JS SDK contains an unterminated module specifier',
+    { sdkVersion: LARK_BASE_JS_SDK_VERSION },
+  );
+}
+
+function skipTrivia(source, start) {
+  let cursor = start;
+  while (cursor < source.length) {
+    if (isWhitespace(source[cursor])) {
+      cursor += 1;
+      continue;
+    }
+    if (source[cursor] === '/' && source[cursor + 1] === '/') {
+      cursor = skipLineComment(source, cursor + 2);
+      continue;
+    }
+    if (source[cursor] === '/' && source[cursor + 1] === '*') {
+      cursor = skipBlockComment(source, cursor + 2);
+      continue;
+    }
+    break;
+  }
+  return cursor;
+}
+
+function skipQuotedLiteral(source, quoteIndex) {
+  const quote = source[quoteIndex];
+  let cursor = quoteIndex + 1;
+  while (cursor < source.length) {
+    if (source[cursor] === '\\') {
+      cursor += 2;
+      continue;
+    }
+    if (source[cursor] === quote) return cursor + 1;
+    cursor += 1;
+  }
+  return source.length;
+}
+
+function skipTemplateLiteral(source, tickIndex) {
+  let cursor = tickIndex + 1;
+  while (cursor < source.length) {
+    if (source[cursor] === '\\') {
+      cursor += 2;
+      continue;
+    }
+    if (source[cursor] === '`') return cursor + 1;
+    cursor += 1;
+  }
+  return source.length;
+}
+
+function skipLineComment(source, start) {
+  let cursor = start;
+  while (cursor < source.length && source[cursor] !== '\n' && source[cursor] !== '\r') cursor += 1;
+  return cursor;
+}
+
+function skipBlockComment(source, start) {
+  const end = source.indexOf('*/', start);
+  return end === -1 ? source.length : end + 2;
+}
+
+function readIdentifier(source, start) {
+  let end = start + 1;
+  while (end < source.length && isIdentifierPart(source[end])) end += 1;
+  return { value: source.slice(start, end), end };
+}
+
+function isWhitespace(char) {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\r' || char === '\f';
+}
+
+function isIdentifierStart(char) {
+  return typeof char === 'string' && /[A-Za-z_$]/u.test(char);
+}
+
+function isIdentifierPart(char) {
+  return typeof char === 'string' && /[A-Za-z0-9_$]/u.test(char);
 }
 
 function assertPinnedCdnUrl(urlValue) {
