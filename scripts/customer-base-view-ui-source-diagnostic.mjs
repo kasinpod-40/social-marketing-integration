@@ -6,6 +6,7 @@ import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
 import { buildLarkBaseViewManualParityManifest } from './lib/lark-base-view-manual-parity-manifest.js';
 import {
+  assessLarkBaseViewUiPlanAuthority,
   assessLarkBaseViewUiRefreshSourceAuthority,
   buildLarkBaseViewJsSdkParityPlan,
 } from './lib/lark-base-view-js-sdk-parity.js';
@@ -17,17 +18,6 @@ const RETAINED_VIEW_MANIFEST_FILENAME = 'customer-base-view-manual-parity.json';
 const DEFAULT_CHECKPOINT_FILE = join(homedir(), 'Downloads', 'customer-base-controlled-apply-checkpoint.json');
 const SOURCE_NAME_PATTERN = /^Social MKT Data Hub.*\.base$/u;
 const PROTECTED_EXTERNAL_TABLE = '🎵 RAW_TikTok_Creator_Videos';
-const EXPECTED_PLAN_SUMMARY = Object.freeze({
-  tableCount: 32,
-  viewCount: 110,
-  fieldOrderAuditViews: 110,
-  sortViews: 41,
-  groupViews: 4,
-  columnWidthViews: 70,
-  columnWidthAssignments: 898,
-  rowHeightViews: 110,
-  frozenColumnManualViews: 110,
-});
 const EXPECTED_SORT_PROFILES = Object.freeze({
   'metric_date DESC': 18,
   'generated_at DESC': 13,
@@ -55,12 +45,12 @@ try {
 
   const retainedLayoutAuthority = await diagnoseRetainedLayoutAuthority(expectedTableNames);
   const usableSources = currentSources.filter((item) => item.structuralOk && item.cloneScopeOk);
-  const exactCurrentPlans = usableSources.filter((item) => item.planOk);
+  const admittedLayoutSources = usableSources.filter((item) => item.planOk);
 
   console.log('\n=== COPY THIS SUMMARY JSON ===');
   console.log(JSON.stringify({
     ok: true,
-    contractVersion: 'customer_base_view_ui_source_diagnostic_v2',
+    contractVersion: 'customer_base_view_ui_source_diagnostic_v3',
     stage: 'customer-base-view-ui-source-diagnostic',
     status: 'DIAGNOSTIC_COMPLETE',
     checkpoint: {
@@ -73,12 +63,12 @@ try {
     retainedLayoutAuthority,
     diagnosis: {
       refreshCompatibleSourceCount: usableSources.length,
-      exactRetainedCountSourceCount: exactCurrentPlans.length,
+      admittedCurrentLayoutSourceCount: admittedLayoutSources.length,
       retainedLayoutAuthorityAvailable: retainedLayoutAuthority.exactAuthorityFound,
-      nextSafeResolverMode: retainedLayoutAuthority.exactAuthorityFound && usableSources.length > 0
-        ? 'RETAINED_LAYOUT_AUTHORITY_PLUS_REFRESH_COMPATIBLE_CURRENT_SOURCE'
-        : exactCurrentPlans.length > 0
-          ? 'CURRENT_SOURCE_LAYOUT_MATCHES_RETAINED_COUNTS'
+      nextSafeResolverMode: admittedLayoutSources.length > 0
+        ? 'CURRENT_SOURCE_LAYOUT_AUTHORITY_ADMITTED'
+        : retainedLayoutAuthority.exactAuthorityFound && usableSources.length > 0
+          ? 'RETAINED_LAYOUT_AUTHORITY_PLUS_REFRESH_COMPATIBLE_CURRENT_SOURCE'
           : 'BLOCKED_NEEDS_LAYOUT_AUTHORITY_DECISION',
     },
     sourceMutationCount: 0,
@@ -89,7 +79,7 @@ try {
   console.error('\n=== COPY THIS SUMMARY JSON ===');
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_view_ui_source_diagnostic_v2',
+    contractVersion: 'customer_base_view_ui_source_diagnostic_v3',
     stage: 'customer-base-view-ui-source-diagnostic',
     status: 'ERROR',
     code: error?.code ?? 'CUSTOMER_BASE_VIEW_UI_SOURCE_DIAGNOSTIC_FAILED',
@@ -115,7 +105,9 @@ async function diagnoseSource(sourceFile, expectedTableNames) {
     const cloneScopeOk = sameUniqueNameSet(actualTableNames, expectedTableNames);
     const manifest = await buildLarkBaseViewManualParityManifest({ sourceClient });
     const plan = buildLarkBaseViewJsSdkParityPlan(manifest);
-    const planMismatches = comparePlanSummary(plan?.summary);
+    const planAuthority = assessLarkBaseViewUiPlanAuthority(plan, {
+      sourceSha256: inspection.file.sha256,
+    });
     const sortAuthority = diagnoseSortAuthority(plan);
     const metadata = await stat(sourceFile);
 
@@ -129,9 +121,11 @@ async function diagnoseSource(sourceFile, expectedTableNames) {
       structuralMismatches: structure.mismatches,
       cloneScopeOk,
       cloneTableCount: actualTableNames.length,
-      planOk: planMismatches.length === 0,
+      planOk: planAuthority.ok,
+      planAuthorityMode: planAuthority.authorityMode,
       planSummary: plan.summary,
-      planMismatches,
+      planMismatches: planAuthority.mismatches,
+      sortInventoryFingerprintSha256: planAuthority.sortInventoryFingerprintSha256,
       sortAuthority,
     });
   } catch (error) {
@@ -228,16 +222,18 @@ async function diagnoseRetainedLayoutAuthority(expectedTableNames) {
       const manifest = extractManifest(parsed);
       const plan = buildLarkBaseViewJsSdkParityPlan(manifest);
       const tableNames = plan.tables.map((table) => table.tableName);
-      const planMismatches = comparePlanSummary(plan.summary);
+      const planAuthority = assessLarkBaseViewUiPlanAuthority(plan, {
+        sourceSha256: BASELINE_SOURCE_SHA256,
+      });
       const cloneScopeOk = sameUniqueNameSet(tableNames, expectedTableNames);
       checked.push(Object.freeze({
         fileName: basename(filePath),
         sha256,
-        status: planMismatches.length === 0 && cloneScopeOk ? 'exact-authority' : 'exact-sha-invalid-layout',
+        status: planAuthority.ok && cloneScopeOk ? 'exact-authority' : 'exact-sha-invalid-layout',
         cloneScopeOk,
-        planMismatches,
+        planMismatches: planAuthority.mismatches,
       }));
-      if (planMismatches.length === 0 && cloneScopeOk) {
+      if (planAuthority.ok && cloneScopeOk) {
         exactAuthority = Object.freeze({
           fileName: basename(filePath),
           sha256,
@@ -271,15 +267,6 @@ function extractManifest(value) {
     'CUSTOMER_BASE_VIEW_UI_RETAINED_MANIFEST_SHAPE_INVALID',
     'Retained View manifest file has the expected SHA but not the expected manifest contract',
   );
-}
-
-function comparePlanSummary(summary) {
-  const mismatches = [];
-  for (const [dimension, expected] of Object.entries(EXPECTED_PLAN_SUMMARY)) {
-    const actual = summary?.[dimension];
-    if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
-  }
-  return mismatches;
 }
 
 async function discoverSourceCandidates() {
