@@ -41,7 +41,7 @@ test('active materialization fails closed when admitted watermark is absent from
   );
 });
 
-test('Organic aggregate remains null when one contributing content metric is unknown', () => {
+test('Organic complete source coverage aggregates observed subtotal without fabricating unknown members', () => {
   const result = calculateOrganicPeriodMetrics({
     platform: 'facebook',
     contents: [content('known'), content('unknown')],
@@ -55,7 +55,7 @@ test('Organic aggregate remains null when one contributing content metric is unk
     periodEnd: '2026-07-12',
     coverageStatus: 'complete',
   });
-  assert.equal(result.metrics.period_views, null);
+  assert.equal(result.metrics.period_views, 10);
   assert.equal(result.contentRows.find((row) => row.content.externalContentId === 'known').periodViews, 10);
   assert.equal(result.contentRows.find((row) => row.content.externalContentId === 'unknown').periodViews, null);
 });
@@ -74,6 +74,7 @@ test('Organic complete baselines do not override incomplete source Coverage', ()
   });
   assert.equal(result.baselineCoverageRate, 1);
   assert.equal(result.dataStatus, 'partial');
+  assert.equal(result.metrics.period_views, 10);
 });
 
 test('Ads aggregate remains null for mixed known/unknown facts and confirms covered empty periods', () => {

@@ -1,60 +1,112 @@
-# Current Task — Repository Final Closeout & Weekly Scheduled Evidence v1
+# Current Task — Organic Dashboard Observed-Metric Repair v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = REPOSITORY_CLOSEOUT_COMPLETE_WEEKLY_TIME_GATE_REMAINS
-CURRENT_PROGRAM                     = WAIT_AUTOMATIC_WEEKLY_V6_SCHEDULED_EVIDENCE_20260824
-REPOSITORY_CLOSEOUT_MERGE            = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
-BRANCH_VERIFICATION_RUN              = 31990567121
-BRANCH_VERIFICATION_JOB              = 95273236886
-BRANCH_VERIFICATION                  = PASS
-INTEGRATION_WORKSPACE               = ACTIVE_VERIFIED
+TASK_STATUS                         = MERGE_READY
+CURRENT_PROGRAM                     = ORGANIC_DASHBOARD_OBSERVED_METRIC_REPAIR_V1
+BASE_MAIN                           = ef5d5fc8697406102757537b5a07a4892ed096a6
+BRANCH                              = work/facebook-organic-observed-metric-aggregation-v1
+PR                                  = 662
+INTEGRATION_WORKSPACE               = NO_MUTATION_IN_REPOSITORY_PHASE
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
-AUTOMATIC_WEEKLY_NOTIFICATION       = LIVE_ENABLED_MONDAY_0830_ASIA_BANGKOK
-NEXT_AUTOMATIC_SCHEDULED_EVIDENCE   = 2026-08-24T08:30:00+07:00
-TIKTOK_ADS                          = DEFERRED_NOT_CURRENT_BLOCKER
-OPEN_PULL_REQUESTS                  = PR_220_ONLY
-DLQ_REDRIVE                         = BLOCKED_OFF
+CUSTOMER_BASE_PR_661                = OUT_OF_SCOPE_NO_MUTATION
 ```
 
 ## Objective
 
-Repository debt ที่ทำได้โดยไม่แตะ Live runtime ปิดแล้ว. งานปัจจุบันเหลือเพียงอ่านหลักฐาน Automatic Weekly v6 ตามเวลาจริงหลัง `2026-08-24 08:30 Asia/Bangkok`. Production/customer-owned provisioning และ TikTok Ads เป็น workstream แยกและไม่ใช่ blocker ของ Integration repository closeout นี้.
+แก้ Shared Organic Report aggregation ที่ทำให้ Facebook Likes / Comments / Shares / Engagement ทั้งก้อนกลายเป็น `null` เมื่อ historical content บางแถวไม่มี metric บางชนิด ทั้งที่ metric เดียวกันมี observed values ในแถวอื่นจำนวนมาก โดยต้องรักษา source `null` ไว้และห้ามแปลง missing value เป็นศูนย์.
 
-## Completed repository closeout
+งานนี้คืน semantics ของ Shared Organic aggregate ให้สอดคล้องกับ retained TikTok Organic calculator เดิม แต่เพิ่ม fail-closed gate ให้ observed subtotal ใช้ได้เฉพาะเมื่อ source coverage เป็น `complete`/`revisable`; period aggregate ต้องมี baseline coverage ครบทุก tracked content ด้วย. Observed zero ยังคงเป็น `0`; negative corrections ไม่ถูก clamp.
 
-- PR #658 merge เข้า `main` ที่ `c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe`.
-- Port Lark Number formatter precision fix จาก stale PR #249 แบบ minimal บน current main.
-- Official grouped formatter `1,000` / `1,000.00` และ spreadsheet alias ใช้ Shared normalizer; unsupported precision ไม่ถูกเดา.
-- Shared Dimensions Backfill operator identity เป็น `lark-dashboard-shared-dimensions-backfill-v1.3`; ไม่มี Apply.
-- Authority files รุ่นเก่าถูก archive byte-for-byte ก่อนแทน active files ด้วย current authority.
-- Branch Verification run `31990567121`, job `95273236886` ผ่านทุก step: install, architecture/hygiene, focused suites, staged TikTok, Unit/Workers runtime, Report Reliability, dependency audit, Wrangler dry-run, diff check และ diagnostics upload.
-- Obsolete Draft PR #11, #17, #66, #249 และ #595 ถูกปิดพร้อมบันทึกเหตุผลว่า superseded.
-- PR #220 TikTok Ads ยังคงเปิดตามคำสั่งผู้ใช้และถูกจัดเป็น deferred.
+## Verified incident evidence
 
-## Locked runtime evidence
+Latest Integration Base authority แสดง Facebook tracked content 101 แถว. `latest_views` สังเกตได้ครบ 101 แถว แต่ historical rows บางรายการมี `likes` / `comments` / `shares` เป็น `null`. Shared `calculate-organic-period-metrics.js` ใช้ strict aggregation จึงทำให้ null เพียงแถวเดียว propagate ไปเป็น aggregate `null`; Lark Dashboard แสดง card เชิงตัวเลขเป็น 0 ทั้งที่ source มี observed engagement metrics อยู่จริง.
 
-Weekly v6 controlled recovery ผ่าน Quality Gate และ exactly-once delivery แล้ว: AI/Admission อย่างละ 1, D1 delivery `sent/mirrored` claim 1, Lark Notification Log `sent` 1 และ exact new alert/DLQ/active lock = 0. หลักฐานนี้พิสูจน์ repair path แต่ไม่แทน scheduled automatic proof.
+Meta Ads Daily / Creatives ไม่ใช่ส่วนของ code fix นี้. Current Meta end-to-end contract ให้ detailed paid facts อยู่ใน D1/Shared Report และไม่ได้อนุญาตให้เติม fake Meta rows ลง `MKT_Ads_Daily` / `MKT_Ads_Creatives` เพื่อแก้หน้าจอ.
 
-Automatic Weekly รอบจริงก่อนหน้า fail-closed และ retained identity ต้องคงเป็น forensic evidence ห้าม reset/replay/redrive. หลักฐาน schedule รอบถัดไปต้องอ่านแบบ read-only หลัง `2026-08-24 08:30 Asia/Bangkok` เท่านั้น.
+## In scope
 
-## Out of scope / deferred
+- Shared `calculateOrganicPeriodMetrics` aggregate semantics
+- coverage-gated observed subtotal สำหรับ period/current totals
+- aggregate Engagement จาก aggregate Likes + Comments + Shares ภายใต้ coverage gate เดียวกัน
+- focused regression สำหรับ mixed observed + missing rows
+- regression ว่า all-missing ยังเป็น `null`, observed zero ยังเป็น `0`, negative correction ยังอยู่
+- Project Brain / task closure documentation
 
-- TikTok Ads implementation, OAuth, deploy หรือ customer onboarding
-- Production provisioning/UAT
-- Worker deployment
-- Queue send/replay/DLQ redrive
-- Remote D1 mutation/migration
-- Lark mutation หรือ Backfill Apply
-- Schedule/Secret/Binding change
-- Manual run ที่ใช้แทน Automatic Weekly evidence
+## Out of scope
+
+- Provider refetch/backfill
+- Integration Lark mutationใน repository/CI phase
+- Worker deploy / schedule / Queue / D1 mutation
+- Production/customer Base mutation
+- PR #661 หรือ branch `work/customer-base-consolidation-v1`
+- Meta Ads projection expansion
+
+## Contract
+
+1. Source-level missing metric ต้องคง `null`; ห้าม normalize เป็น `0`.
+2. Row-level combined Engagement ยังคง strict; component ใด missing ทำให้ row Engagement เป็น `null`.
+3. Current-total aggregate ใช้ observed-value subtotal ได้เฉพาะ source coverage `complete` หรือ `revisable`.
+4. Period aggregate ใช้ observed-value subtotal ได้เมื่อ source coverage authoritative และ baseline coverage ครบทุก tracked content.
+5. ถ้า source/baseline coverage ไม่ครบ aggregate ยังคง strict/fail-closed.
+6. Metric ที่ไม่มี observed member เลยต้องเป็น `null` / `not_observed`.
+7. Observed zero และ negative corrections ต้องรักษาค่าจริง.
+8. Baseline identities, report identities, writer contracts และ Lark schema ไม่เปลี่ยน.
+9. ไม่สร้าง Report engine/helper layer ใหม่เมื่อแก้ calculator เดิมได้ตรงจุด.
 
 ## Acceptance criteria
 
-Repository closeout criteria ผ่านแล้ว. Final Integration time gate จะถือว่าปิดเมื่อ Automatic Weekly v6 รอบถัดไปมี scheduled exactly-once evidence ที่ถูกต้องโดยไม่มีการใช้ manual/control run แทน.
+- Mixed observed/missing Facebook-like rows ภายใต้ complete coverage ให้ numeric observed aggregate แทน whole-metric `null`.
+- A metric with every member missing remains `null` / `not_observed`.
+- Partial/unproven source coverage remains strict null when any contributing member is unknown.
+- Existing complete-input behavior is unchanged.
+- Existing TikTok semantics remain compatible.
+- Focused tests pass.
+- `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit --audit-level=high`, `npm run deploy:dry-run`, `git diff --check` pass in Branch Verification.
+- No Integration/Production mutation occurs as part of Repository/CI implementation.
 
-Historical current-task ก่อน Repository closeout ถูกเก็บ byte-for-byte ที่
-`docs/archive/current-task-before-repository-final-closeout-2026-08-17.md`.
+## Required tests
 
-Detailed closeout record: `docs/project-brain/repository-final-closeout-2026-08-17.md`.
+```bash
+node --test tests/application/calculate-organic-period-metrics-observed.test.js
+npm run check
+npm test
+npm run test:report-reliability
+npm audit --audit-level=high
+npm run deploy:dry-run
+git diff --check
+```
+
+## Implementation result
+
+Implementation is complete and PR #662 is merge-ready pending the fresh Branch Verification triggered by these closure-document commits.
+
+Verified runtime change:
+- `calculate-organic-period-metrics.js` now uses observed subtotal only behind authoritative source/baseline coverage gates.
+- Source `null` values remain `null`; no missing metric is converted to zero.
+- Row-level Engagement remains strict; aggregate Engagement is derived from the aggregate component metrics under the same gate.
+- Observed zero and negative corrections are preserved.
+
+Regression coverage:
+- mixed observed + missing members under complete coverage
+- entirely unobserved metric remains null/not_observed
+- partial source coverage remains fail-closed
+- observed zero and negative correction preservation
+- prior report-materialization safety expectation updated to the reviewed authoritative-coverage contract
+
+Pre-closure verification:
+- Commit: `750729654e9c6f5b8b9189f29bf7374f7dbae63c`
+- Branch Verification Run: `32444055524`
+- Job: `96660217831`
+- Result: SUCCESS, all gates passed including Unit + Workers Runtime and Report Reliability.
+
+Safety evidence:
+- Integration Lark mutation: 0
+- D1 mutation: 0
+- Queue/DLQ mutation: 0
+- Worker deployment: 0
+- Production/customer Base mutation: 0
+- PR #661 mutation: 0
+
+The final PR head must pass Branch Verification once more before merge. The exact merge SHA will be taken from GitHub's merge result and used as the release authority in the handoff.

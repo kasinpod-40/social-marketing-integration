@@ -103,18 +103,29 @@ export function calculateOrganicPeriodMetrics(input = {}) {
   const dataStatus = trackedContentCount === 0
     ? (input.coverageStatus === 'complete' ? 'no_data_confirmed' : normalizeCoverageStatus(input.coverageStatus))
     : (coveredContentCount === trackedContentCount ? normalizeCompleteStatus(input.coverageStatus) : 'partial');
-  const periodViews = sumField(rows, 'periodViews');
-  const periodEngagement = sumField(rows, 'periodEngagement');
-  const latestTotalViews = sumCurrentField(rows, 'views');
-  const latestTotalLikes = sumCurrentField(rows, 'likes');
-  const latestTotalComments = sumCurrentField(rows, 'comments');
-  const latestTotalShares = sumCurrentField(rows, 'shares');
-  const latestTotalEngagement = sumField(rows, 'latestEngagement');
+  const sourceCoverageComplete = isCompleteObservationCoverage(input.coverageStatus);
+  const periodCoverageComplete = sourceCoverageComplete && coveredContentCount === trackedContentCount;
+  const periodViews = sumField(rows, 'periodViews', periodCoverageComplete);
+  const periodLikes = sumField(rows, 'periodLikes', periodCoverageComplete);
+  const periodComments = sumField(rows, 'periodComments', periodCoverageComplete);
+  const periodShares = sumField(rows, 'periodShares', periodCoverageComplete);
+  const periodEngagement = sumComponents(
+    [periodLikes, periodComments, periodShares],
+    periodCoverageComplete,
+  );
+  const latestTotalViews = sumCurrentField(rows, 'views', sourceCoverageComplete);
+  const latestTotalLikes = sumCurrentField(rows, 'likes', sourceCoverageComplete);
+  const latestTotalComments = sumCurrentField(rows, 'comments', sourceCoverageComplete);
+  const latestTotalShares = sumCurrentField(rows, 'shares', sourceCoverageComplete);
+  const latestTotalEngagement = sumComponents(
+    [latestTotalLikes, latestTotalComments, latestTotalShares],
+    sourceCoverageComplete,
+  );
   const metrics = Object.freeze({
     period_views: periodViews,
-    period_likes: sumField(rows, 'periodLikes'),
-    period_comments: sumField(rows, 'periodComments'),
-    period_shares: sumField(rows, 'periodShares'),
+    period_likes: periodLikes,
+    period_comments: periodComments,
+    period_shares: periodShares,
     period_engagement: periodEngagement,
     period_engagement_rate: calculateRate(periodEngagement, periodViews),
     latest_total_views: latestTotalViews,
@@ -302,8 +313,23 @@ function subtractKnown(current, baseline) {
   return left === null || right === null ? null : left - right;
 }
 
-function sumField(rows, fieldName) { return sumStrict(rows.map((row) => row[fieldName])); }
-function sumCurrentField(rows, fieldName) { return sumStrict(rows.map((row) => row.current?.[fieldName])); }
+function sumField(rows, fieldName, allowObservedSubtotal) {
+  return sumAggregate(rows.map((row) => row[fieldName]), allowObservedSubtotal);
+}
+function sumCurrentField(rows, fieldName, allowObservedSubtotal) {
+  return sumAggregate(rows.map((row) => row.current?.[fieldName]), allowObservedSubtotal);
+}
+function sumComponents(values, allowObservedSubtotal) {
+  return sumAggregate(values, allowObservedSubtotal);
+}
+function sumAggregate(values, allowObservedSubtotal) {
+  return allowObservedSubtotal ? sumObserved(values) : sumStrict(values);
+}
+function sumObserved(values) {
+  const observed = values.map(normalizeMetric).filter((value) => value !== null);
+  if (observed.length === 0) return null;
+  return observed.reduce((sum, value) => sum + value, 0);
+}
 function sumStrict(values) {
   if (values.length === 0) return null;
   const normalized = values.map(normalizeMetric);
@@ -374,6 +400,9 @@ function normalizeMetric(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+function isCompleteObservationCoverage(value) {
+  return value === 'complete' || value === 'revisable';
 }
 function normalizeCoverageStatus(value) {
   if (value === 'source_unavailable' || value === 'not_observed' || value === 'revisable') return value;
