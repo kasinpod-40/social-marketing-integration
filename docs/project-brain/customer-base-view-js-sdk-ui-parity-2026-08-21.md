@@ -2,23 +2,9 @@
 
 ## Context
 
-Automatic customer Base migration is closed. The final canonical GET-only verifier passed with:
+Automatic customer Base migration is closed. The final canonical GET-only verifier passed with mismatch count `0`; no further controlled `--apply` is authorized. The original checkpoint is immutable and must never be recreated.
 
-```text
-ok                         true
-status                     PASS
-mismatchCount              0
-remoteMutationCount        0
-applyExecuted              false
-```
-
-No further controlled `--apply` is authorized. The original checkpoint remains immutable and must never be recreated.
-
-The retained View manual manifest still represents 32 clone Tables / 110 Views. Server OpenAPI already owns hidden fields, filters and hierarchy and those dimensions passed canonical verification.
-
-## Refined UI ownership
-
-The earlier manual View procedure was intentionally conservative because it authorized only proven Server OpenAPI request contracts. Base frontend plugins expose a separate documented Base JS SDK surface. Using that surface does not introduce guessed OpenAPI payloads and does not reopen the migration engine.
+Server OpenAPI remains authoritative for hidden fields, filters and hierarchy. Those dimensions already passed automatic verification. The Base JS SDK runner is only for documented frontend-plugin View capabilities.
 
 Pinned SDK runtime:
 
@@ -26,9 +12,9 @@ Pinned SDK runtime:
 @lark-base-open/js-sdk 1.0.2
 ```
 
-Documented Grid View methods used by the UI runner:
+Documented methods used by the runner:
 
-- `getFieldMetaList()` — ordered as displayed in the UI;
+- `getFieldMetaList()` — ordered UI readback;
 - `getSortInfo()` / `deleteSort()` / `addSort()`;
 - `getGroupInfo()` / `deleteGroup()` / `addGroup()`;
 - `getFieldWidth()` / `setFieldWidth()`;
@@ -36,87 +22,135 @@ Documented Grid View methods used by the UI runner:
 - `applySetting()`;
 - `getVisibleFieldIdList()` for hidden-field verification only.
 
-### Server OpenAPI remains automatic-owned
+The runner never owns Record, Field-schema, Formula, Filter, hierarchy, Role, Table-create/delete or View-create/delete mutations.
 
-- hidden fields — verify-only in the JS SDK runner; never rewritten by the second path;
-- filters — untouched by the JS SDK runner;
-- hierarchy — untouched by the JS SDK runner.
+## Current Source authority
 
-### Base JS SDK UI-owned mutation
+The live local Source observed on 2026-08-21 is:
 
-The runner may reconcile only:
+```text
+file                         Social MKT Data Hub.base
+SHA-256                      9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7
+Records                      36,552
+Tables                       33
+Fields                       723
+Views                        111
+Relations                     12
+Formulas                       4
+Dashboards                     6
+Workflows                      2
+Advanced Permission roles      4
+clone Tables                  32
+clone Views                  110
+```
 
-- sort;
-- group;
-- explicit non-null column width;
-- row height.
+This Source passes the existing refresh-compatible structural boundary and exact checkpoint clone-scope Table-name set.
 
-The retained Source manifest is converted to names-only SDK actions. Target Table/View/Field IDs are resolved inside the currently open Base only after target-identity preflight.
+## Retained layout evidence vs current refresh revision
 
-### Remaining manual
+The historical retained manifest evidence contains:
+
+```text
+sort Views                    41
+metric_date DESC              18
+generated_at DESC             13
+rank ASC                       5
+last_order_at DESC             1
+last_activity_at DESC          1
+rank DESC                      1
+source_created_at DESC         1
+source_modified_at DESC        1
+```
+
+The retained manifest file itself is not available in the current local search locations. A read-only diagnostic of current Source SHA `9c24...` proved that every aggregate View dimension remained identical except one additional sort:
+
+```text
+🎬 MKT_Content → 🔵 Facebook Content → published_at DESC
+```
+
+Current Source therefore contains exactly 42 sorted Views. The complete diagnostic inventory showed the retained eight profile counts unchanged plus `published_at DESC = 1`.
+
+## Exact refreshed-layout admission
+
+The current revision is not admitted by weakening `sortViews` from 41 to any arbitrary value. `assessLarkBaseViewUiPlanAuthority()` keeps two fail-closed modes:
+
+1. all unknown refresh SHAs use retained layout counts and still require `sortViews = 41`;
+2. exact Source SHA `9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7` uses one evidence-backed layout revision with `sortViews = 42`.
+
+For that exact SHA, the runner additionally requires the complete sorted-View inventory fingerprint:
+
+```text
+961936df36fdf70b4cb2df434638630e699b573c26166b4aff04f0f58ecfbf88
+```
+
+The fingerprint is computed from every sorted View's Table name, View name, sort Field name and direction. Any replacement, removal or unrelated addition fails even if the aggregate remains 42.
+
+All other plan dimensions remain exact:
+
+```text
+clone Tables                 32
+clone Views                 110
+field-order audit Views     110
+hidden verify Views          11
+hidden assignments           85
+group Views                   4
+column-width Views           70
+column-width assignments    898
+row-height Views            110
+frozen manual Views         110
+```
+
+This is a narrow content-addressed layout revision, not a general plan-count relaxation.
+
+## Source resolver behavior
+
+`scripts/customer-base-view-ui-parity-server.mjs` now:
+
+1. verifies the immutable original checkpoint SHA and baseline Source authority;
+2. discovers `Social MKT Data Hub*.base` from Desktop and Downloads unless explicitly configured;
+3. requires refresh-compatible structural counts and record floor;
+4. excludes protected `🎵 RAW_TikTok_Creator_Videos`;
+5. requires exact checkpoint 32-Table clone-scope name set;
+6. evaluates the View plan through the shared exact layout authority function;
+7. rejects unknown 42-sort Sources;
+8. rejects exact `9c24...` if the complete 42-sort inventory fingerprint differs;
+9. rejects multiple compatible exports whose full View UI plan fingerprints differ;
+10. reports `sourcePlanAuthorityMode` and `sortViews` in its READY summary.
+
+The local read-only diagnostic uses the same authority function, so it no longer reports the approved `9c24...` layout as blocked.
+
+## Target preflight before first UI mutation
+
+The browser runner must prove all of the following before any View setting changes:
+
+1. current Base is editable;
+2. Target contains all four identity anchor Tables:
+   - `🎵 RAW_TikTok_Creator_Videos`;
+   - `(VDO) Content Creator`;
+   - `(Graphic) Content Creator`;
+   - `คำถามจาก Sale & Support`;
+3. all exact 32 clone Table names exist;
+4. all exact 110 planned Views and referenced Fields exist;
+5. hidden-field membership still matches automatic-pass state;
+6. every SDK capability needed by the whole plan is available.
+
+Only after complete preflight may it reconcile Sort / Group / explicit Column width / Row height.
+
+## Remaining manual/audit ownership
 
 No documented setter was found for:
 
 - field order / column reorder;
 - frozen-column count.
 
-These remain manual/audit dimensions. The JS SDK `getFieldMetaList()` supplies ordered UI readback so field-order mismatches can be counted exactly after supported SDK mutations.
+These remain manual/audit. Formula presentation 4, one dynamic-date filter, Dashboards 6 / 75 charts and Workflows 2 also remain separate closure work.
 
-Formula presentation 4, the single dynamic-date filter, Dashboards 6 / 75 charts and Workflows 2 remain separate closure work.
+## No-repeat rules
 
-## Safety gates
-
-Before any Base JS SDK mutation the runner must:
-
-1. require `bitable.base.isEditable()`;
-2. require the four Target identity anchor Tables:
-   - `🎵 RAW_TikTok_Creator_Videos`;
-   - `(VDO) Content Creator`;
-   - `(Graphic) Content Creator`;
-   - `คำถามจาก Sale & Support`;
-3. require every exact clone-scope Table name from the Source plan;
-4. require every exact View and referenced Field name;
-5. verify hidden-field membership still matches the already-passed automatic state;
-6. require SDK methods for every planned mutation before starting writes.
-
-The runner never calls record, field-schema, Formula, filter, hierarchy, Role, Table-create/delete or View-create/delete mutation methods.
-
-## Source authority and plan counts
-
-The local server accepts only the current approved Source export SHA:
-
-```text
-1571cefabb3b881dceeb71ccc2c6e879ad0c912b58072a7549825022704d80b7
-```
-
-Structural authority remains:
-
-```text
-Tables                     33
-Fields                     723
-Views                      111
-Relations                   12
-Formulas                     4
-Dashboards                   6
-Workflows                    2
-clone Tables                32
-clone Views                110
-field-order audit Views    110
-sort Views                  41
-group Views                  4
-width Views                 70
-width assignments          898
-row-height Views           110
-frozen manual Views        110
-```
-
-Any count drift blocks the local UI runner before the Base plugin is served.
-
-## Operator surface
-
-- `scripts/lib/lark-base-view-js-sdk-parity.js` — pure names-only plan projection;
-- `scripts/customer-base-view-ui-parity-server.mjs` — localhost plan/UI server with exact Source gate;
-- `scripts/customer-base-view-ui-parity.browser.js` — Base JS SDK preflight, supported mutation and readback;
-- `tests/scripts/lark-base-view-js-sdk-parity.test.js` — normalization/fail-closed regression.
-
-The browser UI always ends with a compact `=== COPY THIS SUMMARY JSON ===` block for the operator to return without copying full diagnostics.
+- never prepare another checkpoint;
+- never rerun controlled Apply;
+- never delete/recreate successful migration state;
+- never mutate Source, Worker, D1, Queue, schedule or deployment here;
+- never rewrite hidden/filter/hierarchy through the JS SDK runner;
+- never guess undocumented setters for field order, frozen columns, Dashboard or Workflow;
+- PR #661 remains Draft/Open/Unmerged until all UI/manual and final-export gates close.
