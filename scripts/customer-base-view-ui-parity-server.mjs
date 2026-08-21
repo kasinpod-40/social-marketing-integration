@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
@@ -10,7 +11,11 @@ import { buildLarkBaseViewJsSdkParityPlan } from './lib/lark-base-view-js-sdk-pa
 
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 4173;
-const CURRENT_SOURCE_SHA256 = '1571cefabb3b881dceeb71ccc2c6e879ad0c912b58072a7549825022704d80b7';
+const PREFERRED_SOURCE_SHA256 = '1571cefabb3b881dceeb71ccc2c6e879ad0c912b58072a7549825022704d80b7';
+const BASELINE_SOURCE_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
+const CHECKPOINT_SHA256 = '7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053';
+const DEFAULT_CHECKPOINT_FILE = join(homedir(), 'Downloads', 'customer-base-controlled-apply-checkpoint.json');
+const SOURCE_NAME_PATTERN = /^Social MKT Data Hub.*\.base$/u;
 const PROTECTED_EXTERNAL_TABLE = '🎵 RAW_TikTok_Creator_Videos';
 const STRUCTURAL_COUNTS = Object.freeze({
   tables: 33,
@@ -23,24 +28,23 @@ const STRUCTURAL_COUNTS = Object.freeze({
 });
 
 try {
-  const sourceFile = process.env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE
-    ?? join(homedir(), 'Desktop', 'Social MKT Data Hub.base');
+  const checkpointFile = process.env.CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_FILE
+    ?? DEFAULT_CHECKPOINT_FILE;
+  const checkpoint = await readVerifiedCheckpoint(checkpointFile);
+  const sourceAuthority = await resolveSourceAuthority({ checkpoint });
+  const { sourceFile, inspection, plan } = sourceAuthority;
   const port = resolvePort(process.env.CUSTOMER_BASE_VIEW_UI_PORT);
-  const inspection = await inspectLarkBaseExport(sourceFile);
-  assertCurrentAuthority(inspection);
-
-  const sourceClient = await createLarkBaseExportSourceClient(sourceFile, {
-    excludedTableNames: [PROTECTED_EXTERNAL_TABLE],
-  });
-  const manifest = await buildLarkBaseViewManualParityManifest({ sourceClient });
-  const plan = buildLarkBaseViewJsSdkParityPlan(manifest);
-  assertPlan(plan);
 
   const browserScript = await readFile(
     fileURLToPath(new URL('./customer-base-view-ui-parity.browser.js', import.meta.url)),
     'utf8',
   );
-  const html = renderHtml({ sourceSha256: inspection.file.sha256, plan });
+  const html = renderHtml({
+    sourceSha256: inspection.file.sha256,
+    sourceFileName: basename(sourceFile),
+    sourceSelectionMode: sourceAuthority.selectionMode,
+    plan,
+  });
 
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? '/', `http://${HOST}:${port}`).pathname;
@@ -63,8 +67,10 @@ try {
       send(response, 200, 'application/json; charset=utf-8', `${JSON.stringify({
         ok: true,
         service: 'customer-base-view-ui-parity',
-        mode: 'local-source-plan-plus-base-js-sdk-ui',
+        mode: 'local-refresh-compatible-source-plan-plus-base-js-sdk-ui',
+        sourceFileName: basename(sourceFile),
         sourceSha256: inspection.file.sha256,
+        sourceSelectionMode: sourceAuthority.selectionMode,
         tables: plan.summary.tableCount,
         views: plan.summary.viewCount,
       })}\n`);
@@ -74,12 +80,15 @@ try {
   });
 
   server.listen(port, HOST, () => {
+    console.log('\n=== COPY THIS SUMMARY JSON ===');
     console.log(JSON.stringify({
       ok: true,
       stage: 'customer-base-view-ui-parity-server',
       status: 'READY',
       url: `http://${HOST}:${port}`,
+      sourceFileName: basename(sourceFile),
       sourceSha256: inspection.file.sha256,
+      sourceSelectionMode: sourceAuthority.selectionMode,
       tables: plan.summary.tableCount,
       views: plan.summary.viewCount,
       baseJsSdkMutations: plan.ownership.baseJsSdkMutations,
@@ -89,6 +98,7 @@ try {
     }, null, 2));
   });
 } catch (error) {
+  console.error('\n=== COPY THIS SUMMARY JSON ===');
   console.error(JSON.stringify({
     ok: false,
     stage: 'customer-base-view-ui-parity-server',
@@ -102,26 +112,145 @@ try {
   process.exitCode = 1;
 }
 
-function assertCurrentAuthority(inspection) {
-  const mismatches = [];
-  if (inspection?.file?.sha256 !== CURRENT_SOURCE_SHA256) {
-    mismatches.push({
-      dimension: 'sha256',
-      expected: CURRENT_SOURCE_SHA256,
-      actual: inspection?.file?.sha256 ?? null,
+async function resolveSourceAuthority({ checkpoint }) {
+  const configured = optionalText(process.env.LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE);
+  const candidatePaths = configured ? [configured] : await discoverSourceCandidates();
+  const checked = [];
+  const compatible = [];
+  const expectedTableNames = requireExpectedTableNames(checkpoint?.expectedTableNames);
+
+  for (const sourceFile of [...new Set(candidatePaths)]) {
+    let inspection = null;
+    try {
+      inspection = await inspectLarkBaseExport(sourceFile);
+      assertStructuralAuthority(inspection);
+      const sourceClient = await createLarkBaseExportSourceClient(sourceFile, {
+        excludedTableNames: [PROTECTED_EXTERNAL_TABLE],
+      });
+      const manifest = await buildLarkBaseViewManualParityManifest({ sourceClient });
+      const plan = buildLarkBaseViewJsSdkParityPlan(manifest);
+      assertPlan(plan);
+      assertCloneScope(plan, expectedTableNames);
+      const metadata = await stat(sourceFile);
+      compatible.push(Object.freeze({
+        sourceFile,
+        inspection,
+        plan,
+        planFingerprintSha256: fingerprint(JSON.stringify(plan)),
+        mtimeMs: Number(metadata.mtimeMs),
+      }));
+      checked.push(Object.freeze({
+        fileName: basename(sourceFile),
+        status: 'compatible',
+        sha256: inspection.file.sha256,
+      }));
+    } catch (error) {
+      checked.push(Object.freeze({
+        fileName: basename(sourceFile),
+        status: 'rejected',
+        sha256: inspection?.file?.sha256 ?? null,
+        code: error?.code ?? 'SOURCE_REJECTED',
+      }));
+    }
+  }
+
+  if (compatible.length === 0) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SOURCE_AUTHORITY_NOT_FOUND',
+      'No Desktop/Downloads Source export is structurally and clone-scope compatible with the retained checkpoint',
+      { checked },
+    );
+  }
+
+  const preferred = compatible.find((item) => item.inspection?.file?.sha256 === PREFERRED_SOURCE_SHA256);
+  if (preferred) return freezeSelection(preferred, 'preferred-previously-verified-source');
+
+  const layoutFingerprints = new Set(compatible.map((item) => item.planFingerprintSha256));
+  if (layoutFingerprints.size > 1) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SOURCE_LAYOUT_AMBIGUOUS',
+      'Multiple compatible Source exports contain different View UI layouts; selection is blocked before Lark mutation',
+      {
+        candidates: compatible.map((item) => ({
+          fileName: basename(item.sourceFile),
+          sha256: item.inspection.file.sha256,
+          planFingerprintSha256: item.planFingerprintSha256,
+        })),
+      },
+    );
+  }
+
+  compatible.sort((left, right) => right.mtimeMs - left.mtimeMs || left.sourceFile.localeCompare(right.sourceFile));
+  return freezeSelection(compatible[0], compatible.length === 1
+    ? 'single-compatible-source'
+    : 'same-layout-newest-source');
+}
+
+async function discoverSourceCandidates() {
+  const result = [];
+  for (const directory of [join(homedir(), 'Desktop'), join(homedir(), 'Downloads')]) {
+    try {
+      const entries = await readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && SOURCE_NAME_PATTERN.test(entry.name)) result.push(join(directory, entry.name));
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+  return result;
+}
+
+async function readVerifiedCheckpoint(filePath) {
+  const bytes = await readFile(filePath);
+  const actualSha256 = fingerprint(bytes);
+  if (actualSha256 !== CHECKPOINT_SHA256) {
+    throw codedError('CUSTOMER_BASE_VIEW_UI_CHECKPOINT_SHA_MISMATCH', 'Original controlled-Apply checkpoint changed', {
+      expectedSha256: CHECKPOINT_SHA256,
+      actualSha256,
     });
   }
+  const checkpoint = JSON.parse(bytes.toString('utf8'));
+  if (checkpoint?.sourceAuthoritySha256 !== BASELINE_SOURCE_SHA256) {
+    throw codedError('CUSTOMER_BASE_VIEW_UI_CHECKPOINT_BASELINE_MISMATCH', 'Checkpoint no longer belongs to the approved Source baseline');
+  }
+  return checkpoint;
+}
+
+function assertStructuralAuthority(inspection) {
+  const mismatches = [];
   for (const [dimension, expected] of Object.entries(STRUCTURAL_COUNTS)) {
     const actual = inspection?.counts?.[dimension];
     if (actual !== expected) mismatches.push({ dimension, expected, actual: actual ?? null });
   }
   if (mismatches.length > 0) {
     throw codedError(
-      'CUSTOMER_BASE_VIEW_UI_SOURCE_AUTHORITY_MISMATCH',
-      'View UI runner requires the exact current approved Source export',
+      'CUSTOMER_BASE_VIEW_UI_SOURCE_STRUCTURE_MISMATCH',
+      'View UI runner Source export is not refresh-compatible with the approved structure',
       { mismatches },
     );
   }
+}
+
+function assertCloneScope(plan, expectedTableNames) {
+  const actualTableNames = plan?.tables?.map((table) => optionalText(table?.tableName)) ?? [];
+  if (!sameUniqueNameSet(actualTableNames, expectedTableNames)) {
+    throw codedError(
+      'CUSTOMER_BASE_VIEW_UI_SOURCE_SCOPE_MISMATCH',
+      'View UI Source clone-scope Table names differ from the retained checkpoint',
+      { expectedCount: expectedTableNames.length, actualCount: actualTableNames.length },
+    );
+  }
+}
+
+function requireExpectedTableNames(value) {
+  if (!Array.isArray(value) || value.length !== 32 || value.some((item) => !optionalText(item))) {
+    throw codedError('CUSTOMER_BASE_VIEW_UI_CHECKPOINT_SCOPE_INVALID', 'Checkpoint must retain exactly 32 clone-scope Table names');
+  }
+  if (new Set(value).size !== value.length) {
+    throw codedError('CUSTOMER_BASE_VIEW_UI_CHECKPOINT_SCOPE_INVALID', 'Checkpoint clone-scope Table names must be unique');
+  }
+  return value.map((item) => item.trim());
 }
 
 function assertPlan(plan) {
@@ -140,9 +269,32 @@ function assertPlan(plan) {
   }
 }
 
-function renderHtml({ sourceSha256, plan }) {
+function freezeSelection(item, selectionMode) {
+  return Object.freeze({
+    sourceFile: item.sourceFile,
+    inspection: item.inspection,
+    plan: item.plan,
+    selectionMode,
+  });
+}
+
+function sameUniqueNameSet(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  const leftValues = left.map(optionalText);
+  const rightValues = right.map(optionalText);
+  if (leftValues.some((item) => item === null) || rightValues.some((item) => item === null)) return false;
+  const leftSet = new Set(leftValues);
+  const rightSet = new Set(rightValues);
+  if (leftSet.size !== leftValues.length || rightSet.size !== rightValues.length) return false;
+  for (const value of leftSet) if (!rightSet.has(value)) return false;
+  return true;
+}
+
+function renderHtml({ sourceSha256, sourceFileName, sourceSelectionMode, plan }) {
   const summary = JSON.stringify({
+    sourceFileName,
     sourceSha256,
+    sourceSelectionMode,
     tables: plan.summary.tableCount,
     views: plan.summary.viewCount,
     sdk: {
@@ -197,6 +349,14 @@ function renderHtml({ sourceSha256, plan }) {
 
 function escapeHtml(value) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function fingerprint(value) {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function resolvePort(value) {
