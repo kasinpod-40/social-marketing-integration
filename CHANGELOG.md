@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Facebook Organic observed aggregation + live rematerialization — 2026-08-21
+## Facebook Organic observed aggregation + live rematerialization — 2026-08-21
 
 ### Shared Organic aggregation repair
 
@@ -26,8 +26,23 @@
 - Focused tests cover live readback, shared post-deploy verification, invalid JSON, unsupported binding types, duplicate conflicts and local representation preservation.
 - The failed live attempts produced zero Provider requests, zero Production mutation and no recorded deploy/send attempt evidence; no recovery/rollback was required.
 - PR #665 exact head `728cdfec7b0ec082db1b0d8e23c4829f37f32c26` passed Branch Verification Run `32453689935`, Job `96686791658`, `SUCCESS` every step, then merged to `main` at exact SHA `0c7a06430d7f9f87bf85bda3313e2d3b5940bb91`.
-- Repository implementation is complete again; controlled Live Integration execution remains pending.
-- Customer-owned Production and PR #661 remain out of scope with zero mutation.
+
+### Target-scoped Report DLQ preflight guard
+
+- The next read-only live preflight classified all eight globally open Report DLQ rows as retained Paid Ads forensic evidence: Meta Ads 1D/3D/7D/30D plus Google Ads 1D/3D/7D/30D from the earlier missing `LARK_TABLE_MKT_REPORT_TOP_ADS` configuration incident. No row belonged to Facebook.
+- The eight rows remain retained forensic evidence and were not replayed, redriven, resolved, discarded or deleted.
+- Shared Report runtime safety already scoped active work, locks and critical alerts to the selected platform/account, but `open_report_dlq` was global. PR #667 corrected that single shared guard to count the selected `payload_json.platformScope` while malformed or unscoped payloads still fail closed.
+- PR #667 exact head `39c01ff9ac5595029c69c55ff70b585c35425355` passed Branch Verification Run `32460430480`, Job `96706121886`, `SUCCESS` every step and merged at `d7492b0dd30f81953c21355016f26a06e3a308fc`.
+
+### Controlled Integration live completion
+
+- Final preflight on exact `main == origin/main == d7492b0dd30f81953c21355016f26a06e3a308fc` proved global open Report DLQ `8` while the fail-closed Facebook-scoped guard was `0`; active Facebook Report work/locks/critical alerts and pending migrations were also `0`.
+- Controlled execution refreshed the existing stable Facebook Organic 1D/3D/7D/30D Report identities exactly once through the existing Queue/materializer. Queue messages `4`, Provider requests `0`, manual Lark patches `0`, customer Production mutations `0`.
+- Every window completed with 25 Report metrics, D1↔Lark mismatch `0`, one Lark snapshot, 25 metric rows, five Top Content rows, zero Top Ads rows and zero duplicate metric keys.
+- Every window now exposes numeric observed latest totals: Likes `18477`, Comments `84`, Shares `2574`, Engagement `21135`. Missing source members remain null and `sourceNullsFabricatedAsZero=false`; 30D period subtotals remain null under the existing authoritative-baseline contract and were not fabricated.
+- Runtime preservation passed exactly: pre/post execution-flag fingerprint `1932b9064a97daa40a9c0851ca2612456c0921dbda4779bba12cb6e658147267`, `exactFlagRestoration=true`, `changedFlagCount=0`. No temporary Report overlay was required.
+- Final decision: `FACEBOOK_ORGANIC_1_3_7_30_REMATERIALIZED_VERIFIED`. The workstream is complete; do not rerun the live operator. Customer-owned Production and PR #661 remained out of scope with zero mutation.
+- Detailed retained closeout record: `docs/project-brain/facebook-organic-live-rematerialization-closeout-2026-08-21.md`.
 
 ## Historical changelog
 
