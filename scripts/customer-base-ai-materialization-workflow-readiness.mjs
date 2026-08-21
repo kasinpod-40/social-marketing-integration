@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
+import { createWorkflowExportReferenceAliasSourceClient } from './lib/customer-base-workflow-export-reference-source-client.js';
 import { printJson } from './lib/lark-runtime.js';
 import { buildCustomerBaseAiMaterializationWorkflowReadiness } from './lib/customer-base-ai-materialization-workflow-readiness.js';
 
@@ -40,13 +41,15 @@ async function main() {
     );
   }
 
-  const sourceClient = await createLarkBaseExportSourceClient(sourceFile);
+  const rawSourceClient = await createLarkBaseExportSourceClient(sourceFile);
+  const sourceClient = await createWorkflowExportReferenceAliasSourceClient(rawSourceClient);
   const result = await buildCustomerBaseAiMaterializationWorkflowReadiness({ sourceClient });
   printJson({
     ...result,
     sourceAuthority: {
       file: sourceFile,
       sha256: sourceSha256,
+      workflowExportReferenceAliases: sourceClient.getWorkflowExportReferenceAliasDiagnostics(),
     },
     safety: {
       applyAllowed: false,

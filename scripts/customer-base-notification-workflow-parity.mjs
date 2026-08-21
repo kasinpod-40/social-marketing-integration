@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
+import { createWorkflowExportReferenceAliasSourceClient } from './lib/customer-base-workflow-export-reference-source-client.js';
 import { printJson } from './lib/lark-runtime.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import {
@@ -45,7 +46,8 @@ async function main() {
     );
   }
 
-  const sourceClient = await createLarkBaseExportSourceClient(sourceFile);
+  const rawSourceClient = await createLarkBaseExportSourceClient(sourceFile);
+  const sourceClient = await createWorkflowExportReferenceAliasSourceClient(rawSourceClient);
   const plan = await buildCustomerBaseNotificationWorkflowPlan({ sourceClient });
   const targetAppToken = requireText(
     env.LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN,
@@ -90,6 +92,7 @@ async function main() {
       title: plan.title,
       trigger: plan.trigger,
       delayMinutes: plan.delayMinutes,
+      workflowExportReferenceAliases: sourceClient.getWorkflowExportReferenceAliasDiagnostics(),
     },
     target: { label: TARGET_LABEL },
     safety: {
