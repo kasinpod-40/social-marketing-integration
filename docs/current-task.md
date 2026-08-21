@@ -1,75 +1,92 @@
-# Current Task — Organic Dashboard Observed-Metric Repair v1
+# Current Task — Facebook Organic Live Rematerialization Rollout v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = MERGE_READY
-CURRENT_PROGRAM                     = ORGANIC_DASHBOARD_OBSERVED_METRIC_REPAIR_V1
-BASE_MAIN                           = ef5d5fc8697406102757537b5a07a4892ed096a6
-BRANCH                              = work/facebook-organic-observed-metric-aggregation-v1
-PR                                  = 662
-INTEGRATION_WORKSPACE               = NO_MUTATION_IN_REPOSITORY_PHASE
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = FACEBOOK_ORGANIC_LIVE_REMATERIALIZATION_ROLLOUT_V1
+BASE_MAIN                           = 0d8cac334405d755a108f2adea65e9cc6f4cd646
+BRANCH                              = work/facebook-organic-live-rematerialization-rollout-v1
+PR                                  = PENDING
+INTEGRATION_WORKSPACE               = LIVE_EXECUTION_AUTHORIZED_AFTER_MERGE
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
 CUSTOMER_BASE_PR_661                = OUT_OF_SCOPE_NO_MUTATION
 ```
 
 ## Objective
 
-แก้ Shared Organic Report aggregation ที่ทำให้ Facebook Likes / Comments / Shares / Engagement ทั้งก้อนกลายเป็น `null` เมื่อ historical content บางแถวไม่มี metric บางชนิด ทั้งที่ metric เดียวกันมี observed values ในแถวอื่นจำนวนมาก โดยต้องรักษา source `null` ไว้และห้ามแปลง missing value เป็นศูนย์.
+นำ Shared Organic aggregation repair ที่ merge แล้วจาก PR #662 ไปใช้กับ Integration Workspace อย่างปลอดภัย โดย deploy exact `main` code ใหม่โดย **รักษา execution/runtime flags ปัจจุบันของ Worker แบบ exact** แล้ว rematerialize เฉพาะ Facebook Organic Report 1D/3D/7D/30D จาก authoritative D1 facts ไป Lark Report tables โดยไม่ยิง Facebook Provider ใหม่ ไม่เปิด/ปิด Schedule โดยไม่ตั้งใจ และไม่แตะ Production/Customer Base.
 
-งานนี้คืน semantics ของ Shared Organic aggregate ให้สอดคล้องกับ retained TikTok Organic calculator เดิม แต่เพิ่ม fail-closed gate ให้ observed subtotal ใช้ได้เฉพาะเมื่อ source coverage เป็น `complete`/`revisable`; period aggregate ต้องมี baseline coverage ครบทุก tracked content ด้วย. Observed zero ยังคงเป็น `0`; negative corrections ไม่ถูก clamp.
+Live operator ต้องเป็น one-command, plan-only by default, fail-closed, resumable เฉพาะ verification หลัง recorded mutation และบันทึก private evidence ก่อน/หลังทุก remote mutation.
 
-## Verified incident evidence
+## Incident / release authority
 
-Latest Integration Base authority แสดง Facebook tracked content 101 แถว. `latest_views` สังเกตได้ครบ 101 แถว แต่ historical rows บางรายการมี `likes` / `comments` / `shares` เป็น `null`. Shared `calculate-organic-period-metrics.js` ใช้ strict aggregation จึงทำให้ null เพียงแถวเดียว propagate ไปเป็น aggregate `null`; Lark Dashboard แสดง card เชิงตัวเลขเป็น 0 ทั้งที่ source มี observed engagement metrics อยู่จริง.
-
-Meta Ads Daily / Creatives ไม่ใช่ส่วนของ code fix นี้. Current Meta end-to-end contract ให้ detailed paid facts อยู่ใน D1/Shared Report และไม่ได้อนุญาตให้เติม fake Meta rows ลง `MKT_Ads_Daily` / `MKT_Ads_Creatives` เพื่อแก้หน้าจอ.
+- PR #662 merge แล้วเข้า `main` ที่ exact SHA `0d8cac334405d755a108f2adea65e9cc6f4cd646`.
+- Repair เปลี่ยน Shared Organic aggregate ให้ complete/revisable coverage สามารถรวม observed members ได้ โดย source null และ row-level strict engagement ยังถูกเก็บไว้.
+- Existing generic Report closeout operators ไม่เหมาะกับ rollout นี้ตรง ๆ เพราะ baseline restore บาง path ตั้ง execution flags เป็น all-false หรือ Notification-only baseline ซึ่งอาจปิด Source/Report/Notification schedules ที่ Integration Workspace เปิดใช้อยู่แล้ว.
+- จึงต้อง reuse shared Report/D1/Lark/deployment primitives แต่เพิ่ม exact current-runtime preservation contract แทนการสร้าง Report engine ใหม่.
 
 ## In scope
 
-- Shared `calculateOrganicPeriodMetrics` aggregate semantics
-- coverage-gated observed subtotal สำหรับ period/current totals
-- aggregate Engagement จาก aggregate Likes + Comments + Shares ภายใต้ coverage gate เดียวกัน
-- focused regression สำหรับ mixed observed + missing rows
-- regression ว่า all-missing ยังเป็น `null`, observed zero ยังเป็น `0`, negative correction ยังอยู่
-- Project Brain / task closure documentation
+- Exact-current Worker runtime flag readback from active Cloudflare version.
+- Preserve every existing `MKT_*_ENABLED` remote flag value across deploy; local-only newly introduced flags may be admitted only when local default is false.
+- Preserve current non-execution runtime mode values required by the existing Worker contract; do not mutate credentials, D1/Queue bindings, routes, crons, table IDs or secret bindings.
+- Deploy current `main` code once with preserved baseline runtime state.
+- If Report execution flags are already enabled, reuse that exact baseline; otherwise create a temporary Report-only overlay by turning on only the two existing Shared Report execution flags and restore the exact captured baseline afterwards.
+- Rematerialize only Facebook Organic 1D/3D/7D/30D using existing stable Report identities and existing Queue job contract.
+- No Provider request; source watermark/period end come from D1 Coverage/Facts.
+- Preflight zero active Facebook Report work/locks/open Report DLQ/critical alerts and no pending migrations.
+- D1 backup before first queue mutation.
+- D1 ↔ Lark snapshot/metric/top-content parity verification after each window.
+- Verify observed Facebook metric repair result for Likes/Comments/Shares/Engagement without fabricating unavailable members.
+- Exact runtime restoration/readback plus post-run Alert/DLQ/Lock verification.
+- Focused tests, Branch Verification, Project Brain, CHANGELOG and release handoff.
 
 ## Out of scope
 
-- Provider refetch/backfill
-- Integration Lark mutationใน repository/CI phase
-- Worker deploy / schedule / Queue / D1 mutation
-- Production/customer Base mutation
-- PR #661 หรือ branch `work/customer-base-consolidation-v1`
-- Meta Ads projection expansion
+- Facebook Provider refetch/backfill or connector schedule replay.
+- Manual Lark metric editing.
+- Meta Ads `MKT_Ads_Daily` / `MKT_Ads_Creatives` projection expansion.
+- Any Production/customer-owned Cloudflare/Lark/D1/Queue mutation.
+- PR #661 or branch `work/customer-base-consolidation-v1`.
+- Schema migration, dashboard reconstruction, AI rerun or Notification resend.
+- Changing the normal Daily/Weekly schedule contract.
 
 ## Contract
 
-1. Source-level missing metric ต้องคง `null`; ห้าม normalize เป็น `0`.
-2. Row-level combined Engagement ยังคง strict; component ใด missing ทำให้ row Engagement เป็น `null`.
-3. Current-total aggregate ใช้ observed-value subtotal ได้เฉพาะ source coverage `complete` หรือ `revisable`.
-4. Period aggregate ใช้ observed-value subtotal ได้เมื่อ source coverage authoritative และ baseline coverage ครบทุก tracked content.
-5. ถ้า source/baseline coverage ไม่ครบ aggregate ยังคง strict/fail-closed.
-6. Metric ที่ไม่มี observed member เลยต้องเป็น `null` / `not_observed`.
-7. Observed zero และ negative corrections ต้องรักษาค่าจริง.
-8. Baseline identities, report identities, writer contracts และ Lark schema ไม่เปลี่ยน.
-9. ไม่สร้าง Report engine/helper layer ใหม่เมื่อแก้ calculator เดิมได้ตรงจุด.
+1. Operator is plan-only unless exact confirmation is supplied.
+2. Live execute requires clean `main` and exact expected release SHA; branch execution is forbidden.
+3. Capture active Cloudflare Worker version and all remote `MKT_*_ENABLED` values before deployment.
+4. A remote enabled-flag missing from local config is a hard failure; a new local-only flag is allowed only when its source default is false and remains false.
+5. Deploy baseline must preserve the captured remote execution-flag vector exactly.
+6. Report overlay may differ from captured baseline only by enabling existing `MKT_REPORT_D1_READ_ENABLED` and `MKT_REPORT_PRESET_MATERIALIZATION_ENABLED`; no other flag may change.
+7. If overlay deploy is needed, exact baseline must be restored and verified even after primary failure.
+8. Existing routes, crons, Queue topology, D1 identity, Lark table bindings and non-secret runtime mappings must remain identical to reviewed local contract; credentials/secrets are never printed.
+9. Facebook Report jobs use existing `report.materialization.generate` stable identities for exact 1/3/7/30 windows and current authoritative source watermark.
+10. No Provider calls, source refresh, replay of connector work or synthetic history.
+11. Before queue send require zero active Facebook Report work/locks, zero open Report DLQ/critical alerts, and zero pending D1 migrations.
+12. Create one private remote D1 backup before first queue send.
+13. Each window must complete with exactly one authoritative Report materialization identity, valid checksum, zero new Report DLQ, zero active Report lock and D1↔Lark value parity.
+14. Source metric nulls remain null; no direct Lark patch and no conversion of missing value to zero.
+15. After completion, exact captured runtime flags are the final Worker baseline; Schedule/Notification/Source flags must be unchanged from preflight.
+16. Any recorded deploy/send attempt forbids blind rerun; recovery is verification/restore-first and must use retained attempt evidence.
+17. Production stays blocked and PR #661 receives zero mutation.
 
 ## Acceptance criteria
 
-- Mixed observed/missing Facebook-like rows ภายใต้ complete coverage ให้ numeric observed aggregate แทน whole-metric `null`.
-- A metric with every member missing remains `null` / `not_observed`.
-- Partial/unproven source coverage remains strict null when any contributing member is unknown.
-- Existing complete-input behavior is unchanged.
-- Existing TikTok semantics remain compatible.
-- Focused tests pass.
+- Repository operator reuses existing Shared Report job builder, D1/Lark state verifier, Queue/Cloudflare primitives and does not fork report calculation logic.
+- Unit tests prove exact remote-flag preservation, local-only-false admission, remote-only flag rejection, Report-only overlay, exact restoration, and no schedule/notification flag loss.
+- Tests prove exact Facebook 1/3/7/30 job selection and no Provider/source work.
+- Tests prove attempt evidence blocks unsafe repeat.
 - `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit --audit-level=high`, `npm run deploy:dry-run`, `git diff --check` pass in Branch Verification.
-- No Integration/Production mutation occurs as part of Repository/CI implementation.
+- PR is merged only after all repository gates pass.
+- Live execution, when run from merged `main`, returns exact Worker version(s), four report IDs/checksums, zero parity drift, zero new DLQ/critical alert/active lock, and exact pre/post runtime flag equality.
+- No Production/customer Base mutation and no PR #661 mutation.
 
 ## Required tests
 
 ```bash
-node --test tests/application/calculate-organic-period-metrics-observed.test.js
+node --test tests/application/facebook-organic-live-rematerialization-rollout.test.js
 npm run check
 npm test
 npm run test:report-reliability
@@ -80,33 +97,4 @@ git diff --check
 
 ## Implementation result
 
-Implementation is complete and PR #662 is merge-ready pending the fresh Branch Verification triggered by these closure-document commits.
-
-Verified runtime change:
-- `calculate-organic-period-metrics.js` now uses observed subtotal only behind authoritative source/baseline coverage gates.
-- Source `null` values remain `null`; no missing metric is converted to zero.
-- Row-level Engagement remains strict; aggregate Engagement is derived from the aggregate component metrics under the same gate.
-- Observed zero and negative corrections are preserved.
-
-Regression coverage:
-- mixed observed + missing members under complete coverage
-- entirely unobserved metric remains null/not_observed
-- partial source coverage remains fail-closed
-- observed zero and negative correction preservation
-- prior report-materialization safety expectation updated to the reviewed authoritative-coverage contract
-
-Pre-closure verification:
-- Commit: `750729654e9c6f5b8b9189f29bf7374f7dbae63c`
-- Branch Verification Run: `32444055524`
-- Job: `96660217831`
-- Result: SUCCESS, all gates passed including Unit + Workers Runtime and Report Reliability.
-
-Safety evidence:
-- Integration Lark mutation: 0
-- D1 mutation: 0
-- Queue/DLQ mutation: 0
-- Worker deployment: 0
-- Production/customer Base mutation: 0
-- PR #661 mutation: 0
-
-The final PR head must pass Branch Verification once more before merge. The exact merge SHA will be taken from GitHub's merge result and used as the release authority in the handoff.
+Pending implementation and Branch Verification.
