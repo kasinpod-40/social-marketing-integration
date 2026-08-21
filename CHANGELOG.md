@@ -20,10 +20,12 @@
 ### Live preflight JSON-Boolean binding hotfix
 
 - Controlled Integration execution remained fail-closed before any remote mutation when the active Worker exposed `MKT_CONNECTOR_FACEBOOK_ENABLED` as a Cloudflare `json` Boolean binding. The original rollout helper incorrectly admitted only `plain_text` execution flags.
-- Updated remote flag readback to accept both reviewed Cloudflare forms: `plain_text` containing strict `true`/`false`, and `json` containing the actual Boolean `true`/`false`. JSON strings, objects, numbers, secret bindings and all other execution binding types remain rejected.
-- Baseline and temporary Report-overlay configs now preserve each local Wrangler flag's Boolean-vs-string representation instead of coercing every captured flag into text.
+- Audit of the next boundary found the shared post-deploy Report runtime verifier had the same `plain_text`-only assumption; leaving it unchanged could have caused the next attempt to fail only after baseline deployment.
+- PR #665 updates both preflight readback and shared deployment verification to accept the two reviewed Cloudflare Boolean forms: `plain_text` containing `true`/`false`, and `json` containing the actual Boolean `true`/`false`. JSON strings, objects, numbers, secret bindings and all other execution binding types remain rejected; conflicting duplicate flags also fail closed.
+- Baseline and temporary Report-overlay configs preserve each local Wrangler flag's Boolean-vs-string representation instead of coercing every captured flag into text.
+- Focused tests cover live readback, shared post-deploy verification, invalid JSON, unsupported binding types, duplicate conflicts and local representation preservation.
 - The failed live attempts produced zero Provider requests, zero Production mutation and no recorded deploy/send attempt evidence; no recovery/rollback was required.
-- Hotfix Branch Verification and merge remain required before the next controlled live attempt.
+- PR #665 final Branch Verification and merge remain required before the next controlled live attempt.
 - Customer-owned Production and PR #661 remain out of scope with zero mutation.
 
 ## Historical changelog
