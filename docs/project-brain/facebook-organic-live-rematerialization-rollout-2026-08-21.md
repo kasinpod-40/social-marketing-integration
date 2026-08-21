@@ -50,13 +50,8 @@ reviewed continuation instead of replaying automatically.
 
 ## Repository implementation
 
-Primary rollout branch:
-`work/facebook-organic-live-rematerialization-rollout-v1`
-
-PR #663 merged to `main`.
-
-Exact merge SHA:
-`55435bbabbf5788a2cb76790ed5e0b3d137587fb`
+Primary rollout PR #663 merged to `main` at exact SHA
+`55435bbabbf5788a2cb76790ed5e0b3d137587fb`.
 
 Files:
 
@@ -80,7 +75,7 @@ at `local-config-and-current-runtime` with
 `overlayDeploymentAttempted=false`, Provider request count 0 and Production mutation
 count 0; no deploy/send attempt evidence existed.
 
-Root cause is repository-side readback strictness, not a broken active Worker value.
+Root cause was repository-side readback strictness, not a broken active Worker value.
 Wrangler's binding conversion maps string `vars` to `plain_text`, but non-string
 `vars` to `json`; Workers API metadata exposes JSON vars through `binding.json`.
 The original live helper accepted only `plain_text`, so a legitimate JSON Boolean
@@ -90,16 +85,27 @@ Audit of the next execution boundary found the same assumption in the shared
 `report-runtime-closeout-reviewed-remote.js` deployment verifier. Leaving that code
 unchanged would let a future attempt pass preflight, deploy the baseline, and then
 misreport any true JSON Boolean flag as absent. Because that failure would occur
-after a remote mutation, the hotfix must repair both readback surfaces before another
-live attempt is allowed.
+after a remote mutation, both readback surfaces were repaired before another live
+attempt was allowed.
+
+## JSON Boolean hotfix — merged
 
 Hotfix branch:
 `work/facebook-organic-json-flag-binding-hotfix-v1`
 
-Hotfix PR:
-`#665`
+PR #665 exact head:
+`728cdfec7b0ec082db1b0d8e23c4829f37f32c26`
 
-Hotfix contract:
+Branch Verification:
+
+- Run `32453689935`
+- Job `96686791658`
+- Result `SUCCESS` every step
+
+PR #665 merged to `main` at exact SHA:
+`0c7a06430d7f9f87bf85bda3313e2d3b5940bb91`
+
+Merged hotfix contract:
 
 - admit `plain_text` only when its value parses to true/false;
 - admit `json` only when `binding.json`/fallback value is the actual Boolean
@@ -119,20 +125,18 @@ binding rejection, duplicate conflicts and local representation preservation.
 
 ## Verification evidence
 
-Implementation code/test commit before closure docs:
-`1ba7928f9e2529d1291efb073fc54bea7d2448a8`
-
-Pre-closure Branch Verification:
-
-- Run `32446106165`
-- Job `96665851523`
-- Result: `SUCCESS`
-
-Final documentation-closure Branch Verification on PR #663 head
+PR #663 final documentation-closure Branch Verification on head
 `c2c73ebe1117018c73375f9903e152c6430c8848`:
 
 - Run `32446529335`
 - Job `96667104644`
+- Result: `SUCCESS`
+
+PR #665 final Branch Verification on head
+`728cdfec7b0ec082db1b0d8e23c4829f37f32c26`:
+
+- Run `32453689935`
+- Job `96686791658`
 - Result: `SUCCESS`
 - Syntax/architecture/hygiene: pass
 - focused source/readiness regressions: pass
@@ -141,20 +145,18 @@ Final documentation-closure Branch Verification on PR #663 head
 - dependency audit: pass
 - Wrangler dry run: pass
 - diff whitespace check: pass
-
-PR #665 final verification remains pending until Branch Verification completes on
-its exact final head.
+- diagnostics/post steps: pass
 
 ## Current boundary
 
-Live Integration execution has not completed. The latest controlled attempt stopped
-before remote mutation on a repository readback compatibility guard, so no recovery
+Repository implementation is complete again. Live Integration execution has not
+completed. The last controlled attempt stopped before remote mutation, so no recovery
 or rollback is required for that attempt.
 
-Do not rerun the old merged operator. First merge PR #665 after exact-head Branch
-Verification succeeds, then run the controlled live execution from a clean updated
-`main` on a machine that has the real `.dev.vars`, retained Integration config
-authority, Lark credentials and Cloudflare/Wrangler authorization.
+The next action is one controlled live execution from a clean updated `main` at/after
+`0c7a06430d7f9f87bf85bda3313e2d3b5940bb91` on a machine that has the real
+`.dev.vars`, retained Integration config authority, Lark credentials and
+Cloudflare/Wrangler authorization.
 
 Do not claim closure until live evidence proves all four Facebook windows, D1↔Lark
 zero drift, observed aggregate repair, zero Report DLQ/critical alert/lock and exact
