@@ -33,6 +33,9 @@ test('View UI server mirrors the exact pinned SDK module graph before READY and 
   assert.match(source, /sdkDeliveryMode: sdkBundle\.deliveryMode/u);
   assert.match(source, /sdkModuleCount: sdkBundle\.moduleCount/u);
   assert.match(source, /stage=html-executed/u);
+  assert.doesNotMatch(source, /esm\.sh\/@lark-base-open\/js-sdk/u);
+  assert.doesNotMatch(source, /loadPinnedLarkBaseJsSdk\(/u);
+  assert.doesNotMatch(source, /CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE/u);
 
   const resolveIndex = source.indexOf('const sdkBundle = await loadPinnedLarkBaseJsSdkMirror();');
   const listenIndex = source.indexOf('server.listen(port, host');
