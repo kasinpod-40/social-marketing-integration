@@ -104,7 +104,7 @@ This is a narrow content-addressed layout revision, not a general plan-count rel
 
 ## Source resolver behavior
 
-`scripts/customer-base-view-ui-parity-server.mjs` now:
+`scripts/customer-base-view-ui-parity-server.mjs`:
 
 1. verifies the immutable original checkpoint SHA and baseline Source authority;
 2. discovers `Social MKT Data Hub*.base` from Desktop and Downloads unless explicitly configured;
@@ -118,6 +118,49 @@ This is a narrow content-addressed layout revision, not a general plan-count rel
 10. reports `sourcePlanAuthorityMode` and `sortViews` in its READY summary.
 
 The local read-only diagnostic uses the same authority function, so it no longer reports the approved `9c24...` layout as blocked.
+
+## Local extension reachability evidence
+
+The initial localhost runner reported `READY`, but a Lark Base extension using `127.0.0.1:4173` remained on the host `Loading…` screen and never rendered the runner UI. No SDK preflight or mutation occurred.
+
+The runner was then bound to the Mac LAN IPv4. Lark subsequently produced request evidence on the Mac server for `GET /` and `GET /app.js`, proving that LAN transport was working. The panel still remained on `Loading…`, isolating the remaining failure boundary to browser-side SDK bootstrap rather than host/IP reachability.
+
+Lark's official HTML template imports `@lark-base-open/js-sdk` as a package dependency that is bundled into the frontend build. The earlier parity browser instead imported `https://esm.sh/@lark-base-open/js-sdk@1.0.2` directly at iframe runtime. That external browser import is now removed.
+
+## Same-origin pinned SDK bootstrap
+
+The runner now localizes the pinned SDK before it can report `READY`:
+
+1. SDK version is fixed at `1.0.2`;
+2. Node fetches the pinned `esm.sh` standalone build server-side with a timeout;
+3. if the CDN entry is a root-relative `esm.sh` module stub, the server resolves it server-side with a hard hop limit;
+4. every followed module path is fenced to HTTPS `esm.sh` only;
+5. after resolution, any remaining browser module dependency causes fail-closed startup;
+6. the final body must meet a minimum byte floor and retain the `bitable` export shape;
+7. the runner computes SHA-256 and byte count for the resolved SDK body;
+8. only then may `server.listen()` run and emit `READY`;
+9. the SDK body is served from the runner origin as `/lark-base-js-sdk.mjs`;
+10. `customer-base-view-ui-parity.browser.js` imports only that same-origin path and no longer imports `esm.sh` directly.
+
+READY/health expose:
+
+```text
+sdkDeliveryMode = same-origin-pinned-standalone
+sdkVersion      = 1.0.2
+sdkSha256       = <resolved body SHA-256>
+sdkBytes        = <resolved body bytes>
+```
+
+This does not introduce a second migration path and does not grant any new mutation capability; it only changes how the already-pinned frontend SDK bytes reach the Lark iframe.
+
+## Boot-stage evidence
+
+Two transport-only markers make the remaining browser boundary observable without calling any Base API:
+
+- `/client-event?stage=html-executed` — inline HTML executed;
+- `/client-event?stage=browser-module-loaded` — emitted after the same-origin SDK import completed and the browser module began executing.
+
+Every request is logged as `[view-ui-local] ...`. Neither marker reads or writes a Table. Target reads still begin only when the user clicks a runner action and `preflight()` starts; Target mutations remain impossible until full preflight completes.
 
 ## Target preflight before first UI mutation
 
@@ -144,6 +187,11 @@ No documented setter was found for:
 - frozen-column count.
 
 These remain manual/audit. Formula presentation 4, one dynamic-date filter, Dashboards 6 / 75 charts and Workflows 2 also remain separate closure work.
+
+## Regression coverage
+
+- `tests/scripts/lark-base-view-js-sdk-parity.test.js` keeps structural/layout authority fail-closed, including exact 42-sort revision inventory;
+- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` requires the browser to import only `/lark-base-js-sdk.mjs`, prevents direct browser `esm.sh` SDK imports, pins SDK `1.0.2`, requires standalone resolution before `server.listen()`, and locks both boot-stage markers.
 
 ## No-repeat rules
 
