@@ -65,6 +65,7 @@ export function calculateAdsDerivedMetrics(metrics = {}) {
   const spendMicros = nullableMoneyMicros(metrics.spend_micros, 'spend_micros');
   const impressions = nullableCount(metrics.impressions, 'impressions');
   const clicks = nullableCount(metrics.clicks, 'clicks');
+  const conversions = nullableNonNegativeNumber(metrics.conversions, 'conversions');
   const conversionValueMicros = nullableMoneyMicros(
     metrics.conversion_value_micros,
     'conversion_value_micros',
@@ -75,6 +76,7 @@ export function calculateAdsDerivedMetrics(metrics = {}) {
     cpm: impressions && spendMicros !== null
       ? ((spendMicros / impressions) * 1_000) / ADS_MONEY_SCALE
       : null,
+    cpa: microsRateToCurrencyUnits(spendMicros, conversions),
     actual_roas: safeDivide(conversionValueMicros, spendMicros),
   });
 }
