@@ -27,7 +27,7 @@ async function run({ execute }) {
     setStatus(execute ? 'กำลัง preflight ก่อนจัด View…' : 'กำลังตรวจ View…');
     const context = await preflight(plan);
     if (execute) {
-      setStatus('Preflight ผ่าน กำลังจัด sort / group / width / row height…');
+      setStatus('Preflight ผ่าน กำลังจัด sort / group…');
       await applySupportedParity(context);
     }
     setStatus('กำลังตรวจ readback…');
@@ -35,8 +35,8 @@ async function run({ execute }) {
     const summary = buildSummary(plan, verification, { execute });
     printSummary(summary);
     setStatus(summary.ok
-      ? (execute ? 'ส่วนที่ Base JS SDK รองรับผ่านแล้ว' : 'ตรวจผ่าน')
-      : 'ยังมี UI parity ที่ต้องจัด/ตรวจต่อ');
+      ? (execute ? 'Sort / Group parity ผ่านแล้ว' : 'ตรวจผ่าน')
+      : 'ยังมี Sort / Group parity ที่ต้องจัด/ตรวจต่อ');
   } catch (error) {
     const summary = {
       ok: false,
@@ -116,19 +116,12 @@ async function preflight(plan) {
       if ((viewPlan.mutate?.group ?? []).length > 0 || typeof view.getGroupInfo === 'function') {
         requireMethods(view, ['getGroupInfo', 'deleteGroup', 'addGroup'], `${tablePlan.tableName}.${viewPlan.viewName}`);
       }
-      if (Object.keys(viewPlan.mutate?.columnWidths ?? {}).length > 0) {
-        requireMethods(view, ['getFieldWidth', 'setFieldWidth'], `${tablePlan.tableName}.${viewPlan.viewName}`);
-      }
-      if (viewPlan.mutate?.rowHeightLevel !== null && viewPlan.mutate?.rowHeightLevel !== undefined) {
-        requireMethods(view, ['setRowHeight'], `${tablePlan.tableName}.${viewPlan.viewName}`);
-      }
 
       const referencedFieldNames = new Set([
         ...(viewPlan.verifyOnly?.fieldOrder ?? []),
         ...(viewPlan.verifyOnly?.hiddenFieldNames ?? []),
         ...(viewPlan.mutate?.sort ?? []).map((item) => item.fieldName),
         ...(viewPlan.mutate?.group ?? []).map((item) => item.fieldName),
-        ...Object.keys(viewPlan.mutate?.columnWidths ?? {}),
       ]);
       for (const fieldName of referencedFieldNames) {
         if (!fieldByName.has(fieldName)) {
@@ -136,7 +129,8 @@ async function preflight(plan) {
         }
       }
 
-      const expectedHiddenIds = new Set((viewPlan.verifyOnly?.hiddenFieldNames ?? []).map((name) => requireId(fieldByName.get(name), `${tablePlan.tableName}.${name}`)));
+      const expectedHiddenIds = new Set((viewPlan.verifyOnly?.hiddenFieldNames ?? [])
+        .map((name) => requireId(fieldByName.get(name), `${tablePlan.tableName}.${name}`)));
       const allFieldIds = fieldMetas.map((meta) => requireId(meta, `${tablePlan.tableName} field`));
       const expectedVisibleIds = allFieldIds.filter((id) => !expectedHiddenIds.has(id)).sort();
       const actualVisibleIds = [...await view.getVisibleFieldIdList()].sort();
@@ -169,8 +163,12 @@ async function applySupportedParity(context) {
       const expectedSort = remapRules(item.plan.mutate?.sort ?? [], item.fieldByName, item.tableName);
       const currentSort = normalizeSdkRules(await item.view.getSortInfo());
       if (!sameJson(currentSort, expectedSort)) {
-        for (const rule of await item.view.getSortInfo()) await requireMutation(item.view.deleteSort(rule), `deleteSort ${item.tableName}.${item.viewName}`);
-        if (expectedSort.length > 0) await requireMutation(item.view.addSort(expectedSort), `addSort ${item.tableName}.${item.viewName}`);
+        for (const rule of await item.view.getSortInfo()) {
+          await requireMutation(item.view.deleteSort(rule), `deleteSort ${item.tableName}.${item.viewName}`);
+        }
+        if (expectedSort.length > 0) {
+          await requireMutation(item.view.addSort(expectedSort), `addSort ${item.tableName}.${item.viewName}`);
+        }
         needsApplySetting = true;
       }
 
@@ -178,29 +176,21 @@ async function applySupportedParity(context) {
         const expectedGroup = remapRules(item.plan.mutate?.group ?? [], item.fieldByName, item.tableName);
         const currentGroup = normalizeSdkRules(await item.view.getGroupInfo());
         if (!sameJson(currentGroup, expectedGroup)) {
-          for (const rule of await item.view.getGroupInfo()) await requireMutation(item.view.deleteGroup(rule), `deleteGroup ${item.tableName}.${item.viewName}`);
-          if (expectedGroup.length > 0) await requireMutation(item.view.addGroup(expectedGroup), `addGroup ${item.tableName}.${item.viewName}`);
+          for (const rule of await item.view.getGroupInfo()) {
+            await requireMutation(item.view.deleteGroup(rule), `deleteGroup ${item.tableName}.${item.viewName}`);
+          }
+          if (expectedGroup.length > 0) {
+            await requireMutation(item.view.addGroup(expectedGroup), `addGroup ${item.tableName}.${item.viewName}`);
+          }
           needsApplySetting = true;
         }
       } else if ((item.plan.mutate?.group ?? []).length > 0) {
         throw codedError('VIEW_UI_GROUP_CAPABILITY_MISSING', `Group API missing: ${item.tableName}.${item.viewName}`);
       }
 
-      for (const [fieldName, width] of Object.entries(item.plan.mutate?.columnWidths ?? {})) {
-        const fieldId = requireId(item.fieldByName.get(fieldName), `${item.tableName}.${fieldName}`);
-        const currentWidth = await item.view.getFieldWidth(fieldId);
-        if (Number(currentWidth) !== Number(width)) {
-          await requireMutation(item.view.setFieldWidth(fieldId, Number(width)), `setFieldWidth ${item.tableName}.${item.viewName}.${fieldName}`);
-        }
+      if (needsApplySetting) {
+        await requireMutation(item.view.applySetting(), `applySetting ${item.tableName}.${item.viewName}`);
       }
-
-      const rowHeight = item.plan.mutate?.rowHeightLevel;
-      if (rowHeight !== null && rowHeight !== undefined) {
-        await requireMutation(item.view.setRowHeight(Number(rowHeight)), `setRowHeight ${item.tableName}.${item.viewName}`);
-        needsApplySetting = true;
-      }
-
-      if (needsApplySetting) await item.view.applySetting();
     }
   }
 }
@@ -211,7 +201,6 @@ async function verify(context) {
   let hiddenMismatchViews = 0;
   let sortMismatchViews = 0;
   let groupMismatchViews = 0;
-  let widthMismatchAssignments = 0;
 
   for (const table of context.tables) {
     for (const item of table.views) {
@@ -224,8 +213,12 @@ async function verify(context) {
       }
 
       const viewFieldByName = uniqueByName(viewFieldMetas, `View field in ${item.tableName}.${item.viewName}`);
-      const expectedHiddenIds = new Set((item.plan.verifyOnly?.hiddenFieldNames ?? []).map((name) => requireId(viewFieldByName.get(name), `${item.tableName}.${name}`)));
-      const expectedVisibleIds = viewFieldMetas.map((meta) => requireId(meta, `${item.tableName} field`)).filter((id) => !expectedHiddenIds.has(id)).sort();
+      const expectedHiddenIds = new Set((item.plan.verifyOnly?.hiddenFieldNames ?? [])
+        .map((name) => requireId(viewFieldByName.get(name), `${item.tableName}.${name}`)));
+      const expectedVisibleIds = viewFieldMetas
+        .map((meta) => requireId(meta, `${item.tableName} field`))
+        .filter((id) => !expectedHiddenIds.has(id))
+        .sort();
       const actualVisibleIds = [...await item.view.getVisibleFieldIdList()].sort();
       if (!sameJson(expectedVisibleIds, actualVisibleIds)) {
         hiddenMismatchViews += 1;
@@ -247,15 +240,6 @@ async function verify(context) {
           mismatches.push({ dimension: 'group', tableName: item.tableName, viewName: item.viewName });
         }
       }
-
-      for (const [fieldName, width] of Object.entries(item.plan.mutate?.columnWidths ?? {})) {
-        const fieldId = requireId(viewFieldByName.get(fieldName), `${item.tableName}.${fieldName}`);
-        const actualWidth = await item.view.getFieldWidth(fieldId);
-        if (Number(actualWidth) !== Number(width)) {
-          widthMismatchAssignments += 1;
-          mismatches.push({ dimension: 'columnWidth', tableName: item.tableName, viewName: item.viewName, fieldName });
-        }
-      }
     }
   }
 
@@ -264,7 +248,6 @@ async function verify(context) {
     hiddenMismatchViews,
     sortMismatchViews,
     groupMismatchViews,
-    widthMismatchAssignments,
     mismatchPreview: mismatches.slice(0, 10),
   };
 }
@@ -272,8 +255,7 @@ async function verify(context) {
 function buildSummary(plan, verification, { execute }) {
   const supportedOk = verification.hiddenMismatchViews === 0
     && verification.sortMismatchViews === 0
-    && verification.groupMismatchViews === 0
-    && verification.widthMismatchAssignments === 0;
+    && verification.groupMismatchViews === 0;
   return {
     ok: supportedOk,
     stage: 'customer-base-view-ui-parity',
@@ -283,8 +265,12 @@ function buildSummary(plan, verification, { execute }) {
       hiddenVerifyMismatchViews: verification.hiddenMismatchViews,
       sortMismatchViews: verification.sortMismatchViews,
       groupMismatchViews: verification.groupMismatchViews,
-      widthMismatchAssignments: verification.widthMismatchAssignments,
-      rowHeightTargetViews: plan.summary.rowHeightViews,
+    },
+    ignoredCosmetic: {
+      columnWidthViews: plan.summary.columnWidthViews,
+      columnWidthAssignments: plan.summary.columnWidthAssignments,
+      rowHeightViews: plan.summary.rowHeightViews,
+      reason: 'non-authoritative presentation only',
     },
     remainingManual: {
       fieldOrderMismatchViews: verification.fieldOrderMismatchViews,
