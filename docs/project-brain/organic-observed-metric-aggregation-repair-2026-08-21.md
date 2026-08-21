@@ -27,6 +27,6 @@ The same Base inspection showed `MKT_Ads_Daily` and `MKT_Ads_Creatives` contain 
 
 ## Verification
 
-PR #662 Branch Verification run `32443849995` passed the focused readiness suites, Unit + Workers Runtime, Report Reliability, Dependency Audit, Wrangler dry run and diff whitespace check on commit `6193ff56ea586d16010b8a2b35de4812bc840277` before closure-document updates.
+PR #662 Branch Verification run `32444055524`, job `96660217831`, passed every gate on commit `750729654e9c6f5b8b9189f29bf7374f7dbae63c`: architecture/hygiene, focused Report/Meta/Woo/Chatwoot/TikTok suites, full Unit + Workers Runtime, Report Reliability, Dependency Audit, Wrangler dry run and diff whitespace check.
 
-Final merge SHA and post-document CI evidence must be recorded in `docs/current-task.md` after the final branch verification and merge.
+The closure-document commits do not change runtime behavior. The final PR head must still receive a fresh Branch Verification before merge; the merge result is the authoritative final SHA.
