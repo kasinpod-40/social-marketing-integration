@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLarkBaseViewJsSdkParityPlan } from '../../scripts/lib/lark-base-view-js-sdk-parity.js';
+import {
+  assessLarkBaseViewUiRefreshSourceAuthority,
+  buildLarkBaseViewJsSdkParityPlan,
+} from '../../scripts/lib/lark-base-view-js-sdk-parity.js';
 
 test('projects retained View manifest into documented Base JS SDK mutations', () => {
   const plan = buildLarkBaseViewJsSdkParityPlan(fixtureManifest({
@@ -95,6 +98,53 @@ test('omits null widths and rejects unsafe row height', () => {
     () => buildLarkBaseViewJsSdkParityPlan(fixtureManifest({ rowHeightLevel: 5 })),
     /must be an integer from 1 to 4/u,
   );
+});
+
+test('admits a different Source SHA when controlled refresh structure remains exact', () => {
+  const assessment = assessLarkBaseViewUiRefreshSourceAuthority({
+    file: { sha256: 'different-current-source-sha' },
+    counts: {
+      tables: 33,
+      fields: 723,
+      records: 36_001,
+      views: 111,
+      relationFields: 12,
+      formulaFields: 4,
+      dashboards: 6,
+      workflows: 2,
+      advancedPermissionRoles: 4,
+    },
+  });
+
+  assert.equal(assessment.ok, true);
+  assert.equal(assessment.authorityMode, 'refresh-compatible');
+  assert.equal(assessment.fileSha256, 'different-current-source-sha');
+  assert.equal(assessment.records, 36_001);
+  assert.deepEqual(assessment.mismatches, []);
+});
+
+test('rejects View UI Source when structure or record floor differs', () => {
+  const assessment = assessLarkBaseViewUiRefreshSourceAuthority({
+    file: { sha256: 'bad-source' },
+    counts: {
+      tables: 33,
+      fields: 722,
+      records: 35_000,
+      views: 111,
+      relationFields: 12,
+      formulaFields: 4,
+      dashboards: 6,
+      workflows: 2,
+      advancedPermissionRoles: 4,
+    },
+  });
+
+  assert.equal(assessment.ok, false);
+  assert.equal(assessment.authorityMode, null);
+  assert.deepEqual(assessment.mismatches, [
+    { dimension: 'fields', expected: 723, actual: 722 },
+    { dimension: 'records', expectedMinimum: 35_528, actual: 35_000 },
+  ]);
 });
 
 function fixtureManifest(manual) {
