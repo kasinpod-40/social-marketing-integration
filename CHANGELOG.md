@@ -25,7 +25,8 @@
 - Baseline and temporary Report-overlay configs preserve each local Wrangler flag's Boolean-vs-string representation instead of coercing every captured flag into text.
 - Focused tests cover live readback, shared post-deploy verification, invalid JSON, unsupported binding types, duplicate conflicts and local representation preservation.
 - The failed live attempts produced zero Provider requests, zero Production mutation and no recorded deploy/send attempt evidence; no recovery/rollback was required.
-- PR #665 final Branch Verification and merge remain required before the next controlled live attempt.
+- PR #665 exact head `728cdfec7b0ec082db1b0d8e23c4829f37f32c26` passed Branch Verification Run `32453689935`, Job `96686791658`, `SUCCESS` every step, then merged to `main` at exact SHA `0c7a06430d7f9f87bf85bda3313e2d3b5940bb91`.
+- Repository implementation is complete again; controlled Live Integration execution remains pending.
 - Customer-owned Production and PR #661 remain out of scope with zero mutation.
 
 ## Historical changelog
