@@ -516,13 +516,17 @@ function sameStringSet(a, b) {
 }
 
 function parseMaybeJson(value, label) {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw codedError(
-      'CUSTOMER_BASE_NOTIFICATION_WORKFLOW_SOURCE_DRAFT_MISSING',
-      `${label} is missing`,
-    );
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (
+      value.encoding === 'json'
+      && value.value
+      && typeof value.value === 'object'
+      && !Array.isArray(value.value)
+    ) return value.value;
+    return value;
   }
+  if (typeof value !== 'string') return null;
   try {
     return JSON.parse(value);
   } catch (cause) {
