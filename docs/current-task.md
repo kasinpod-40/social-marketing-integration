@@ -3,7 +3,7 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = DASHBOARD_REMAINDER_AND_WORKFLOW_CLOSURE
+TASK_STATUS                         = WORKFLOW_CLOSURE_AND_FINAL_EXPORT
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
@@ -28,12 +28,11 @@ FORMULA_PRESENTATION                = COMPLETE_4_OF_4
 DYNAMIC_DATE_VIEW_FILTER            = LIVE_PASS_DO_NOT_RERUN
 DASHBOARD_CONTAINERS                = PASS_6_OF_6
 DASHBOARD_DOCUMENTED_BLOCKS         = PASS_66_OF_66_MISMATCH_0_DO_NOT_RERUN
-DASHBOARD_UNSUPPORTED_COMPONENTS    = REMAINDER_7_SLICER_2_TABLE_VIEW
-DASHBOARD_THEME                     = DEFERRED_CURRENT_GENERIC_CONTAINER_SPECIALIZED_ROUTE_CODE_1
-WORKFLOW_NOTIFICATION               = DOCUMENTED_API_OPERATOR_STAGED_PREVIEW_PENDING
-WORKFLOW_AI_MATERIALIZATION         = DOCUMENTED_API_SEMANTIC_CONVERSION_PENDING
+DASHBOARD_MANUAL_REMAINDER          = USER_ACCEPTED_7_SLICER_2_TABLE_VIEW_THEME
+WORKFLOW_NOTIFICATION               = DOCUMENTED_API_READY_PREVIEW_CI_LIVE_CREATE_PENDING
+WORKFLOW_AI_MATERIALIZATION         = DOCUMENTED_TYPES_READY_NULL_CLEAR_BLOCKED
 DRAFT_PR                            = 661
-PRODUCTION                          = BLOCKED_PENDING_REMAINDER_WORKFLOW_FINAL_EXPORT
+PRODUCTION                          = BLOCKED_PENDING_WORKFLOW_FINAL_EXPORT
 ```
 
 ## Closed — never rerun
@@ -56,7 +55,7 @@ Closed state also includes:
 
 Do not rerun automatic Apply, Sort/Group, Formula presentation, Dynamic Date Filter, or Dashboard documented-block materialization.
 
-## Dashboard documented API closure
+## Dashboard closure
 
 Current Source contains exactly six Dashboards / 75 blocks:
 
@@ -73,83 +72,42 @@ Exact current Source block-kind boundary:
 statistics     39   documented API — PASS
 text           18   documented API — PASS
 column          9   documented API — PASS
-slicer          7   public Dashboard block enum absent
-table_view      2   public Dashboard block enum absent
+slicer          7   public Dashboard block enum absent — manual remainder
+table_view      2   public Dashboard block enum absent — manual remainder
 TOTAL          75
 ```
 
-Live materialization result on exact branch HEAD `e40b23083126d8f6c8937683762985f5be73a486`:
+Live documented-block materialization:
 
 ```text
-status                         DASHBOARD_DOCUMENTED_API_BLOCKS_PASS_WITH_UNSUPPORTED_REMAINDER
+HEAD                           e40b23083126d8f6c8937683762985f5be73a486
+Branch Verification Run        32480035425
+Branch Verification Job        96764194928
+Result                          SUCCESS
 Dashboard containers           6 / 6
 Documented blocks              66 / 66
 Documented mismatch            0
-Unsupported remainder          9
-  slicer                       7
-  table_view                   2
-Table mutation                 0
-Field mutation                 0
-Record mutation                0
-View mutation                  0
-Formula mutation               0
-Role mutation                  0
-Workflow mutation              0
+Table/Field/Record/View/etc.    0 mutation
 ```
 
-Branch Verification for that live materialization gate:
+The 66-block stage is closed. Never rerun it unless a later read-only final audit proves drift.
 
-```text
-Run 32480035425
-Job 96764194928
-SUCCESS
-```
+### Dashboard presentation remainder
 
-The documented-block stage is closed. Never rerun it unless a later read-only final audit proves drift.
+Remaining Dashboard presentation-only parity is:
 
-## Dashboard theme incident and rule
+- 7 Slicers;
+- 2 Table View widgets;
+- Source theme `summerBreeze`.
 
-Source theme is `summerBreeze`. Lark public Dashboard update documentation confirms this is a valid public enum and documents:
-
-```text
-PATCH /open-apis/base/v3/bases/{base_token}/dashboards/{dashboard_id}
-body = {"theme":{"theme_style":"summerBreeze"}}
-```
-
-However the six customer Dashboards were materialized through the generic Base Block lifecycle so they could be created directly inside the approved Folder without staging elsewhere. Those containers successfully host all 66 Dashboard components through `/dashboards/{id}/blocks`, but the specialized Dashboard detail/update route rejects the same current container identity with:
-
-```text
-HTTP 200
-Lark code 1
-```
-
-The first live Theme PATCH failed on `💬 Customer Service & Leads` with `completedDashboards=[]`; therefore confirmed Theme mutation count is `0`.
-
-Do not retry the Theme PATCH on the current containers.
-
-The Theme operator now has a mandatory specialized Dashboard `GET` preflight before any PATCH. If the current container shape returns the known `HTTP 200 / Lark code 1`, the operator must terminate safely with:
-
-```text
-DASHBOARD_THEME_DEFERRED_CONTAINER_UPDATE_UNSUPPORTED
-```
-
-and all mutation counts `0`.
-
-Theme parity remains an explicit presentation remainder. Do not delete/recreate the six Dashboards or the 66 passed components just to set theme. Only reopen Theme if a documented conversion/attachment/update route for the current generic-created Dashboard container is proven.
-
-## Dashboard unsupported component remainder
-
-Current remainder remains exactly:
-
-- 7 Slicers
-- 2 Table View widgets
-
-Do not send guessed internal chart kinds or decoded snapshot payloads to production. Close only through a documented/proven Dashboard component contract or minimal supported UI if the user explicitly chooses that path.
+The user accepted handling this remainder manually. It no longer blocks the API workstream.
 
 Known Table View semantic mappings:
 
 - `🔄 Latest Sync Runs` → `🔄 MKT_Sync_Log` → `📊 Dashboard Sync Health`
 - `🚨 Recent System Alerts` → `🚨 MKT_System_Alerts` → `📊 Dashboard Alerts`
+
+Theme rule remains fail-closed: the six current generic-created Dashboard containers host all 66 documented components, but specialized Dashboard GET/PATCH rejects their current identity with HTTP 200 / Lark code 1. The first Theme PATCH failed before any completed Dashboard (`completedDashboards=[]`), so confirmed Theme mutation count is `0`. Never retry Theme PATCH on these containers and never delete/recreate them just to set theme.
 
 ## Workflows
 
@@ -158,9 +116,9 @@ Two Source Workflows remain:
 1. `AI Materialization → MKT_AI_Report_Runs`
 2. `Eligible AI Run → Lark Group Notification`
 
-Current official Lark CLI Base Workflow SSOT now proves public list/get/create/update/enable/disable contracts. Raw Source Draft/FlowSchema/auth/generated IDs still must never be replayed directly.
+Current official Lark CLI Base Workflow SSOT proves public list/get/create/update/enable/disable contracts. Raw Source Draft/FlowSchema/auth/generated IDs must never be replayed directly.
 
-### Notification Workflow — documented API operator staged
+### Notification Workflow — documented API ready
 
 Current Source semantic definition is exactly:
 
@@ -175,11 +133,13 @@ AddRecordTrigger
 
 The current Source contains no message-send action in this Workflow. Parity must not invent one.
 
-Staged operator:
+Files:
 
 - `scripts/lib/customer-base-notification-workflow-parity.js`
+- `scripts/lib/customer-base-workflow-placement.js`
 - `scripts/customer-base-notification-workflow-parity.mjs`
 - `tests/scripts/customer-base-notification-workflow-parity.test.js`
+- `tests/scripts/customer-base-workflow-placement.test.js`
 - `docs/project-brain/customer-base-notification-workflow-documented-api-parity-2026-08-21.md`
 
 Contract:
@@ -190,20 +150,74 @@ Contract:
 - public Workflow list/get only in preview;
 - duplicate/conflicting same-title Workflow fails closed;
 - absent Workflow is planned for one disabled create only;
-- new Workflow remains disabled; operator has no enable path;
+- new Workflow remains disabled; operator has no enable/update/message path;
 - readback verifies exact AddRecordTrigger → Delay definition and disabled status;
-- rerun reuses an exact existing disabled Workflow with zero writes;
-- no notification send, AI call, record mutation, update, delete, Worker/D1/Queue/schedule/deploy mutation.
+- deterministic create token + list discovery makes ambiguous create resumable;
+- Base Block topology resolves the approved folder and Workflow block identity;
+- official Base Block contract confirms Workflow block `id` equals `workflow_id`;
+- if needed, move only the Workflow block under `Setup Phase | Social MKT Data Hub` and list-readback placement;
+- if create succeeds but move fails, rerun reuses the same disabled Workflow and performs only the missing move;
+- no notification send, AI call, record mutation, delete, Worker/D1/Queue/schedule/deploy mutation.
 
 Exact create confirmation:
 
 `APPLY_CUSTOMER_BASE_NOTIFICATION_WORKFLOW_PARITY_V1`
 
-Focused synthetic regression passed 5/5 before repository staging. No customer Target Workflow mutation was executed while preparing this operator.
+Required Lark permission bundle for this phase:
 
-### AI Materialization Workflow
+```text
+base:workflow:read
+base:workflow:create
+base:block:read      # already required by Dashboard work
+base:block:update
+```
 
-Still pending semantic conversion to the documented public Workflow schema. It contains a SetRecordTrigger, four native AI generation actions, output bindings and a final SetRecordAction. Convert from current Source semantic authority and Target Field IDs; do not replay Source/internal step IDs or raw Draft/FlowSchema payloads.
+Do not add `base:workflow:update` merely for this disabled-only parity create because this operator neither updates nor enables the Workflow.
+
+No customer Target Workflow mutation has been executed by this operator yet.
+
+### AI Materialization Workflow — public step types ready, live apply blocked
+
+Current Source status is enabled and the exact reviewed chain is:
+
+```text
+SetRecordTrigger
+→ GenerateAiTextWithSkyLarkAction ×4
+→ SetRecordAction
+```
+
+Public Lark Workflow schema covers the corresponding concepts:
+
+```text
+SetRecordTrigger
+GenerateAiTextAction
+SetRecordAction
+```
+
+It also documents trigger field outputs, trigger `startTime`, whole-output refs from `GenerateAiTextAction`, and SetRecordAction field/ref semantics.
+
+Exact Source final update includes:
+
+```text
+generation_status = generated
+failure_code       = null
+generated_at       = trigger startTime
+```
+
+The remaining blocker is `failure_code = null`. Public `RecordFieldValue` requires `ValueInfo[]`, while the documented `ValueInfo` enum does not define a null/clear value for clearing a Text field. No reviewed official example/test proves that `null`, empty string or `[]` is the clear encoding. Omitting `failure_code` is also non-parity because an older failure value could remain.
+
+Files:
+
+- `scripts/lib/customer-base-ai-materialization-workflow-readiness.js`
+- `scripts/customer-base-ai-materialization-workflow-readiness.mjs`
+- `tests/scripts/customer-base-ai-materialization-workflow-readiness.test.js`
+- `docs/project-brain/customer-base-ai-materialization-workflow-readiness-2026-08-21.md`
+
+The readiness operator is intentionally local/read-only, exposes no Target client and rejects `--apply` unconditionally. Expected terminal state is:
+
+`CUSTOMER_BASE_AI_WORKFLOW_DOCUMENTED_TYPES_READY_NULL_CLEAR_BLOCKED`
+
+Do not create/update/enable the AI Materialization Workflow until a documented/proven Text-field clear semantic exists.
 
 ## No-repeat rules
 
@@ -214,19 +228,21 @@ Still pending semantic conversion to the documented public Workflow schema. It c
 5. Never rerun the passed Sort/Group runner.
 6. Never rerun the passed Dynamic Date Filter mutation.
 7. Never rerun Dashboard 66-block materialization.
-8. Never retry Theme PATCH on the current generic-created Dashboard containers without a proven conversion/update route.
+8. Never retry Theme PATCH on the current generic-created Dashboard containers.
 9. Never restore Width/RowHeight as parity requirements.
 10. Never mutate Source, Worker, D1, Queue, schedule or deployment for this workstream.
-11. Never invent undocumented Slicer/Table View/Workflow write payloads.
+11. Never invent undocumented Slicer/Table View/Workflow payloads.
 12. Never enable `Eligible AI Run → Lark Group Notification` during parity; current Source status is disabled.
-13. PR #661 remains Draft/Open/Unmerged until explicit final authorization.
+13. Never create the AI Materialization Workflow while null-clear semantics are unresolved.
+14. PR #661 remains Draft/Open/Unmerged until explicit final authorization.
 
 ## Required next sequence
 
-1. Run focused notification Workflow regression + read-only preview on exact Source/Target.
-2. Run Branch Verification on the same exact HEAD.
-3. If preview and CI pass, perform one controlled disabled-only notification Workflow create/readback; never enable it.
-4. Convert/close `AI Materialization → MKT_AI_Report_Runs` only through documented Workflow schema and current Source semantic authority.
-5. Close 7 Slicer + 2 Table View + Theme through minimal supported UI unless a new proven API contract appears.
-6. Export Target once and run final parity verification.
-7. Ready/Merge PR #661 only on explicit user instruction.
+1. Run focused Notification/placement/AI-readiness regression on the exact branch HEAD.
+2. Run local AI Materialization readiness against the exact Source; expected zero remote requests/mutations and one exact null-clear blocker.
+3. After the required Workflow permissions are active, run Notification Workflow read-only Target preview.
+4. Run Branch Verification on the same exact HEAD.
+5. If preview and CI pass, perform one controlled disabled-only Notification Workflow create/readback + folder move; never enable it.
+6. Keep AI Materialization blocked until a documented/proven null-clear contract is available; otherwise close that one semantic through minimal supported UI/manual configuration rather than guessing API payloads.
+7. Export Target once and run final parity verification.
+8. Ready/Merge PR #661 only on explicit user instruction.
