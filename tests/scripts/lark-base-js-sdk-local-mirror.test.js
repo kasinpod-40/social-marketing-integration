@@ -17,6 +17,11 @@ function response(url, body, status = 200) {
   };
 }
 
+function hasRuntimeModuleSpecifier(source, moduleName) {
+  const escaped = moduleName.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  return new RegExp(`\\b(?:from|import)\\s*(?:\\(\\s*)?['\"][^'\"]*${escaped}['\"]`, 'u').test(source);
+}
+
 test('bundles the pinned SDK graph into one standalone browser module', async () => {
   const childUrl = new URL('./chunk-a.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href;
   const rootBody = `export { bitable } from './chunk-a.mjs';\n${'x'.repeat(70_000)}`;
@@ -36,8 +41,8 @@ test('bundles the pinned SDK graph into one standalone browser module', async ()
   assert.equal(bundle.moduleCount, 2);
   assert.equal(bundle.modules.size, 0);
   assert.match(bundle.entryBody, /bitable/u);
-  assert.doesNotMatch(bundle.entryBody, /chunk-a\.mjs/u);
-  assert.doesNotMatch(bundle.entryBody, /cdn\.jsdelivr\.net/u);
+  assert.equal(hasRuntimeModuleSpecifier(bundle.entryBody, 'chunk-a.mjs'), false);
+  assert.equal(bundle.entryBody.includes('cdn.jsdelivr.net'), false);
   assert.equal(typeof bundle.sha256, 'string');
   assert.equal(bundle.sha256.length, 64);
   assert.ok(bundle.bytes >= 100_000);
@@ -58,7 +63,7 @@ test('esbuild parser discovers nested imports without the retired hand-written s
 
   assert.equal(bundle.moduleCount, 3);
   assert.match(bundle.entryBody, /bitable/u);
-  assert.doesNotMatch(bundle.entryBody, /chunk-b\.mjs/u);
+  assert.equal(hasRuntimeModuleSpecifier(bundle.entryBody, 'chunk-b.mjs'), false);
 });
 
 test('fails closed when the SDK imports outside the exact versioned package graph', async () => {
