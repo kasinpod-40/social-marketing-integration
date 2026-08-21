@@ -3,7 +3,7 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = AUTOMATIC_PASS_VIEW_UI_LIVE_CLOSURE_READY
+TASK_STATUS                         = AUTOMATIC_PASS_VIEW_UI_LIVE_LAN_RECOVERY
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
@@ -20,7 +20,7 @@ CURRENT_SOURCE_SEARCH               = Desktop + Downloads / Social MKT Data Hub*
 AUTOMATIC_CANONICAL_VERIFY          = PASS_MISMATCH_COUNT_0
 AUTOMATIC_APPLY                     = CLOSED_DO_NOT_RERUN
 VIEW_HIDDEN_FILTER_HIERARCHY        = AUTOMATIC_PASS
-VIEW_JS_SDK_UI_PARITY               = FINAL_RUNNER_FIX_PENDING_BRANCH_VERIFICATION
+VIEW_JS_SDK_UI_PARITY               = LAN_EXTENSION_RECOVERY_PENDING_BRANCH_VERIFICATION
 VIEW_FIELD_ORDER                    = SDK_AUDIT_NO_DOCUMENTED_SETTER
 VIEW_FROZEN_COLUMNS                 = MANUAL_NO_DOCUMENTED_SETTER
 FORMULA_PRESENTATION                = MANUAL_UI_4
@@ -113,10 +113,24 @@ Admission rules in `assessLarkBaseViewUiPlanAuthority()`:
 
 This is an exact revision admission, not a relaxation of the retained parity gate.
 
+## Local Base extension transport recovery
+
+The first live runner started successfully on `127.0.0.1:4173`, but Lark's extension side panel remained on `Loading…`; the runner UI itself never rendered, so no Base JS SDK preflight or mutation began.
+
+Lark's official Base JS SDK local-development procedure uses `Add script` with a local development URL, and its official HTML template exposes the dev server beyond loopback (`host: 0.0.0.0`). The runner now supports an explicit bind/public host instead of hard-pinning loopback:
+
+- default remains `127.0.0.1` for standalone/local inspection;
+- live Lark extension recovery binds only to the Mac's current LAN IPv4 via `CUSTOMER_BASE_VIEW_UI_HOST`;
+- the same address is emitted through `CUSTOMER_BASE_VIEW_UI_PUBLIC_HOST` as the URL to paste into Lark;
+- CORS is reflected only for HTTPS `*.larksuite.com` / `*.feishu.cn` origins;
+- only `GET`, `HEAD`, and `OPTIONS` are exposed;
+- every incoming request is logged as `[view-ui-local] ...` so reachability is proven before any SDK action;
+- Target mutation remains impossible until the extension UI loads and the user explicitly clicks the runner button, after which the existing full preflight still runs first.
+
 ## Operators
 
 - `scripts/lib/lark-base-view-js-sdk-parity.js` — names-only plan projection, structural admission and exact layout-revision authority;
-- `scripts/customer-base-view-ui-parity-server.mjs` — checkpoint fence, Source discovery/admission and localhost runner;
+- `scripts/customer-base-view-ui-parity-server.mjs` — checkpoint fence, Source discovery/admission and configurable local/LAN runner transport;
 - `scripts/customer-base-view-ui-parity.browser.js` — exact Target preflight + supported SDK mutation/readback;
 - `scripts/customer-base-view-ui-source-diagnostic.mjs` — local read-only Source/layout diagnostic using the same authority function;
 - `tests/scripts/lark-base-view-js-sdk-parity.test.js` — normalization, structural admission and exact 42-sort inventory regressions.
@@ -166,11 +180,12 @@ Official Base JS SDK exposes ordered field readback but no documented setter for
 ## Required closure sequence
 
 1. Require full Branch Verification SUCCESS on the final runner/docs HEAD.
-2. Start `scripts/customer-base-view-ui-parity-server.mjs`; require `status=READY`, exact Source SHA `9c24...`, `sourcePlanAuthorityMode=exact-refresh-layout-revision-facebook-content-published-at-desc`, and `sortViews=42`.
-3. Add/open `http://127.0.0.1:4173` as a Base extension script inside the exact customer Target Base.
-4. Run supported View UI parity once and retain its compact summary JSON.
-5. Use the reported field-order mismatch count to finish only actual remaining field-order work; frozen columns remain manual.
-6. Complete Formula presentation 4 and dynamic-date filter 1.
-7. Recreate/verify Dashboards 6 / 75 charts and Workflows 2 through supported UI/source reference.
-8. Export Target once and verify all manual-owned View dimensions locally.
-9. Ready/Merge PR #661 only after every gate closes and only on explicit user instruction.
+2. Resolve the Mac's LAN IPv4 and start `scripts/customer-base-view-ui-parity-server.mjs` with that address as both bind/public host; require `status=READY`, exact Source SHA `9c24...`, `sourcePlanAuthorityMode=exact-refresh-layout-revision-facebook-content-published-at-desc`, and `sortViews=42`.
+3. Edit/recreate the Base extension script inside the exact customer Target Base using the emitted LAN URL, not `127.0.0.1`.
+4. Confirm Terminal receives `[view-ui-local]` requests and the runner UI renders inside Lark before clicking anything.
+5. Run supported View UI parity once and retain its compact summary JSON.
+6. Use the reported field-order mismatch count to finish only actual remaining field-order work; frozen columns remain manual.
+7. Complete Formula presentation 4 and dynamic-date filter 1.
+8. Recreate/verify Dashboards 6 / 75 charts and Workflows 2 through supported UI/source reference.
+9. Export Target once and verify all manual-owned View dimensions locally.
+10. Ready/Merge PR #661 only after every gate closes and only on explicit user instruction.
