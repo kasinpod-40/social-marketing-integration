@@ -12,6 +12,14 @@ test('View UI browser loads Base JS SDK only from the same local origin', async 
   assert.match(source, /^import \{ bitable \} from '\/lark-base-js-sdk\.mjs';/u);
   assert.doesNotMatch(source, /https:\/\/esm\.sh\/@lark-base-open\/js-sdk/u);
   assert.match(source, /stage=browser-module-loaded/u);
+
+  const sdkImportIndex = source.indexOf("import { bitable } from '/lark-base-js-sdk.mjs';");
+  const bootMarkerIndex = source.indexOf('stage=browser-module-loaded');
+  const preflightIndex = source.indexOf('async function preflight(plan)');
+  assert.ok(
+    sdkImportIndex === 0 && bootMarkerIndex > sdkImportIndex && preflightIndex > bootMarkerIndex,
+    'same-origin SDK import and boot marker must be established before Base preflight code',
+  );
 });
 
 test('View UI server resolves pinned SDK before READY and serves it locally', async () => {
