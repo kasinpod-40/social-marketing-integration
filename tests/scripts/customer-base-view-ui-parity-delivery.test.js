@@ -9,15 +9,16 @@ const serverFile = fileURLToPath(new URL('../../scripts/customer-base-view-ui-pa
 test('View UI browser loads Base JS SDK only from the same local origin', async () => {
   const source = await readFile(browserFile, 'utf8');
 
-  assert.match(source, /^import \{ bitable \} from '\/lark-base-js-sdk\.mjs';/u);
+  assert.match(source, /^import \{/u);
+  assert.match(source, /from '\/lark-base-js-sdk\.mjs';/u);
   assert.doesNotMatch(source, /https:\/\/esm\.sh\/@lark-base-open\/js-sdk/u);
   assert.match(source, /stage=browser-module-loaded/u);
 
-  const sdkImportIndex = source.indexOf("import { bitable } from '/lark-base-js-sdk.mjs';");
+  const sdkImportIndex = source.indexOf("from '/lark-base-js-sdk.mjs';");
   const bootMarkerIndex = source.indexOf('stage=browser-module-loaded');
   const preflightIndex = source.indexOf('async function preflight(plan)');
   assert.ok(
-    sdkImportIndex === 0 && bootMarkerIndex > sdkImportIndex && preflightIndex > bootMarkerIndex,
+    sdkImportIndex >= 0 && bootMarkerIndex > sdkImportIndex && preflightIndex > bootMarkerIndex,
     'same-origin SDK import and boot marker must be established before Base preflight code',
   );
 });
@@ -40,17 +41,22 @@ test('View UI server resolves the exact pinned SDK bundle before READY and serve
   assert.ok(resolveIndex >= 0 && listenIndex > resolveIndex, 'SDK bundle must resolve before the server can report READY');
 });
 
-test('View UI semantic runner never mutates cosmetic row height or column width', async () => {
+test('View UI recovery owns only the exact Google Ads 30D dynamic filter', async () => {
   const source = await readFile(browserFile, 'utf8');
 
-  assert.match(source, /กำลังจัด sort \/ group/u);
-  assert.match(source, /getSortInfo/u);
-  assert.match(source, /addSort/u);
-  assert.match(source, /getGroupInfo/u);
-  assert.match(source, /addGroup/u);
-  assert.doesNotMatch(source, /setRowHeight/u);
-  assert.doesNotMatch(source, /setFieldWidth/u);
-  assert.doesNotMatch(source, /getFieldWidth/u);
-  assert.match(source, /ignoredCosmetic/u);
-  assert.match(source, /non-authoritative presentation only/u);
+  assert.match(source, /const TARGET_TABLE = '📈 MKT_Ads_Daily'/u);
+  assert.match(source, /const TARGET_VIEW = '📈 Google Ads Daily 30D'/u);
+  assert.match(source, /const PLATFORM_OPTION = 'google_ads'/u);
+  assert.match(source, /FilterDuration\.TheLastMonth/u);
+  assert.match(source, /getFilterInfo/u);
+  assert.match(source, /addFilterCondition/u);
+  assert.match(source, /setFilterConjunction/u);
+  assert.match(source, /applySetting/u);
+  assert.match(source, /DYNAMIC_DATE_FILTER_EXISTING_STATE_CONFLICT/u);
+  assert.match(source, /already contains a non-empty filter that differs from Source; refusing to overwrite it/u);
+
+  assert.doesNotMatch(source, /addSort|deleteSort|addGroup|deleteGroup/u);
+  assert.doesNotMatch(source, /setFieldWidth|getFieldWidth|setRowHeight/u);
+  assert.doesNotMatch(source, /deleteFilterCondition|updateFilterCondition/u);
+  assert.doesNotMatch(source, /createField|deleteField|setField/u);
 });
