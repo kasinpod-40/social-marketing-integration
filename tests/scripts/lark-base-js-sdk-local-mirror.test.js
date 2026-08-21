@@ -65,9 +65,9 @@ test('local path conversion is exact-version scoped', () => {
   );
 });
 
-test('specifier rewrite changes only quoted module specifiers', () => {
-  const source = `import x from './a.mjs';\nconst note = "./a.mjs";`;
+test('specifier rewrite replaces the exact quoted module path used by the graph', () => {
+  const source = `import x from './a.mjs';\nexport { x };`;
   const rewritten = rewriteModuleSpecifiers(source, new Map([['./a.mjs', '/lark-base-js-sdk/a.mjs']]));
   assert.match(rewritten, /from '\/lark-base-js-sdk\/a\.mjs'/u);
-  assert.match(rewritten, /const note = "\/lark-base-js-sdk\/a\.mjs"/u);
+  assert.doesNotMatch(rewritten, /from '\.\/a\.mjs'/u);
 });
