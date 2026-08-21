@@ -23,6 +23,17 @@ export const GOOGLE_ADS_LIVE_OPERATOR_CONFIRMATIONS = Object.freeze({
   'rerun-verify': 'CONFIRM_GOOGLE_ADS_LIVE_RERUN_VERIFY',
 });
 
+export const GOOGLE_ADS_LARK_DAILY_NUMBER_FORMATTERS = Object.freeze({
+  conversions: Object.freeze({ formatter: '0.0', decimalPlaces: 1 }),
+  spend: Object.freeze({ formatter: '฿#,##0.00', decimalPlaces: 2 }),
+  conversion_value: Object.freeze({ formatter: '฿#,##0.00', decimalPlaces: 2 }),
+  ctr: Object.freeze({ formatter: '0.000', decimalPlaces: 3 }),
+  cpc: Object.freeze({ formatter: '฿#,##0.00', decimalPlaces: 2 }),
+  cpm: Object.freeze({ formatter: '฿#,##0.00', decimalPlaces: 2 }),
+  cpa: Object.freeze({ formatter: '฿#,##0.00', decimalPlaces: 2 }),
+  actual_roas: Object.freeze({ formatter: '0.0', decimalPlaces: 1 }),
+});
+
 const EXECUTABLE_PHASES = new Set(GOOGLE_ADS_LIVE_OPERATOR_PHASES.filter((phase) => phase !== 'plan'));
 const REQUIRED_FALSE_FLAGS = Object.freeze([
   'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
@@ -270,6 +281,46 @@ export function compareGoogleAdsRerunVerification(before, after) {
     });
   }
   return Object.freeze({ businessFactDrift: false, changed: Object.freeze([]) });
+}
+
+export function compareGoogleAdsLarkDailyNumber(field, actual, expected) {
+  const formatter = GOOGLE_ADS_LARK_DAILY_NUMBER_FORMATTERS[field] ?? null;
+  if (actual === null || expected === null) {
+    return Object.freeze({
+      field,
+      mode: formatter ? 'lark-display' : 'canonical-exact',
+      formatter: formatter?.formatter ?? null,
+      decimalPlaces: formatter?.decimalPlaces ?? null,
+      expectedCanonical: expected,
+      expectedDisplay: expected,
+      actual,
+      tolerance: 0,
+      matches: actual === expected,
+    });
+  }
+
+  const actualNumber = Number(actual);
+  const expectedNumber = Number(expected);
+  const finite = Number.isFinite(actualNumber) && Number.isFinite(expectedNumber);
+  const expectedDisplay = finite && formatter
+    ? Number(expectedNumber.toFixed(formatter.decimalPlaces))
+    : expectedNumber;
+  const tolerance = finite
+    ? 1e-9 * Math.max(1, Math.abs(actualNumber), Math.abs(expectedDisplay))
+    : 0;
+  const matches = finite && Math.abs(actualNumber - expectedDisplay) <= tolerance;
+
+  return Object.freeze({
+    field,
+    mode: formatter ? 'lark-display' : 'canonical-exact',
+    formatter: formatter?.formatter ?? null,
+    decimalPlaces: formatter?.decimalPlaces ?? null,
+    expectedCanonical: expectedNumber,
+    expectedDisplay,
+    actual: actualNumber,
+    tolerance,
+    matches,
+  });
 }
 
 export function requireGoogleAdsOperatorRunId(env = {}) {
