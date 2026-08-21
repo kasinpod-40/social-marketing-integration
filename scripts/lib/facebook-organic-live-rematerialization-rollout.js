@@ -99,17 +99,7 @@ export function extractRemoteExecutionFlagMap(bindings = []) {
   for (const binding of bindings) {
     const name = readBindingName(binding);
     if (!name || !ENABLED_FLAG.test(name)) continue;
-    if (normalizeBindingType(binding?.type) !== 'plain_text') throw rolloutError(
-      `Execution flag ${name} is not a plain-text Worker binding`,
-      'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_BINDING_TYPE_INVALID',
-      { flagName: name },
-    );
-    const value = readBoolean(binding?.text ?? binding?.value);
-    if (value === null) throw rolloutError(
-      `Execution flag ${name} does not contain a boolean value`,
-      'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_VALUE_INVALID',
-      { flagName: name },
-    );
+    const value = readRemoteExecutionFlag(binding, name);
     if (Object.hasOwn(map, name) && map[name] !== value) throw rolloutError(
       `Execution flag ${name} is duplicated with conflicting values`,
       'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_DUPLICATE',
@@ -160,13 +150,19 @@ export function buildExactRuntimePreservingConfigs(sourceText, remoteFlagMap = {
   const baseline = structuredClone(source);
   baseline.workers_dev = false;
   baseline.vars = { ...baseline.vars };
-  for (const name of remoteFlagNames) baseline.vars[name] = remoteFlagMap[name] ? 'true' : 'false';
-  for (const name of localOnly) baseline.vars[name] = 'false';
+  for (const name of remoteFlagNames) {
+    baseline.vars[name] = encodeBooleanLikeLocal(source.vars[name], remoteFlagMap[name], name);
+  }
+  for (const name of localOnly) {
+    baseline.vars[name] = encodeBooleanLikeLocal(source.vars[name], false, name);
+  }
   const baselineFlagMap = readLocalExecutionFlagMap(baseline.vars);
 
   const overlay = structuredClone(baseline);
   overlay.vars = { ...overlay.vars };
-  for (const name of FACEBOOK_REPORT_EXECUTION_FLAGS) overlay.vars[name] = 'true';
+  for (const name of FACEBOOK_REPORT_EXECUTION_FLAGS) {
+    overlay.vars[name] = encodeBooleanLikeLocal(baseline.vars[name], true, name);
+  }
   const overlayFlagMap = readLocalExecutionFlagMap(overlay.vars);
   assertReportOnlyOverlay(baselineFlagMap, overlayFlagMap);
 
@@ -289,6 +285,33 @@ export function fingerprintFlagMap(map = {}) {
   return sha256(JSON.stringify(sortObject(map)));
 }
 
+function readRemoteExecutionFlag(binding, name) {
+  const bindingType = normalizeBindingType(binding?.type);
+  if (bindingType === 'plain_text') {
+    const value = readBoolean(binding?.text ?? binding?.value);
+    if (value === null) throw rolloutError(
+      `Execution flag ${name} does not contain a boolean value`,
+      'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_VALUE_INVALID',
+      { flagName: name, bindingType },
+    );
+    return value;
+  }
+  if (bindingType === 'json') {
+    const value = binding?.json ?? binding?.value;
+    if (value !== true && value !== false) throw rolloutError(
+      `Execution flag ${name} JSON binding is not a boolean`,
+      'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_VALUE_INVALID',
+      { flagName: name, bindingType, valueType: typeof value },
+    );
+    return value;
+  }
+  throw rolloutError(
+    `Execution flag ${name} is not a supported boolean Worker binding`,
+    'FACEBOOK_ORGANIC_LIVE_ROLLOUT_FLAG_BINDING_TYPE_INVALID',
+    { flagName: name, bindingType: bindingType || null },
+  );
+}
+
 function readLocalExecutionFlagMap(vars) {
   const output = {};
   for (const name of Object.keys(vars).filter((key) => ENABLED_FLAG.test(key)).sort()) {
@@ -301,6 +324,18 @@ function readLocalExecutionFlagMap(vars) {
     output[name] = value;
   }
   return Object.freeze(output);
+}
+
+function encodeBooleanLikeLocal(sourceValue, value, flagName) {
+  if (sourceValue === true || sourceValue === false) return value;
+  if (typeof sourceValue === 'string' && readBoolean(sourceValue) !== null) {
+    return value ? 'true' : 'false';
+  }
+  throw rolloutError(
+    `Local execution flag ${flagName} is not boolean`,
+    'FACEBOOK_ORGANIC_LIVE_ROLLOUT_LOCAL_FLAG_VALUE_INVALID',
+    { flagName, valueType: typeof sourceValue },
+  );
 }
 
 function trueFlagNames(map) {
