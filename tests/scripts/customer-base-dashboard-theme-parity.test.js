@@ -14,7 +14,7 @@ const DASHBOARDS = [
   ['🛒 Commerce & Conversion', 'dsh_6', 9],
 ];
 
-function makeClient({ failThemeAt = null } = {}) {
+function makeClient({ failThemeAt = null, detailUnsupported = false } = {}) {
   const calls = [];
   const folderId = 'folder_target';
   const client = {
@@ -36,9 +36,19 @@ function makeClient({ failThemeAt = null } = {}) {
         const authority = DASHBOARDS.find(([, id]) => id === blockMatch[1]);
         return { data: { has_more: false, items: Array.from({ length: authority[2] }, (_, index) => ({ block_id: `${authority[1]}_blk_${index}`, name: `Block ${index}` })) } };
       }
-      const patchMatch = path.match(/\/dashboards\/(dsh_\d+)$/u);
-      if (patchMatch && options.method === 'PATCH') {
-        const authority = DASHBOARDS.find(([, id]) => id === patchMatch[1]);
+      const dashboardMatch = path.match(/\/dashboards\/(dsh_\d+)$/u);
+      if (dashboardMatch && options.method === 'GET') {
+        const authority = DASHBOARDS.find(([, id]) => id === dashboardMatch[1]);
+        if (detailUnsupported) {
+          const error = new Error('Lark API error 1:');
+          error.code = 'LARK_PERMANENT_API_ERROR';
+          error.details = { status: 200, larkCode: 1 };
+          throw error;
+        }
+        return { data: { dashboard_id: authority[1], name: authority[0], theme: { theme_style: 'default' } } };
+      }
+      if (dashboardMatch && options.method === 'PATCH') {
+        const authority = DASHBOARDS.find(([, id]) => id === dashboardMatch[1]);
         if (failThemeAt === authority[0]) {
           const error = new Error('simulated Lark theme failure');
           error.code = 'LARK_PERMANENT_API_ERROR';
@@ -60,10 +70,11 @@ test('theme preview validates six materialized dashboards and 66 blocks without 
   assert.equal(result.dashboards.length, 6);
   assert.equal(result.dashboards.reduce((sum, item) => sum + item.documentedBlockCount, 0), 66);
   assert.equal(result.dashboardThemeMutationCount, 0);
+  assert.equal(targetClient.calls.filter((call) => call.method === 'GET' && /\/dashboards\/dsh_\d+$/u.test(call.path)).length, 6);
   assert.equal(targetClient.calls.some((call) => call.method === 'PATCH'), false);
 });
 
-test('theme apply patches six dashboards only and verifies response echo', async () => {
+test('theme apply patches six dashboards only after specialized detail preflight', async () => {
   const targetClient = makeClient();
   const result = await applyCustomerBaseDashboardThemeParity({
     targetClient,
@@ -77,6 +88,7 @@ test('theme apply patches six dashboards only and verifies response echo', async
   assert.equal(result.tableMutationCount, 0);
   assert.equal(result.fieldMutationCount, 0);
   assert.equal(result.recordMutationCount, 0);
+  assert.equal(targetClient.calls.filter((call) => call.method === 'GET' && /\/dashboards\/dsh_\d+$/u.test(call.path)).length, 6);
   assert.equal(targetClient.calls.filter((call) => call.method === 'PATCH').length, 6);
 
   // POST /blocks/list is the proven read-only topology lookup endpoint. The
@@ -87,6 +99,22 @@ test('theme apply patches six dashboards only and verifies response echo', async
       && call.method !== 'GET'),
     false,
   );
+});
+
+test('theme apply defers with zero mutation when current container rejects specialized detail route', async () => {
+  const targetClient = makeClient({ detailUnsupported: true });
+  const result = await applyCustomerBaseDashboardThemeParity({
+    targetClient,
+    mode: 'apply',
+    confirmation: CUSTOMER_BASE_DASHBOARD_THEME_CONFIRMATION,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'DASHBOARD_THEME_DEFERRED_CONTAINER_UPDATE_UNSUPPORTED');
+  assert.equal(result.dashboardThemeMutationCount, 0);
+  assert.equal(result.dashboardBlockMutationCount, 0);
+  assert.equal(result.deferred.stage, 'get_dashboard_detail:💬 Customer Service & Leads');
+  assert.equal(result.deferred.larkCode, 1);
+  assert.equal(targetClient.calls.filter((call) => call.method === 'PATCH').length, 0);
 });
 
 test('theme apply fails with exact stage and completed ledger while remaining resumable', async () => {
