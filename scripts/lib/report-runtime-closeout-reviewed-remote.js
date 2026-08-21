@@ -338,12 +338,7 @@ export function createReviewedRemoteRuntime(input) {
       'wrangler', 'versions', 'view', activeVersion, '--name', EXPECTED_WORKER_NAME, '--config', configPath, '--json',
     ], { env }));
     const bindings = collectBindings(versionView);
-    const trueFlags = bindings
-      .filter((binding) => normalizeBindingType(binding?.type) === 'plain_text')
-      .map((binding) => [readBindingName(binding), readRemoteBoolean(binding?.text ?? binding?.value)])
-      .filter(([name, enabled]) => name && /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name) && enabled)
-      .map(([name]) => name)
-      .sort();
+    const trueFlags = extractReviewedRemoteTrueExecutionFlags(bindings);
     const expectedTrue = mode === 'active' ? [...target.activeTrueFlags].sort() : [];
     if (stableJson(trueFlags) !== stableJson(expectedTrue)) throw closeoutFailure(
       'Remote Worker execution flags differ from the reviewed Report closeout window',
@@ -418,6 +413,54 @@ export async function sendReviewedQueueMessage({ auth, queueId, job }) {
     'REPORT_RUNTIME_CLOSEOUT_QUEUE_SEND_FAILED',
     { status: response.status },
   );
+}
+
+export function extractReviewedRemoteExecutionFlagMap(bindings = []) {
+  if (!Array.isArray(bindings)) throw closeoutFailure(
+    'Remote Worker bindings must be an array',
+    'REPORT_RUNTIME_CLOSEOUT_REMOTE_FLAG_BINDINGS_INVALID',
+  );
+  const map = {};
+  for (const binding of bindings) {
+    const name = readBindingName(binding);
+    if (!name || !/^MKT_[A-Z0-9_]+_ENABLED$/u.test(name)) continue;
+    const type = normalizeBindingType(binding?.type);
+    let value = null;
+    if (type === 'plain_text') {
+      value = readRemoteBoolean(binding?.text ?? binding?.value);
+      if (value === null) throw closeoutFailure(
+        `Remote Worker execution flag ${name} has an invalid text Boolean value`,
+        'REPORT_RUNTIME_CLOSEOUT_REMOTE_FLAG_VALUE_INVALID',
+        { flagName: name, bindingType: type },
+      );
+    } else if (type === 'json') {
+      const raw = binding?.json ?? binding?.value;
+      if (raw !== true && raw !== false) throw closeoutFailure(
+        `Remote Worker execution flag ${name} JSON binding is not Boolean`,
+        'REPORT_RUNTIME_CLOSEOUT_REMOTE_FLAG_VALUE_INVALID',
+        { flagName: name, bindingType: type, valueType: typeof raw },
+      );
+      value = raw;
+    } else {
+      throw closeoutFailure(
+        `Remote Worker execution flag ${name} uses an unsupported binding type`,
+        'REPORT_RUNTIME_CLOSEOUT_REMOTE_FLAG_BINDING_TYPE_INVALID',
+        { flagName: name, bindingType: type || null },
+      );
+    }
+    if (Object.hasOwn(map, name) && map[name] !== value) throw closeoutFailure(
+      `Remote Worker execution flag ${name} is duplicated with conflicting values`,
+      'REPORT_RUNTIME_CLOSEOUT_REMOTE_FLAG_DUPLICATE',
+      { flagName: name },
+    );
+    map[name] = value;
+  }
+  return Object.freeze(Object.fromEntries(Object.entries(map).sort(([left], [right]) => left.localeCompare(right))));
+}
+
+export function extractReviewedRemoteTrueExecutionFlags(bindings = []) {
+  const map = extractReviewedRemoteExecutionFlagMap(bindings);
+  return Object.freeze(Object.keys(map).filter((name) => map[name] === true).sort());
 }
 
 function verifyRequiredTableBindings(bindings, contract, tableIds) {
