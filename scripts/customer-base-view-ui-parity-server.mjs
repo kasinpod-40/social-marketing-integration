@@ -13,7 +13,7 @@ import {
   buildLarkBaseViewJsSdkParityPlan,
 } from './lib/lark-base-view-js-sdk-parity.js';
 
-const HOST = '127.0.0.1';
+const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 4173;
 const BASELINE_SOURCE_SHA256 = 'c230354d7eb06f7ab598511c1be4d798ba420e50255ce29a6b810db505e8e643';
 const CHECKPOINT_SHA256 = '7c1176faab7b039acb81b663e442837e6d80a79d922c8d6e6cefbfbcaef93053';
@@ -27,7 +27,10 @@ try {
   const checkpoint = await readVerifiedCheckpoint(checkpointFile);
   const sourceAuthority = await resolveSourceAuthority({ checkpoint });
   const { sourceFile, inspection, plan } = sourceAuthority;
+  const host = resolveHost(process.env.CUSTOMER_BASE_VIEW_UI_HOST);
+  const publicHost = resolveHost(process.env.CUSTOMER_BASE_VIEW_UI_PUBLIC_HOST ?? host);
   const port = resolvePort(process.env.CUSTOMER_BASE_VIEW_UI_PORT);
+  const publicUrl = `http://${formatUrlHost(publicHost)}:${port}`;
 
   const browserScript = await readFile(
     fileURLToPath(new URL('./customer-base-view-ui-parity.browser.js', import.meta.url)),
@@ -42,20 +45,29 @@ try {
   });
 
   const server = createServer((request, response) => {
-    const path = new URL(request.url ?? '/', `http://${HOST}:${port}`).pathname;
+    setCrossOriginHeaders(request, response);
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
 
+    if (request.method === 'OPTIONS') {
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+
+    const path = new URL(request.url ?? '/', publicUrl).pathname;
+    console.log(`[view-ui-local] ${request.method ?? 'GET'} ${path} origin=${request.headers.origin ?? '-'}`);
+
     if (path === '/' || path === '/index.html') {
-      send(response, 200, 'text/html; charset=utf-8', html);
+      send(response, 200, 'text/html; charset=utf-8', html, request.method);
       return;
     }
     if (path === '/app.js') {
-      send(response, 200, 'text/javascript; charset=utf-8', browserScript);
+      send(response, 200, 'text/javascript; charset=utf-8', browserScript, request.method);
       return;
     }
     if (path === '/plan.json') {
-      send(response, 200, 'application/json; charset=utf-8', `${JSON.stringify(plan)}\n`);
+      send(response, 200, 'application/json; charset=utf-8', `${JSON.stringify(plan)}\n`, request.method);
       return;
     }
     if (path === '/health') {
@@ -63,25 +75,28 @@ try {
         ok: true,
         service: 'customer-base-view-ui-parity',
         mode: 'local-refresh-compatible-source-plan-plus-base-js-sdk-ui',
+        bindHost: host,
+        publicUrl,
         sourceFileName: basename(sourceFile),
         sourceSha256: inspection.file.sha256,
         sourceSelectionMode: sourceAuthority.selectionMode,
         sourcePlanAuthorityMode: sourceAuthority.planAuthorityMode,
         tables: plan.summary.tableCount,
         views: plan.summary.viewCount,
-      })}\n`);
+      })}\n`, request.method);
       return;
     }
-    send(response, 404, 'text/plain; charset=utf-8', 'Not found\n');
+    send(response, 404, 'text/plain; charset=utf-8', 'Not found\n', request.method);
   });
 
-  server.listen(port, HOST, () => {
+  server.listen(port, host, () => {
     console.log('\n=== COPY THIS SUMMARY JSON ===');
     console.log(JSON.stringify({
       ok: true,
       stage: 'customer-base-view-ui-parity-server',
       status: 'READY',
-      url: `http://${HOST}:${port}`,
+      bindHost: host,
+      url: publicUrl,
       sourceFileName: basename(sourceFile),
       sourceSha256: inspection.file.sha256,
       sourceSelectionMode: sourceAuthority.selectionMode,
@@ -345,6 +360,30 @@ function renderHtml({ sourceSha256, sourceFileName, sourceSelectionMode, sourceP
 </html>`;
 }
 
+function setCrossOriginHeaders(request, response) {
+  const origin = optionalText(request.headers.origin);
+  if (origin && isTrustedLarkOrigin(origin)) {
+    response.setHeader('Access-Control-Allow-Origin', origin);
+    response.setHeader('Vary', 'Origin');
+  }
+  response.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+function isTrustedLarkOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'https:') return false;
+    const host = url.hostname.toLowerCase();
+    return host === 'larksuite.com'
+      || host.endsWith('.larksuite.com')
+      || host === 'feishu.cn'
+      || host.endsWith('.feishu.cn');
+  } catch {
+    return false;
+  }
+}
+
 function escapeHtml(value) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
@@ -357,6 +396,17 @@ function fingerprint(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function resolveHost(value) {
+  const host = optionalText(value) ?? DEFAULT_HOST;
+  if (/^[A-Za-z0-9.-]+$/u.test(host) || /^\[[0-9A-Fa-f:]+\]$/u.test(host)) return host;
+  throw new TypeError('CUSTOMER_BASE_VIEW_UI_HOST/PUBLIC_HOST must be a hostname or IP address');
+}
+
+function formatUrlHost(host) {
+  if (host.includes(':') && !host.startsWith('[')) return `[${host}]`;
+  return host;
+}
+
 function resolvePort(value) {
   if (value === null || value === undefined || value === '') return DEFAULT_PORT;
   const port = Number(value);
@@ -364,9 +414,13 @@ function resolvePort(value) {
   return port;
 }
 
-function send(response, status, contentType, body) {
+function send(response, status, contentType, body, method = 'GET') {
   response.statusCode = status;
   response.setHeader('Content-Type', contentType);
+  if (method === 'HEAD') {
+    response.end();
+    return;
+  }
   response.end(body);
 }
 
