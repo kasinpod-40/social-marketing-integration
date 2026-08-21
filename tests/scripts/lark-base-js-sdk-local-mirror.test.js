@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH,
   LARK_BASE_JS_SDK_ENTRY_URL,
+  extractModuleSpecifiers,
   loadPinnedLarkBaseJsSdkMirror,
   localPathForPinnedModule,
   rewriteModuleSpecifiers,
@@ -65,9 +66,32 @@ test('local path conversion is exact-version scoped', () => {
   );
 });
 
-test('specifier rewrite replaces the exact quoted module path used by the graph', () => {
-  const source = `import x from './a.mjs';\nexport { x };`;
+test('lexical parser ignores minified string boundaries that look like from-specifiers', () => {
+  const source = `const a="value from",xT=",xT=";\nexport { marker } from './real.mjs';`;
+  assert.deepEqual(extractModuleSpecifiers(source), ['./real.mjs']);
+});
+
+test('lexical parser recognizes static, side-effect, export-from, and literal dynamic imports', () => {
+  const source = [
+    `import value from './a.mjs';`,
+    `import './b.mjs';`,
+    `export * from './c.mjs';`,
+    `export { value } from './d.mjs';`,
+    `const later = import('./e.mjs');`,
+  ].join('\n');
+  assert.deepEqual(extractModuleSpecifiers(source), [
+    './a.mjs',
+    './b.mjs',
+    './c.mjs',
+    './d.mjs',
+    './e.mjs',
+  ]);
+});
+
+test('specifier rewrite changes only actual module syntax and leaves unrelated strings untouched', () => {
+  const source = `const note = "./a.mjs";\nimport x from './a.mjs';\nexport { x };`;
   const rewritten = rewriteModuleSpecifiers(source, new Map([['./a.mjs', '/lark-base-js-sdk/a.mjs']]));
+  assert.match(rewritten, /const note = "\.\/a\.mjs"/u);
   assert.match(rewritten, /from '\/lark-base-js-sdk\/a\.mjs'/u);
   assert.doesNotMatch(rewritten, /from '\.\/a\.mjs'/u);
 });
