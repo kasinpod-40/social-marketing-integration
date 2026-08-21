@@ -78,7 +78,15 @@ test('theme apply patches six dashboards only and verifies response echo', async
   assert.equal(result.fieldMutationCount, 0);
   assert.equal(result.recordMutationCount, 0);
   assert.equal(targetClient.calls.filter((call) => call.method === 'PATCH').length, 6);
-  assert.equal(targetClient.calls.some((call) => call.path.includes('/blocks/') && call.method !== 'GET'), false);
+
+  // POST /blocks/list is the proven read-only topology lookup endpoint. The
+  // theme phase must never write to /dashboards/{id}/blocks.
+  assert.equal(
+    targetClient.calls.some((call) =>
+      /\/dashboards\/[^/]+\/blocks(?:\?|$)/u.test(call.path)
+      && call.method !== 'GET'),
+    false,
+  );
 });
 
 test('theme apply fails with exact stage and completed ledger while remaining resumable', async () => {
