@@ -231,9 +231,18 @@ function normalizeSourceWorkflowStatus(raw) {
 }
 
 function parseMaybeJson(value, label) {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  const text = requireText(value, label);
-  try { return JSON.parse(text); } catch (error) {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (
+      value.encoding === 'json'
+      && value.value
+      && typeof value.value === 'object'
+      && !Array.isArray(value.value)
+    ) return value.value;
+    return value;
+  }
+  if (typeof value !== 'string') return null;
+  try { return JSON.parse(value); } catch (error) {
     throw codedError('CUSTOMER_BASE_AI_WORKFLOW_SOURCE_JSON_INVALID', `${label} is not valid JSON`, {
       cause: error?.message ?? String(error),
     });
