@@ -2,13 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LARK_BASE_JS_SDK_CDN_ROOT,
-  LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH,
   LARK_BASE_JS_SDK_ENTRY_URL,
-  assertMirroredGraphClosure,
-  extractModuleSpecifiers,
+  LARK_BASE_JS_SDK_ESBUILD_VERSION,
   loadPinnedLarkBaseJsSdkMirror,
   localPathForPinnedModule,
-  rewriteModuleSpecifiers,
 } from '../../scripts/lib/lark-base-js-sdk-local-mirror.js';
 
 function response(url, body, status = 200) {
@@ -20,76 +17,92 @@ function response(url, body, status = 200) {
   };
 }
 
-test('mirrors a pinned relative SDK module graph and rewrites imports to same-origin paths', async () => {
-  const rootBody = `export { bitable } from './chunk-a.mjs';\nimport './chunk-b.mjs';\n${'x'.repeat(60_000)}`;
-  const childA = `export const bitable = {};\n${'a'.repeat(30_000)}`;
-  const childB = `export * from './nested/chunk-c.mjs';\n${'b'.repeat(20_000)}`;
-  const childC = `export const marker = true;\n${'c'.repeat(10_000)}`;
+test('bundles the pinned SDK graph into one standalone browser module', async () => {
+  const childUrl = new URL('./chunk-a.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href;
+  const rootBody = `export { bitable } from './chunk-a.mjs';\n${'x'.repeat(70_000)}`;
+  const childBody = `export const bitable = { ready: true };\n${'a'.repeat(40_000)}`;
   const bodies = new Map([
     [LARK_BASE_JS_SDK_ENTRY_URL, rootBody],
-    [new URL('./chunk-a.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href, childA],
-    [new URL('./chunk-b.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href, childB],
-    [new URL('./nested/chunk-c.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href, childC],
+    [childUrl, childBody],
   ]);
 
-  const mirror = await loadPinnedLarkBaseJsSdkMirror({
+  const bundle = await loadPinnedLarkBaseJsSdkMirror({
     fetchImpl: async (url) => response(url, bodies.get(url) ?? '', bodies.has(url) ? 200 : 404),
   });
 
-  assert.equal(mirror.version, '1.0.2');
-  assert.equal(mirror.deliveryMode, 'same-origin-pinned-jsdelivr-module-graph');
-  assert.equal(mirror.moduleCount, 4);
-  assert.equal(mirror.modules.get(LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH), mirror.entryBody);
-  assert.match(mirror.entryBody, /from '\/lark-base-js-sdk\/chunk-a\.mjs'/u);
-  assert.match(mirror.entryBody, /import '\/lark-base-js-sdk\/chunk-b\.mjs'/u);
-  assert.match(mirror.modules.get('/lark-base-js-sdk/chunk-b.mjs'), /from '\/lark-base-js-sdk\/nested\/chunk-c\.mjs'/u);
-  assert.equal(typeof mirror.sha256, 'string');
-  assert.equal(mirror.sha256.length, 64);
+  assert.equal(bundle.version, '1.0.2');
+  assert.equal(bundle.deliveryMode, 'same-origin-pinned-esbuild-single-bundle');
+  assert.equal(bundle.esbuildVersion, LARK_BASE_JS_SDK_ESBUILD_VERSION);
+  assert.equal(bundle.moduleCount, 2);
+  assert.equal(bundle.modules.size, 0);
+  assert.match(bundle.entryBody, /bitable/u);
+  assert.doesNotMatch(bundle.entryBody, /chunk-a\.mjs/u);
+  assert.doesNotMatch(bundle.entryBody, /cdn\.jsdelivr\.net/u);
+  assert.equal(typeof bundle.sha256, 'string');
+  assert.equal(bundle.sha256.length, 64);
+  assert.ok(bundle.bytes >= 100_000);
 });
 
-test('stores a mirrored module under the requested browser path even if the CDN resolves another in-root URL', async () => {
-  const childRequestedUrl = new URL('./chunk-a.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href;
-  const childResolvedUrl = `${LARK_BASE_JS_SDK_CDN_ROOT}canonical/chunk-a.mjs`;
-  const rootBody = `export { bitable } from './chunk-a.mjs';\n${'x'.repeat(70_000)}`;
-  const childBody = `export const bitable = {};\n${'a'.repeat(40_000)}`;
-
-  const mirror = await loadPinnedLarkBaseJsSdkMirror({
-    fetchImpl: async (url) => {
-      if (url === LARK_BASE_JS_SDK_ENTRY_URL) return response(url, rootBody);
-      if (url === childRequestedUrl) return response(childResolvedUrl, childBody);
-      return response(url, '', 404);
-    },
-  });
-
-  assert.equal(mirror.moduleCount, 2);
-  assert.ok(mirror.modules.has('/lark-base-js-sdk/chunk-a.mjs'));
-  assert.equal(mirror.modules.has('/lark-base-js-sdk/canonical/chunk-a.mjs'), false);
-  assert.doesNotThrow(() => assertMirroredGraphClosure(mirror.modules));
-});
-
-test('fails closed when a rewritten same-origin SDK import has no mirrored module', () => {
-  const modules = new Map([
-    [LARK_BASE_JS_SDK_ENTRY_LOCAL_PATH, `import '/lark-base-js-sdk/chunk-missing.mjs';`],
+test('esbuild parser discovers nested imports without the retired hand-written scanner', async () => {
+  const aUrl = new URL('./chunk-a.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href;
+  const bUrl = new URL('./nested/chunk-b.mjs', aUrl).href;
+  const bodies = new Map([
+    [LARK_BASE_JS_SDK_ENTRY_URL, `export { bitable } from './chunk-a.mjs';\n${'x'.repeat(60_000)}`],
+    [aUrl, `export { bitable } from './nested/chunk-b.mjs';\n${'a'.repeat(30_000)}`],
+    [bUrl, `export const bitable = {};\n${'b'.repeat(20_000)}`],
   ]);
 
-  assert.throws(
-    () => assertMirroredGraphClosure(modules),
-    (error) => error?.code === 'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_NOT_CLOSED'
-      && error?.details?.missingLocalPath === '/lark-base-js-sdk/chunk-missing.mjs',
-  );
+  const bundle = await loadPinnedLarkBaseJsSdkMirror({
+    fetchImpl: async (url) => response(url, bodies.get(url) ?? '', bodies.has(url) ? 200 : 404),
+  });
+
+  assert.equal(bundle.moduleCount, 3);
+  assert.match(bundle.entryBody, /bitable/u);
+  assert.doesNotMatch(bundle.entryBody, /chunk-b\.mjs/u);
 });
 
-test('fails closed when the pinned graph imports outside the exact versioned dist root', async () => {
-  const rootBody = `import 'https://evil.example/sdk.mjs';\n${'x'.repeat(120_000)}\nbitable`;
+test('fails closed when the SDK imports outside the exact versioned package graph', async () => {
+  const rootBody = `import 'https://evil.example/sdk.mjs';\nexport const bitable = {};\n${'x'.repeat(120_000)}`;
+
   await assert.rejects(
     () => loadPinnedLarkBaseJsSdkMirror({
       fetchImpl: async (url) => response(url, rootBody),
     }),
-    (error) => error?.code === 'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_EXTERNAL_IMPORT',
+    (error) => error?.code === 'CUSTOMER_BASE_VIEW_UI_SDK_GRAPH_EXTERNAL_IMPORT'
+      && error?.details?.specifier === 'https://evil.example/sdk.mjs',
   );
 });
 
-test('local path conversion is exact-version scoped', () => {
+test('fails closed when the CDN redirects a module to a different package path', async () => {
+  const childUrl = new URL('./chunk-a.mjs', LARK_BASE_JS_SDK_ENTRY_URL).href;
+  const redirectedChildUrl = `${LARK_BASE_JS_SDK_CDN_ROOT}canonical/chunk-a.mjs`;
+  const bodies = new Map([
+    [LARK_BASE_JS_SDK_ENTRY_URL, `export { bitable } from './chunk-a.mjs';\n${'x'.repeat(70_000)}`],
+    [childUrl, `export const bitable = {};\n${'a'.repeat(40_000)}`],
+  ]);
+
+  await assert.rejects(
+    () => loadPinnedLarkBaseJsSdkMirror({
+      fetchImpl: async (url) => {
+        if (url === childUrl) return response(redirectedChildUrl, bodies.get(url));
+        return response(url, bodies.get(url) ?? '', bodies.has(url) ? 200 : 404);
+      },
+    }),
+    (error) => error?.code === 'CUSTOMER_BASE_VIEW_UI_SDK_REDIRECT_PATH_CHANGED',
+  );
+});
+
+test('fails closed when the bundler version is outside the repository lock authority', async () => {
+  await assert.rejects(
+    () => loadPinnedLarkBaseJsSdkMirror({
+      fetchImpl: async () => response(LARK_BASE_JS_SDK_ENTRY_URL, ''),
+      esbuildImpl: { build: async () => ({}), version: '0.0.1' },
+    }),
+    (error) => error?.code === 'CUSTOMER_BASE_VIEW_UI_SDK_BUNDLER_VERSION_MISMATCH',
+  );
+});
+
+test('local path conversion remains exact-version scoped', () => {
   assert.equal(
     localPathForPinnedModule('https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.2/dist/api_modules/foo.mjs'),
     '/lark-base-js-sdk/api_modules/foo.mjs',
@@ -98,34 +111,4 @@ test('local path conversion is exact-version scoped', () => {
     () => localPathForPinnedModule('https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.1/dist/index.mjs'),
     (error) => error?.code === 'CUSTOMER_BASE_VIEW_UI_SDK_ORIGIN_MISMATCH',
   );
-});
-
-test('lexical parser ignores minified string boundaries that look like from-specifiers', () => {
-  const source = `const a="value from",xT=",xT=";\nexport { marker } from './real.mjs';`;
-  assert.deepEqual(extractModuleSpecifiers(source), ['./real.mjs']);
-});
-
-test('lexical parser recognizes static, side-effect, export-from, and literal dynamic imports', () => {
-  const source = [
-    `import value from './a.mjs';`,
-    `import './b.mjs';`,
-    `export * from './c.mjs';`,
-    `export { value } from './d.mjs';`,
-    `const later = import('./e.mjs');`,
-  ].join('\n');
-  assert.deepEqual(extractModuleSpecifiers(source), [
-    './a.mjs',
-    './b.mjs',
-    './c.mjs',
-    './d.mjs',
-    './e.mjs',
-  ]);
-});
-
-test('specifier rewrite changes only actual module syntax and leaves unrelated strings untouched', () => {
-  const source = `const note = "./a.mjs";\nimport x from './a.mjs';\nexport { x };`;
-  const rewritten = rewriteModuleSpecifiers(source, new Map([['./a.mjs', '/lark-base-js-sdk/a.mjs']]));
-  assert.match(rewritten, /const note = "\.\/a\.mjs"/u);
-  assert.match(rewritten, /from '\/lark-base-js-sdk\/a\.mjs'/u);
-  assert.doesNotMatch(rewritten, /from '\.\/a\.mjs'/u);
 });
