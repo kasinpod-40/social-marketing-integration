@@ -1,4 +1,10 @@
-import { bitable } from '/lark-base-js-sdk.mjs';
+import {
+  bitable,
+  FieldType,
+  FilterConjunction,
+  FilterDuration,
+  FilterOperator,
+} from '/lark-base-js-sdk.mjs';
 
 void fetch('/client-event?stage=browser-module-loaded', { cache: 'no-store' }).catch(() => {});
 
@@ -8,6 +14,23 @@ const REQUIRED_TARGET_ANCHORS = Object.freeze([
   '(Graphic) Content Creator',
   'คำถามจาก Sale & Support',
 ]);
+const TARGET_TABLE = '📈 MKT_Ads_Daily';
+const TARGET_VIEW = '📈 Google Ads Daily 30D';
+const PLATFORM_FIELD = 'platform';
+const DATE_FIELD = 'metric_date';
+const PLATFORM_OPTION = 'google_ads';
+
+const card = document.querySelector('.card');
+if (card) {
+  card.innerHTML = `
+    <strong>งานที่เหลือ: Dynamic Date Filter 30D เพียงจุดเดียว</strong>
+    <p><code>📈 MKT_Ads_Daily → 📈 Google Ads Daily 30D</code></p>
+    <p>ต้องเป็น AND: <code>platform is google_ads</code> + <code>metric_date is TheLastMonth</code></p>
+    <p class="warn">Sort / Group / Hidden ผ่านแล้วและ runner นี้จะไม่เรียก API เหล่านั้นอีก</p>
+    <button id="apply">ตั้ง Dynamic Date Filter</button>
+    <button id="inspect">ตรวจ Filter อย่างเดียว</button>
+  `;
+}
 
 const output = document.querySelector('#output');
 const status = document.querySelector('#status');
@@ -16,6 +39,7 @@ const inspectButton = document.querySelector('#inspect');
 
 let planPromise = null;
 
+if (status) status.textContent = 'พร้อมตรวจ Dynamic Date Filter 30D';
 inspectButton?.addEventListener('click', () => run({ execute: false }));
 applyButton?.addEventListener('click', () => run({ execute: true }));
 
@@ -24,25 +48,73 @@ async function run({ execute }) {
   clearOutput();
   try {
     const plan = await loadPlan();
-    setStatus(execute ? 'กำลัง preflight ก่อนจัด View…' : 'กำลังตรวจ View…');
+    setStatus(execute ? 'กำลัง preflight Dynamic Date Filter…' : 'กำลังตรวจ Dynamic Date Filter…');
     const context = await preflight(plan);
-    if (execute) {
-      setStatus('Preflight ผ่าน กำลังจัด sort / group…');
-      await applySupportedParity(context);
+    const before = await inspectFilter(context);
+    let mutationApplied = false;
+
+    if (execute && !sameJson(before.semantic, expectedSemanticFilter())) {
+      if (!before.empty) {
+        throw codedError(
+          'DYNAMIC_DATE_FILTER_EXISTING_STATE_CONFLICT',
+          `${TARGET_TABLE}.${TARGET_VIEW} already contains a non-empty filter that differs from Source; refusing to overwrite it`,
+        );
+      }
+
+      setStatus('Preflight ผ่าน กำลังตั้ง TheLastMonth…');
+      await requireMutation(context.view.addFilterCondition([
+        {
+          fieldId: context.platformFieldId,
+          fieldType: FieldType.SingleSelect,
+          operator: FilterOperator.Is,
+          value: context.googleAdsOptionId,
+        },
+        {
+          fieldId: context.dateFieldId,
+          fieldType: FieldType.DateTime,
+          operator: FilterOperator.Is,
+          value: FilterDuration.TheLastMonth,
+        },
+      ]), `addFilterCondition ${TARGET_TABLE}.${TARGET_VIEW}`);
+      await requireMutation(
+        context.view.setFilterConjunction(FilterConjunction.And),
+        `setFilterConjunction ${TARGET_TABLE}.${TARGET_VIEW}`,
+      );
+      await context.view.applySetting();
+      mutationApplied = true;
     }
-    setStatus('กำลังตรวจ readback…');
-    const verification = await verify(context);
-    const summary = buildSummary(plan, verification, { execute });
+
+    setStatus('กำลังตรวจ readback Dynamic Date Filter…');
+    const after = await inspectFilter(context);
+    const ok = sameJson(after.semantic, expectedSemanticFilter());
+    const summary = {
+      ok,
+      stage: 'customer-base-dynamic-date-filter-parity',
+      status: ok ? 'DYNAMIC_DATE_FILTER_PASS' : 'FAIL',
+      mode: execute ? 'base-js-sdk-write-and-readback' : 'base-js-sdk-read-only',
+      target: {
+        tableName: TARGET_TABLE,
+        viewName: TARGET_VIEW,
+      },
+      expected: expectedSemanticFilter(),
+      before: before.semantic,
+      after: after.semantic,
+      mutationApplied,
+      viewMutationCount: mutationApplied ? 1 : 0,
+      tableMutationCount: 0,
+      fieldMutationCount: 0,
+      recordMutationCount: 0,
+    };
     printSummary(summary);
-    setStatus(summary.ok
-      ? (execute ? 'Sort / Group parity ผ่านแล้ว' : 'ตรวจผ่าน')
-      : 'ยังมี Sort / Group parity ที่ต้องจัด/ตรวจต่อ');
+    setStatus(ok
+      ? (mutationApplied ? 'Dynamic Date Filter 30D ผ่านแล้ว' : 'Dynamic Date Filter 30D ตรงอยู่แล้ว')
+      : 'Dynamic Date Filter 30D ยังไม่ตรง Source');
   } catch (error) {
     const summary = {
       ok: false,
-      stage: 'customer-base-view-ui-parity',
+      stage: 'customer-base-dynamic-date-filter-parity',
       status: 'ERROR',
-      code: error?.code ?? 'CUSTOMER_BASE_VIEW_UI_PARITY_FAILED',
+      code: error?.code ?? 'CUSTOMER_BASE_DYNAMIC_DATE_FILTER_FAILED',
       message: error?.message ?? String(error),
       tableMutationCount: 0,
       fieldMutationCount: 0,
@@ -90,212 +162,117 @@ async function preflight(plan) {
   }
 
   const planTableNames = new Set(plan.tables.map((table) => table.tableName));
-  if (planTableNames.size !== 32) throw codedError('VIEW_UI_PLAN_TABLE_NAMES_INVALID', 'Plan Table names must be unique');
+  if (planTableNames.size !== 32) {
+    throw codedError('VIEW_UI_PLAN_TABLE_NAMES_INVALID', 'Plan Table names must be unique');
+  }
   for (const tableName of planTableNames) {
     if (!tableMetaByName.has(tableName)) {
       throw codedError('VIEW_UI_TARGET_CLONE_TABLE_MISSING', `Target clone Table is missing: ${tableName}`);
     }
   }
 
-  const tables = [];
-  for (const tablePlan of plan.tables) {
-    const table = await base.getTableByName(tablePlan.tableName);
-    const fieldMetas = await table.getFieldMetaList();
-    const fieldByName = uniqueByName(fieldMetas, `Field in ${tablePlan.tableName}`);
-    const viewMetas = await table.getViewMetaList();
-    const viewByName = uniqueByName(viewMetas, `View in ${tablePlan.tableName}`);
-    const views = [];
+  const table = await base.getTableByName(TARGET_TABLE);
+  const fieldMetas = await table.getFieldMetaList();
+  const fieldByName = uniqueByName(fieldMetas, `Field in ${TARGET_TABLE}`);
+  const platformMeta = fieldByName.get(PLATFORM_FIELD);
+  const dateMeta = fieldByName.get(DATE_FIELD);
+  requireFieldType(platformMeta, FieldType.SingleSelect, `${TARGET_TABLE}.${PLATFORM_FIELD}`);
+  requireFieldType(dateMeta, FieldType.DateTime, `${TARGET_TABLE}.${DATE_FIELD}`);
 
-    for (const viewPlan of tablePlan.views) {
-      const viewMeta = viewByName.get(viewPlan.viewName);
-      if (!viewMeta) {
-        throw codedError('VIEW_UI_TARGET_VIEW_MISSING', `Target View is missing: ${tablePlan.tableName}.${viewPlan.viewName}`);
-      }
-      const view = await table.getViewById(requireId(viewMeta, `View ${tablePlan.tableName}.${viewPlan.viewName}`));
-      requireMethods(view, ['getFieldMetaList', 'getVisibleFieldIdList', 'getSortInfo', 'deleteSort', 'addSort', 'applySetting'], `${tablePlan.tableName}.${viewPlan.viewName}`);
-      if ((viewPlan.mutate?.group ?? []).length > 0 || typeof view.getGroupInfo === 'function') {
-        requireMethods(view, ['getGroupInfo', 'deleteGroup', 'addGroup'], `${tablePlan.tableName}.${viewPlan.viewName}`);
-      }
-
-      const referencedFieldNames = new Set([
-        ...(viewPlan.verifyOnly?.fieldOrder ?? []),
-        ...(viewPlan.verifyOnly?.hiddenFieldNames ?? []),
-        ...(viewPlan.mutate?.sort ?? []).map((item) => item.fieldName),
-        ...(viewPlan.mutate?.group ?? []).map((item) => item.fieldName),
-      ]);
-      for (const fieldName of referencedFieldNames) {
-        if (!fieldByName.has(fieldName)) {
-          throw codedError('VIEW_UI_TARGET_FIELD_MISSING', `Target Field is missing: ${tablePlan.tableName}.${fieldName}`);
-        }
-      }
-
-      const expectedHiddenIds = new Set((viewPlan.verifyOnly?.hiddenFieldNames ?? [])
-        .map((name) => requireId(fieldByName.get(name), `${tablePlan.tableName}.${name}`)));
-      const allFieldIds = fieldMetas.map((meta) => requireId(meta, `${tablePlan.tableName} field`));
-      const expectedVisibleIds = allFieldIds.filter((id) => !expectedHiddenIds.has(id)).sort();
-      const actualVisibleIds = [...await view.getVisibleFieldIdList()].sort();
-      if (!sameJson(expectedVisibleIds, actualVisibleIds)) {
-        throw codedError(
-          'VIEW_UI_AUTOMATIC_HIDDEN_STATE_DRIFT',
-          `Hidden-field state changed after automatic PASS: ${tablePlan.tableName}.${viewPlan.viewName}`,
-        );
-      }
-
-      views.push({
-        tableName: tablePlan.tableName,
-        viewName: viewPlan.viewName,
-        view,
-        fieldByName,
-        plan: viewPlan,
-      });
-    }
-    tables.push({ tableName: tablePlan.tableName, views });
+  const platformFieldId = requireId(platformMeta, `${TARGET_TABLE}.${PLATFORM_FIELD}`);
+  const dateFieldId = requireId(dateMeta, `${TARGET_TABLE}.${DATE_FIELD}`);
+  const googleOptions = (platformMeta?.property?.options ?? [])
+    .filter((option) => requireName(option, `${TARGET_TABLE}.${PLATFORM_FIELD} option`) === PLATFORM_OPTION);
+  if (googleOptions.length !== 1) {
+    throw codedError(
+      'DYNAMIC_DATE_FILTER_PLATFORM_OPTION_MISMATCH',
+      `${TARGET_TABLE}.${PLATFORM_FIELD} must contain exactly one ${PLATFORM_OPTION} option`,
+    );
   }
+  const googleAdsOptionId = requireId(googleOptions[0], `${TARGET_TABLE}.${PLATFORM_FIELD}.${PLATFORM_OPTION}`);
 
-  return { plan, tables };
-}
-
-async function applySupportedParity(context) {
-  for (const table of context.tables) {
-    setStatus(`กำลังจัด ${table.tableName}…`);
-    for (const item of table.views) {
-      let needsApplySetting = false;
-      const expectedSort = remapRules(item.plan.mutate?.sort ?? [], item.fieldByName, item.tableName);
-      const currentSort = normalizeSdkRules(await item.view.getSortInfo());
-      if (!sameJson(currentSort, expectedSort)) {
-        for (const rule of await item.view.getSortInfo()) {
-          await requireMutation(item.view.deleteSort(rule), `deleteSort ${item.tableName}.${item.viewName}`);
-        }
-        if (expectedSort.length > 0) {
-          await requireMutation(item.view.addSort(expectedSort), `addSort ${item.tableName}.${item.viewName}`);
-        }
-        needsApplySetting = true;
-      }
-
-      if (typeof item.view.getGroupInfo === 'function') {
-        const expectedGroup = remapRules(item.plan.mutate?.group ?? [], item.fieldByName, item.tableName);
-        const currentGroup = normalizeSdkRules(await item.view.getGroupInfo());
-        if (!sameJson(currentGroup, expectedGroup)) {
-          for (const rule of await item.view.getGroupInfo()) {
-            await requireMutation(item.view.deleteGroup(rule), `deleteGroup ${item.tableName}.${item.viewName}`);
-          }
-          if (expectedGroup.length > 0) {
-            await requireMutation(item.view.addGroup(expectedGroup), `addGroup ${item.tableName}.${item.viewName}`);
-          }
-          needsApplySetting = true;
-        }
-      } else if ((item.plan.mutate?.group ?? []).length > 0) {
-        throw codedError('VIEW_UI_GROUP_CAPABILITY_MISSING', `Group API missing: ${item.tableName}.${item.viewName}`);
-      }
-
-      if (needsApplySetting) {
-        await requireMutation(item.view.applySetting(), `applySetting ${item.tableName}.${item.viewName}`);
-      }
-    }
+  const viewMetas = await table.getViewMetaList();
+  const viewByName = uniqueByName(viewMetas, `View in ${TARGET_TABLE}`);
+  const viewMeta = viewByName.get(TARGET_VIEW);
+  if (!viewMeta) {
+    throw codedError('DYNAMIC_DATE_FILTER_VIEW_MISSING', `Target View is missing: ${TARGET_TABLE}.${TARGET_VIEW}`);
   }
-}
-
-async function verify(context) {
-  const mismatches = [];
-  let fieldOrderMismatchViews = 0;
-  let hiddenMismatchViews = 0;
-  let sortMismatchViews = 0;
-  let groupMismatchViews = 0;
-
-  for (const table of context.tables) {
-    for (const item of table.views) {
-      const viewFieldMetas = await item.view.getFieldMetaList();
-      const actualFieldOrder = viewFieldMetas.map((meta) => requireName(meta, `${item.tableName}.${item.viewName} field`));
-      const expectedFieldOrder = item.plan.verifyOnly?.fieldOrder ?? [];
-      if (expectedFieldOrder.length > 0 && !sameJson(actualFieldOrder, expectedFieldOrder)) {
-        fieldOrderMismatchViews += 1;
-        mismatches.push({ dimension: 'fieldOrder', tableName: item.tableName, viewName: item.viewName });
-      }
-
-      const viewFieldByName = uniqueByName(viewFieldMetas, `View field in ${item.tableName}.${item.viewName}`);
-      const expectedHiddenIds = new Set((item.plan.verifyOnly?.hiddenFieldNames ?? [])
-        .map((name) => requireId(viewFieldByName.get(name), `${item.tableName}.${name}`)));
-      const expectedVisibleIds = viewFieldMetas
-        .map((meta) => requireId(meta, `${item.tableName} field`))
-        .filter((id) => !expectedHiddenIds.has(id))
-        .sort();
-      const actualVisibleIds = [...await item.view.getVisibleFieldIdList()].sort();
-      if (!sameJson(expectedVisibleIds, actualVisibleIds)) {
-        hiddenMismatchViews += 1;
-        mismatches.push({ dimension: 'hiddenFields', tableName: item.tableName, viewName: item.viewName });
-      }
-
-      const expectedSort = remapRules(item.plan.mutate?.sort ?? [], viewFieldByName, item.tableName);
-      const actualSort = normalizeSdkRules(await item.view.getSortInfo());
-      if (!sameJson(actualSort, expectedSort)) {
-        sortMismatchViews += 1;
-        mismatches.push({ dimension: 'sort', tableName: item.tableName, viewName: item.viewName });
-      }
-
-      if (typeof item.view.getGroupInfo === 'function') {
-        const expectedGroup = remapRules(item.plan.mutate?.group ?? [], viewFieldByName, item.tableName);
-        const actualGroup = normalizeSdkRules(await item.view.getGroupInfo());
-        if (!sameJson(actualGroup, expectedGroup)) {
-          groupMismatchViews += 1;
-          mismatches.push({ dimension: 'group', tableName: item.tableName, viewName: item.viewName });
-        }
-      }
-    }
-  }
+  const view = await table.getViewById(requireId(viewMeta, `${TARGET_TABLE}.${TARGET_VIEW}`));
+  requireMethods(
+    view,
+    ['getFilterInfo', 'addFilterCondition', 'setFilterConjunction', 'applySetting'],
+    `${TARGET_TABLE}.${TARGET_VIEW}`,
+  );
 
   return {
-    fieldOrderMismatchViews,
-    hiddenMismatchViews,
-    sortMismatchViews,
-    groupMismatchViews,
-    mismatchPreview: mismatches.slice(0, 10),
+    view,
+    platformFieldId,
+    dateFieldId,
+    googleAdsOptionId,
   };
 }
 
-function buildSummary(plan, verification, { execute }) {
-  const supportedOk = verification.hiddenMismatchViews === 0
-    && verification.sortMismatchViews === 0
-    && verification.groupMismatchViews === 0;
+async function inspectFilter(context) {
+  const raw = await context.view.getFilterInfo();
+  const conditions = Array.isArray(raw?.conditions)
+    ? raw.conditions.map((condition) => semanticCondition(condition, context)).sort(compareSemanticCondition)
+    : [];
   return {
-    ok: supportedOk,
-    stage: 'customer-base-view-ui-parity',
-    status: supportedOk ? 'SUPPORTED_UI_PASS' : 'FAIL',
-    mode: execute ? 'base-js-sdk-write-and-readback' : 'base-js-sdk-read-only',
-    supportedUi: {
-      hiddenVerifyMismatchViews: verification.hiddenMismatchViews,
-      sortMismatchViews: verification.sortMismatchViews,
-      groupMismatchViews: verification.groupMismatchViews,
+    empty: raw === null || conditions.length === 0,
+    semantic: {
+      conjunction: raw?.conjunction ?? FilterConjunction.And,
+      conditions,
     },
-    ignoredCosmetic: {
-      columnWidthViews: plan.summary.columnWidthViews,
-      columnWidthAssignments: plan.summary.columnWidthAssignments,
-      rowHeightViews: plan.summary.rowHeightViews,
-      reason: 'non-authoritative presentation only',
-    },
-    remainingManual: {
-      fieldOrderMismatchViews: verification.fieldOrderMismatchViews,
-      frozenColumnViews: plan.summary.frozenColumnManualViews,
-    },
-    mismatchPreview: verification.mismatchPreview,
-    tableMutationCount: 0,
-    fieldMutationCount: 0,
-    recordMutationCount: 0,
   };
 }
 
-function remapRules(rules, fieldByName, tableName) {
-  return rules.map((rule) => ({
-    fieldId: requireId(fieldByName.get(rule.fieldName), `${tableName}.${rule.fieldName}`),
-    desc: Boolean(rule.desc),
-  }));
+function semanticCondition(condition, context) {
+  const fieldId = String(condition?.fieldId ?? condition?.field_id ?? '');
+  const operator = String(condition?.operator ?? '');
+  if (fieldId === context.platformFieldId) {
+    return {
+      fieldName: PLATFORM_FIELD,
+      operator,
+      value: semanticPlatformValue(condition?.value, context.googleAdsOptionId),
+    };
+  }
+  if (fieldId === context.dateFieldId) {
+    return {
+      fieldName: DATE_FIELD,
+      operator,
+      value: unwrapSingleValue(condition?.value),
+    };
+  }
+  return {
+    fieldName: `__unknown_field__:${fieldId}`,
+    operator,
+    value: condition?.value ?? null,
+  };
 }
 
-function normalizeSdkRules(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map((rule) => ({
-    fieldId: String(rule?.fieldId ?? rule?.field_id ?? ''),
-    desc: Boolean(rule?.desc ?? rule?.isDesc ?? false),
-  }));
+function semanticPlatformValue(value, googleAdsOptionId) {
+  const unwrapped = unwrapSingleValue(value);
+  if (unwrapped === googleAdsOptionId || unwrapped === PLATFORM_OPTION) return PLATFORM_OPTION;
+  return unwrapped;
+}
+
+function unwrapSingleValue(value) {
+  if (Array.isArray(value) && value.length === 1) return value[0];
+  return value ?? null;
+}
+
+function expectedSemanticFilter() {
+  return {
+    conjunction: FilterConjunction.And,
+    conditions: [
+      { fieldName: DATE_FIELD, operator: FilterOperator.Is, value: FilterDuration.TheLastMonth },
+      { fieldName: PLATFORM_FIELD, operator: FilterOperator.Is, value: PLATFORM_OPTION },
+    ].sort(compareSemanticCondition),
+  };
+}
+
+function compareSemanticCondition(left, right) {
+  return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 
 function uniqueByName(items, label) {
@@ -321,6 +298,12 @@ function requireId(value, label) {
     : (typeof value?.fieldId === 'string' ? value.fieldId.trim() : '');
   if (!id) throw codedError('VIEW_UI_METADATA_ID_MISSING', `${label} id is missing`);
   return id;
+}
+
+function requireFieldType(value, expectedType, label) {
+  if (Number(value?.type) !== Number(expectedType)) {
+    throw codedError('DYNAMIC_DATE_FILTER_FIELD_TYPE_MISMATCH', `${label} has unexpected field type`);
+  }
 }
 
 function requireMethods(value, methods, label) {
