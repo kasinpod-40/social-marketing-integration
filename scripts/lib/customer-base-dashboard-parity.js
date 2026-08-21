@@ -93,9 +93,12 @@ export async function buildCustomerBaseDashboardParityPlan({ sourceClient }) {
 }
 
 /**
- * Inspect or materialize only the documented Dashboard API subset. The function
- * never deletes Dashboards/blocks and never mutates Tables, Fields, Records,
- * Views, Formulas, Roles, Workflows, or the retained migration checkpoint.
+ * Inspect or materialize only the documented Dashboard API subset. The live
+ * materialization path intentionally follows the already-proven BNK sequence:
+ * list -> create missing resource -> list readback. Deep Dashboard GET, deep
+ * block GET, theme PATCH and delete operations are excluded from this loop so
+ * an eventually-consistent detail endpoint cannot strand a partially-created
+ * customer Dashboard. Target state itself is the resumable ledger.
  */
 export async function applyCustomerBaseDashboardParity({
   plan,
@@ -130,21 +133,26 @@ export async function applyCustomerBaseDashboardParity({
       mode,
       mutationLog,
       onProgress,
-      themeStyle: plan.themeStyle,
     });
     results.push(result);
   }
 
   const documentedApiMismatchCount = results.reduce((sum, dashboard) => sum + dashboard.documentedApiMismatchCount, 0);
   const unsupportedRemainingCount = results.reduce((sum, dashboard) => sum + dashboard.unsupportedRemainingCount, 0);
+  const themeDeferredCount = results.filter((dashboard) => dashboard.themeParity === 'deferred_post_materialization').length;
+  const previewReady = mode === 'preview';
 
   return deepFreeze({
-    ok: documentedApiMismatchCount === 0,
+    ok: previewReady || documentedApiMismatchCount === 0,
     contractVersion: plan.contractVersion,
     action: mode,
-    status: documentedApiMismatchCount === 0
-      ? (unsupportedRemainingCount === 0 ? 'DASHBOARD_FULL_PARITY_PASS' : 'DASHBOARD_DOCUMENTED_API_PASS_WITH_UNSUPPORTED_REMAINDER')
-      : 'DASHBOARD_DOCUMENTED_API_MISMATCH',
+    status: previewReady
+      ? 'DASHBOARD_DOCUMENTED_API_PREVIEW_READY'
+      : (documentedApiMismatchCount === 0
+        ? (unsupportedRemainingCount === 0
+          ? 'DASHBOARD_DOCUMENTED_API_BLOCKS_PASS'
+          : 'DASHBOARD_DOCUMENTED_API_BLOCKS_PASS_WITH_UNSUPPORTED_REMAINDER')
+        : 'DASHBOARD_DOCUMENTED_API_MISMATCH'),
     targetFolder: folderName,
     dashboards: results,
     summary: {
@@ -153,6 +161,8 @@ export async function applyCustomerBaseDashboardParity({
       documentedApiMismatchCount,
       unsupportedRemainingCount,
       unsupportedByKind: plan.summary.unsupportedByKind,
+      themeDeferredCount,
+      expectedThemeStyle: plan.themeStyle,
     },
     mutations: mutationLog,
     dashboardMutationCount: mutationLog.filter((item) => item.kind === 'dashboard').length,
@@ -523,23 +533,32 @@ async function buildReferenceMaps(sourceClient) {
   return { tableById, fieldById, optionById, viewById };
 }
 
-async function ensureDashboard({ targetClient, dashboardPlan, folderId, initialDashboards, mode, mutationLog, onProgress, themeStyle }) {
+async function ensureDashboard({ targetClient, dashboardPlan, folderId, initialDashboards, mode, mutationLog, onProgress }) {
   let dashboards = initialDashboards.filter((item) => dashboardName(item) === dashboardPlan.name);
-  if (dashboards.length > 1) throw codedError('CUSTOMER_BASE_DASHBOARD_DUPLICATE_TARGET', 'Target contains duplicate Dashboard names', { name: dashboardPlan.name });
-  let createdDashboard = false;
+  if (dashboards.length > 1) {
+    throw codedError('CUSTOMER_BASE_DASHBOARD_DUPLICATE_TARGET', 'Target contains duplicate Dashboard names', { name: dashboardPlan.name });
+  }
+
+  const resumedExistingDashboard = dashboards.length === 1;
   if (dashboards.length === 0) {
     if (mode === 'apply') {
-      await targetClient.requestBitableJson(`/open-apis/base/v3/bases/${encodeURIComponent(targetClient.appToken)}/blocks`, {
-        method: 'POST',
-        retryMode: 'rate_limit_only',
-        body: { type: 'dashboard', name: dashboardPlan.name, parent_id: folderId },
-      });
+      await requestDashboardApi(
+        targetClient,
+        `create_dashboard:${dashboardPlan.name}`,
+        `/open-apis/base/v3/bases/${encodeURIComponent(targetClient.appToken)}/blocks`,
+        {
+          method: 'POST',
+          retryMode: 'rate_limit_only',
+          body: { type: 'dashboard', name: dashboardPlan.name, parent_id: folderId },
+        },
+      );
       mutationLog.push({ kind: 'dashboard', action: 'create', dashboardName: dashboardPlan.name });
-      createdDashboard = true;
       onProgress({ stage: 'dashboard_created', dashboardName: dashboardPlan.name });
       const refreshed = await listDashboards(targetClient);
       dashboards = refreshed.filter((item) => dashboardName(item) === dashboardPlan.name);
-      if (dashboards.length !== 1) throw codedError('CUSTOMER_BASE_DASHBOARD_CREATE_READBACK_MISMATCH', 'Dashboard did not materialize exactly once after create', { name: dashboardPlan.name });
+      if (dashboards.length !== 1) {
+        throw codedError('CUSTOMER_BASE_DASHBOARD_CREATE_READBACK_MISMATCH', 'Dashboard did not materialize exactly once after create', { name: dashboardPlan.name });
+      }
     } else {
       return previewMissingDashboard(dashboardPlan);
     }
@@ -557,40 +576,8 @@ async function ensureDashboard({ targetClient, dashboardPlan, folderId, initialD
     });
   }
 
-  const dashboardDetail = await getDashboard(targetClient, dashboardId);
-  const actualTheme = optionalText(dashboardDetail?.theme?.theme_style ?? dashboardDetail?.theme_style);
-  if (actualTheme !== themeStyle) {
-    if (mode !== 'apply') {
-      throw codedError('CUSTOMER_BASE_DASHBOARD_THEME_MISMATCH', 'Existing Dashboard theme differs from Source', {
-        dashboardName: dashboardPlan.name,
-        expected: themeStyle,
-        actual: actualTheme,
-      });
-    }
-    const existingBlocks = await listDashboardBlocks(targetClient, dashboardId);
-    const expectedNames = new Set(dashboardPlan.blocks.map((block) => block.name));
-    if (!createdDashboard && existingBlocks.some((block) => !expectedNames.has(blockName(block)))) {
-      throw codedError('CUSTOMER_BASE_DASHBOARD_PREEXISTING_CONFLICT', 'Refusing to retheme a Dashboard containing unknown blocks', {
-        dashboardName: dashboardPlan.name,
-      });
-    }
-    await targetClient.requestBitableJson(
-      `/open-apis/base/v3/bases/${encodeURIComponent(targetClient.appToken)}/dashboards/${encodeURIComponent(dashboardId)}`,
-      { method: 'PATCH', body: { theme: { theme_style: themeStyle } } },
-    );
-    mutationLog.push({ kind: 'dashboard', action: 'set_theme', dashboardName: dashboardPlan.name });
-    const themeReadback = await getDashboard(targetClient, dashboardId);
-    const readbackTheme = optionalText(themeReadback?.theme?.theme_style ?? themeReadback?.theme_style);
-    if (readbackTheme !== themeStyle) {
-      throw codedError('CUSTOMER_BASE_DASHBOARD_THEME_READBACK_MISMATCH', 'Dashboard theme differs after update readback', {
-        dashboardName: dashboardPlan.name,
-        expected: themeStyle,
-        actual: readbackTheme,
-      });
-    }
-  }
-
   let existingBlocks = await listDashboardBlocks(targetClient, dashboardId);
+  const existingBlockCountAtStart = existingBlocks.length;
   const byName = groupBy(existingBlocks, blockName);
   const supportedBlocks = dashboardPlan.blocks.filter((block) => block.supportedByDocumentedApi);
   const unsupportedBlocks = dashboardPlan.blocks.filter((block) => !block.supportedByDocumentedApi);
@@ -606,44 +593,65 @@ async function ensureDashboard({ targetClient, dashboardPlan, folderId, initialD
   let missing = 0;
   for (const spec of supportedBlocks) {
     const matches = byName.get(spec.name) ?? [];
-    if (matches.length > 1) throw codedError('CUSTOMER_BASE_DASHBOARD_DUPLICATE_BLOCK', 'Target Dashboard contains duplicate block names', { dashboardName: dashboardPlan.name, blockName: spec.name });
-    if (matches.length === 0) {
-      missing += 1;
-      if (mode !== 'apply') continue;
-      await targetClient.requestBitableJson(
-        `/open-apis/base/v3/bases/${encodeURIComponent(targetClient.appToken)}/dashboards/${encodeURIComponent(dashboardId)}/blocks`,
-        {
-          method: 'POST',
-          retryMode: 'rate_limit_only',
-          body: {
-            name: spec.name,
-            type: spec.type,
-            data_config: spec.dataConfig,
-            position: spec.position,
-          },
-        },
-      );
-      mutationLog.push({ kind: 'dashboard_block', action: 'create', dashboardName: dashboardPlan.name, blockName: spec.name, type: spec.type });
-      onProgress({ stage: 'dashboard_block_created', dashboardName: dashboardPlan.name, blockName: spec.name });
-      existingBlocks = await listDashboardBlocks(targetClient, dashboardId);
-      const created = existingBlocks.filter((item) => blockName(item) === spec.name);
-      if (created.length !== 1) throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_CREATE_READBACK_MISMATCH', 'Dashboard block did not materialize exactly once after create', { dashboardName: dashboardPlan.name, blockName: spec.name });
-      await verifyExistingBlock(targetClient, dashboardId, created[0], spec);
-      byName.set(spec.name, created);
+    if (matches.length > 1) {
+      throw codedError('CUSTOMER_BASE_DASHBOARD_DUPLICATE_BLOCK', 'Target Dashboard contains duplicate block names', {
+        dashboardName: dashboardPlan.name,
+        blockName: spec.name,
+      });
+    }
+    if (matches.length === 1) {
+      verifyExistingBlockSummary(matches[0], spec);
       continue;
     }
-    await verifyExistingBlock(targetClient, dashboardId, matches[0], spec);
+
+    missing += 1;
+    if (mode !== 'apply') continue;
+
+    await requestDashboardApi(
+      targetClient,
+      `create_dashboard_block:${dashboardPlan.name}:${spec.name}`,
+      `/open-apis/base/v3/bases/${encodeURIComponent(targetClient.appToken)}/dashboards/${encodeURIComponent(dashboardId)}/blocks`,
+      {
+        method: 'POST',
+        retryMode: 'rate_limit_only',
+        body: {
+          name: spec.name,
+          type: spec.type,
+          data_config: spec.dataConfig,
+          position: spec.position,
+        },
+      },
+    );
+    mutationLog.push({ kind: 'dashboard_block', action: 'create', dashboardName: dashboardPlan.name, blockName: spec.name, type: spec.type });
+    onProgress({ stage: 'dashboard_block_created', dashboardName: dashboardPlan.name, blockName: spec.name });
+
+    existingBlocks = await listDashboardBlocks(targetClient, dashboardId);
+    const created = existingBlocks.filter((item) => blockName(item) === spec.name);
+    if (created.length !== 1) {
+      throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_CREATE_READBACK_MISMATCH', 'Dashboard block did not materialize exactly once after create', {
+        dashboardName: dashboardPlan.name,
+        blockName: spec.name,
+      });
+    }
+    verifyExistingBlockSummary(created[0], spec);
+    byName.set(spec.name, created);
   }
 
   if (mode === 'apply') {
     existingBlocks = await listDashboardBlocks(targetClient, dashboardId);
     missing = supportedBlocks.filter((spec) => !existingBlocks.some((item) => blockName(item) === spec.name)).length;
   }
+
   return deepFreeze({
     name: dashboardPlan.name,
     dashboardId,
     expectedBlocks: dashboardPlan.blocks.length,
     documentedApiBlocks: supportedBlocks.length,
+    documentedApiMismatchCount: missing,
+    resumedExistingDashboard,
+    existingBlockCountAtStart,
+    themeParity: 'deferred_post_materialization',
+    deepDetailVerification: 'deferred_post_materialization',
     unsupportedRemainingCount: unsupportedBlocks.length,
     unsupportedBlocks: unsupportedBlocks.map((block) => ({
       name: block.name,
@@ -651,11 +659,10 @@ async function ensureDashboard({ targetClient, dashboardPlan, folderId, initialD
       position: block.position,
       manualReference: block.manualReference ?? null,
     })),
-    documentedApiMismatchCount: missing,
   });
 }
 
-async function verifyExistingBlock(targetClient, dashboardId, summary, spec) {
+function verifyExistingBlockSummary(summary, spec) {
   const actualType = optionalText(summary?.type);
   if (actualType && actualType !== spec.type) {
     throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_TYPE_CONFLICT', 'Existing Dashboard block type differs from Source', {
@@ -664,22 +671,20 @@ async function verifyExistingBlock(targetClient, dashboardId, summary, spec) {
       actualType,
     });
   }
-  const id = requireText(summary?.block_id ?? summary?.id, `${spec.name} block id`);
-  const detail = await getDashboardBlock(targetClient, dashboardId, id);
-  const detailType = optionalText(detail?.type) ?? actualType;
-  if (detailType && detailType !== spec.type) {
-    throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_TYPE_CONFLICT', 'Dashboard block detail type differs from Source', {
+
+  const actualDataConfig = summary?.data_config ?? summary?.dataConfig;
+  if (actualDataConfig && !semanticSubset(spec.dataConfig, actualDataConfig)) {
+    throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_DATA_CONFLICT', 'Existing Dashboard block list readback data_config differs from Source', {
       blockName: spec.name,
-      expectedType: spec.type,
-      actualType: detailType,
     });
   }
-  if (!semanticSubset(spec.dataConfig, detail?.data_config ?? detail?.dataConfig ?? {})) {
-    throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_DATA_CONFLICT', 'Existing Dashboard block data_config differs from Source', { blockName: spec.name });
-  }
-  const actualPosition = detail?.position;
-  if (actualPosition && !semanticSubset(spec.position, actualPosition)) {
-    throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_POSITION_CONFLICT', 'Existing Dashboard block position differs from Source', { blockName: spec.name, expected: spec.position, actual: actualPosition });
+
+  if (summary?.position && !semanticSubset(spec.position, summary.position)) {
+    throw codedError('CUSTOMER_BASE_DASHBOARD_BLOCK_POSITION_CONFLICT', 'Existing Dashboard block list readback position differs from Source', {
+      blockName: spec.name,
+      expected: spec.position,
+      actual: summary.position,
+    });
   }
 }
 
@@ -692,8 +697,17 @@ function previewMissingDashboard(dashboardPlan) {
     expectedBlocks: dashboardPlan.blocks.length,
     documentedApiBlocks: supported.length,
     unsupportedRemainingCount: unsupported.length,
-    unsupportedBlocks: unsupported.map((block) => ({ name: block.name, sourceKind: block.sourceKind, position: block.position, manualReference: block.manualReference ?? null })),
+    unsupportedBlocks: unsupported.map((block) => ({
+      name: block.name,
+      sourceKind: block.sourceKind,
+      position: block.position,
+      manualReference: block.manualReference ?? null,
+    })),
     documentedApiMismatchCount: supported.length,
+    resumedExistingDashboard: false,
+    existingBlockCountAtStart: 0,
+    themeParity: 'deferred_post_materialization',
+    deepDetailVerification: 'deferred_post_materialization',
   });
 }
 
@@ -711,7 +725,12 @@ async function listDashboards(client) {
   for (let page = 1; page <= 100; page += 1) {
     const params = new URLSearchParams({ page_size: '100' });
     if (pageToken) params.set('page_token', pageToken);
-    const response = await client.requestBitableJson(`/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/dashboards?${params.toString()}`, { method: 'GET' });
+    const response = await requestDashboardApi(
+      client,
+      'list_dashboards',
+      `/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/dashboards?${params.toString()}`,
+      { method: 'GET' },
+    );
     const data = response?.data ?? response ?? {};
     items.push(...collection(data, ['items', 'dashboards']));
     if (data.has_more !== true) return items;
@@ -728,7 +747,12 @@ async function listDashboardBlocks(client, dashboardId) {
   for (let page = 1; page <= 100; page += 1) {
     const params = new URLSearchParams({ page_size: '100' });
     if (pageToken) params.set('page_token', pageToken);
-    const response = await client.requestBitableJson(`/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/dashboards/${encodeURIComponent(dashboardId)}/blocks?${params.toString()}`, { method: 'GET' });
+    const response = await requestDashboardApi(
+      client,
+      'list_dashboard_blocks',
+      `/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/dashboards/${encodeURIComponent(dashboardId)}/blocks?${params.toString()}`,
+      { method: 'GET' },
+    );
     const data = response?.data ?? response ?? {};
     items.push(...collection(data, ['items', 'blocks']));
     if (data.has_more !== true) return items;
@@ -740,18 +764,27 @@ async function listDashboardBlocks(client, dashboardId) {
 }
 
 async function listBaseBlocks(client) {
-  const response = await client.requestBitableJson(`/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/blocks/list`, { method: 'POST', body: {} });
+  const response = await requestDashboardApi(
+    client,
+    'list_base_blocks',
+    `/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/blocks/list`,
+    { method: 'POST', body: {} },
+  );
   return collection(response?.data ?? response ?? {}, ['blocks', 'items']);
 }
 
-async function getDashboard(client, dashboardId) {
-  const response = await client.requestBitableJson(`/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/dashboards/${encodeURIComponent(dashboardId)}`, { method: 'GET' });
-  return response?.data?.dashboard ?? response?.data ?? response ?? {};
-}
-
-async function getDashboardBlock(client, dashboardId, blockIdValue) {
-  const response = await client.requestBitableJson(`/open-apis/base/v3/bases/${encodeURIComponent(client.appToken)}/dashboards/${encodeURIComponent(dashboardId)}/blocks/${encodeURIComponent(blockIdValue)}`, { method: 'GET' });
-  return response?.data?.block ?? response?.data ?? response ?? {};
+async function requestDashboardApi(client, stage, path, options) {
+  try {
+    return await client.requestBitableJson(path, options);
+  } catch (error) {
+    throw codedError('CUSTOMER_BASE_DASHBOARD_API_STAGE_FAILED', `Dashboard API stage failed: ${stage}`, {
+      stage,
+      causeCode: error?.code ?? null,
+      status: error?.details?.status ?? null,
+      larkCode: error?.details?.larkCode ?? null,
+      retryAfter: error?.details?.retryAfter ?? null,
+    });
+  }
 }
 
 function resolveUniqueNamedBlock(blocks, name, expectedKind) {
