@@ -167,3 +167,28 @@ test('AI readiness resolves Draft inside JSON-string workflow envelope', async (
   assert.equal(result.blockerCount, 1);
   assert.equal(result.remoteMutationCount, 0);
 });
+
+test('notification planner resolves Draft nested inside workflow envelope and reads sibling status', async () => {
+  const result = await buildCustomerBaseNotificationWorkflowPlan({
+    sourceClient: baseSource([
+      { envelope: { Status: 1, Draft: JSON.stringify(aiDraft()) } },
+      { envelope: { Status: 0, Draft: JSON.stringify(notificationDraft()) } },
+    ]),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceStatus, 'disabled');
+  assert.equal(result.sourceResolutionMode, 'canonical-title-nested-draft');
+  assert.match(result.sourceDraftPath, /\.envelope\.Draft$/u);
+});
+
+test('notification planner resolves Draft inside JSON-string workflow envelope', async () => {
+  const result = await buildCustomerBaseNotificationWorkflowPlan({
+    sourceClient: baseSource([
+      { payload: JSON.stringify({ Status: 1, Draft: JSON.stringify(aiDraft()) }) },
+      { payload: JSON.stringify({ Status: 0, Draft: JSON.stringify(notificationDraft()) }) },
+    ]),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceStatus, 'disabled');
+  assert.match(result.sourceDraftPath, /\.payload\.\$json\.Draft$/u);
+});
