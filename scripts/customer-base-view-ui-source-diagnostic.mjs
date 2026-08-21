@@ -28,6 +28,16 @@ const EXPECTED_PLAN_SUMMARY = Object.freeze({
   rowHeightViews: 110,
   frozenColumnManualViews: 110,
 });
+const EXPECTED_SORT_PROFILES = Object.freeze({
+  'metric_date DESC': 18,
+  'generated_at DESC': 13,
+  'rank ASC': 5,
+  'last_order_at DESC': 1,
+  'last_activity_at DESC': 1,
+  'rank DESC': 1,
+  'source_created_at DESC': 1,
+  'source_modified_at DESC': 1,
+});
 
 try {
   const checkpointFile = process.env.CUSTOMER_BASE_CONTROLLED_APPLY_CHECKPOINT_FILE
@@ -50,7 +60,7 @@ try {
   console.log('\n=== COPY THIS SUMMARY JSON ===');
   console.log(JSON.stringify({
     ok: true,
-    contractVersion: 'customer_base_view_ui_source_diagnostic_v1',
+    contractVersion: 'customer_base_view_ui_source_diagnostic_v2',
     stage: 'customer-base-view-ui-source-diagnostic',
     status: 'DIAGNOSTIC_COMPLETE',
     checkpoint: {
@@ -58,6 +68,7 @@ try {
       sourceAuthoritySha256: checkpoint.sourceAuthoritySha256,
       cloneTableCount: expectedTableNames.length,
     },
+    retainedSortProfiles: EXPECTED_SORT_PROFILES,
     currentSources,
     retainedLayoutAuthority,
     diagnosis: {
@@ -78,7 +89,7 @@ try {
   console.error('\n=== COPY THIS SUMMARY JSON ===');
   console.error(JSON.stringify({
     ok: false,
-    contractVersion: 'customer_base_view_ui_source_diagnostic_v1',
+    contractVersion: 'customer_base_view_ui_source_diagnostic_v2',
     stage: 'customer-base-view-ui-source-diagnostic',
     status: 'ERROR',
     code: error?.code ?? 'CUSTOMER_BASE_VIEW_UI_SOURCE_DIAGNOSTIC_FAILED',
@@ -105,6 +116,7 @@ async function diagnoseSource(sourceFile, expectedTableNames) {
     const manifest = await buildLarkBaseViewManualParityManifest({ sourceClient });
     const plan = buildLarkBaseViewJsSdkParityPlan(manifest);
     const planMismatches = comparePlanSummary(plan?.summary);
+    const sortAuthority = diagnoseSortAuthority(plan);
     const metadata = await stat(sourceFile);
 
     return Object.freeze({
@@ -120,6 +132,7 @@ async function diagnoseSource(sourceFile, expectedTableNames) {
       planOk: planMismatches.length === 0,
       planSummary: plan.summary,
       planMismatches,
+      sortAuthority,
     });
   } catch (error) {
     return Object.freeze({
@@ -133,6 +146,62 @@ async function diagnoseSource(sourceFile, expectedTableNames) {
       details: error?.details ?? {},
     });
   }
+}
+
+function diagnoseSortAuthority(plan) {
+  const inventory = [];
+  const profileViews = new Map();
+
+  for (const table of plan?.tables ?? []) {
+    for (const view of table?.views ?? []) {
+      const sort = Array.isArray(view?.mutate?.sort) ? view.mutate.sort : [];
+      if (sort.length === 0) continue;
+      const normalized = sort.map((rule) => ({
+        fieldName: requireText(rule?.fieldName, 'sort fieldName'),
+        direction: rule?.desc === true ? 'DESC' : 'ASC',
+      }));
+      const profile = normalized.map((rule) => `${rule.fieldName} ${rule.direction}`).join(' + ');
+      const identity = `${table.tableName} → ${view.viewName}`;
+      inventory.push(Object.freeze({
+        tableName: table.tableName,
+        viewName: view.viewName,
+        profile,
+        sort: Object.freeze(normalized),
+      }));
+      const views = profileViews.get(profile) ?? [];
+      views.push(identity);
+      profileViews.set(profile, views);
+    }
+  }
+
+  inventory.sort((left, right) => left.tableName.localeCompare(right.tableName)
+    || left.viewName.localeCompare(right.viewName));
+
+  const profiles = [...profileViews.entries()]
+    .map(([profile, views]) => Object.freeze({
+      profile,
+      count: views.length,
+      expectedCount: EXPECTED_SORT_PROFILES[profile] ?? 0,
+      delta: views.length - (EXPECTED_SORT_PROFILES[profile] ?? 0),
+      views: Object.freeze([...views].sort()),
+    }))
+    .sort((left, right) => left.profile.localeCompare(right.profile));
+
+  const profileMismatches = [];
+  const profileNames = new Set([...Object.keys(EXPECTED_SORT_PROFILES), ...profileViews.keys()]);
+  for (const profile of [...profileNames].sort()) {
+    const expected = EXPECTED_SORT_PROFILES[profile] ?? 0;
+    const actual = profileViews.get(profile)?.length ?? 0;
+    if (expected !== actual) profileMismatches.push(Object.freeze({ profile, expected, actual, delta: actual - expected }));
+  }
+
+  return Object.freeze({
+    expectedTotal: Object.values(EXPECTED_SORT_PROFILES).reduce((sum, value) => sum + value, 0),
+    actualTotal: inventory.length,
+    profileMismatches: Object.freeze(profileMismatches),
+    profiles: Object.freeze(profiles),
+    inventory: Object.freeze(inventory),
+  });
 }
 
 async function diagnoseRetainedLayoutAuthority(expectedTableNames) {
@@ -173,6 +242,7 @@ async function diagnoseRetainedLayoutAuthority(expectedTableNames) {
           fileName: basename(filePath),
           sha256,
           planSummary: plan.summary,
+          sortAuthority: diagnoseSortAuthority(plan),
         });
       }
     } catch (error) {
