@@ -172,6 +172,7 @@ async function preflight(plan) {
   }
 
   const table = await base.getTableByName(TARGET_TABLE);
+  requireMethods(table, ['getField'], TARGET_TABLE);
   const fieldMetas = await table.getFieldMetaList();
   const fieldByName = uniqueByName(fieldMetas, `Field in ${TARGET_TABLE}`);
   const platformMeta = fieldByName.get(PLATFORM_FIELD);
@@ -181,7 +182,9 @@ async function preflight(plan) {
 
   const platformFieldId = requireId(platformMeta, `${TARGET_TABLE}.${PLATFORM_FIELD}`);
   const dateFieldId = requireId(dateMeta, `${TARGET_TABLE}.${DATE_FIELD}`);
-  const googleOptions = (platformMeta?.property?.options ?? [])
+  const platformField = await table.getField(platformFieldId);
+  requireMethods(platformField, ['getOptions'], `${TARGET_TABLE}.${PLATFORM_FIELD}`);
+  const googleOptions = (await platformField.getOptions())
     .filter((option) => requireName(option, `${TARGET_TABLE}.${PLATFORM_FIELD} option`) === PLATFORM_OPTION);
   if (googleOptions.length !== 1) {
     throw codedError(
