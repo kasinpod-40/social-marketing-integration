@@ -3,7 +3,7 @@
 ## Current status
 
 ```text
-TASK_STATUS                         = AUTOMATIC_PASS_VIEW_FUNCTIONAL_PASS_DYNAMIC_FILTER_READY
+TASK_STATUS                         = DASHBOARD_DOCUMENTED_API_PREVIEW_PENDING
 CURRENT_PROGRAM                     = CUSTOMER_BASE_FULL_PARITY_V1
 TARGET_BASE                         = ✨Marketing Content Calendar
 TARGET_FOLDER                       = Setup Phase | Social MKT Data Hub
@@ -26,148 +26,181 @@ VIEW_ROW_HEIGHT                     = IGNORED_COSMETIC_BY_USER
 VIEW_FIELD_ORDER                    = PRESENTATION_ONLY_105_MISMATCH_VIEWS
 VIEW_FROZEN_COLUMNS                 = PRESENTATION_ONLY_110_VIEWS
 FORMULA_DEFINITION                  = AUTOMATIC_PASS_DO_NOT_REWRITE
-FORMULA_PRESENTATION                = SOURCE_DIAGNOSTIC_READY_UI_4
-DYNAMIC_DATE_VIEW_FILTER            = SDK_EXACT_ONE_VIEW_READY_FOR_LIVE
-DASHBOARDS                          = MANUAL_UI_6_75_CHARTS
-WORKFLOWS                           = MANUAL_UI_2
+FORMULA_PRESENTATION                = COMPLETE_4_OF_4
+DYNAMIC_DATE_VIEW_FILTER            = LIVE_PASS_DO_NOT_RERUN
+DASHBOARDS                          = API_PLAN_6_DASHBOARDS_75_BLOCKS_66_DOCUMENTED_9_REMAINDER
+WORKFLOWS                           = MANUAL_RECONSTRUCTION_PENDING_2
 DRAFT_PR                            = 661
-PRODUCTION                          = BLOCKED_PENDING_REMAINING_UI_AND_FINAL_EXPORT
+PRODUCTION                          = BLOCKED_PENDING_DASHBOARD_WORKFLOW_FINAL_EXPORT
 ```
 
 ## Objective
 
-Close the remaining customer-owned Lark Base UI parity after the automatic migration and functional View parity have passed. Do not reopen migration-owned Table/Field/Record/Formula-definition state and do not touch Worker, D1, Queue, schedule or deployment.
+Close remaining customer-owned Lark Base parity without reopening successful migration state. Reuse existing shared clients/operators and previously proven API contracts. Do not mutate Source, Worker, D1, Queue, schedules, deployment, or the retained automatic-migration checkpoint.
 
 ## Closed — never rerun
 
-The automatic migration is closed. Final canonical GET verification passed with mismatch count `0` across the clone scope. The original checkpoint is immutable and must never be recreated.
+The controlled automatic migration is closed. Final canonical GET verification passed with mismatch count `0` across the clone scope. The original checkpoint is immutable and must never be recreated.
 
-Closed automatic state:
+Closed state includes:
 
 - 32 clone Tables and all migration-owned Fields/Records;
 - Relations and Formula definitions;
-- supported View filters and hierarchy;
-- hidden fields;
-- Advanced Permission parity already covered by the controlled migration flow;
+- supported View filters/hierarchy and hidden fields;
+- Advanced Permission parity covered by the controlled migration;
 - protected `🎵 RAW_TikTok_Creator_Videos` remains zero-write;
-- folder placement under `Setup Phase | Social MKT Data Hub` is complete.
+- folder placement under `Setup Phase | Social MKT Data Hub` is complete;
+- View Sort 42 / Group 4 live write+readback PASS;
+- Formula presentation 4/4 complete in UI without Formula-expression mutation;
+- `📈 MKT_Ads_Daily → 📈 Google Ads Daily 30D` dynamic filter live PASS with exact `platform is google_ads AND metric_date is TheLastMonth`.
 
-Closed Base JS SDK functional View state from live Target readback:
+Do not run automatic Apply, Sort/Group, Formula presentation or Dynamic Date Filter again unless a later read-only audit proves drift.
 
-```text
-hidden verify mismatch        0
-sort mismatch                 0 / 42 Views
-group mismatch                0 / 4 Views
-```
+## Cosmetic View dimensions
 
-Do not run the Sort/Group mutation runner again.
-
-## Cosmetic View dimensions removed from parity gate
-
-The user explicitly confirmed that historical Column Width and Row Height values were incidental resizing/appearance changes. They are not business/data requirements and are removed from execution, authority and closure gates.
+By explicit user decision, historical Column Width and Row Height were incidental presentation changes and are removed from parity gates. Field order and frozen columns remain presentation-only observations because no documented setter has been proven.
 
 ```text
 Column Width                  ignored cosmetic
 Row Height                    ignored cosmetic
-```
-
-Field order and frozen columns remain presentation-only observations because the SDK has no documented setter. They do not block the current functional-data work:
-
-```text
 Field order mismatches        105 Views
 Frozen columns                110 Views
 ```
 
-Do not invent undocumented setters for them.
+Do not invent undocumented setters.
 
-## Formula presentation — exact four-field UI ownership
+## Dashboard authority — current exact Source
 
-Formula expressions/definitions already passed automatic canonical verification and must not be rewritten, deleted or recreated. The only remaining Formula scope is presentation metadata for exactly:
-
-1. `📣 MKT_Ads_Campaigns.budget`
-2. `📈 MKT_Ads_Daily.all_conversion_value`
-3. `📈 MKT_Ads_Daily.cost_per_conversion`
-4. `📈 MKT_Ads_Daily.conversion_rate`
-
-`scripts/customer-base-formula-presentation-source-diagnostic.mjs` is local/read-only and is fenced to current Source SHA:
+Current Source authority is `Social MKT Data Hub.base` SHA-256:
 
 ```text
 9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7
 ```
 
-It reuses the shared `normalizeLarkFieldProperty()` Formula canonicalization, strips `formula_expression`, requires the exact four approved Formula identities, and reports only presentation metadata needed for UI closeout. It performs zero remote requests and mutations.
+The current Source contains exactly six Dashboards / 75 blocks:
 
-Historical UI evidence expects display formats `0.00`, `0.00`, `0.00`, `0.00%`, but current exact Source diagnostic remains the authority for any richer `data_type / ui_type / currency_code / formatter` presentation before UI changes.
+1. `💬 Customer Service & Leads` — 11
+2. `🛡️ Data Quality & Operations` — 8
+3. `📊 Executive Marketing Overview` — 11
+4. `🌱 Organic Performance` — 22
+5. `💰 Paid Ads Performance` — 13
+6. `🛒 Commerce & Conversion` — 10
 
-## Dynamic Date filter — exact one-view SDK recovery
+All 81 Dashboard/Chart snapshots were proven to be Base64 → UTF-8 JSON. The semantic decode mapped Table/Field/Select-option references to names and found zero opaque snapshot payloads. The two Table View widgets were separately resolved to:
 
-The exact current Source contract is:
+- `🔄 Latest Sync Runs` → `🔄 MKT_Sync_Log` → `📊 Dashboard Sync Health`
+- `🚨 Recent System Alerts` → `🚨 MKT_System_Alerts` → `📊 Dashboard Alerts`
 
-```text
-Table                         📈 MKT_Ads_Daily
-View                          📈 Google Ads Daily 30D
-Conjunction                   AND
-Condition 1                   platform is google_ads
-Condition 2                   metric_date is TheLastMonth
-```
+## Dashboard API correction — BNK reuse
 
-`TheLastMonth` is the single dynamic Date token that the Server OpenAPI projection intentionally omitted in full rather than writing a partial filter. Current regression evidence is `tests/application/lark-base-view-filter-manual-parity.test.js`.
+The earlier assumption that all 75 Dashboard blocks required manual UI reconstruction was wrong and is superseded.
 
-The existing same-origin Base extension runner is now narrowed to this one filter only. Before mutation it requires:
+The existing BNK project proved the Base v3 Dashboard write path in `scripts/bnk/apply-sales-orders-dashboard.mjs`:
 
-1. editable Target Base;
-2. all four immutable Target identity anchors;
-3. exact 32 clone Table-name scope from the admitted Source plan;
-4. exact `📈 MKT_Ads_Daily` / `📈 Google Ads Daily 30D` identity;
-5. `platform` is SingleSelect and contains exactly one Target option named `google_ads`;
-6. `metric_date` is DateTime;
-7. documented filter SDK methods are present.
+- list Dashboards: `GET /open-apis/base/v3/bases/{base}/dashboards`
+- create Dashboard navigation block in a folder: `POST /open-apis/base/v3/bases/{base}/blocks`
+- list Dashboard blocks: `GET /open-apis/base/v3/bases/{base}/dashboards/{dashboard_id}/blocks`
+- create Dashboard block: `POST /open-apis/base/v3/bases/{base}/dashboards/{dashboard_id}/blocks`
+- exact block placement: top-level `position {x,y,w,h}` in the 12-column grid
+- Dashboard theme update: `PATCH /open-apis/base/v3/bases/{base}/dashboards/{dashboard_id}`
+- Dashboard/block readback through the corresponding GET endpoints
 
-Safety behavior:
+Lark CLI official Dashboard SSOT confirms documented block types `statistics`, `text`, `column`, `bar`, `line`, `pie`, `ring`, `area`, `combo`, `scatter`, `funnel`, `wordCloud`, `radar`, with semantic `data_config` based on Table/Field names and optional exact `position`.
 
-- if readback is already exact → PASS with zero mutation;
-- if filter is null/empty → add the exact two conditions, set AND, `applySetting()`, then read back;
-- if any non-empty different filter exists → fail closed with `DYNAMIC_DATE_FILTER_EXISTING_STATE_CONFLICT`; do not overwrite;
-- no Sort/Group/Hidden/Width/RowHeight method is called;
-- no Record, Field schema, Formula, Role, Table or View create/delete method is called.
-
-Expected successful live status:
+Current Source chart-kind inventory is:
 
 ```text
-DYNAMIC_DATE_FILTER_PASS
+statistics     39
+a text          18
+column           9
+slicer           7
+table_view       2
+TOTAL            75
 ```
 
-## Remaining after Formula + dynamic filter
+Therefore the reviewed documented-API boundary is:
 
-After these two gates close, meaningful remaining work is:
+```text
+Documented API blocks        66 / 75
+Unsupported public enum       9 / 75
+  slicer                       7
+  table_view                   2
+```
 
-1. Dashboards — 6 / 75 charts, reconstruct/verify through supported Lark UI/source reference;
-2. Workflows — 2, reconstruct/verify through supported Lark UI/source reference while preserving intended enabled/disabled state;
-3. one final Target `.base` export and final parity verification;
-4. Ready/Merge PR #661 only on explicit user instruction after all closure evidence is retained.
+Do not send guessed undocumented `slicer` or `table_view` block types to the customer Target. Those 9 remain explicit remainder until a documented/proven contract is found.
+
+## Dashboard operator
+
+New narrow post-Apply operator:
+
+```text
+scripts/customer-base-dashboard-parity.mjs
+scripts/lib/customer-base-dashboard-parity.js
+```
+
+This is not a clone/migration engine. It reuses `LarkBitableClient.requestBitableJson()` for authentication, throttling and retry behavior and performs only Dashboard/navigation-block mutations.
+
+Safety gates:
+
+1. exact current Source SHA only;
+2. exact six Dashboard names/counts;
+3. exact current reviewed boundary `75 total / 66 documented API / 9 unsupported`;
+4. maps Source IDs locally to semantic Table/Field/View/Select-option names before request construction;
+5. validates all Source positions against the documented 12-column grid;
+6. requires all four immutable Target identity-anchor Tables;
+7. resolves target folder `Setup Phase | Social MKT Data Hub` exactly once;
+8. duplicate Dashboard/block names fail closed;
+9. unknown existing Target block names fail closed;
+10. existing block type/data_config/position conflicts fail closed;
+11. creates missing blocks sequentially using rate-limit-only retry and readback;
+12. no delete scope;
+13. no Table/Field/Record/View/Formula/Role/Workflow mutation;
+14. exact Apply confirmation required.
+
+Apply confirmation:
+
+```text
+APPLY_CUSTOMER_BASE_DASHBOARD_DOCUMENTED_API_PARITY_V1
+```
+
+Expected successful documented-API status after live apply:
+
+```text
+DASHBOARD_DOCUMENTED_API_PASS_WITH_UNSUPPORTED_REMAINDER
+```
+
+with documented API mismatch `0` and explicit remainder `7 slicers + 2 table views`.
+
+## Workflows
+
+Two Source Workflows remain separate from Dashboard closure:
+
+1. `AI Materialization → MKT_AI_Report_Runs`
+2. `Eligible AI Run → Lark Group Notification`
+
+Do not replay raw Draft/FlowSchema/auth/generated IDs. Preserve Source intended enabled/disabled state and reconstruct only through a documented/proven definition-write contract or supported UI.
 
 ## No-repeat rules
 
-1. Never create a new checkpoint.
+1. Never create a new automatic-migration checkpoint.
 2. Never rerun controlled automatic Apply.
 3. Never delete/recreate migration-owned Tables/Fields/Records.
-4. Never rewrite the four Formula definitions during presentation closeout.
-5. Never rerun the already-passed Sort/Group runner.
-6. Never restore Width/RowHeight as parity requirements.
-7. Never mutate Source, Worker, D1, Queue, schedule or deployment for this workstream.
-8. Never overwrite a non-empty conflicting dynamic filter; stop and inspect instead.
-9. Never invent undocumented field-order/frozen-column/Dashboard/Workflow write payloads.
+4. Never rewrite the four Formula definitions.
+5. Never rerun the passed Sort/Group runner.
+6. Never rerun the passed Dynamic Date Filter mutation.
+7. Never restore Width/RowHeight as parity requirements.
+8. Never mutate Source, Worker, D1, Queue, schedule or deployment for this workstream.
+9. Never invent undocumented Slicer/Table View/Workflow write payloads.
 10. PR #661 remains Draft/Open/Unmerged until explicit final authorization.
 
 ## Required next sequence
 
-1. Run focused tests on the final branch HEAD.
-2. Run the Source Formula presentation diagnostic locally; require exact current Source SHA and exactly four Formula identities.
+1. Run focused Dashboard regression tests on the exact branch HEAD.
+2. Run Dashboard operator in default preview/read-only mode against exact Source + customer Target; require six Dashboards, 75 Source blocks, 66 documented-API planned blocks, 9 explicit unsupported remainder, and zero Target mutation.
 3. Require Branch Verification SUCCESS on that same exact HEAD.
-4. Start the existing local Base extension server using the immutable checkpoint only as a Target-scope fence.
-5. Require `browser-module-loaded` from the exact customer Target.
-6. Click `ตั้ง Dynamic Date Filter` once and retain the compact readback JSON; do not click again after PASS or ERROR.
-7. Use the Source diagnostic output to close only Formula presentation in Lark UI, without editing Formula expressions.
-8. Proceed to Dashboard 6 / 75 charts and Workflow 2 closure.
-9. Export Target once for final verification.
-10. Ready/Merge PR #661 only after explicit user instruction.
+4. Only then run one controlled Dashboard `--apply` using exact confirmation.
+5. Read back all six Dashboards and all 66 documented-API blocks; require documented mismatch `0`.
+6. Close the 7 Slicer + 2 Table View remainder only through a proven documented contract or minimal supported UI.
+7. Close Workflow 2.
+8. Export Target once and run final parity verification.
+9. Ready/Merge PR #661 only on explicit user instruction.
