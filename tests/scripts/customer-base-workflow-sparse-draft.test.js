@@ -138,3 +138,32 @@ test('both planners accept decoded json Draft wrapper shape', async () => {
   assert.equal(ai.ok, true);
   assert.equal(notification.ok, true);
 });
+
+test('AI readiness resolves Draft nested inside workflow envelope and reads sibling status', async () => {
+  const result = await buildCustomerBaseAiMaterializationWorkflowReadiness({
+    sourceClient: baseSource([
+      { envelope: { Status: 1, Draft: JSON.stringify(aiDraft()) } },
+      { envelope: { Status: 0, Draft: JSON.stringify(notificationDraft()) } },
+    ]),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceStatus, 'enabled');
+  assert.equal(result.sourceResolutionMode, 'canonical-title-nested-draft');
+  assert.match(result.sourceDraftPath, /\.envelope\.Draft$/u);
+  assert.equal(result.blockerCount, 1);
+  assert.equal(result.remoteMutationCount, 0);
+});
+
+test('AI readiness resolves Draft inside JSON-string workflow envelope', async () => {
+  const result = await buildCustomerBaseAiMaterializationWorkflowReadiness({
+    sourceClient: baseSource([
+      { payload: JSON.stringify({ Status: 1, Draft: JSON.stringify(aiDraft()) }) },
+      { payload: JSON.stringify({ Status: 0, Draft: JSON.stringify(notificationDraft()) }) },
+    ]),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceStatus, 'enabled');
+  assert.match(result.sourceDraftPath, /\.payload\.\$json\.Draft$/u);
+  assert.equal(result.blockerCount, 1);
+  assert.equal(result.remoteMutationCount, 0);
+});
