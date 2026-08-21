@@ -1,60 +1,79 @@
-# Current Task — Repository Final Closeout & Weekly Scheduled Evidence v1
+# Current Task — Organic Dashboard Observed-Metric Repair v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = REPOSITORY_CLOSEOUT_COMPLETE_WEEKLY_TIME_GATE_REMAINS
-CURRENT_PROGRAM                     = WAIT_AUTOMATIC_WEEKLY_V6_SCHEDULED_EVIDENCE_20260824
-REPOSITORY_CLOSEOUT_MERGE            = c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe
-BRANCH_VERIFICATION_RUN              = 31990567121
-BRANCH_VERIFICATION_JOB              = 95273236886
-BRANCH_VERIFICATION                  = PASS
-INTEGRATION_WORKSPACE               = ACTIVE_VERIFIED
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = ORGANIC_DASHBOARD_OBSERVED_METRIC_REPAIR_V1
+BASE_MAIN                           = ef5d5fc8697406102757537b5a07a4892ed096a6
+BRANCH                              = work/facebook-organic-observed-metric-aggregation-v1
+INTEGRATION_WORKSPACE               = READ_ONLY_UNTIL_REVIEWED_MERGE
 PRODUCTION                          = BLOCKED_CUSTOMER_OWNED
-AUTOMATIC_WEEKLY_NOTIFICATION       = LIVE_ENABLED_MONDAY_0830_ASIA_BANGKOK
-NEXT_AUTOMATIC_SCHEDULED_EVIDENCE   = 2026-08-24T08:30:00+07:00
-TIKTOK_ADS                          = DEFERRED_NOT_CURRENT_BLOCKER
-OPEN_PULL_REQUESTS                  = PR_220_ONLY
-DLQ_REDRIVE                         = BLOCKED_OFF
+CUSTOMER_BASE_PR_661                = OUT_OF_SCOPE_NO_MUTATION
 ```
 
 ## Objective
 
-Repository debt ที่ทำได้โดยไม่แตะ Live runtime ปิดแล้ว. งานปัจจุบันเหลือเพียงอ่านหลักฐาน Automatic Weekly v6 ตามเวลาจริงหลัง `2026-08-24 08:30 Asia/Bangkok`. Production/customer-owned provisioning และ TikTok Ads เป็น workstream แยกและไม่ใช่ blocker ของ Integration repository closeout นี้.
+แก้ Shared Organic Report aggregation ที่ทำให้ Facebook Likes / Comments / Shares / Engagement ทั้งก้อนกลายเป็น `null` เมื่อ historical content บางแถวไม่มี metric บางชนิด ทั้งที่ metric เดียวกันมี observed values ในแถวอื่นจำนวนมาก โดยต้องรักษา source `null` ไว้และห้ามแปลง missing value เป็นศูนย์.
 
-## Completed repository closeout
+งานนี้ต้องคืน semantics ของ Shared Organic aggregate ให้สอดคล้องกับ retained TikTok Organic calculator เดิม: aggregate เฉพาะค่าที่สังเกตได้ และคืน `null` เฉพาะเมื่อ metric นั้นไม่มี observed value เลย. Observed zero ยังคงเป็น `0`; negative corrections ต้องไม่ถูก clamp.
 
-- PR #658 merge เข้า `main` ที่ `c1203cd3d96be7ae9616adad08d8c6b64d8b3cfe`.
-- Port Lark Number formatter precision fix จาก stale PR #249 แบบ minimal บน current main.
-- Official grouped formatter `1,000` / `1,000.00` และ spreadsheet alias ใช้ Shared normalizer; unsupported precision ไม่ถูกเดา.
-- Shared Dimensions Backfill operator identity เป็น `lark-dashboard-shared-dimensions-backfill-v1.3`; ไม่มี Apply.
-- Authority files รุ่นเก่าถูก archive byte-for-byte ก่อนแทน active files ด้วย current authority.
-- Branch Verification run `31990567121`, job `95273236886` ผ่านทุก step: install, architecture/hygiene, focused suites, staged TikTok, Unit/Workers runtime, Report Reliability, dependency audit, Wrangler dry-run, diff check และ diagnostics upload.
-- Obsolete Draft PR #11, #17, #66, #249 และ #595 ถูกปิดพร้อมบันทึกเหตุผลว่า superseded.
-- PR #220 TikTok Ads ยังคงเปิดตามคำสั่งผู้ใช้และถูกจัดเป็น deferred.
+## Verified incident evidence
 
-## Locked runtime evidence
+Latest Integration Base authority แสดง Facebook tracked content 101 แถว. `latest_views` สังเกตได้ครบ 101 แถว แต่ historical rows บางรายการมี `likes` / `comments` / `shares` เป็น `null`. Shared `calculate-organic-period-metrics.js` ใช้ `sumStrict`, ทำให้ null เพียงแถวเดียว propagate ไปเป็น aggregate `null`; Lark Dashboard จึงแสดงค่าเชิงตัวเลขเป็น 0 ทั้งที่ source มี observed engagement metrics อยู่จริง.
 
-Weekly v6 controlled recovery ผ่าน Quality Gate และ exactly-once delivery แล้ว: AI/Admission อย่างละ 1, D1 delivery `sent/mirrored` claim 1, Lark Notification Log `sent` 1 และ exact new alert/DLQ/active lock = 0. หลักฐานนี้พิสูจน์ repair path แต่ไม่แทน scheduled automatic proof.
+Standalone TikTok Organic calculator ที่เป็น retained predecessor ใช้ `sumKnown`: กรองเฉพาะ `null` และ aggregate observed values; ถ้าไม่มี observed value เลยจึงคืน `null`.
 
-Automatic Weekly รอบจริงก่อนหน้า fail-closed และ retained identity ต้องคงเป็น forensic evidence ห้าม reset/replay/redrive. หลักฐาน schedule รอบถัดไปต้องอ่านแบบ read-only หลัง `2026-08-24 08:30 Asia/Bangkok` เท่านั้น.
+Meta Ads Daily / Creatives ไม่ใช่ส่วนของ code fix นี้. Current Meta end-to-end contract ระบุ Lark projection เฉพาะ Ads Account / Campaign / AdSet / Ad ส่วน source facts และ paid report metrics อยู่ใน D1/Shared Report. ห้ามเติม fake Meta rows หรือเปลี่ยน architecture ใน workstream นี้.
 
-## Out of scope / deferred
+## In scope
 
-- TikTok Ads implementation, OAuth, deploy หรือ customer onboarding
-- Production provisioning/UAT
-- Worker deployment
-- Queue send/replay/DLQ redrive
-- Remote D1 mutation/migration
-- Lark mutation หรือ Backfill Apply
-- Schedule/Secret/Binding change
-- Manual run ที่ใช้แทน Automatic Weekly evidence
+- Shared `calculateOrganicPeriodMetrics` aggregate semantics
+- row-level period/latest engagement aggregation ที่ใช้ component metrics
+- focused regression สำหรับ mixed observed + missing rows
+- regression ว่า all-missing ยังเป็น `null`, observed zero ยังเป็น `0`, negative correction ยังอยู่
+- documentation / Project Brain / CHANGELOG หลังผล CI ยืนยัน
+
+## Out of scope
+
+- Provider refetch/backfill
+- Integration Lark mutation ก่อน reviewed merge
+- Worker deploy / schedule / Queue / D1 mutation
+- Production/customer Base mutation
+- PR #661 หรือ branch `work/customer-base-consolidation-v1`
+- Meta Ads projection expansion
+
+## Contract
+
+1. Source-level missing metric ต้องคง `null`; ห้าม normalize เป็น `0`.
+2. Aggregate metric ใช้ observed-value sum: ignore `null` members; return `null` only when no member is observed.
+3. Observed zero participates normally and can produce aggregate `0`.
+4. Negative deltas/corrections are preserved.
+5. Baseline semantics, stable report identities, writer contracts and Lark schema remain unchanged.
+6. No new Report engine/helper layer when existing calculator can be repaired directly.
 
 ## Acceptance criteria
 
-Repository closeout criteria ผ่านแล้ว. Final Integration time gate จะถือว่าปิดเมื่อ Automatic Weekly v6 รอบถัดไปมี scheduled exactly-once evidence ที่ถูกต้องโดยไม่มีการใช้ manual/control run แทน.
+- Mixed observed/missing Facebook-like rows produce numeric observed aggregate instead of whole-metric `null`.
+- A metric with every member missing remains `null` / `not_observed`.
+- Existing complete-input behavior is unchanged.
+- Existing TikTok semantics remain compatible.
+- Focused test passes.
+- `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit --audit-level=high`, `npm run deploy:dry-run`, `git diff --check` pass in Branch Verification.
+- No Integration/Production mutation occurs as part of Repository/CI implementation.
 
-Historical current-task ก่อน Repository closeout ถูกเก็บ byte-for-byte ที่
-`docs/archive/current-task-before-repository-final-closeout-2026-08-17.md`.
+## Required tests
 
-Detailed closeout record: `docs/project-brain/repository-final-closeout-2026-08-17.md`.
+```bash
+node --test tests/application/calculate-organic-period-metrics-observed.test.js
+npm run check
+npm test
+npm run test:report-reliability
+npm audit --audit-level=high
+npm run deploy:dry-run
+git diff --check
+```
+
+## Implementation result
+
+Pending implementation and Branch Verification.
