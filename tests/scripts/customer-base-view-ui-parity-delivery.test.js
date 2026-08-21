@@ -22,17 +22,19 @@ test('View UI browser loads Base JS SDK only from the same local origin', async 
   );
 });
 
-test('View UI server resolves pinned SDK before READY and serves it locally', async () => {
+test('View UI server mirrors the exact pinned SDK module graph before READY and serves every module locally', async () => {
   const source = await readFile(serverFile, 'utf8');
 
-  assert.match(source, /const LARK_BASE_JS_SDK_VERSION = '1\.0\.2';/u);
-  assert.match(source, /\?standalone&target=es2022/u);
-  assert.match(source, /const sdkBundle = await loadPinnedLarkBaseJsSdk\(\);/u);
+  assert.match(source, /loadPinnedLarkBaseJsSdkMirror/u);
+  assert.match(source, /const sdkBundle = await loadPinnedLarkBaseJsSdkMirror\(\);/u);
   assert.match(source, /path === '\/lark-base-js-sdk\.mjs'/u);
-  assert.match(source, /sdkDeliveryMode: 'same-origin-pinned-standalone'/u);
+  assert.match(source, /path\.startsWith\('\/lark-base-js-sdk\/'\)/u);
+  assert.match(source, /sdkBundle\.modules\.get\(path\)/u);
+  assert.match(source, /sdkDeliveryMode: sdkBundle\.deliveryMode/u);
+  assert.match(source, /sdkModuleCount: sdkBundle\.moduleCount/u);
   assert.match(source, /stage=html-executed/u);
 
-  const resolveIndex = source.indexOf('const sdkBundle = await loadPinnedLarkBaseJsSdk();');
+  const resolveIndex = source.indexOf('const sdkBundle = await loadPinnedLarkBaseJsSdkMirror();');
   const listenIndex = source.indexOf('server.listen(port, host');
-  assert.ok(resolveIndex >= 0 && listenIndex > resolveIndex, 'SDK must resolve before the server can report READY');
+  assert.ok(resolveIndex >= 0 && listenIndex > resolveIndex, 'SDK graph must resolve before the server can report READY');
 });
