@@ -125,40 +125,82 @@ The initial localhost runner reported `READY`, but a Lark Base extension using `
 
 The runner was then bound to the Mac LAN IPv4. Lark subsequently produced request evidence on the Mac server for `GET /` and `GET /app.js`, proving that LAN transport was working. The panel still remained on `Loading…`, isolating the remaining failure boundary to browser-side SDK bootstrap rather than host/IP reachability.
 
-Lark's official HTML template imports `@lark-base-open/js-sdk` as a package dependency that is bundled into the frontend build. The earlier parity browser instead imported `https://esm.sh/@lark-base-open/js-sdk@1.0.2` directly at iframe runtime. That external browser import is now removed.
+Lark's official HTML template imports `@lark-base-open/js-sdk` as a package dependency that is bundled into the frontend build. The earlier parity browser instead imported `https://esm.sh/@lark-base-open/js-sdk@1.0.2` directly at iframe runtime. That external browser import was removed.
 
-## Same-origin pinned SDK bootstrap
+## Rejected single-file SDK localization attempt
 
-The runner now localizes the pinned SDK before it can report `READY`:
+The first same-origin recovery attempted to fetch the pinned SDK server-side through `esm.sh` using its `standalone` option and refused to start unless the result became one self-contained browser module.
 
-1. SDK version is fixed at `1.0.2`;
-2. Node fetches the pinned `esm.sh` standalone build server-side with a timeout;
-3. if the CDN entry is a root-relative `esm.sh` module stub, the server resolves it server-side with a hard hop limit;
-4. every followed module path is fenced to HTTPS `esm.sh` only;
-5. after resolution, any remaining browser module dependency causes fail-closed startup;
-6. the final body must meet a minimum byte floor and retain the `bitable` export shape;
-7. the runner computes SHA-256 and byte count for the resolved SDK body;
-8. only then may `server.listen()` run and emit `READY`;
-9. the SDK body is served from the runner origin as `/lark-base-js-sdk.mjs`;
-10. `customer-base-view-ui-parity.browser.js` imports only that same-origin path and no longer imports `esm.sh` directly.
-
-READY/health expose:
+The live Mac run was CI-green at HEAD `da100d17df8234b43bb4d2bbb066feea109fd0ce`, Branch Verification Run `32446409807`, Job `96666723346`, but startup failed **before server READY** with:
 
 ```text
-sdkDeliveryMode = same-origin-pinned-standalone
-sdkVersion      = 1.0.2
-sdkSha256       = <resolved body SHA-256>
-sdkBytes        = <resolved body bytes>
+code                         CUSTOMER_BASE_VIEW_UI_SDK_NOT_STANDALONE
+message                      Pinned Base JS SDK resolver returned multiple unresolved module paths
+sdkVersion                   1.0.2
+unresolvedModuleCount        2
+sourceMutationCount          0
+remoteMutationCount          0
+Target read                  0
+Target mutation              0
 ```
 
-This does not introduce a second migration path and does not grant any new mutation capability; it only changes how the already-pinned frontend SDK bytes reach the Lark iframe.
+This is retained as negative evidence. Do not retry or weaken the single-file `esm.sh standalone` path.
+
+## Exact-version published ESM graph mirror
+
+The current recovery follows the package's real published module shape instead of pretending it is one file.
+
+`scripts/lib/lark-base-js-sdk-local-mirror.js` owns only SDK byte delivery and has no Base mutation capability. Its admission rules are:
+
+1. exact SDK version: `@lark-base-open/js-sdk@1.0.2`;
+2. exact upstream root: `https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.2/dist/`;
+3. exact entry: `dist/index.mjs`;
+4. recursively follow only literal relative ESM imports from that package graph;
+5. every resolved URL must remain under the exact versioned jsDelivr `dist/` root;
+6. any bare, absolute, cross-origin or cross-version import fails closed;
+7. hard bounds: maximum 256 modules and 4 MB total source;
+8. integrity shape: at least 100 KB total mirrored source and retained `bitable` shape;
+9. rewrite every accepted relative import to a local same-origin path;
+10. compute a deterministic graph SHA-256 from the sorted local path/body-hash inventory.
+
+Local serving contract:
+
+```text
+/lark-base-js-sdk.mjs       = mirrored entry module
+/lark-base-js-sdk/...       = mirrored child modules
+```
+
+The Lark iframe therefore performs no CDN request. All SDK modules are already resolved on the Mac **before** `server.listen()` and before `READY`.
+
+READY/health now expose:
+
+```text
+sdkDeliveryMode = same-origin-pinned-jsdelivr-module-graph
+sdkVersion      = 1.0.2
+sdkSha256       = <deterministic mirrored graph SHA-256>
+sdkBytes        = <total mirrored upstream bytes>
+sdkModuleCount  = <mirrored module count>
+```
+
+This does not introduce a second migration path and does not grant any new mutation capability; it only changes how the already-pinned frontend SDK module graph reaches the Lark iframe.
 
 ## Boot-stage evidence
 
-Two transport-only markers make the remaining browser boundary observable without calling any Base API:
+Two transport-only markers make the browser boundary observable without calling any Base API:
 
 - `/client-event?stage=html-executed` — inline HTML executed;
-- `/client-event?stage=browser-module-loaded` — emitted after the same-origin SDK import completed and the browser module began executing.
+- `/client-event?stage=browser-module-loaded` — emitted after the same-origin SDK graph import completed and the browser module began executing.
+
+Expected live request sequence includes:
+
+```text
+GET /
+GET /client-event?stage=html-executed
+GET /app.js
+GET /lark-base-js-sdk.mjs
+GET /lark-base-js-sdk/...
+GET /client-event?stage=browser-module-loaded
+```
 
 Every request is logged as `[view-ui-local] ...`. Neither marker reads or writes a Table. Target reads still begin only when the user clicks a runner action and `preflight()` starts; Target mutations remain impossible until full preflight completes.
 
@@ -191,7 +233,8 @@ These remain manual/audit. Formula presentation 4, one dynamic-date filter, Dash
 ## Regression coverage
 
 - `tests/scripts/lark-base-view-js-sdk-parity.test.js` keeps structural/layout authority fail-closed, including exact 42-sort revision inventory;
-- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` requires the browser to import only `/lark-base-js-sdk.mjs`, prevents direct browser `esm.sh` SDK imports, pins SDK `1.0.2`, requires standalone resolution before `server.listen()`, and locks both boot-stage markers.
+- `tests/scripts/lark-base-js-sdk-local-mirror.test.js` covers recursive graph traversal, exact-version path scoping, same-origin rewrites and external-import rejection;
+- `tests/scripts/customer-base-view-ui-parity-delivery.test.js` requires the browser to import only `/lark-base-js-sdk.mjs`, requires the mirrored graph to finish before `server.listen()`, requires child-module serving and locks both boot-stage markers.
 
 ## No-repeat rules
 
@@ -201,4 +244,5 @@ These remain manual/audit. Formula presentation 4, one dynamic-date filter, Dash
 - never mutate Source, Worker, D1, Queue, schedule or deployment here;
 - never rewrite hidden/filter/hierarchy through the JS SDK runner;
 - never guess undocumented setters for field order, frozen columns, Dashboard or Workflow;
+- never retry the rejected single-file `esm.sh standalone` SDK resolver;
 - PR #661 remains Draft/Open/Unmerged until all UI/manual and final-export gates close.
