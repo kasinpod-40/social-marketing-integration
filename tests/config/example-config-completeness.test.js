@@ -39,12 +39,13 @@ test('safe examples declare every active release Lark table mapping', async () =
   }
 });
 
-test('release examples keep every connector, schedule and Storage flag fail-closed', async () => {
+test('release examples keep every connector, schedule, Storage and Production UAT flag fail-closed', async () => {
   const [devVars, wrangler] = await Promise.all([
     readFile(resolve(root, '.dev.vars.example'), 'utf8'),
     readFile(resolve(root, 'wrangler.sync.example.jsonc'), 'utf8'),
   ]);
   const flags = [
+    'MKT_PRODUCTION_CONNECTOR_UAT_ENABLED',
     'MKT_CONNECTOR_TIKTOK_ENABLED',
     'MKT_CONNECTOR_FACEBOOK_ENABLED',
     'MKT_CONNECTOR_INSTAGRAM_ENABLED',
@@ -73,6 +74,9 @@ test('release examples keep every connector, schedule and Storage flag fail-clos
     assert.match(devVars, new RegExp(`^${flag}=false$`, 'mu'));
     assert.match(wrangler, new RegExp(`"${flag}"\\s*:\\s*"false"`, 'u'));
   }
+
+  assert.match(devVars, /^MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR=$/mu);
+  assert.match(wrangler, /"MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR"\s*:\s*""/u);
 
   for (const content of [devVars, wrangler]) {
     assert.doesNotMatch(content, /dev_ft_pumkin|ft\.pumkin|uat_chemistry_k/u);
