@@ -2,51 +2,66 @@
 
 ## Scope
 
-This lane closes only the per-View field/column order parity for the customer-owned Lark Base.
+This lane closes only the displayed per-View column order for the customer-owned Lark Base.
 
 - Target Base: `✨Marketing Content Calendar`
-- Clone scope: 32 tables / 110 cloned grid views
-- Protected table: `🎵 RAW_TikTok_Creator_Videos` remains zero-write and out of this lane
-- Column width is explicitly out of scope
-- Record values, field schema, formulas, relations, filters, hidden fields, sort, group, row height, dashboards, automations, D1, Queue, Worker and schedules are not to be changed in this lane
+- Clone scope: 32 Tables / 705 Fields / 110 cloned grid Views
+- Protected `🎵 RAW_TikTok_Creator_Videos`: zero-write and excluded
+- Column width: out of scope by user decision
+- Hidden membership: already closed separately
+- Records/schema/formulas/relations/filters/sort/group/row height/frozen state/dashboards/automations/Worker/D1/Queue/schedules: no mutation in this lane
 
-## Current finding
+## Evidence
 
-The latest target export shows that 105 of 110 cloned grid views have a UI field order that differs from Source authority. Five views are already exact; those five are the `🔄 MKT_Sync_Log` views and must not be touched.
+An earlier Source-vs-Target export comparison reported 105/110 mismatches in the full exported `fieldOrder` arrays. This is presentation state only; record values remain attached to the correct Field IDs.
 
-This is a presentation-order defect only. Record values remain attached to the correct field IDs and must not be rewritten or moved between fields.
+## Corrected capability
+
+The JS SDK itself has no existing-View reorder setter, but official `larksuite/cli` documents the Base v3 View property:
+
+```text
+PUT /open-apis/base/v3/bases/:base_token/tables/:table_id/views/:view_id/visible_fields
+```
+
+Official guidance states that `visible_fields` controls both visibility and order. Therefore manual dragging is no longer the default repair.
 
 ## Root cause
 
-The migration treated canonical table schema order and per-View display order as equivalent. They are not equivalent. Lark's documented Grid View JS SDK can read field metadata in UI order via `getFieldMetaList()`, but it does not document a setter that reorders fields/columns inside an existing Grid View. Therefore, a migration cannot claim full View parity merely because schema, filters, hidden state, sort and group are correct.
+The migration already used `visible_fields` for hidden-field parity. That gate compared membership after sorting arrays, which is correct for visibility but intentionally discards order. As a result, hidden parity could pass while displayed order remained different.
 
-## Closeout rule
+## Safe closeout rule
 
-A cloned grid view is accepted only when its displayed field order equals Source authority exactly, excluding column width.
+A cloned View is accepted when its **visible-field order** equals Source exactly. Hidden membership remains owned by its separate already-passed gate.
 
-For every view:
+The operator must:
 
-1. Read Target UI field order.
-2. Compare against Source authority field order.
-3. If exact, do nothing.
-4. If different, change field order only through a documented/safe mechanism. If no documented write mechanism exists, leave it for explicit manual UI closeout.
-5. Preserve visibility, filter, sort, group, row height and all record/schema state.
-6. Re-export Target and run a read-only parity comparison before closing the lane.
+1. Pin the exact approved Source export.
+2. Exclude the protected TikTok table.
+3. Verify Target identity and exact clone scope.
+4. Read all 110 Views before writing.
+5. Derive Source visible order from Source `fieldOrder` minus hidden fields.
+6. Refuse to write if Target visible membership differs from Source.
+7. PUT only mismatching `visible_fields` arrays in Source order.
+8. Exact ordered GET-readback after every write.
+9. Roll back every View changed in the current run if any write/readback fails.
+10. Re-export Target and run `scripts/customer-base-view-export-parity.mjs`.
 
-## Migration prevention rule
+Production operator:
 
-Future customer Base migrations must not classify field order as cosmetic-only. Before a migration is allowed to close:
+```text
+scripts/customer-base-visible-field-order-parity.mjs
+```
 
-- Source per-View field order must be captured as authority.
-- Target per-View field order must be read back and compared.
-- The final parity report must separately report `fieldOrderMismatchCount`.
-- `fieldOrderMismatchCount > 0` must block `FULL_PARITY_PASS` unless the user explicitly excludes field order from scope.
-- Width must remain separately scoped and must not be conflated with field order.
+Confirmation:
 
-## Safe creation guidance for future migrations
+```text
+APPLY_CUSTOMER_BASE_VISIBLE_FIELD_ORDER_V1
+```
 
-When creating a new table, create fields in the order of the Source table's primary/default operational view when possible. This minimizes downstream manual reorder work for views that share the same field-order profile. Views with intentionally different Source orders still require explicit per-View verification.
+## Final acceptance
 
-## Current customer closeout
-
-The current customer Base must not be recreated and no data migration should be rerun. Close only the existing View field-order remainder, then continue the already identified Dashboard manual remainder separately.
+- all 110 cloned Views exact in visible-field order;
+- hidden membership unchanged and already passed;
+- width excluded;
+- fresh Target export has zero in-scope View mismatches;
+- then continue Dashboard manual remainder separately.
