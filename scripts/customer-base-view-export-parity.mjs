@@ -4,8 +4,10 @@ import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
-import { buildLarkBaseViewManualParityManifest } from './lib/lark-base-view-manual-parity-manifest.js';
-import { verifyCustomerBaseViewParityAcceptance } from './lib/customer-base-view-parity-acceptance.js';
+import {
+  buildLarkBaseViewManualParityManifest,
+  verifyLarkBaseViewManualParityManifests,
+} from './lib/lark-base-view-manual-parity-manifest.js';
 
 const SOURCE_EXPORT_SHA256 = '9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7';
 const SOURCE_EXPORT_FILENAME = 'Social MKT Data Hub.base';
@@ -39,7 +41,11 @@ try {
 
   const sourceManifest = await buildLarkBaseViewManualParityManifest({ sourceClient });
   const targetManifest = await buildLarkBaseViewManualParityManifest({ sourceClient: targetClient });
-  const acceptance = verifyCustomerBaseViewParityAcceptance({ sourceManifest, targetManifest });
+  const acceptance = verifyLarkBaseViewManualParityManifests({
+    sourceManifest,
+    targetManifest,
+    includeColumnWidths: false,
+  });
 
   const scopeMismatch = [];
   for (const [dimension, expected] of Object.entries(EXPECTED_CLONE)) {
