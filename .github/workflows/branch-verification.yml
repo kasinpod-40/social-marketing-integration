@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_config_compare:
+  google_ads_assetgroups_mapping:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 10
     steps:
-      - name: Compare exact local Google Ads configs without values
+      - name: Locate Asset Groups table mapping evidence safely
         shell: bash
         run: |
           set -euo pipefail
@@ -33,53 +33,49 @@ jobs:
           PRIMARY_REPO="$repo" node <<'NODE'
           const fs = require('node:fs');
           const path = require('node:path');
-          const crypto = require('node:crypto');
 
           const repo = process.env.PRIMARY_REPO;
-          const names = [
-            'wrangler.api.jsonc',
-            'wrangler.sync.jsonc',
-            'wrangler.api.google-ads-uat.jsonc',
-            'wrangler.sync.google-ads-uat.jsonc',
-          ];
-          const flags = [
-            'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
-            'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED',
-            'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
-            'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
-            'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
-            'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
-          ];
+          const needles = ['LARK_TABLE_MKT_ADS_ASSET_GROUPS', 'MKT_Ads_AssetGroups'];
+          const skip = new Set(['.git', 'node_modules', '.wrangler']);
+          const hits = [];
 
-          const texts = Object.fromEntries(names.map((name) => [name, fs.readFileSync(path.join(repo, name), 'utf8')]));
-          const extract = (text, key) => text.match(new RegExp(`["']?${key}["']?\\s*:\\s*["']([^"']*)["']`, 'u'))?.[1] ?? null;
-          const hash = (value) => crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
-
-          for (const name of names) {
-            const text = texts[name];
-            console.log(`config=${name}`);
-            for (const flag of flags) console.log(`  ${flag}=${extract(text, flag) ?? 'missing'}`);
-            console.log(`  has_assetgroups_table=${/LARK_TABLE_MKT_ADS_ASSET_GROUPS/u.test(text)}`);
+          function walk(dir, depth = 0) {
+            if (depth > 6) return;
+            let entries;
+            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+            for (const entry of entries) {
+              if (skip.has(entry.name)) continue;
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                walk(full, depth + 1);
+                continue;
+              }
+              if (!entry.isFile()) continue;
+              let stat;
+              try { stat = fs.statSync(full); } catch { continue; }
+              if (stat.size > 20 * 1024 * 1024) continue;
+              let text;
+              try { text = fs.readFileSync(full, 'utf8'); } catch { continue; }
+              const found = needles.filter((needle) => text.includes(needle));
+              if (found.length) hits.push({ file: path.relative(repo, full), found });
+            }
           }
 
-          const pairs = [
-            ['wrangler.api.jsonc', 'wrangler.api.google-ads-uat.jsonc'],
-            ['wrangler.sync.jsonc', 'wrangler.sync.google-ads-uat.jsonc'],
-            ['wrangler.api.google-ads-uat.jsonc', 'wrangler.sync.google-ads-uat.jsonc'],
-          ];
-          for (const [a, b] of pairs) {
-            const keys = [
-              'database_name',
-              'database_id',
-              'MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID',
-              'MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID',
-              'MKT_CONNECTION_CUSTOMER_KEY',
-            ];
-            console.log(`pair=${a}<->${b}`);
-            for (const key of keys) {
-              const av = extract(texts[a], key);
-              const bv = extract(texts[b], key);
-              console.log(`  ${key}_both_present=${Boolean(av && bv)} equal=${Boolean(av && bv && hash(av) === hash(bv))}`);
-            }
+          walk(repo);
+          console.log(`assetgroups_reference_file_count=${hits.length}`);
+          for (const hit of hits.sort((a,b) => a.file.localeCompare(b.file))) {
+            console.log(`reference_file=${hit.file} keys=${hit.found.join(',')}`);
+          }
+
+          const devVars = path.join(repo, '.dev.vars');
+          if (fs.existsSync(devVars)) {
+            const text = fs.readFileSync(devVars, 'utf8');
+            const match = text.match(/^\s*(?:export\s+)?LARK_TABLE_MKT_ADS_ASSET_GROUPS\s*=\s*(.+?)\s*$/mu);
+            const value = match?.[1]?.trim().replace(/^['"]|['"]$/gu, '') ?? '';
+            console.log(`dev_vars_assetgroups_key=${Boolean(match)}`);
+            console.log(`dev_vars_assetgroups_value_looks_table_id=${/^tbl[A-Za-z0-9]+$/u.test(value)}`);
+          } else {
+            console.log('dev_vars_assetgroups_key=false');
+            console.log('dev_vars_assetgroups_value_looks_table_id=false');
           }
           NODE
