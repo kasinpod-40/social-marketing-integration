@@ -55,7 +55,10 @@ function writeSet() {
       coverageRuns: [{ coverage_run_id: 'coverage_1' }, { coverage_run_id: 'coverage_2' }],
       coverageEntities: [],
     },
-    reconciliation: { sourceStatus: 'no_data_confirmed' },
+    reconciliation: {
+      sourceStatus: 'no_data_confirmed',
+      larkProjectionMode: 'curated_reports',
+    },
   };
 }
 
