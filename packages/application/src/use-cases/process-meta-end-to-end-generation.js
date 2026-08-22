@@ -1,4 +1,5 @@
 import {
+  META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
   META_END_TO_END_LARK_TABLES,
 } from '../../../config/src/meta-end-to-end-runtime-config.js';
 import { createOrganicHistoryWriter } from '../storage/organic-history-writer.js';
@@ -53,7 +54,7 @@ export async function processMetaEndToEndGeneration(input = {}) {
     });
   }
 
-  const contracts = activeLarkContracts(writeSet.connectorKey);
+  const contracts = activeLarkContracts(writeSet);
   const preflight = input.larkWriteEnabled === true
     ? await ensureDestinationPreflight({
       workStore,
@@ -629,14 +630,25 @@ function createReconciliation({ writeSet, preflight, d1, lark }) {
   });
 }
 
-function activeLarkContracts(connectorKey) {
+function activeLarkContracts(writeSet) {
+  const connectorKey = writeSet.connectorKey;
   const organic = connectorKey === 'facebook' || connectorKey === 'instagram';
-  const prefixes = organic
-    ? ['canonical.accounts', 'canonical.accountDaily', 'canonical.content']
-    : ['canonical.ads'];
-  return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
-    (contract) => prefixes.some((prefix) => contract.path.startsWith(prefix)),
-  ));
+  if (organic) {
+    const prefixes = ['canonical.accounts', 'canonical.accountDaily', 'canonical.content'];
+    return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
+      (contract) => prefixes.some((prefix) => contract.path.startsWith(prefix)),
+    ));
+  }
+
+  const currentPaidAds = connectorKey === 'meta_ads'
+    && writeSet.reconciliation?.larkProjectionMode === 'curated_reports';
+  const allowedTableKeys = currentPaidAds
+    ? null
+    : new Set(META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS);
+  return Object.freeze(META_END_TO_END_LARK_TABLES.filter((contract) => (
+    contract.path.startsWith('canonical.ads')
+    && (allowedTableKeys === null || allowedTableKeys.has(contract.tableKey))
+  )));
 }
 
 function disabledPreflight() {
