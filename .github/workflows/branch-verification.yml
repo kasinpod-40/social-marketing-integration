@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_resumable_checkpoint_diagnostic:
+  google_ads_terminal_reason_diagnostic:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 8
     steps:
-      - name: Inspect existing LIVE resumable phases without mutation
+      - name: Inspect terminal reason and queue failure without mutation
         shell: bash
         run: |
           set -euo pipefail
@@ -26,53 +26,28 @@ jobs:
           expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
           safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
           run_id="9e24aaa3-6939-486a-ad87-0527a088a6b7"
-          evidence_root="$HOME/Git/social-marketing-integration/outputs/google-ads-live-operator/paid-parity-resume-diagnostic-20260822"
+          work_key="google_ads:$run_id"
+          evidence_root="$HOME/Git/social-marketing-integration/outputs/google-ads-live-operator/paid-parity-terminal-diagnostic-20260822"
           mkdir -p "$evidence_root"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
-          test -f "$safe_sync"
           cd "$live_worktree"
-          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$safe_sync")"
-
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT a.run_id,a.status AS admission_status,a.work_key,a.generation,a.original_requested_at,a.updated_at,a.completed_at,a.last_error_code,w.lifecycle_status,w.completed_at AS work_completed_at,w.completion_json FROM google_ads_live_admissions a LEFT JOIN sync_work_runs w ON w.work_key=a.work_key WHERE a.run_id='$run_id';" --json > "$evidence_root/work.json"
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT p.phase,p.expected_items,p.processed_items,p.pages_processed,p.chunks_processed,p.complete,p.updated_at,p.state_json FROM sync_work_phases p JOIN google_ads_live_admissions a ON a.work_key=p.work_key WHERE a.run_id='$run_id' ORDER BY p.phase;" --json > "$evidence_root/phases.json"
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT u.phase,u.unit_key,u.sequence,u.updated_at FROM sync_work_units u JOIN google_ads_live_admissions a ON a.work_key=u.work_key WHERE a.run_id='$run_id' ORDER BY u.phase,u.sequence;" --json > "$evidence_root/units.json"
-
-          WORK_FILE="$evidence_root/work.json" PHASES_FILE="$evidence_root/phases.json" UNITS_FILE="$evidence_root/units.json" node <<'NODE'
+          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");process.stdout.write(d.database_name)' "$safe_sync")"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT work_key,cursor_key,lifecycle_status,terminal_reason,abandoned_at,audit_reference,updated_at,expires_at FROM sync_work_runs WHERE work_key='$work_key';" --json > "$evidence_root/work.json"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT lock_key,owner_id,expires_at,updated_at FROM sync_locks WHERE lock_key=(SELECT cursor_key FROM sync_work_runs WHERE work_key='$work_key');" --json > "$evidence_root/lock.json"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT dlq_id,message_id,queue_name,job_type,error_code,retry_count,status,created_at,updated_at FROM dead_letter_jobs WHERE payload_json LIKE '%$run_id%' OR replay_payload_json LIKE '%$run_id%' ORDER BY created_at DESC LIMIT 10;" --json > "$evidence_root/dlq.json"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT sync_run_id,status,retry_count,error_code,error_message,started_at,finished_at,updated_at FROM sync_runs WHERE platform='google_ads' AND started_at >= 1787389700000 ORDER BY started_at ASC;" --json > "$evidence_root/sync-runs.json"
+          WORK="$evidence_root/work.json" LOCK="$evidence_root/lock.json" DLQ="$evidence_root/dlq.json" SYNCS="$evidence_root/sync-runs.json" node <<'NODE'
           const fs=require('fs');
-          const rows=(path)=>{const p=JSON.parse(fs.readFileSync(path,'utf8'));const cs=Array.isArray(p)?p:[p];const out=[];for(const c of cs){const r=c?.results??c?.result?.[0]?.results;if(Array.isArray(r))out.push(...r);}return out;};
-          const work=rows(process.env.WORK_FILE)[0];
-          const phases=rows(process.env.PHASES_FILE);
-          const units=rows(process.env.UNITS_FILE);
-          if(!work) throw new Error('work_missing');
-          console.log(`run_id=${work.run_id}`);
-          console.log(`admission_status=${work.admission_status}`);
-          console.log(`work_key=${work.work_key}`);
-          console.log(`generation=${work.generation}`);
-          console.log(`admission_updated_at=${work.updated_at}`);
-          console.log(`admission_completed_at=${work.completed_at??''}`);
-          console.log(`last_error_code=${work.last_error_code??''}`);
-          console.log(`work_lifecycle_status=${work.lifecycle_status??''}`);
-          console.log(`work_completed_at=${work.work_completed_at??''}`);
-          let completion={};try{completion=JSON.parse(String(work.completion_json??'{}'));}catch{}
-          console.log(`work_completion_schema=${completion.schemaVersion??''}`);
-          for(const p of phases){
-            console.log(`phase_${p.phase}_progress=${p.processed_items}/${p.expected_items}`);
-            console.log(`phase_${p.phase}_complete=${p.complete}`);
-            console.log(`phase_${p.phase}_chunks=${p.chunks_processed}`);
-            console.log(`phase_${p.phase}_updated_at=${p.updated_at}`);
-            let s={};try{s=JSON.parse(String(p.state_json??'{}'));}catch{}
-            if(p.phase==='google_ads_d1_business_write_v1') console.log(`d1_next_index=${s.nextIndex??''}`);
-            if(p.phase==='google_ads_lark_write_v1'){
-              console.log(`lark_next_table_index=${s.nextTableIndex??''}`);
-              const rs=Array.isArray(s.results)?s.results:[];
-              for(const x of rs.filter(Boolean)){
-                const accounted=Number(x.created??0)+Number(x.updated??0)+Number(x.skipped??0);
-                console.log(`lark_${x.tableKey}_expected=${x.expected}`);
-                console.log(`lark_${x.tableKey}_accounted=${accounted}`);
-              }
-            }
-          }
-          console.log(`work_unit_count=${units.length}`);
-          for(const u of units.slice(-12)) console.log(`unit=${u.phase}|${u.sequence}|${u.unit_key}|${u.updated_at}`);
+          const rows=p=>{const x=JSON.parse(fs.readFileSync(p,'utf8'));const a=Array.isArray(x)?x:[x];return a.flatMap(c=>c?.results??c?.result?.[0]?.results??[])};
+          const w=rows(process.env.WORK)[0];
+          if(!w) throw new Error('work_missing');
+          console.log(`lifecycle_status=${w.lifecycle_status}`);
+          console.log(`terminal_reason=${w.terminal_reason??''}`);
+          console.log(`abandoned_at=${w.abandoned_at??''}`);
+          console.log(`audit_reference=${w.audit_reference??''}`);
+          console.log(`cursor_key=${w.cursor_key}`);
+          const locks=rows(process.env.LOCK); console.log(`lock_row_count=${locks.length}`); for(const x of locks) console.log(`lock=${x.owner_id}|${x.expires_at}`);
+          const dlq=rows(process.env.DLQ); console.log(`matching_dlq_count=${dlq.length}`); for(const x of dlq) console.log(`dlq=${x.dlq_id}|${x.error_code}|${x.retry_count}|${x.status}`);
+          const sr=rows(process.env.SYNCS); console.log(`google_ads_sync_run_count=${sr.length}`); for(const x of sr) console.log(`sync=${x.sync_run_id}|${x.status}|${x.retry_count}|${x.error_code??''}|${String(x.error_message??'').slice(0,180)}`);
           console.log('diagnostic_remote_mutation_count=0');
           NODE
