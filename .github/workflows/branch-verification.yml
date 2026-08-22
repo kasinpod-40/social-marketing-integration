@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_assetgroups_resolve:
+  google_ads_live_preflight:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Resolve Asset Groups table ID via read-only Lark metadata
+      - name: Build safe current configs and execute reviewed-main preflight
         shell: bash
         run: |
           set -euo pipefail
@@ -32,56 +32,108 @@ jobs:
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
           test "$(git -C "$live_worktree" branch --show-current)" = main
           test -z "$(git -C "$live_worktree" status --porcelain)"
+          test -f "$evidence_root/assetgroups-table-id"
+
+          exclude_file="$repo/.git/info/exclude"
+          mkdir -p "$(dirname "$exclude_file")"
+          touch "$exclude_file"
+          for name in wrangler.api.google-ads-live-safe.jsonc wrangler.sync.google-ads-live-safe.jsonc; do
+            grep -qxF "/$name" "$exclude_file" || printf '/%s\n' "$name" >> "$exclude_file"
+          done
 
           cd "$live_worktree"
           test -d node_modules || npm ci >/tmp/google-ads-live-npm-ci.log 2>&1
-          mkdir -p "$evidence_root"
 
-          PRIMARY_REPO="$repo" EVIDENCE_ROOT="$evidence_root" node --input-type=module <<'NODE'
+          PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" EVIDENCE_ROOT="$evidence_root" node --input-type=module <<'NODE'
           import { readFile, writeFile, chmod } from 'node:fs/promises';
           import { resolve } from 'node:path';
-          import { createLarkBitableClientFromEnv } from './packages/connectors/src/lark/lark-bitable.client.js';
+          import { spawnSync } from 'node:child_process';
           import { parseJsoncObject } from './scripts/lib/chatwoot-safe-wrangler-config.js';
           import { readDevVars } from './scripts/lib/dev-vars.js';
 
           const repo = process.env.PRIMARY_REPO;
+          const live = process.env.LIVE_WORKTREE;
           const evidenceRoot = process.env.EVIDENCE_ROOT;
-          const configText = await readFile(resolve(repo, 'wrangler.sync.google-ads-uat.jsonc'), 'utf8');
-          const config = parseJsoncObject(configText);
+          const apiSource = resolve(repo, 'wrangler.api.jsonc');
+          const syncSource = resolve(repo, 'wrangler.sync.jsonc');
+          const apiSafePath = resolve(live, 'wrangler.api.google-ads-live-safe.jsonc');
+          const syncSafePath = resolve(live, 'wrangler.sync.google-ads-live-safe.jsonc');
+          const tableId = (await readFile(resolve(evidenceRoot, 'assetgroups-table-id'), 'utf8')).trim();
+          if (!/^tbl[A-Za-z0-9]+$/u.test(tableId)) throw new Error('private Asset Groups table ID is invalid');
+
+          const api = parseJsoncObject(await readFile(apiSource, 'utf8'));
+          const sync = parseJsoncObject(await readFile(syncSource, 'utf8'));
+          const flags = [
+            'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
+            'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED',
+            'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+            'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+            'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+            'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
+          ];
+
+          function makeSafe(config) {
+            const clone = structuredClone(config);
+            clone.vars = { ...(clone.vars ?? {}) };
+            for (const key of flags) clone.vars[key] = 'false';
+            clone.vars.LARK_TABLE_MKT_ADS_ASSET_GROUPS = tableId;
+            return clone;
+          }
+          const apiSafe = makeSafe(api);
+          const syncSafe = makeSafe(sync);
+          await writeFile(apiSafePath, `${JSON.stringify(apiSafe, null, 2)}\n`, { mode: 0o600 });
+          await chmod(apiSafePath, 0o600);
+          await writeFile(syncSafePath, `${JSON.stringify(syncSafe, null, 2)}\n`, { mode: 0o600 });
+          await chmod(syncSafePath, 0o600);
+
+          const stateDb = (syncSafe.d1_databases ?? []).find((entry) => entry?.binding === 'MKT_STATE_DB');
+          if (!String(stateDb?.database_name ?? '').trim()) throw new Error('MKT_STATE_DB database_name missing');
+          const managerId = String(syncSafe.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
+          const advertiserId = String(syncSafe.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
+          if (!/^\d{10}$/u.test(managerId) || !/^\d{10}$/u.test(advertiserId)) throw new Error('Google Ads customer IDs invalid');
+          if (flags.some((key) => apiSafe.vars?.[key] !== 'false' || syncSafe.vars?.[key] !== 'false')) throw new Error('safe Google flags invariant failed');
+          if (apiSafe.vars.LARK_TABLE_MKT_ADS_ASSET_GROUPS !== tableId || syncSafe.vars.LARK_TABLE_MKT_ADS_ASSET_GROUPS !== tableId) throw new Error('Asset Groups mapping invariant failed');
+
           const devVars = await readDevVars(resolve(repo, '.dev.vars'));
-          const env = Object.freeze({ ...(config.vars ?? {}), ...devVars });
+          const env = {
+            ...process.env,
+            ...devVars,
+            MKT_ENV: 'development',
+            MKT_CUSTOMER_PROFILE: 'integration_workspace',
+            MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+            MKT_GOOGLE_ADS_SOURCE_TIMEZONE: 'Asia/Bangkok',
+            MKT_GOOGLE_ADS_LIVE_DATABASE_NAME: stateDb.database_name,
+            MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG: apiSafePath,
+            MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG: syncSafePath,
+            MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID: managerId,
+            MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID: advertiserId,
+            MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR: evidenceRoot,
+            CONFIRM_GOOGLE_ADS_LIVE_PREFLIGHT: 'preflight',
+          };
 
-          for (const key of ['LARK_APP_TOKEN','LARK_APP_ID','LARK_APP_SECRET']) {
-            const fallback = key === 'LARK_APP_TOKEN' ? env.LARK_BASE_APP_TOKEN : null;
-            if (!String(env[key] ?? fallback ?? '').trim()) {
-              console.error(`missing_lark_credential=${key}`);
-              process.exit(1);
-            }
-          }
+          const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: live, encoding: 'utf8' });
+          if (status.status !== 0 || String(status.stdout).trim() !== '') throw new Error('reviewed-main worktree is not clean after safe config creation');
 
-          let requestCount = 0;
-          const client = createLarkBitableClientFromEnv(env, { onRequest: () => { requestCount += 1; } });
-          const tables = await client.listTables();
-          const matches = tables.filter((table) => {
-            const name = String(table.name ?? table.tableName ?? table.table_name ?? '').trim();
-            return name === 'MKT_Ads_AssetGroups' || name.endsWith(' MKT_Ads_AssetGroups');
+          const result = spawnSync(process.execPath, ['scripts/google-ads-live-operator.mjs', '--phase=preflight', '--execute'], {
+            cwd: live,
+            env,
+            encoding: 'utf8',
+            maxBuffer: 32 * 1024 * 1024,
           });
-          if (matches.length !== 1) {
-            console.error(`assetgroups_remote_match_count=${matches.length}`);
-            process.exit(1);
-          }
-          const tableId = String(matches[0].tableId ?? matches[0].table_id ?? matches[0].id ?? '').trim();
-          if (!/^tbl[A-Za-z0-9]+$/u.test(tableId)) {
-            console.error('assetgroups_remote_table_id_valid=false');
-            process.exit(1);
+          if (result.status !== 0) {
+            process.stdout.write(result.stdout || '');
+            process.stderr.write(result.stderr || '');
+            process.exit(result.status || 1);
           }
 
-          const out = resolve(evidenceRoot, 'assetgroups-table-id');
-          await writeFile(out, `${tableId}\n`, { mode: 0o600 });
-          await chmod(out, 0o600);
-          console.log('assetgroups_remote_match_count=1');
-          console.log('assetgroups_remote_table_id_valid=true');
-          console.log(`lark_metadata_request_count=${requestCount}`);
-          console.log('lark_write_count=0');
-          console.log('assetgroups_id_persisted_private=true');
+          const evidence = JSON.parse(await readFile(resolve(evidenceRoot, 'preflight.json'), 'utf8'));
+          if (evidence.phase !== 'preflight' || evidence.status !== 'passed') throw new Error('preflight evidence is not passed');
+          console.log('safe_configs_from_current_production=true');
+          console.log('google_flags_false_both_configs=true');
+          console.log('assetgroups_mapping_present_both_configs=true');
+          console.log('reviewed_main_clean=true');
+          console.log('preflight_status=passed');
+          console.log(`repository_head=${evidence.repositoryHead}`);
+          console.log(`schedule_disabled=${evidence.safeConfig?.scheduleDisabled === true}`);
+          console.log(`pending_migrations_reviewed=${evidence.pendingMigrationsReviewed === true}`);
           NODE
