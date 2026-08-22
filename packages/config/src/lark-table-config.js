@@ -11,6 +11,7 @@ export const LARK_TABLE_ENV = Object.freeze({
   mktContentDaily: 'LARK_TABLE_MKT_CONTENT_DAILY',
   mktAccountDaily: 'LARK_TABLE_MKT_ACCOUNT_DAILY',
   mktAdsCampaigns: 'LARK_TABLE_MKT_ADS_CAMPAIGNS',
+  mktAdsAssetGroups: 'LARK_TABLE_MKT_ADS_ASSET_GROUPS',
   mktAdsAdGroups: 'LARK_TABLE_MKT_ADS_ADGROUPS',
   mktAdsAds: 'LARK_TABLE_MKT_ADS_ADS',
   mktAdsCreatives: 'LARK_TABLE_MKT_ADS_CREATIVES',
