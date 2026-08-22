@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import {
   buildGoogleAdsQueueReference,
 } from '../../packages/application/src/google-ads/google-ads-queue-reference.js';
@@ -54,27 +55,31 @@ describe('Google Ads Worker runtime table wiring', () => {
       },
     };
 
-    await expect(processGoogleAdsManualUatJob({
-      env,
-      job: { body: reference },
-      operation: {
-        stable: true,
-        operationId: reference.operationId,
-        workKey: reference.workKey,
-        generation: reference.generation,
-        originalRequestedAt: reference.originalRequestedAt,
-      },
-      getRuntimeConfig: () => runtimeConfig,
-      getInfrastructure: () => ({
-        getGoogleAdsAdmissionStore: () => admissionStore,
+    await assert.rejects(
+      () => processGoogleAdsManualUatJob({
+        env,
+        job: { body: reference },
+        operation: {
+          stable: true,
+          operationId: reference.operationId,
+          workKey: reference.workKey,
+          generation: reference.generation,
+          originalRequestedAt: reference.originalRequestedAt,
+        },
+        getRuntimeConfig: () => runtimeConfig,
+        getInfrastructure: () => ({
+          getGoogleAdsAdmissionStore: () => admissionStore,
+        }),
       }),
-    })).rejects.toMatchObject({
-      code: 'LARK_TABLE_CONFIG_INVALID',
-      retryable: false,
-      details: {
-        envName: 'LARK_TABLE_MKT_ADS_ASSET_GROUPS',
-        tableKey: 'mktAdsAssetGroups',
+      (error) => {
+        assert.equal(error.code, 'LARK_TABLE_CONFIG_INVALID');
+        assert.equal(error.retryable, false);
+        assert.deepEqual(error.details, {
+          envName: 'LARK_TABLE_MKT_ADS_ASSET_GROUPS',
+          tableKey: 'mktAdsAssetGroups',
+        });
+        return true;
       },
-    });
+    );
   });
 });
