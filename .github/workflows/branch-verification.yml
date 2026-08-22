@@ -13,52 +13,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_assetgroups_evidence:
+  google_ads_assetgroups_resolve:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Inspect Asset Groups inventory evidence with identifiers masked
+      - name: Resolve Asset Groups table ID via read-only Lark metadata
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
           live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
           expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
+          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
 
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test "$(git -C "$live_worktree" branch --show-current)" = main
+          test -z "$(git -C "$live_worktree" status --porcelain)"
 
-          PRIMARY_REPO="$repo" node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
+          cd "$live_worktree"
+          test -d node_modules || npm ci >/tmp/google-ads-live-npm-ci.log 2>&1
+          mkdir -p "$evidence_root"
+
+          PRIMARY_REPO="$repo" EVIDENCE_ROOT="$evidence_root" node --input-type=module <<'NODE'
+          import { readFile, writeFile, chmod } from 'node:fs/promises';
+          import { resolve } from 'node:path';
+          import { createLarkBitableClientFromEnv } from './packages/connectors/src/lark/lark-bitable.client.js';
+          import { parseJsoncObject } from './scripts/lib/chatwoot-safe-wrangler-config.js';
+          import { readDevVars } from './scripts/lib/dev-vars.js';
+
           const repo = process.env.PRIMARY_REPO;
-          const inventory = path.join(repo, 'outputs/lark-native-ai-remote-inventory/inventory-summary.json');
-          const text = fs.readFileSync(inventory, 'utf8');
-          const needle = 'MKT_Ads_AssetGroups';
-          let from = 0;
-          let count = 0;
-          while (true) {
-            const i = text.indexOf(needle, from);
-            if (i < 0) break;
-            count++;
-            const raw = text.slice(Math.max(0, i - 500), Math.min(text.length, i + needle.length + 500));
-            const tableIds = raw.match(/tbl[A-Za-z0-9]+/gu) ?? [];
-            const redacted = raw
-              .replace(/tbl[A-Za-z0-9]+/gu, '<TABLE_ID>')
-              .replace(/cli_[A-Za-z0-9]+/gu, '<APP_ID>')
-              .replace(/[A-Fa-f0-9]{32,}/gu, '<HEX>');
-            console.log(`occurrence=${count} nearby_table_id_count=${tableIds.length} unique_nearby_table_ids=${new Set(tableIds).size}`);
-            console.log(`redacted_context=${JSON.stringify(redacted)}`);
-            from = i + needle.length;
-          }
-          console.log(`assetgroups_occurrence_count=${count}`);
+          const evidenceRoot = process.env.EVIDENCE_ROOT;
+          const configText = await readFile(resolve(repo, 'wrangler.sync.google-ads-uat.jsonc'), 'utf8');
+          const config = parseJsoncObject(configText);
+          const devVars = await readDevVars(resolve(repo, '.dev.vars'));
+          const env = Object.freeze({ ...(config.vars ?? {}), ...devVars });
 
-          const scriptDir = path.join(repo, 'scripts');
-          const scriptNames = fs.readdirSync(scriptDir)
-            .filter((name) => /lark|inventory|table/i.test(name))
-            .sort();
-          console.log(`candidate_script_count=${scriptNames.length}`);
-          for (const name of scriptNames) console.log(`candidate_script=${name}`);
+          for (const key of ['LARK_APP_TOKEN','LARK_APP_ID','LARK_APP_SECRET']) {
+            const fallback = key === 'LARK_APP_TOKEN' ? env.LARK_BASE_APP_TOKEN : null;
+            if (!String(env[key] ?? fallback ?? '').trim()) {
+              console.error(`missing_lark_credential=${key}`);
+              process.exit(1);
+            }
+          }
+
+          let requestCount = 0;
+          const client = createLarkBitableClientFromEnv(env, { onRequest: () => { requestCount += 1; } });
+          const tables = await client.listTables();
+          const matches = tables.filter((table) => {
+            const name = String(table.name ?? table.tableName ?? table.table_name ?? '').trim();
+            return name === 'MKT_Ads_AssetGroups' || name.endsWith(' MKT_Ads_AssetGroups');
+          });
+          if (matches.length !== 1) {
+            console.error(`assetgroups_remote_match_count=${matches.length}`);
+            process.exit(1);
+          }
+          const tableId = String(matches[0].tableId ?? matches[0].table_id ?? matches[0].id ?? '').trim();
+          if (!/^tbl[A-Za-z0-9]+$/u.test(tableId)) {
+            console.error('assetgroups_remote_table_id_valid=false');
+            process.exit(1);
+          }
+
+          const out = resolve(evidenceRoot, 'assetgroups-table-id');
+          await writeFile(out, `${tableId}\n`, { mode: 0o600 });
+          await chmod(out, 0o600);
+          console.log('assetgroups_remote_match_count=1');
+          console.log('assetgroups_remote_table_id_valid=true');
+          console.log(`lark_metadata_request_count=${requestCount}`);
+          console.log('lark_write_count=0');
+          console.log('assetgroups_id_persisted_private=true');
           NODE
