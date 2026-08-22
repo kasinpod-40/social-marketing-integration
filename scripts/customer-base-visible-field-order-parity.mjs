@@ -46,7 +46,7 @@ try {
     contractVersion: 'customer_base_visible_field_order_operator_v1',
     code: error?.code ?? 'CUSTOMER_BASE_VISIBLE_FIELD_ORDER_OPERATOR_FAILED',
     message: error?.message ?? String(error),
-    details: error?.details ?? {},
+    details: redactDetails(error?.details ?? {}),
   }, null, 2));
   process.exitCode = 1;
 }
@@ -116,7 +116,7 @@ async function main() {
         property: 'visible_fields',
         controls: ['visibility', 'visible-field-order'],
       },
-      preview,
+      preview: summarizePreview(preview),
       safety: zeroMutationSafety(),
       next: preview.ok
         ? `CUSTOMER_BASE_VISIBLE_FIELD_ORDER_CONFIRMATION=${CUSTOMER_BASE_VISIBLE_FIELD_ORDER_CONFIRMATION} node scripts/customer-base-visible-field-order-parity.mjs --apply`
@@ -180,6 +180,28 @@ async function main() {
       viewVisibleFieldOrderMutationCount: result.remoteMutationCount,
       rollbackMutationCount: result.rollbackMutationCount,
     },
+  });
+}
+
+function summarizePreview(preview) {
+  return Object.freeze({
+    representedViews: preview?.representedViews ?? 0,
+    exactViews: preview?.exactViews ?? 0,
+    mismatchedViews: preview?.mismatchedViews ?? 0,
+    blockerCount: Array.isArray(preview?.blockers) ? preview.blockers.length : 0,
+    blockers: Array.isArray(preview?.blockers)
+      ? preview.blockers.map((item) => redactDetails(item))
+      : [],
+    changes: Array.isArray(preview?.steps)
+      ? preview.steps
+        .filter((step) => step?.needsUpdate === true)
+        .map((step) => Object.freeze({
+          tableName: step.tableName,
+          viewName: step.viewName,
+          beforeVisibleFields: [...step.beforeVisibleFields],
+          desiredVisibleFields: [...step.desiredVisibleFields],
+        }))
+      : [],
   });
 }
 
@@ -295,6 +317,21 @@ function zeroMutationSafety() {
     scheduleMutationCount: 0,
     protectedTikTokMutationCount: 0,
   });
+}
+
+function redactDetails(value) {
+  if (Array.isArray(value)) return value.map(redactDetails);
+  if (!value || typeof value !== 'object') return value;
+  const output = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (/^(?:target|source)?(?:table|view|field)?id$/iu.test(key)
+      || /(?:table|view|field)Ids?$/iu.test(key)
+      || key === 'targetAppToken') {
+      continue;
+    }
+    output[key] = redactDetails(nested);
+  }
+  return output;
 }
 
 function assertUnique(values, label) {
