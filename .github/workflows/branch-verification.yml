@@ -147,3 +147,52 @@ jobs:
             diff-check.log
           if-no-files-found: ignore
           retention-days: 7
+
+  google_ads_ops_probe:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 673
+    runs-on: mkt-ci
+    timeout-minutes: 10
+    steps:
+      - name: Probe local live operator readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$HOME/Git/social-marketing-integration"
+          expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
+
+          test -d "$repo/.git"
+          cd "$repo"
+          git fetch origin main
+          git switch main
+          git pull --ff-only origin main
+          test "$(git rev-parse HEAD)" = "$expected_sha"
+          test -z "$(git status --porcelain)"
+          test -f .dev.vars
+          test -f wrangler.sync.jsonc
+
+          set -a
+          source .dev.vars
+          set +a
+
+          required=(
+            MKT_ENV
+            MKT_CUSTOMER_PROFILE
+            MKT_CONNECTION_CUSTOMER_KEY
+            MKT_GOOGLE_ADS_LIVE_DATABASE_NAME
+            MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG
+            MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG
+            MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID
+            MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "missing_required_env=$name"
+              exit 1
+            fi
+          done
+
+          npx wrangler whoami >/tmp/google-ads-live-wrangler-whoami.txt 2>&1
+          echo "local_repo_exact_main=true"
+          echo "local_ignored_configs_present=true"
+          echo "required_operator_env_present=true"
+          echo "wrangler_identity_ok=true"
