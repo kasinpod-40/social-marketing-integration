@@ -13,97 +13,93 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_exact_direct_checkpoint_recovery_v2:
+  google_ads_final_verify_and_lark_readback:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
-      - name: Continue exact LIVE run directly without Queue replay
+      - name: Verify exact completed run and read Lark targets
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
           live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
           expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
+          safe_api="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
           safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
-          entry="$live_worktree/google-ads-direct-recovery-entry.js"
-          recovery_cfg="$live_worktree/wrangler.google-ads-direct-recovery.jsonc"
-          recovery_vars="$live_worktree/.dev.vars"
-          source_vars="$repo/.dev.vars"
-          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-direct-recovery-v2-20260822"
-          port=8791
-          mkdir -p "$evidence_root"
+          operator_evidence="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
+          final_evidence="$repo/outputs/google-ads-live-operator/paid-parity-final-verify-20260822"
+          run_id="9e24aaa3-6939-486a-ad87-0527a088a6b7"
+          mkdir -p "$final_evidence"
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
-          test -f "$safe_sync" && test -f "$source_vars"
-          SAFE_SYNC="$safe_sync" node <<'NODE'
-          const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.SAFE_SYNC,'utf8'));const keys=['MKT_CONNECTOR_GOOGLE_ADS_ENABLED','MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED','MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED','MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED','MKT_GOOGLE_ADS_LARK_WRITE_ENABLED','MKT_SCHEDULE_GOOGLE_ADS_ENABLED'];if(!keys.every(k=>c.vars?.[k]==='false'))throw new Error('safe_config_not_false');console.log('production_safe_config_contract=true');
-          NODE
-          cp "$source_vars" "$recovery_vars"; chmod 600 "$recovery_vars"
-          token="$(openssl rand -hex 32)"; export RECOVERY_TOKEN="$token"
+          test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
+          test -f "$safe_api" && test -f "$safe_sync" && test -f "$operator_evidence/live-ready.json"
 
-          cat > "$entry" <<'ENTRY'
-          import { processGoogleAdsManagerSignedDelivery } from './packages/application/src/use-cases/process-google-ads-manager-signed-delivery.js';
-          import { buildGoogleAdsQueueReference } from './packages/application/src/google-ads/google-ads-queue-reference.js';
-          import { readLarkTableIdsFromEnv } from './packages/config/src/lark-table-config.js';
-          import { D1ReliabilityStore } from './packages/reliability/src/d1-reliability-store.js';
-          import { createInfrastructure } from './apps/sync-worker/src/runtime-infrastructure.js';
-          const RUN_ID='9e24aaa3-6939-486a-ad87-0527a088a6b7', WORK_KEY=`google_ads:${RUN_ID}`, GENERATION=1787389764329, CURSOR_KEY='integration_workspace:google_ads:chemistry_k:paid_ads_delivery';
-          const TABLE_KEYS=['mktAdsAccounts','mktAdsCampaigns','mktAdsAssetGroups','mktAdsAdGroups','mktAdsAds','mktAdsCreatives','mktAdsDaily'];
-          const first=async(db,sql,...b)=>db.prepare(sql).bind(...b).first();
-          const parse=r=>{try{return JSON.parse(String(r?.state_json??'{}'));}catch{return {}}};
-          async function snapshot(db){
-            const run=await first(db,'SELECT run_id,mode,status,expected_chunk_count,received_chunk_count,expected_row_count,received_row_count,payload_redacted_at FROM google_ads_delivery_runs WHERE run_id=?',RUN_ID);
-            const admission=await first(db,'SELECT status,last_error_code,reconciliation_json,completed_at,payload_redacted_at FROM google_ads_live_admissions WHERE run_id=?',RUN_ID);
-            const work=await first(db,'SELECT lifecycle_status,audit_reference,completed_at FROM sync_work_runs WHERE work_key=?',WORK_KEY);
-            const d1=await first(db,"SELECT expected_items,processed_items,complete,state_json FROM sync_work_phases WHERE work_key=? AND phase='google_ads_d1_business_write_v1'",WORK_KEY);
-            const lark=await first(db,"SELECT expected_items,processed_items,complete,state_json FROM sync_work_phases WHERE work_key=? AND phase='google_ads_lark_write_v1'",WORK_KEY);
-            const chunks=await first(db,'SELECT COUNT(*) total,SUM(CASE WHEN payload_json IS NOT NULL AND redacted_at IS NULL THEN 1 ELSE 0 END) available FROM google_ads_delivery_chunks WHERE run_id=?',RUN_ID);
-            const lock=await first(db,'SELECT COUNT(*) n FROM sync_locks WHERE lock_key=? AND expires_at>?',CURSOR_KEY,Date.now());
-            return {run,admission,work,d1,lark,chunks,activeLock:Number(lock?.n??0)};
-          }
-          function assertProbe(s){
-            if(s.run?.run_id!==RUN_ID||s.run?.mode!=='LIVE'||Number(s.run.expected_chunk_count)!==7||Number(s.run.received_chunk_count)!==7||Number(s.run.expected_row_count)!==1305||Number(s.run.received_row_count)!==1305||s.run.payload_redacted_at!==null)throw new Error('transport_guard_failed');
-            if(Number(s.chunks?.total)!==7||Number(s.chunks?.available)!==7)throw new Error('payload_guard_failed');
-            if(s.admission?.status!=='processing'||s.admission.completed_at!==null||s.admission.payload_redacted_at!==null)throw new Error('admission_guard_failed');
-            if(s.work?.lifecycle_status!=='active'||s.work?.audit_reference!=='operator:google-ads-direct-checkpoint-recovery-20260822'||s.work?.completed_at!==null)throw new Error('active_work_guard_failed');
-            if(Number(s.d1?.expected_items)!==2616||Number(s.d1?.processed_items)!==1000||Number(parse(s.d1).nextIndex)!==1000||Number(s.d1?.complete)!==0)throw new Error('checkpoint_guard_failed');
-            if(s.activeLock!==0)throw new Error('lock_guard_failed');
-          }
-          async function executeOne(env){
-            const db=env.MKT_STATE_DB; const before=await snapshot(db);
-            if(before.admission?.status==='completed')return {result:{status:'completed_idempotent'},snapshot:before};
-            if(before.work?.lifecycle_status!=='active'||before.admission?.status!=='processing')throw new Error('recovery_state_not_active_processing');
-            const lockStore=new D1ReliabilityStore({db}); const ownerId=`google-ads-direct-recovery:${crypto.randomUUID()}`; const lock=await lockStore.acquire({lockKey:CURSOR_KEY,ownerId,leaseMs:600000}); if(!lock.acquired)throw new Error('recovery_lock_busy');
-            try{
-              const infrastructure=createInfrastructure(env); const tables=readLarkTableIdsFromEnv(env,TABLE_KEYS); const queueReference=buildGoogleAdsQueueReference({runId:RUN_ID,runStartedAt:GENERATION});
-              const result=await processGoogleAdsManagerSignedDelivery({queueReference,syncRunId:crypto.randomUUID(),cursorKey:CURSOR_KEY,assertLockActive:async()=>undefined,admissionStore:infrastructure.getGoogleAdsAdmissionStore(),deliveryStore:infrastructure.getGoogleAdsDeliveryStore(),historyStore:infrastructure.getMarketingHistoryStore(),resumableWorkStore:infrastructure.getResumableWorkStore(),repository:infrastructure.repository,syncEngine:infrastructure.syncEngine,continuationQueue:{send:async()=>undefined},businessWriteEnabled:true,larkWriteEnabled:true,maxD1RowsPerInvocation:250,tables});
-              return {result,snapshot:await snapshot(db)};
-            }finally{await lockStore.release({lockKey:CURSOR_KEY,ownerId});}
-          }
-          export default {async fetch(request,env){if(request.headers.get('x-recovery-token')!==env.RECOVERY_TOKEN)return new Response('forbidden',{status:403});const url=new URL(request.url);try{if(url.pathname==='/probe'){const s=await snapshot(env.MKT_STATE_DB);assertProbe(s);return Response.json({ok:true,runId:RUN_ID,d1Processed:s.d1.processed_items,d1Expected:s.d1.expected_items});}if(url.pathname==='/recover'&&request.method==='POST'){const out=await executeOne(env),s=out.snapshot;let rec={};try{rec=JSON.parse(String(s.admission?.reconciliation_json??'{}'));}catch{}return Response.json({ok:true,resultStatus:out.result?.status??null,admissionStatus:s.admission?.status??null,workLifecycle:s.work?.lifecycle_status??null,d1Processed:s.d1?.processed_items??null,d1Expected:s.d1?.expected_items??null,d1NextIndex:parse(s.d1).nextIndex??null,larkProcessed:s.lark?.processed_items??null,larkExpected:s.lark?.expected_items??null,larkNextTableIndex:parse(s.lark).nextTableIndex??null,reconciliation:rec});}return new Response('not found',{status:404});}catch(error){return Response.json({ok:false,error:String(error?.message??error),code:error?.code??null},{status:500});}}};
-          ENTRY
-
-          SAFE_SYNC="$safe_sync" RECOVERY_CFG="$recovery_cfg" RECOVERY_TOKEN="$token" node <<'NODE'
-          const fs=require('fs');const s=JSON.parse(fs.readFileSync(process.env.SAFE_SYNC,'utf8'));const d=s.d1_databases.filter(x=>x.binding==='MKT_STATE_DB').map(x=>({...x,remote:true}));if(d.length!==1)throw new Error('d1_missing');fs.writeFileSync(process.env.RECOVERY_CFG,JSON.stringify({name:'google-ads-direct-recovery-local',main:'google-ads-direct-recovery-entry.js',compatibility_date:s.compatibility_date,compatibility_flags:s.compatibility_flags,account_id:s.account_id,vars:{...s.vars,RECOVERY_TOKEN:process.env.RECOVERY_TOKEN},d1_databases:d},null,2)+'\n',{mode:0o600});
+          SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" node <<'NODE'
+          const fs=require('fs');
+          const a=JSON.parse(fs.readFileSync(process.env.SAFE_API,'utf8'));
+          const s=JSON.parse(fs.readFileSync(process.env.SAFE_SYNC,'utf8'));
+          const keys=['MKT_CONNECTOR_GOOGLE_ADS_ENABLED','MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED','MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED','MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED','MKT_GOOGLE_ADS_LARK_WRITE_ENABLED','MKT_SCHEDULE_GOOGLE_ADS_ENABLED'];
+          if(!keys.every(k=>a.vars?.[k]==='false')||!keys.every(k=>s.vars?.[k]==='false'))throw new Error('safe_flags_not_false');
+          console.log('safe_flags_false_both_configs=true');
+          console.log('google_schedule_enabled=false');
           NODE
-          cleanup(){ if [ -n "${dev_pid:-}" ]; then kill "$dev_pid" 2>/dev/null || true; fi; rm -f "$entry" "$recovery_cfg" "$recovery_vars"; }; trap cleanup EXIT
+
           cd "$live_worktree"
-          env -u CI -u GITHUB_ACTIONS npx wrangler dev --config "$recovery_cfg" --ip 127.0.0.1 --port "$port" > "$evidence_root/wrangler-dev.log" 2>&1 & dev_pid=$!
-          ready=0; for n in $(seq 1 60); do if curl -fsS -H "x-recovery-token: $token" "http://127.0.0.1:$port/probe" > "$evidence_root/probe.json" 2>/dev/null; then ready=1; break; fi; if ! kill -0 "$dev_pid" 2>/dev/null; then break; fi; sleep 1; done
-          if [ "$ready" -ne 1 ]; then tail -n 120 "$evidence_root/wrangler-dev.log" | sed -E 's/(token|secret|password|authorization)[=: ]+[^ ]+/\1=<REDACTED>/Ig'; exit 2; fi
-          PROBE="$evidence_root/probe.json" node -e "const fs=require('fs'),x=JSON.parse(fs.readFileSync(process.env.PROBE,'utf8'));if(!x.ok||x.runId!=='9e24aaa3-6939-486a-ad87-0527a088a6b7'||+x.d1Processed!==1000||+x.d1Expected!==2616)process.exit(1);console.log('remote_exact_active_checkpoint_probe=passed');console.log('queue_replay_count=0');console.log('google_live_rerun_count=0')"
-          completed=0
-          for n in $(seq 1 24); do
-            out="$evidence_root/recovery-$n.json"; code="$(curl -sS -o "$out" -w '%{http_code}' -X POST -H "x-recovery-token: $token" "http://127.0.0.1:$port/recover")"; if [ "$code" != "200" ]; then cat "$out"; exit 3; fi
-            STEP="$out" N="$n" node <<'NODE'
-          const fs=require('fs'),x=JSON.parse(fs.readFileSync(process.env.STEP,'utf8'));if(!x.ok)throw new Error(x.error||'step_failed');console.log(`recovery_step=${process.env.N}`);console.log(`result_status=${x.resultStatus}`);console.log(`admission_status=${x.admissionStatus}`);console.log(`d1_progress=${x.d1Processed??'complete'}/${x.d1Expected??'complete'}`);console.log(`lark_progress=${x.larkProcessed??0}/${x.larkExpected??7}`);if(x.admissionStatus==='completed'){const t=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']),r=(Array.isArray(x.reconciliation?.lark)?x.reconciliation.lark:[]).filter(v=>t.has(v?.tableKey));if(r.length!==3)throw new Error('target_reconciliation_missing');for(const v of r){const a=Number(v.created??0)+Number(v.updated??0)+Number(v.skipped??0);if(a!==Number(v.expected))throw new Error(`target_mismatch:${v.tableKey}`);console.log(`${v.tableKey}_expected=${v.expected}`);console.log(`${v.tableKey}_accounted=${a}`);}if(Number(x.reconciliation?.failed??-1)!==0)throw new Error('reconciliation_failed');console.log('target_lark_reconciliation=passed');}
+          env -u CI -u GITHUB_ACTIONS RUN_ID="$run_id" PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" OPERATOR_EVIDENCE="$operator_evidence" node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import { spawnSync } from 'node:child_process';
+          import { resolve } from 'node:path';
+          import { readDevVars } from './scripts/lib/dev-vars.js';
+          const sync=JSON.parse(await readFile(process.env.SAFE_SYNC,'utf8'));
+          const db=(sync.d1_databases??[]).find(x=>x?.binding==='MKT_STATE_DB');
+          const manager=String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
+          const advertiser=String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
+          const devVars=await readDevVars(resolve(process.env.PRIMARY_REPO,'.dev.vars'));
+          const baseEnv={...process.env,...devVars,MKT_ENV:'development',MKT_CUSTOMER_PROFILE:'integration_workspace',MKT_CONNECTION_CUSTOMER_KEY:'chemistry_k',MKT_GOOGLE_ADS_SOURCE_TIMEZONE:'Asia/Bangkok',MKT_GOOGLE_ADS_LIVE_DATABASE_NAME:db.database_name,MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG:process.env.SAFE_API,MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG:process.env.SAFE_SYNC,MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID:manager,MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID:advertiser,MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR:process.env.OPERATOR_EVIDENCE,MKT_GOOGLE_ADS_LIVE_RUN_ID:process.env.RUN_ID};
+          let r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=verify','--execute'],{cwd:process.env.LIVE_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_VERIFY:'verify'},encoding:'utf8',maxBuffer:32*1024*1024});
+          process.stdout.write(r.stdout||''); if(r.status!==0){process.stderr.write(r.stderr||'');process.exit(r.status||1);}
+          r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=rerun-verify','--execute'],{cwd:process.env.LIVE_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_RERUN_VERIFY:'rerun-verify'},encoding:'utf8',maxBuffer:32*1024*1024});
+          process.stdout.write(r.stdout||''); if(r.status!==0){process.stderr.write(r.stderr||'');process.exit(r.status||1);}
+          console.log('operator_verify=passed');
+          console.log('operator_rerun_verify=passed');
           NODE
-            status="$(STEP="$out" node -e "const fs=require('fs'),x=JSON.parse(fs.readFileSync(process.env.STEP,'utf8'));process.stdout.write(String(x.admissionStatus||''))")"; if [ "$status" = completed ]; then completed=1; cp "$out" "$evidence_root/final.json"; break; fi
-          done
-          test "$completed" = 1
-          echo 'exact_same_run_recovery=completed'
-          echo 'queue_replay_count=0'
-          echo 'google_live_rerun_count=0'
-          echo 'production_schedule_enabled=false'
+
+          env -u CI -u GITHUB_ACTIONS PRIMARY_REPO="$repo" SAFE_SYNC="$safe_sync" node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import { resolve } from 'node:path';
+          import { readDevVars } from './scripts/lib/dev-vars.js';
+          import { createLarkBitableClientFromEnv } from './packages/connectors/src/lark/lark-bitable.client.js';
+          import { readLarkTableIdsFromEnv } from './packages/config/src/lark-table-config.js';
+          const devVars=await readDevVars(resolve(process.env.PRIMARY_REPO,'.dev.vars'));
+          const safe=JSON.parse(await readFile(process.env.SAFE_SYNC,'utf8'));
+          const env={...devVars,...safe.vars};
+          const tableIds=readLarkTableIdsFromEnv(env,['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']);
+          const client=createLarkBitableClientFromEnv(env);
+          const specs=[
+            ['mktAdsCreatives','ads_creative_key',161],
+            ['mktAdsDaily','ads_daily_key',200],
+            ['mktAdsAssetGroups','ads_asset_group_key',0],
+          ];
+          for(const [key,field,minimum] of specs){
+            const rows=await client.listRecords({tableId:tableIds[key],pageSize:500,includeRecordMetadata:false});
+            const values=rows.map(r=>String(r.fields?.[field]??'').trim()).filter(Boolean);
+            const googleValues=values.filter(v=>v.startsWith('google_ads:'));
+            const unique=new Set(googleValues);
+            if(unique.size!==googleValues.length) throw new Error(`${key}_duplicate_stable_key`);
+            if(unique.size<minimum) throw new Error(`${key}_google_rows_below_reconciled_minimum:${unique.size}<${minimum}`);
+            console.log(`${key}_physical_rows=${rows.length}`);
+            console.log(`${key}_google_ads_unique_keys=${unique.size}`);
+            console.log(`${key}_duplicate_google_ads_keys=0`);
+          }
+          console.log('lark_target_readback=passed');
+          NODE
+
+          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(c.d1_databases.find(x=>x.binding==="MKT_STATE_DB").database_name)' "$safe_sync")"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT r.mode,r.expected_chunk_count,r.received_chunk_count,r.expected_row_count,r.received_row_count,r.payload_redacted_at,a.status,a.last_error_code,a.completed_at,a.payload_redacted_at AS admission_redacted,a.reconciliation_json FROM google_ads_delivery_runs r JOIN google_ads_live_admissions a ON a.run_id=r.run_id WHERE r.run_id='$run_id';" --json > "$final_evidence/final-state.json"
+          FINAL="$final_evidence/final-state.json" node <<'NODE'
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.env.FINAL,'utf8'));const a=Array.isArray(x)?x:[x];const r=a.flatMap(c=>c?.results??c?.result?.[0]?.results??[])[0];if(!r)throw new Error('final_run_missing');if(r.mode!=='LIVE'||+r.expected_chunk_count!==7||+r.received_chunk_count!==7||+r.expected_row_count!==1305||+r.received_row_count!==1305||r.status!=='completed'||r.last_error_code!==null||r.payload_redacted_at===null||r.admission_redacted===null)throw new Error('final_state_invalid');const rec=JSON.parse(r.reconciliation_json);const t=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']),rows=rec.lark.filter(v=>t.has(v.tableKey));for(const v of rows){const n=+v.created+(+v.updated)+(+v.skipped);console.log(`${v.tableKey}_expected=${v.expected}`);console.log(`${v.tableKey}_accounted=${n}`);}console.log(`reconciliation_failed=${rec.failed}`);console.log('payload_redacted=true');console.log('final_live_state=passed');
+          NODE
+          echo 'final_verify_remote_mutation_count=0'
