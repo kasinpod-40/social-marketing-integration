@@ -39,8 +39,10 @@ try {
   const targetScope = await countScope(targetClient);
   assertExpectedScope(sourceScope, EXPECTED_CLONE, 'Source clone');
 
-  const sourceManifest = await buildLarkBaseViewManualParityManifest({ sourceClient });
-  const targetManifest = await buildLarkBaseViewManualParityManifest({ sourceClient: targetClient });
+  const sourceManifestRaw = await buildLarkBaseViewManualParityManifest({ sourceClient });
+  const targetManifestRaw = await buildLarkBaseViewManualParityManifest({ sourceClient: targetClient });
+  const sourceManifest = projectVisibleFieldOrderManifest(sourceManifestRaw);
+  const targetManifest = projectVisibleFieldOrderManifest(targetManifestRaw);
   const acceptance = verifyLarkBaseViewManualParityManifests({
     sourceManifest,
     targetManifest,
@@ -58,6 +60,11 @@ try {
     contractVersion: 'customer_base_view_export_parity_v1',
     action: 'verify-view-parity-from-base-exports',
     mode: 'local-read-only',
+    fieldOrderSemantics: {
+      compared: 'visible-field-order-only',
+      hiddenMembership: 'owned-by-closed-hidden-field-parity-gate',
+      reason: 'documented Base v3 visible_fields controls visibility and visible-field order; hidden-field relative positions are not part of displayed column order',
+    },
     sourceAuthority: {
       fileName: basename(sourceFile),
       sha256: sourceInspection.file.sha256,
@@ -92,6 +99,22 @@ try {
     remoteMutationCount: 0,
   }, null, 2));
   process.exitCode = 2;
+}
+
+function projectVisibleFieldOrderManifest(manifest) {
+  const copy = structuredClone(manifest);
+  for (const table of copy.tables ?? []) {
+    for (const view of table.views ?? []) {
+      const manual = view?.manual ?? {};
+      const hidden = new Set(Object.entries(manual.colInfos ?? {})
+        .filter(([, info]) => info && typeof info === 'object' && info.hidden === true)
+        .map(([fieldName]) => fieldName));
+      if (Array.isArray(manual.fieldOrder)) {
+        manual.fieldOrder = manual.fieldOrder.filter((fieldName) => !hidden.has(fieldName));
+      }
+    }
+  }
+  return copy;
 }
 
 async function projectClientByTableNames(client, allowedNames) {
