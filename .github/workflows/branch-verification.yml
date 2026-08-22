@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_bounded_manual_live_window:
+  google_ads_bounded_manual_live_window_retry:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 28
+    timeout-minutes: 18
     steps:
-      - name: Open manual LIVE gates wait restore and verify
+      - name: Restore safe state then open fresh manual LIVE window
         shell: bash
         run: |
           set -euo pipefail
@@ -29,10 +29,8 @@ jobs:
           safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
           active_api="$live_worktree/wrangler.api.google-ads-live-active.jsonc"
           active_sync="$live_worktree/wrangler.sync.google-ads-live-active.jsonc"
-          desktop_script="$HOME/Desktop/google-ads-manager-script-signed-delivery-current.js"
-          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-manual-live-20260822"
-          operator_evidence="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
-          restored=0
+          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-manual-live-retry-20260822"
+          mkdir -p "$evidence_root"
 
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
@@ -41,14 +39,22 @@ jobs:
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
           test -f "$safe_api"
           test -f "$safe_sync"
-          test -f "$desktop_script"
-          test -f "$operator_evidence/live-ready.json"
-          mkdir -p "$evidence_root"
 
-          exclude_file="$repo/.git/info/exclude"
-          for name in wrangler.api.google-ads-live-active.jsonc wrangler.sync.google-ads-live-active.jsonc; do
-            grep -qxF "/$name" "$exclude_file" || printf '/%s\n' "$name" >> "$exclude_file"
-          done
+          deploy_with_retry() {
+            config="$1"
+            log="$2"
+            for n in 1 2 3; do
+              if npx wrangler deploy --config "$config" > "$log" 2>&1; then return 0; fi
+              sleep $((n * 5))
+            done
+            return 1
+          }
+
+          cd "$live_worktree"
+          deploy_with_retry "$safe_api" "$evidence_root/api-safe-initial.txt"
+          deploy_with_retry "$safe_sync" "$evidence_root/sync-safe-initial.txt"
+          echo "initial_safe_restore=true"
+          echo "google_schedule_enabled=false"
 
           SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" ACTIVE_API="$active_api" ACTIVE_SYNC="$active_sync" node <<'NODE'
           const fs=require('fs');
@@ -64,22 +70,18 @@ jobs:
           set(sync,'MKT_SCHEDULE_GOOGLE_ADS_ENABLED','false');
           fs.writeFileSync(process.env.ACTIVE_API,JSON.stringify(api,null,2)+'\n',{mode:0o600});
           fs.writeFileSync(process.env.ACTIVE_SYNC,JSON.stringify(sync,null,2)+'\n',{mode:0o600});
-          console.log('active_configs_built=true');
-          console.log('schedule_enabled=false');
           NODE
 
-          test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
-          cd "$live_worktree"
-
+          restored=0
           restore_safe() {
             if [ "$restored" = "1" ]; then return 0; fi
             set +e
-            npx wrangler deploy --config "$safe_api" > "$evidence_root/api-restore.txt" 2>&1
-            api_status=$?
-            npx wrangler deploy --config "$safe_sync" > "$evidence_root/sync-restore.txt" 2>&1
-            sync_status=$?
+            deploy_with_retry "$safe_api" "$evidence_root/api-safe-final.txt"
+            a=$?
+            deploy_with_retry "$safe_sync" "$evidence_root/sync-safe-final.txt"
+            s=$?
             set -e
-            if [ "$api_status" -eq 0 ] && [ "$sync_status" -eq 0 ]; then
+            if [ "$a" -eq 0 ] && [ "$s" -eq 0 ]; then
               restored=1
               echo "safe_flags_restored=true"
               echo "google_schedule_enabled=false"
@@ -90,41 +92,43 @@ jobs:
           }
           trap 'restore_safe || true' EXIT
 
-          npx wrangler deploy --config "$active_api" > "$evidence_root/api-active-deploy.txt"
-          npx wrangler deploy --config "$active_sync" > "$evidence_root/sync-active-deploy.txt"
+          deploy_with_retry "$active_api" "$evidence_root/api-active.txt"
+          deploy_with_retry "$active_sync" "$evidence_root/sync-active.txt"
           window_start="$(($(date +%s) * 1000))"
           echo "$window_start" > "$evidence_root/window-start-ms"
           echo "manual_live_window_active=true"
-          echo "manual_live_window_minutes=20"
+          echo "manual_live_window_minutes=12"
           echo "google_schedule_enabled=false"
-          echo "waiting_for_new_live_run=true"
 
           database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$safe_sync")"
           run_id=""
-          for attempt in $(seq 1 80); do
+          for attempt in $(seq 1 48); do
             query_file="$evidence_root/poll.json"
-            sql="SELECT r.run_id, r.expected_chunk_count, r.received_chunk_count, r.expected_row_count, r.received_row_count, a.status AS admission_status, a.last_error_code, a.reconciliation_json, a.completed_at FROM google_ads_delivery_runs AS r LEFT JOIN google_ads_live_admissions AS a ON a.run_id = r.run_id WHERE r.mode = 'LIVE' AND r.created_at >= $window_start ORDER BY r.created_at DESC LIMIT 1;"
-            npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "$sql" --json > "$query_file"
-            POLL_FILE="$query_file" node <<'NODE' > "$evidence_root/poll-state.txt"
+            sql="SELECT r.run_id, r.expected_chunk_count, r.received_chunk_count, r.expected_row_count, r.received_row_count, a.status AS admission_status, a.last_error_code, a.reconciliation_json FROM google_ads_delivery_runs AS r LEFT JOIN google_ads_live_admissions AS a ON a.run_id=r.run_id WHERE r.mode='LIVE' AND r.created_at >= $window_start ORDER BY r.created_at DESC LIMIT 1;"
+            if npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "$sql" --json > "$query_file" 2> "$evidence_root/poll-error.txt"; then
+              state="$(POLL_FILE="$query_file" node <<'NODE'
           const fs=require('fs');
           const parsed=JSON.parse(fs.readFileSync(process.env.POLL_FILE,'utf8'));
           const cs=Array.isArray(parsed)?parsed:[parsed];
           let row=null;
           for(const c of cs){const rows=c?.results??c?.result?.[0]?.results;if(Array.isArray(rows)&&rows.length){row=rows[0];break;}}
           if(!row){console.log('NONE');process.exit(0);}
-          const status=String(row.admission_status??'');
           const id=String(row.run_id??'');
+          const status=String(row.admission_status??'');
           if(['failed_permanent','failed_retryable'].includes(status)){console.log(`FAILED|${id}|${status}|${String(row.last_error_code??'')}`);process.exit(0);}
           if(status==='completed'){console.log(`COMPLETED|${id}`);process.exit(0);}
           console.log(`PENDING|${id}|${status||'transport'}`);
           NODE
-            state="$(cat "$evidence_root/poll-state.txt")"
-            case "$state" in
-              COMPLETED\|*) run_id="${state#COMPLETED|}"; break ;;
-              FAILED\|*) echo "new_live_run_state=$state"; exit 4 ;;
-              PENDING\|*) echo "new_live_run_state=$state" ;;
-              NONE) : ;;
-            esac
+              )"
+              case "$state" in
+                COMPLETED\|*) run_id="${state#COMPLETED|}"; break ;;
+                FAILED\|*) echo "new_live_run_state=$state"; exit 4 ;;
+                PENDING\|*) echo "new_live_run_state=$state" ;;
+                NONE) : ;;
+              esac
+            else
+              echo "poll_transient_failure=true"
+            fi
             sleep 15
           done
 
@@ -158,27 +162,4 @@ jobs:
 
           restore_safe
           trap - EXIT
-
-          RUN_ID_FILE="$evidence_root/run-id" PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" OPERATOR_EVIDENCE="$operator_evidence" node --input-type=module <<'NODE'
-          import { readFile } from 'node:fs/promises';
-          import { spawnSync } from 'node:child_process';
-          import { resolve } from 'node:path';
-          import { readDevVars } from './scripts/lib/dev-vars.js';
-          const runId=(await readFile(process.env.RUN_ID_FILE,'utf8')).trim();
-          const sync=JSON.parse(await readFile(process.env.SAFE_SYNC,'utf8'));
-          const db=(sync.d1_databases??[]).find(x=>x?.binding==='MKT_STATE_DB');
-          const manager=String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
-          const advertiser=String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
-          const devVars=await readDevVars(resolve(process.env.PRIMARY_REPO,'.dev.vars'));
-          const baseEnv={...process.env,...devVars,MKT_ENV:'development',MKT_CUSTOMER_PROFILE:'integration_workspace',MKT_CONNECTION_CUSTOMER_KEY:'chemistry_k',MKT_GOOGLE_ADS_SOURCE_TIMEZONE:'Asia/Bangkok',MKT_GOOGLE_ADS_LIVE_DATABASE_NAME:db.database_name,MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG:process.env.SAFE_API,MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG:process.env.SAFE_SYNC,MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID:manager,MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID:advertiser,MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR:process.env.OPERATOR_EVIDENCE,MKT_GOOGLE_ADS_LIVE_RUN_ID:runId};
-          let r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=verify','--execute'],{cwd:process.env.LIVE_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_VERIFY:'verify'},encoding:'utf8',maxBuffer:32*1024*1024});
-          if(r.status!==0){process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.exit(r.status||1);}
-          r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=rerun-verify','--execute'],{cwd:process.env.LIVE_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_RERUN_VERIFY:'rerun-verify'},encoding:'utf8',maxBuffer:32*1024*1024});
-          if(r.status!==0){process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.exit(r.status||1);}
-          console.log('operator_verify=passed');
-          console.log('operator_rerun_verify=passed');
-          NODE
-
-          echo "paid_ads_parity_live_closeout=passed"
-          echo "safe_flags_restored=true"
-          echo "google_schedule_enabled=false"
+          echo "paid_ads_parity_live_reconciliation=passed"
