@@ -699,7 +699,7 @@ export function expectedLarkContracts(connectorKey) {
   const organic = connectorKey === 'facebook' || connectorKey === 'instagram';
   const prefixes = organic
     ? ['raw.organic', 'canonical.accounts', 'canonical.accountDaily', 'canonical.content']
-    : [];
+    : ['raw.ads', 'canonical.ads'];
   return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
     (contract) => prefixes.some((prefix) => contract.path.startsWith(prefix)),
   ));
@@ -811,7 +811,7 @@ function requireFingerprint(value, fieldName) {
 
 function requireObject(value, fieldName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw operatorError(`${fieldName} must be an object`, 'META_LARK_INPUT_INVALID');
+    throw operatorError(`${fieldName} must be an object`, 'META_LARK_INPUT_INVALID', { fieldName });
   }
   return value;
 }
