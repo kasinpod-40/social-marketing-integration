@@ -356,6 +356,7 @@ function requireExact(value, expected, fieldName) {
 }
 
 function requireExactFalse(value, fieldName) {
+  if (value === undefined || value === null || value === '') return false;
   if (value !== false && value !== 'false') {
     throw operatorError(
       `Meta read-only validation requires ${fieldName}=false`,
