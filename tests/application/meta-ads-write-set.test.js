@@ -176,7 +176,7 @@ test('July activity scope keeps detailed daily facts in D1 and emits one bounded
   assert.equal(writeSet.reconciliation.entityScopeMode, 'report_range');
   assert.equal(writeSet.reconciliation.larkProjectionMode, 'curated_reports');
   assert.equal(writeSet.reconciliation.detailedDailyRows, 1);
-  assert.equal(writeSet.d1.coverageRuns.length, 5);
+  assert.equal(writeSet.d1.coverageRuns.length, 6);
   assert.equal(writeSet.d1.coverageRuns.some((row) => row.dataset_key.includes('creatives')), false);
   assert.equal(writeSet.d1.coverageRuns
     .filter((row) => row.dataset_key.endsWith('.activity'))
