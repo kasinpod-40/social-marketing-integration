@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_live_run_read_only_diagnostic:
+  google_ads_resumable_checkpoint_diagnostic:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 8
     steps:
-      - name: Inspect existing LIVE run without mutation
+      - name: Inspect existing LIVE resumable phases without mutation
         shell: bash
         run: |
           set -euo pipefail
@@ -26,71 +26,53 @@ jobs:
           expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
           safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
           run_id="9e24aaa3-6939-486a-ad87-0527a088a6b7"
-          evidence_root="$HOME/Git/social-marketing-integration/outputs/google-ads-live-operator/paid-parity-post-live-diagnostic-20260822"
+          evidence_root="$HOME/Git/social-marketing-integration/outputs/google-ads-live-operator/paid-parity-resume-diagnostic-20260822"
           mkdir -p "$evidence_root"
-
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
           test -f "$safe_sync"
           cd "$live_worktree"
-
           database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$safe_sync")"
 
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT * FROM google_ads_delivery_runs WHERE run_id='$run_id';" --json > "$evidence_root/run.json"
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT * FROM google_ads_live_admissions WHERE run_id='$run_id';" --json > "$evidence_root/admission.json"
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT dataset_key, COUNT(*) AS chunk_count, COALESCE(SUM(row_count),0) AS row_count FROM google_ads_delivery_chunks WHERE run_id='$run_id' GROUP BY dataset_key ORDER BY dataset_key;" --json > "$evidence_root/chunks.json"
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT name, sql FROM sqlite_master WHERE type='table' AND name LIKE 'google_ads%' ORDER BY name;" --json > "$evidence_root/schema.json"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT a.run_id,a.status AS admission_status,a.work_key,a.generation,a.original_requested_at,a.updated_at,a.completed_at,a.last_error_code,w.lifecycle_status,w.completed_at AS work_completed_at,w.completion_json FROM google_ads_live_admissions a LEFT JOIN sync_work_runs w ON w.work_key=a.work_key WHERE a.run_id='$run_id';" --json > "$evidence_root/work.json"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT p.phase,p.expected_items,p.processed_items,p.pages_processed,p.chunks_processed,p.complete,p.updated_at,p.state_json FROM sync_work_phases p JOIN google_ads_live_admissions a ON a.work_key=p.work_key WHERE a.run_id='$run_id' ORDER BY p.phase;" --json > "$evidence_root/phases.json"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT u.phase,u.unit_key,u.sequence,u.updated_at FROM sync_work_units u JOIN google_ads_live_admissions a ON a.work_key=u.work_key WHERE a.run_id='$run_id' ORDER BY u.phase,u.sequence;" --json > "$evidence_root/units.json"
 
-          RUN_FILE="$evidence_root/run.json" ADMISSION_FILE="$evidence_root/admission.json" CHUNKS_FILE="$evidence_root/chunks.json" SCHEMA_FILE="$evidence_root/schema.json" node <<'NODE'
+          WORK_FILE="$evidence_root/work.json" PHASES_FILE="$evidence_root/phases.json" UNITS_FILE="$evidence_root/units.json" node <<'NODE'
           const fs=require('fs');
-          const firstRow=(path)=>{
-            const parsed=JSON.parse(fs.readFileSync(path,'utf8'));
-            const cs=Array.isArray(parsed)?parsed:[parsed];
-            for(const c of cs){const rows=c?.results??c?.result?.[0]?.results;if(Array.isArray(rows)&&rows.length)return rows[0];}
-            return null;
-          };
-          const allRows=(path)=>{
-            const parsed=JSON.parse(fs.readFileSync(path,'utf8'));
-            const cs=Array.isArray(parsed)?parsed:[parsed];
-            const out=[];
-            for(const c of cs){const rows=c?.results??c?.result?.[0]?.results;if(Array.isArray(rows))out.push(...rows);}
-            return out;
-          };
-          const run=firstRow(process.env.RUN_FILE);
-          const admission=firstRow(process.env.ADMISSION_FILE);
-          const chunks=allRows(process.env.CHUNKS_FILE);
-          const schema=allRows(process.env.SCHEMA_FILE);
-          if(!run) throw new Error('run_missing');
-          console.log(`run_id=${run.run_id}`);
-          console.log(`run_mode=${run.mode}`);
-          console.log(`expected_chunks=${run.expected_chunk_count}`);
-          console.log(`received_chunks=${run.received_chunk_count}`);
-          console.log(`expected_rows=${run.expected_row_count}`);
-          console.log(`received_rows=${run.received_row_count}`);
-          console.log(`delivery_status=${run.status??''}`);
-          if(admission){
-            console.log(`admission_status=${admission.status??''}`);
-            console.log(`last_error_code=${admission.last_error_code??''}`);
-            console.log(`last_error_message=${String(admission.last_error_message??'').slice(0,500)}`);
-            console.log(`admission_attempt_count=${admission.attempt_count??admission.attempts??''}`);
-            console.log(`admission_updated_at=${admission.updated_at??''}`);
-            console.log(`admission_completed_at=${admission.completed_at??''}`);
-            let rec={};
-            try{rec=JSON.parse(String(admission.reconciliation_json??'{}'));}catch{}
-            const targets=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']);
-            const lark=Array.isArray(rec.lark)?rec.lark:[];
-            for(const x of lark.filter(x=>targets.has(x?.tableKey))){
-              const accounted=Number(x.created??0)+Number(x.updated??0)+Number(x.skipped??0);
-              console.log(`${x.tableKey}_expected=${x.expected}`);
-              console.log(`${x.tableKey}_created=${x.created??0}`);
-              console.log(`${x.tableKey}_updated=${x.updated??0}`);
-              console.log(`${x.tableKey}_skipped=${x.skipped??0}`);
-              console.log(`${x.tableKey}_accounted=${accounted}`);
+          const rows=(path)=>{const p=JSON.parse(fs.readFileSync(path,'utf8'));const cs=Array.isArray(p)?p:[p];const out=[];for(const c of cs){const r=c?.results??c?.result?.[0]?.results;if(Array.isArray(r))out.push(...r);}return out;};
+          const work=rows(process.env.WORK_FILE)[0];
+          const phases=rows(process.env.PHASES_FILE);
+          const units=rows(process.env.UNITS_FILE);
+          if(!work) throw new Error('work_missing');
+          console.log(`run_id=${work.run_id}`);
+          console.log(`admission_status=${work.admission_status}`);
+          console.log(`work_key=${work.work_key}`);
+          console.log(`generation=${work.generation}`);
+          console.log(`admission_updated_at=${work.updated_at}`);
+          console.log(`admission_completed_at=${work.completed_at??''}`);
+          console.log(`last_error_code=${work.last_error_code??''}`);
+          console.log(`work_lifecycle_status=${work.lifecycle_status??''}`);
+          console.log(`work_completed_at=${work.work_completed_at??''}`);
+          let completion={};try{completion=JSON.parse(String(work.completion_json??'{}'));}catch{}
+          console.log(`work_completion_schema=${completion.schemaVersion??''}`);
+          for(const p of phases){
+            console.log(`phase_${p.phase}_progress=${p.processed_items}/${p.expected_items}`);
+            console.log(`phase_${p.phase}_complete=${p.complete}`);
+            console.log(`phase_${p.phase}_chunks=${p.chunks_processed}`);
+            console.log(`phase_${p.phase}_updated_at=${p.updated_at}`);
+            let s={};try{s=JSON.parse(String(p.state_json??'{}'));}catch{}
+            if(p.phase==='google_ads_d1_business_write_v1') console.log(`d1_next_index=${s.nextIndex??''}`);
+            if(p.phase==='google_ads_lark_write_v1'){
+              console.log(`lark_next_table_index=${s.nextTableIndex??''}`);
+              const rs=Array.isArray(s.results)?s.results:[];
+              for(const x of rs.filter(Boolean)){
+                const accounted=Number(x.created??0)+Number(x.updated??0)+Number(x.skipped??0);
+                console.log(`lark_${x.tableKey}_expected=${x.expected}`);
+                console.log(`lark_${x.tableKey}_accounted=${accounted}`);
+              }
             }
-            console.log(`reconciliation_failed=${rec.failed??''}`);
-          } else {
-            console.log('admission_missing=true');
           }
-          for(const x of chunks) console.log(`chunk_${x.dataset_key}=${x.chunk_count}/${x.row_count}`);
-          console.log(`google_ads_schema_tables=${schema.map(x=>x.name).join(',')}`);
+          console.log(`work_unit_count=${units.length}`);
+          for(const u of units.slice(-12)) console.log(`unit=${u.phase}|${u.sequence}|${u.unit_key}|${u.updated_at}`);
           console.log('diagnostic_remote_mutation_count=0');
           NODE
