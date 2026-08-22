@@ -43,7 +43,7 @@ const REQUIRED_FALSE_FLAGS = Object.freeze([
   'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
   'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
 ]);
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{12}$/u;
 const ADWORDS_SCOPE = 'https://www.googleapis.com/auth/adwords';
 
 export function parseGoogleAdsLiveOperatorArgs(args = []) {
@@ -268,8 +268,8 @@ export function validateGoogleAdsRunVerificationRow(row = {}) {
 }
 
 export function compareGoogleAdsRerunVerification(before, after) {
-  const left = validateGoogleAdsRunVerificationRow(before);
-  const right = validateGoogleAdsRunVerificationRow(after);
+  const left = normalizeGoogleAdsRerunVerification(before);
+  const right = normalizeGoogleAdsRerunVerification(after);
   const stableFields = [
     'runId', 'expectedChunks', 'receivedChunks', 'expectedRows', 'receivedRows',
     'adsEntityRows', 'adsDailyRows', 'coverageRunRows',
@@ -325,6 +325,31 @@ export function compareGoogleAdsLarkDailyNumber(field, actual, expected) {
 
 export function requireGoogleAdsOperatorRunId(env = {}) {
   return requireUuid(env.MKT_GOOGLE_ADS_LIVE_RUN_ID, 'MKT_GOOGLE_ADS_LIVE_RUN_ID');
+}
+
+function normalizeGoogleAdsRerunVerification(value = {}) {
+  if (value && typeof value === 'object' && !Array.isArray(value)
+    && Object.prototype.hasOwnProperty.call(value, 'runId')) {
+    return validateGoogleAdsRunVerificationRow({
+      run_id: value.runId,
+      mode: value.mode,
+      transport_status: value.transportStatus,
+      expected_chunk_count: value.expectedChunks,
+      received_chunk_count: value.receivedChunks,
+      expected_row_count: value.expectedRows,
+      received_row_count: value.receivedRows,
+      payload_redacted_at: value.payloadRedacted === true ? 1 : null,
+      admission_status: value.admissionStatus,
+      send_attempts: value.sendAttempts,
+      completed_at: value.admissionCompleted === true ? 1 : null,
+      admission_payload_redacted_at: value.admissionPayloadRedacted === true ? 1 : null,
+      work_lifecycle_status: value.workLifecycleStatus,
+      ads_entity_rows: value.adsEntityRows,
+      ads_daily_rows: value.adsDailyRows,
+      coverage_run_rows: value.coverageRunRows,
+    });
+  }
+  return validateGoogleAdsRunVerificationRow(value);
 }
 
 function normalizeTarget(value = {}) {
