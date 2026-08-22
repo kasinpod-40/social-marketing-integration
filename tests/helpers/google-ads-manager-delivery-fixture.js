@@ -46,6 +46,13 @@ const DATASET_ROWS = deepFreeze({
     campaignBudgetResourceName: 'customers/2222222222/campaignBudgets/100',
     resourceName: 'customers/2222222222/campaigns/10',
   }],
+  assetGroups: [{
+    assetGroupId: '15',
+    campaignId: '10',
+    assetGroupName: 'Asset group 15',
+    status: 'ENABLED',
+    resourceName: 'customers/2222222222/assetGroups/15',
+  }],
   adGroups: [{
     adGroupId: '20',
     campaignId: '10',
@@ -107,6 +114,7 @@ export function createGoogleAdsDeliveryManifest(overrides = {}) {
   const manifest = {
     account: { totalRows: 1, chunkCount: 1 },
     campaigns: { totalRows: 0, chunkCount: 0 },
+    assetGroups: { totalRows: 0, chunkCount: 0 },
     adGroups: { totalRows: 0, chunkCount: 0 },
     ads: { totalRows: 0, chunkCount: 0 },
     youtubeAssets: { totalRows: 0, chunkCount: 0 },
