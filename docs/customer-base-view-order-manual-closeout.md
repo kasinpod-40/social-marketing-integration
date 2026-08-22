@@ -1,39 +1,72 @@
 # Customer Base View field-order closeout
 
-## Superseded manual procedure
+## Final capability decision
 
-The earlier 105-View drag checklist is **no longer the primary closeout path**.
+View field order is now **manual UI only** for this customer Target.
 
-A later review of the official `larksuite/cli` Base shortcuts found the documented Base v3 `visible_fields` View property. Lark states that `visible_fields` controls both visibility and order. The supported write is:
+The official Base v3 `visible_fields` endpoint is documented to control visibility and order, but two live order-only attempts on the customer Target proved that it cannot safely close the existing order drift when visible membership is unchanged.
 
-```text
-PUT /open-apis/base/v3/bases/:base_token/tables/:table_id/views/:view_id/visible_fields
-```
+### Live attempt evidence
 
-The customer Base lane now uses `scripts/customer-base-visible-field-order-parity.mjs` and the shared documented View parity implementation.
+Attempt 1:
 
-## Safe automated sequence
+- four Views changed;
+- Lark then returned `800070003 api_error: no operation produced`;
+- transaction rollback restored all four Views;
+- `rollbackFailures = []`.
 
-1. Load the exact approved Source export SHA.
-2. Exclude protected `🎵 RAW_TikTok_Creator_Videos` from clone scope.
-3. Verify Target identity anchors and all 32 clone Tables.
-4. Read all 110 cloned Views.
-5. Derive Source visible order from Source `fieldOrder` minus Source hidden fields.
-6. Require Target visible membership to equal Source membership before any write.
-7. PUT only mismatching `visible_fields` arrays in Source order.
-8. GET-readback each changed View in exact order.
-9. On any failure, restore all changed Views to their pre-run `visible_fields` arrays.
-10. Re-export Target and run `scripts/customer-base-view-export-parity.mjs`.
+Attempt 2:
 
-## Manual fallback
+- the operator accepted `800070003` only if immediate ordered GET readback exactly matched the requested order;
+- failing View: `📐 MKT_Metric_Definitions → 📋 All Metrics`;
+- immediate readback still differed;
+- operator raised `VISIBLE_FIELD_ORDER_LARK_NO_OPERATION_NOT_APPLIED`;
+- four earlier changed Views rolled back;
+- `rollbackFailures = []`.
 
-Manual dragging is allowed only if the documented API lane fails closed for a specific proven Lark capability/readback reason. It is not the default procedure anymore.
+The Base JS SDK exposes ordered reads but no documented reorder setter for an existing Grid View.
+
+Therefore:
+
+- do not rerun `scripts/customer-base-visible-field-order-parity.mjs --apply`;
+- do not ignore `800070003`;
+- do not temporarily hide/show fields merely to try to force order;
+- do not recreate Views;
+- do not use undocumented View payloads.
+
+## Manual UI procedure
+
+For each mismatching cloned View:
+
+1. Open the existing Target View.
+2. Open `Customize Field` / the View field-order editor.
+3. Reorder existing columns to the exact Source visible-field order.
+4. Change **order only**.
+5. Keep current visible/hidden membership unchanged.
+6. Keep Filter unchanged.
+7. Keep Sort unchanged.
+8. Keep Group unchanged.
+9. Keep Row Height unchanged.
+10. Keep frozen-column state unchanged.
+11. Do not resize Width; width is excluded from acceptance.
+12. Do not touch `🎵 RAW_TikTok_Creator_Videos`.
+
+Latest comparison before manual closeout found 105/110 View-order mismatches. The five `🔄 MKT_Sync_Log` Views were already exact and should be skipped unless fresh evidence proves drift.
+
+Source field-order authority is the exact approved Source export SHA:
+
+`9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7`
+
+and its generated manual View manifest.
 
 ## Acceptance
 
-The field-order lane closes only when:
+This lane closes only when:
 
-- all 110 cloned Views have exact **visible-field order**;
+- displayed visible-field order matches Source for all 110 cloned Views;
 - hidden membership remains unchanged and already-passed;
-- final exported Target has zero in-scope View parity mismatches;
-- width remains excluded by user decision.
+- no protected-table change occurs;
+- final exported Target read-only verification reports zero in-scope View-order mismatches;
+- Width remains excluded by user decision.
+
+Do not run final export verification until the Dashboard manual lane is also complete; export once after both manual lanes to avoid unnecessary repeated work.
