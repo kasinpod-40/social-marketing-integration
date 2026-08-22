@@ -13,17 +13,146 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_safe_api_error_diagnostic:
+  google_ads_guarded_live_after_login:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 5
+    timeout-minutes: 18
     steps:
-      - name: Read safe API deploy error
+      - name: Verify account restore safe and open LIVE window
         shell: bash
         run: |
           set -euo pipefail
-          path="$HOME/Git/social-marketing-integration/outputs/google-ads-live-operator/wrangler-oauth-recovery-20260822/api-safe.txt"
-          test -f "$path"
-          tail -n 160 "$path" \
-            | sed -E 's/(token|secret|password|signature|authorization)[=: ]+[^ ]+/\1=<REDACTED>/Ig'
-          echo "diagnostic_mutation_count=0"
+          repo="$HOME/Git/social-marketing-integration"
+          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
+          expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
+          safe_api="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
+          safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
+          active_api="$live_worktree/wrangler.api.google-ads-live-active.jsonc"
+          active_sync="$live_worktree/wrangler.sync.google-ads-live-active.jsonc"
+          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-manual-live-final-20260822"
+          mkdir -p "$evidence_root"
+
+          git -C "$repo" fetch origin main
+          test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
+          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test "$(git -C "$live_worktree" branch --show-current)" = main
+          test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
+          test -f "$safe_api"
+          test -f "$safe_sync"
+          cd "$live_worktree"
+
+          target_account_id="$(node -e 'const fs=require("fs");const a=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const s=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));if(!a.account_id||a.account_id!==s.account_id)process.exit(1);process.stdout.write(a.account_id)' "$safe_api" "$safe_sync")"
+          env -u CI -u GITHUB_ACTIONS npx wrangler whoami > "$evidence_root/whoami.txt" 2>&1
+          grep -Fq "$target_account_id" "$evidence_root/whoami.txt"
+          echo "cloudflare_target_account_visible=true"
+
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$safe_api" > "$evidence_root/api-safe.txt" 2>&1
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$safe_sync" > "$evidence_root/sync-safe.txt" 2>&1
+          echo "initial_safe_restore=true"
+          echo "google_schedule_enabled=false"
+
+          SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" ACTIVE_API="$active_api" ACTIVE_SYNC="$active_sync" node <<'NODE'
+          const fs=require('fs');
+          const api=JSON.parse(fs.readFileSync(process.env.SAFE_API,'utf8'));
+          const sync=JSON.parse(fs.readFileSync(process.env.SAFE_SYNC,'utf8'));
+          const set=(obj,key,value)=>{obj.vars={...(obj.vars??{}),[key]:value};};
+          for(const key of ['MKT_CONNECTOR_GOOGLE_ADS_ENABLED','MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED','MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED','MKT_GOOGLE_ADS_LARK_WRITE_ENABLED']){
+            set(api,key,'true'); set(sync,key,'true');
+          }
+          set(api,'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED','true');
+          set(sync,'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED','false');
+          set(api,'MKT_SCHEDULE_GOOGLE_ADS_ENABLED','false');
+          set(sync,'MKT_SCHEDULE_GOOGLE_ADS_ENABLED','false');
+          fs.writeFileSync(process.env.ACTIVE_API,JSON.stringify(api,null,2)+'\n',{mode:0o600});
+          fs.writeFileSync(process.env.ACTIVE_SYNC,JSON.stringify(sync,null,2)+'\n',{mode:0o600});
+          NODE
+
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$active_api" > "$evidence_root/api-active.txt" 2>&1
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$active_sync" > "$evidence_root/sync-active.txt" 2>&1
+          window_start="$(($(date +%s) * 1000))"
+          printf '%s\n' "$window_start" > "$evidence_root/window-start-ms"
+          echo "manual_live_window_active=true"
+          echo "google_schedule_enabled=false"
+
+      - name: Wait for one Google Ads LIVE run
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$HOME/Git/social-marketing-integration"
+          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
+          safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
+          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-manual-live-final-20260822"
+          cd "$live_worktree"
+          window_start="$(cat "$evidence_root/window-start-ms")"
+          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$safe_sync")"
+          run_id=""
+
+          for attempt in $(seq 1 48); do
+            query_file="$evidence_root/poll.json"
+            sql="SELECT r.run_id, r.expected_chunk_count, r.received_chunk_count, r.expected_row_count, r.received_row_count, a.status AS admission_status, a.last_error_code, a.reconciliation_json FROM google_ads_delivery_runs AS r LEFT JOIN google_ads_live_admissions AS a ON a.run_id=r.run_id WHERE r.mode='LIVE' AND r.created_at >= $window_start ORDER BY r.created_at DESC LIMIT 1;"
+            if env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "$sql" --json > "$query_file" 2> "$evidence_root/poll-error.txt"; then
+              state="$(POLL_FILE="$query_file" node <<'NODE'
+          const fs=require('fs');
+          const parsed=JSON.parse(fs.readFileSync(process.env.POLL_FILE,'utf8'));
+          const cs=Array.isArray(parsed)?parsed:[parsed];
+          let row=null;
+          for(const c of cs){const rows=c?.results??c?.result?.[0]?.results;if(Array.isArray(rows)&&rows.length){row=rows[0];break;}}
+          if(!row){console.log('NONE');process.exit(0);}
+          const id=String(row.run_id??'');
+          const status=String(row.admission_status??'');
+          if(['failed_permanent','failed_retryable'].includes(status)){console.log(`FAILED|${id}|${status}|${String(row.last_error_code??'')}`);process.exit(0);}
+          if(status==='completed'){console.log(`COMPLETED|${id}`);process.exit(0);}
+          console.log(`PENDING|${id}|${status||'transport'}`);
+          NODE
+              )"
+              case "$state" in
+                COMPLETED\|*) run_id="${state#COMPLETED|}"; break ;;
+                FAILED\|*) echo "new_live_run_state=$state"; exit 4 ;;
+                PENDING\|*) echo "new_live_run_state=$state" ;;
+                NONE) : ;;
+              esac
+            else
+              echo "poll_transient_failure=true"
+            fi
+            sleep 15
+          done
+
+          test -n "$run_id"
+          printf '%s\n' "$run_id" > "$evidence_root/run-id"
+          echo "new_live_run_detected=true"
+
+          FINAL_POLL="$evidence_root/poll.json" node <<'NODE'
+          const fs=require('fs');
+          const parsed=JSON.parse(fs.readFileSync(process.env.FINAL_POLL,'utf8'));
+          const cs=Array.isArray(parsed)?parsed:[parsed];
+          let row=null;
+          for(const c of cs){const rows=c?.results??c?.result?.[0]?.results;if(Array.isArray(rows)&&rows.length){row=rows[0];break;}}
+          if(!row||row.admission_status!=='completed')process.exit(1);
+          if(Number(row.expected_chunk_count)!==Number(row.received_chunk_count)||Number(row.expected_row_count)!==Number(row.received_row_count))process.exit(2);
+          const rec=JSON.parse(String(row.reconciliation_json??'{}'));
+          const target=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']);
+          const results=Array.isArray(rec.lark)?rec.lark.filter(x=>target.has(x?.tableKey)):[];
+          if(results.length!==3)process.exit(3);
+          for(const result of results){
+            const accounted=Number(result.created??0)+Number(result.updated??0)+Number(result.skipped??0);
+            if(accounted!==Number(result.expected??-1))process.exit(4);
+            console.log(`${result.tableKey}_expected=${result.expected}`);
+            console.log(`${result.tableKey}_accounted=${accounted}`);
+          }
+          console.log('target_lark_reconciliation=passed');
+          NODE
+
+      - name: Restore safe Google Ads flags
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
+          safe_api="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
+          safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
+          evidence_root="$HOME/Git/social-marketing-integration/outputs/google-ads-live-operator/paid-parity-manual-live-final-20260822"
+          cd "$live_worktree"
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$safe_api" > "$evidence_root/api-safe-final.txt" 2>&1
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$safe_sync" > "$evidence_root/sync-safe-final.txt" 2>&1
+          echo "safe_flags_restored=true"
+          echo "google_schedule_enabled=false"
