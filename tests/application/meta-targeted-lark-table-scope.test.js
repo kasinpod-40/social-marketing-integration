@@ -149,3 +149,24 @@ test('Meta Ads targeted Lark scope rejects duplicate table keys before planning'
   );
   assert.deepEqual(executedTableIds, []);
 });
+
+test('Meta Ads targeted Lark scope cannot drift after durable preflight', async () => {
+  const { input, executedTableIds } = baseInput(['mktAdsCreatives', 'mktAdsDaily']);
+  input.maxLarkTablesPerInvocation = 1;
+
+  const first = await processMetaEndToEndGeneration(input);
+  assert.equal(first.status, 'lark_continuation');
+  assert.deepEqual(executedTableIds, ['tbl_ads_creatives']);
+
+  input.tables = {
+    ...TABLES,
+    __metaLarkTableKeys: null,
+  };
+  input.maxLarkTablesPerInvocation = 4;
+
+  await assert.rejects(
+    processMetaEndToEndGeneration(input),
+    (error) => error.code === 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+  );
+  assert.deepEqual(executedTableIds, ['tbl_ads_creatives']);
+});
