@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_assetgroups_mapping:
+  google_ads_assetgroups_inventory:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 10
     steps:
-      - name: Locate Asset Groups table mapping evidence safely
+      - name: Resolve Asset Groups inventory structure without values
         shell: bash
         run: |
           set -euo pipefail
@@ -30,52 +30,52 @@ jobs:
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
 
-          PRIMARY_REPO="$repo" node <<'NODE'
+          PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" node <<'NODE'
           const fs = require('node:fs');
           const path = require('node:path');
+          const { spawnSync } = require('node:child_process');
 
           const repo = process.env.PRIMARY_REPO;
-          const needles = ['LARK_TABLE_MKT_ADS_ASSET_GROUPS', 'MKT_Ads_AssetGroups'];
-          const skip = new Set(['.git', 'node_modules', '.wrangler']);
-          const hits = [];
-
-          function walk(dir, depth = 0) {
-            if (depth > 6) return;
-            let entries;
-            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-            for (const entry of entries) {
-              if (skip.has(entry.name)) continue;
-              const full = path.join(dir, entry.name);
-              if (entry.isDirectory()) {
-                walk(full, depth + 1);
-                continue;
-              }
-              if (!entry.isFile()) continue;
-              let stat;
-              try { stat = fs.statSync(full); } catch { continue; }
-              if (stat.size > 20 * 1024 * 1024) continue;
-              let text;
-              try { text = fs.readFileSync(full, 'utf8'); } catch { continue; }
-              const found = needles.filter((needle) => text.includes(needle));
-              if (found.length) hits.push({ file: path.relative(repo, full), found });
+          const live = process.env.LIVE_WORKTREE;
+          const inventory = path.join(repo, 'outputs/lark-native-ai-remote-inventory/inventory-summary.json');
+          if (!fs.existsSync(inventory)) {
+            console.error('inventory_missing=true');
+            process.exit(1);
+          }
+          const root = JSON.parse(fs.readFileSync(inventory, 'utf8'));
+          const matches = [];
+          const seen = new Set();
+          function walk(value, where = '$') {
+            if (!value || typeof value !== 'object' || seen.has(value)) return;
+            seen.add(value);
+            if (Array.isArray(value)) {
+              value.forEach((item, i) => walk(item, `${where}[${i}]`));
+              return;
             }
+            const values = Object.values(value);
+            if (values.some((v) => typeof v === 'string' && v === 'MKT_Ads_AssetGroups')) {
+              matches.push({ where, value });
+            }
+            for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`);
           }
-
-          walk(repo);
-          console.log(`assetgroups_reference_file_count=${hits.length}`);
-          for (const hit of hits.sort((a,b) => a.file.localeCompare(b.file))) {
-            console.log(`reference_file=${hit.file} keys=${hit.found.join(',')}`);
+          walk(root);
+          console.log(`assetgroups_inventory_object_count=${matches.length}`);
+          let validTableIdField = false;
+          for (const match of matches) {
+            const fields = Object.entries(match.value).map(([k,v]) => ({
+              key:k,
+              type:Array.isArray(v)?'array':v===null?'null':typeof v,
+              looksTableId:typeof v==='string' && /^tbl[A-Za-z0-9]+$/u.test(v),
+              isTitle: v === 'MKT_Ads_AssetGroups',
+            }));
+            console.log(`object_path=${match.where}`);
+            console.log(`object_fields=${fields.map((f)=>`${f.key}:${f.type}:tableId=${f.looksTableId}:title=${f.isTitle}`).join(',')}`);
+            if (fields.some((f) => f.looksTableId)) validTableIdField = true;
           }
+          console.log(`assetgroups_inventory_has_table_id=${validTableIdField}`);
 
-          const devVars = path.join(repo, '.dev.vars');
-          if (fs.existsSync(devVars)) {
-            const text = fs.readFileSync(devVars, 'utf8');
-            const match = text.match(/^\s*(?:export\s+)?LARK_TABLE_MKT_ADS_ASSET_GROUPS\s*=\s*(.+?)\s*$/mu);
-            const value = match?.[1]?.trim().replace(/^['"]|['"]$/gu, '') ?? '';
-            console.log(`dev_vars_assetgroups_key=${Boolean(match)}`);
-            console.log(`dev_vars_assetgroups_value_looks_table_id=${/^tbl[A-Za-z0-9]+$/u.test(value)}`);
-          } else {
-            console.log('dev_vars_assetgroups_key=false');
-            console.log('dev_vars_assetgroups_value_looks_table_id=false');
+          for (const candidate of ['wrangler.api.google-ads-live-safe.jsonc','wrangler.sync.google-ads-live-safe.jsonc']) {
+            const r = spawnSync('git', ['-C', live, 'check-ignore', '-q', candidate]);
+            console.log(`safe_config_candidate=${candidate} ignored=${r.status === 0}`);
           }
           NODE
