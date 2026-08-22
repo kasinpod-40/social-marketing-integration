@@ -13,35 +13,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_manager_script_inventory:
+  google_ads_assetgroups_transport_schema:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 10
     steps:
-      - name: Locate current Manager Script artifact and safe contract markers
+      - name: Verify remote D1 transport schema supports Asset Groups
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
           live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
           expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
+          sync_config="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
 
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test "$(git -C "$live_worktree" branch --show-current)" = main
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
+          test -f "$sync_config"
 
           cd "$live_worktree"
-          echo "--- filename_candidates ---"
-          find . -type f \
-            \( -iname '*google*ads*manager*' -o -iname '*manager*script*' -o -iname '*signed*delivery*' \) \
-            -not -path './node_modules/*' -not -path './.git/*' | sort
+          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$sync_config")"
+          sql="SELECT sql FROM sqlite_master WHERE type='table' AND name='google_ads_delivery_chunks';"
+          npx wrangler d1 execute "$database_name" --remote --config "$sync_config" --command "$sql" --json > /tmp/google-ads-transport-schema.json
 
-          echo "--- current_contract_markers ---"
-          rg -n --no-heading \
-            'google_ads_manager_script_signed_delivery_v[234]|adsAssetGroups|assetGroups|SCHEMA_VERSION|schemaVersion|MODE|DRY_RUN|PREVIEW|LIVE|ScriptProperties|PropertiesService|runId' \
-            . \
-            -g '!node_modules/**' -g '!.git/**' \
-            | grep -E 'google-ads|Google Ads|manager-script|Manager Script|signed-delivery' \
-            | sed -E 's/(secret|token|signature|key)[[:space:]]*[:=][[:space:]]*[^,; ]+/\1=<REDACTED>/Ig' \
-            | head -n 300
+          node <<'NODE'
+          const fs=require('fs');
+          const parsed=JSON.parse(fs.readFileSync('/tmp/google-ads-transport-schema.json','utf8'));
+          const containers=Array.isArray(parsed)?parsed:[parsed];
+          let row=null;
+          for(const c of containers){
+            const rows=c?.results ?? c?.result?.[0]?.results;
+            if(Array.isArray(rows)&&rows.length){row=rows[0];break;}
+          }
+          if(!row||typeof row.sql!=='string'){
+            console.log('transport_table_present=false');
+            process.exit(1);
+          }
+          const sql=row.sql;
+          const assetGroupsSupported=/['"]assetGroups['"]/.test(sql);
+          console.log('transport_table_present=true');
+          console.log(`assetgroups_dataset_constraint_supported=${assetGroupsSupported}`);
+          console.log('remote_d1_mutation_count=0');
+          console.log('google_live_execute_count=0');
+          console.log('lark_write_count=0');
+          if(!assetGroupsSupported) process.exit(2);
+          NODE
