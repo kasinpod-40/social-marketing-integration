@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_live_migrate:
+  google_ads_live_deploy:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-      - name: Execute reviewed migration phase with zero pending migrations
+      - name: Deploy exact reviewed runtime with Google execution flags false
         shell: bash
         run: |
           set -euo pipefail
@@ -30,8 +30,9 @@ jobs:
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test "$(git -C "$live_worktree" branch --show-current)" = main
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
-          test -f "$evidence_root/backup.json"
+          test -f "$evidence_root/migrate.json"
 
           cd "$live_worktree"
           PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" EVIDENCE_ROOT="$evidence_root" node --input-type=module <<'NODE'
@@ -45,32 +46,42 @@ jobs:
           const evidenceRoot = process.env.EVIDENCE_ROOT;
           const apiSafePath = resolve(live, 'wrangler.api.google-ads-live-safe.jsonc');
           const syncSafePath = resolve(live, 'wrangler.sync.google-ads-live-safe.jsonc');
+          const api = JSON.parse(await readFile(apiSafePath, 'utf8'));
           const sync = JSON.parse(await readFile(syncSafePath, 'utf8'));
+          const flags = ['MKT_CONNECTOR_GOOGLE_ADS_ENABLED','MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED','MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED','MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED','MKT_GOOGLE_ADS_LARK_WRITE_ENABLED','MKT_SCHEDULE_GOOGLE_ADS_ENABLED'];
+          if (flags.some((k) => api.vars?.[k] !== 'false' || sync.vars?.[k] !== 'false')) process.exit(1);
+          const assetId = String(sync.vars?.LARK_TABLE_MKT_ADS_ASSET_GROUPS ?? '');
+          if (!/^tbl[A-Za-z0-9]+$/u.test(assetId) || api.vars?.LARK_TABLE_MKT_ADS_ASSET_GROUPS !== assetId) process.exit(1);
           const stateDb = (sync.d1_databases ?? []).find((x) => x?.binding === 'MKT_STATE_DB');
-          const managerId = String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
-          const advertiserId = String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
+          const managerId = String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? '').replace(/-/gu,'').trim();
+          const advertiserId = String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID ?? '').replace(/-/gu,'').trim();
           if (!stateDb?.database_name || !/^\d{10}$/u.test(managerId) || !/^\d{10}$/u.test(advertiserId)) process.exit(1);
-          const devVars = await readDevVars(resolve(repo, '.dev.vars'));
+          const migrate = JSON.parse(await readFile(resolve(evidenceRoot,'migrate.json'),'utf8'));
+          if (migrate.phase !== 'migrate' || migrate.status !== 'passed') process.exit(1);
+          const devVars = await readDevVars(resolve(repo,'.dev.vars'));
           const env = {
             ...process.env, ...devVars,
-            MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'integration_workspace', MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
-            MKT_GOOGLE_ADS_SOURCE_TIMEZONE: 'Asia/Bangkok',
-            MKT_GOOGLE_ADS_LIVE_DATABASE_NAME: stateDb.database_name,
-            MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG: apiSafePath,
-            MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG: syncSafePath,
-            MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID: managerId,
-            MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID: advertiserId,
-            MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR: evidenceRoot,
-            CONFIRM_GOOGLE_ADS_LIVE_MIGRATION: 'migrate',
+            MKT_ENV:'development', MKT_CUSTOMER_PROFILE:'integration_workspace', MKT_CONNECTION_CUSTOMER_KEY:'chemistry_k',
+            MKT_GOOGLE_ADS_SOURCE_TIMEZONE:'Asia/Bangkok',
+            MKT_GOOGLE_ADS_LIVE_DATABASE_NAME:stateDb.database_name,
+            MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG:apiSafePath,
+            MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG:syncSafePath,
+            MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID:managerId,
+            MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID:advertiserId,
+            MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR:evidenceRoot,
+            CONFIRM_GOOGLE_ADS_FLAGS_FALSE_DEPLOY:'deploy',
           };
-          const r = spawnSync(process.execPath, ['scripts/google-ads-live-operator.mjs','--phase=migrate','--execute'], { cwd: live, env, encoding:'utf8', maxBuffer:64*1024*1024 });
+          const r = spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=deploy','--execute'],{cwd:live,env,encoding:'utf8',maxBuffer:64*1024*1024});
           if (r.status !== 0) { process.stdout.write(r.stdout||''); process.stderr.write(r.stderr||''); process.exit(r.status||1); }
-          const e = JSON.parse(await readFile(resolve(evidenceRoot,'migrate.json'),'utf8'));
-          if (e.phase !== 'migrate' || e.status !== 'passed' || e.migrationApplyCompleted !== true || e.migrationListAfterReviewed !== true) process.exit(1);
-          console.log('migrate_status=passed');
-          console.log('pending_before=0');
-          console.log('pending_after=0');
-          console.log('schema_change_count=0');
+          const e = JSON.parse(await readFile(resolve(evidenceRoot,'deploy.json'),'utf8'));
+          if (e.phase !== 'deploy' || e.status !== 'passed' || e.apiDeployCompleted !== true || e.syncDeployCompleted !== true || e.executionFlagsEnabled !== false || e.scheduleEnabled !== false) process.exit(1);
+          console.log('deploy_status=passed');
+          console.log('api_deploy_completed=true');
+          console.log('sync_deploy_completed=true');
+          console.log('deployed_repository_head=00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae');
+          console.log('assetgroups_mapping_deployed=true');
+          console.log('google_execution_flags_enabled=false');
+          console.log('google_schedule_enabled=false');
           console.log('google_live_execute_count=0');
           console.log('lark_write_count=0');
           NODE
