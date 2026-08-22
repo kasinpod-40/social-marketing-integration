@@ -11,8 +11,9 @@ LARK_APP_ID=
 LARK_APP_SECRET=
 
 # SOURCE authority = exact local Lark Base export approved for this migration.
-# Optional for --source-export-audit because the operator defaults to this Downloads path.
-LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE=/Users/wasanjantawong/Downloads/Social MKT Data Hub(20260818-030125).base
+# Current closeout authority SHA-256:
+# 9c24f5da1400d05ca0c070ab736e87c49e7ff4ea78e854a96d4e4c2c3ab267f7
+LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE=/Users/wasanjantawong/Desktop/Social MKT Data Hub.base
 
 # Optional diagnostic only; never used as the migration authority gate.
 # LARK_CUSTOMER_CONSOLIDATION_SOURCE_APP_TOKEN=
@@ -20,6 +21,10 @@ LARK_CUSTOMER_CONSOLIDATION_SOURCE_EXPORT_FILE=/Users/wasanjantawong/Downloads/S
 # TARGET Base: customer `✨Marketing Content Calendar`.
 # Use the Base app token only (not the full URL).
 LARK_CUSTOMER_CONSOLIDATION_TARGET_APP_TOKEN=
+
+# One-run confirmation used only by the documented visible-field-order operator.
+# Prefer setting this inline for the apply command instead of persisting it here.
+# CUSTOMER_BASE_VISIBLE_FIELD_ORDER_CONFIRMATION=APPLY_CUSTOMER_BASE_VISIBLE_FIELD_ORDER_V1
 
 # Optional read-performance tuning. Leave commented unless needed.
 # LARK_REQUEST_TIMEOUT_MS=30000
