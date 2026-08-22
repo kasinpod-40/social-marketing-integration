@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_assetgroups_inventory:
+  google_ads_assetgroups_evidence:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 10
     steps:
-      - name: Resolve Asset Groups inventory structure without values
+      - name: Inspect Asset Groups inventory evidence with identifiers masked
         shell: bash
         run: |
           set -euo pipefail
@@ -30,52 +30,35 @@ jobs:
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
 
-          PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" node <<'NODE'
+          PRIMARY_REPO="$repo" node <<'NODE'
           const fs = require('node:fs');
           const path = require('node:path');
-          const { spawnSync } = require('node:child_process');
-
           const repo = process.env.PRIMARY_REPO;
-          const live = process.env.LIVE_WORKTREE;
           const inventory = path.join(repo, 'outputs/lark-native-ai-remote-inventory/inventory-summary.json');
-          if (!fs.existsSync(inventory)) {
-            console.error('inventory_missing=true');
-            process.exit(1);
+          const text = fs.readFileSync(inventory, 'utf8');
+          const needle = 'MKT_Ads_AssetGroups';
+          let from = 0;
+          let count = 0;
+          while (true) {
+            const i = text.indexOf(needle, from);
+            if (i < 0) break;
+            count++;
+            const raw = text.slice(Math.max(0, i - 500), Math.min(text.length, i + needle.length + 500));
+            const tableIds = raw.match(/tbl[A-Za-z0-9]+/gu) ?? [];
+            const redacted = raw
+              .replace(/tbl[A-Za-z0-9]+/gu, '<TABLE_ID>')
+              .replace(/cli_[A-Za-z0-9]+/gu, '<APP_ID>')
+              .replace(/[A-Fa-f0-9]{32,}/gu, '<HEX>');
+            console.log(`occurrence=${count} nearby_table_id_count=${tableIds.length} unique_nearby_table_ids=${new Set(tableIds).size}`);
+            console.log(`redacted_context=${JSON.stringify(redacted)}`);
+            from = i + needle.length;
           }
-          const root = JSON.parse(fs.readFileSync(inventory, 'utf8'));
-          const matches = [];
-          const seen = new Set();
-          function walk(value, where = '$') {
-            if (!value || typeof value !== 'object' || seen.has(value)) return;
-            seen.add(value);
-            if (Array.isArray(value)) {
-              value.forEach((item, i) => walk(item, `${where}[${i}]`));
-              return;
-            }
-            const values = Object.values(value);
-            if (values.some((v) => typeof v === 'string' && v === 'MKT_Ads_AssetGroups')) {
-              matches.push({ where, value });
-            }
-            for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`);
-          }
-          walk(root);
-          console.log(`assetgroups_inventory_object_count=${matches.length}`);
-          let validTableIdField = false;
-          for (const match of matches) {
-            const fields = Object.entries(match.value).map(([k,v]) => ({
-              key:k,
-              type:Array.isArray(v)?'array':v===null?'null':typeof v,
-              looksTableId:typeof v==='string' && /^tbl[A-Za-z0-9]+$/u.test(v),
-              isTitle: v === 'MKT_Ads_AssetGroups',
-            }));
-            console.log(`object_path=${match.where}`);
-            console.log(`object_fields=${fields.map((f)=>`${f.key}:${f.type}:tableId=${f.looksTableId}:title=${f.isTitle}`).join(',')}`);
-            if (fields.some((f) => f.looksTableId)) validTableIdField = true;
-          }
-          console.log(`assetgroups_inventory_has_table_id=${validTableIdField}`);
+          console.log(`assetgroups_occurrence_count=${count}`);
 
-          for (const candidate of ['wrangler.api.google-ads-live-safe.jsonc','wrangler.sync.google-ads-live-safe.jsonc']) {
-            const r = spawnSync('git', ['-C', live, 'check-ignore', '-q', candidate]);
-            console.log(`safe_config_candidate=${candidate} ignored=${r.status === 0}`);
-          }
+          const scriptDir = path.join(repo, 'scripts');
+          const scriptNames = fs.readdirSync(scriptDir)
+            .filter((name) => /lark|inventory|table/i.test(name))
+            .sort();
+          console.log(`candidate_script_count=${scriptNames.length}`);
+          for (const name of scriptNames) console.log(`candidate_script=${name}`);
           NODE
