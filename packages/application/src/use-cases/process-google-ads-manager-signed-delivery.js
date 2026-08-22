@@ -23,16 +23,13 @@ const DEFAULT_D1_ROWS_PER_INVOCATION = 250;
 const LARK_TABLES = Object.freeze([
   { path: 'canonical.accounts', tableKey: 'mktAdsAccounts', keyField: 'ads_account_key' },
   { path: 'canonical.campaigns', tableKey: 'mktAdsCampaigns', keyField: 'ads_campaign_key' },
+  { path: 'canonical.assetGroups', tableKey: 'mktAdsAssetGroups', keyField: 'ads_asset_group_key' },
   { path: 'canonical.adGroups', tableKey: 'mktAdsAdGroups', keyField: 'ads_ad_group_key' },
   { path: 'canonical.ads', tableKey: 'mktAdsAds', keyField: 'ads_ad_key' },
   { path: 'canonical.creatives', tableKey: 'mktAdsCreatives', keyField: 'ads_creative_key' },
   { path: 'canonical.daily', tableKey: 'mktAdsDaily', keyField: 'ads_daily_key' },
 ]);
 
-/**
- * Process one reference-only Google Ads Queue operation with durable D1/Lark checkpoints.
- * The caller owns distributed lock, generation fence and Reliability/DLQ handling.
- */
 export async function processGoogleAdsManagerSignedDelivery(input = {}) {
   const reference = validateGoogleAdsQueueReference(input.queueReference);
   const admissionStore = requireMethods(input.admissionStore, [
@@ -164,25 +161,11 @@ export async function processGoogleAdsManagerSignedDelivery(input = {}) {
       return queueContinuation({ continuationQueue, reference, status: 'lark_continuation' });
     }
 
-    const reconciliation = createReconciliation({
-      reference,
-      run: transport.run,
-      preflight,
-      d1,
-      lark,
-    });
+    const reconciliation = createReconciliation({ reference, run: transport.run, preflight, d1, lark });
     await assertLockActive();
     await resumableWorkStore.completeWork({ workKey: reference.workKey, completion: reconciliation });
-    await admissionStore.markCompleted({
-      runId: reference.operationId,
-      reconciliation,
-      now: now(),
-    });
-    return Object.freeze({
-      status: 'completed',
-      operationId: reference.operationId,
-      reconciliation,
-    });
+    await admissionStore.markCompleted({ runId: reference.operationId, reconciliation, now: now() });
+    return Object.freeze({ status: 'completed', operationId: reference.operationId, reconciliation });
   } catch (error) {
     if (admission && admission.status !== 'completed') {
       try {
@@ -284,7 +267,7 @@ async function ensureDestinationPreflight(input) {
       skipped: plan.skipped,
     }));
   }
-  const saved = await input.resumableWorkStore.savePhase({
+  return input.resumableWorkStore.savePhase({
     workKey: input.reference.workKey,
     phase: PREFLIGHT_PHASE,
     state: { summaries },
@@ -294,7 +277,6 @@ async function ensureDestinationPreflight(input) {
     chunksProcessed: LARK_TABLES.length,
     complete: true,
   });
-  return saved;
 }
 
 async function executeD1Phase(input) {
@@ -376,9 +358,7 @@ async function executeLarkPhase(input) {
     keyField: contract.keyField,
     rows,
   });
-  const result = await input.syncEngine.executePlan(plan, {
-    beforeWriteChunk: input.assertLockActive,
-  });
+  const result = await input.syncEngine.executePlan(plan, { beforeWriteChunk: input.assertLockActive });
   const accounted = result.created + result.updated + result.skipped;
   if (accounted !== rows.length || result.duplicateInputRows !== 0) {
     throw permanentError('Google Ads Lark table reconciliation failed', {
