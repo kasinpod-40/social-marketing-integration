@@ -890,10 +890,20 @@ export class LarkBitableClient {
     throw lastError ?? transientError('Lark request failed', { code: 'LARK_REQUEST_FAILED' });
   }
 
-  /** ส่ง Fetch พร้อม AbortController และแปลง Timeout เป็น Error ชั่วคราว */
+  /** ส่ง Fetch พร้อม AbortController และแยก Serialization ออกจาก Transport failure */
   async fetchWithTimeout(path, options, safePath = sanitizeLarkPath(path)) {
     const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
     if (options?.token) headers.set('Authorization', `Bearer ${options.token}`);
+
+    let requestBody;
+    try {
+      requestBody = options?.body === undefined ? undefined : JSON.stringify(options.body);
+    } catch (cause) {
+      throw permanentError(`Lark request body serialization failed: ${safePath}`, {
+        code: 'LARK_REQUEST_SERIALIZATION_ERROR',
+        cause,
+      });
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
@@ -902,7 +912,7 @@ export class LarkBitableClient {
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method: options?.method ?? 'GET',
         headers,
-        body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+        body: requestBody,
         signal: controller.signal,
       });
       const text = await response.text();
@@ -914,7 +924,11 @@ export class LarkBitableClient {
           { code: 'LARK_REQUEST_TIMEOUT', cause: error },
         );
       }
-      throw error;
+      if (error instanceof RuntimeError) throw error;
+      throw transientError(`Lark network request failed: ${safePath}`, {
+        code: 'LARK_NETWORK_ERROR',
+        cause: error,
+      });
     } finally {
       clearTimeout(timeout);
     }
@@ -1289,18 +1303,12 @@ function createLarkResponseError(input) {
   });
 }
 
-/** แปลง Fetch/Network error ทั่วไปให้เป็น RuntimeError ที่ Worker จัดการได้ */
+/** แปลง Error นอก Transport boundary ให้ fail closed; Transport ถูก Normalize ใน fetchWithTimeout แล้ว */
 function normalizeRequestError(error, safePath, timeoutMs) {
   if (error instanceof RuntimeError) return error;
   if (error?.name === 'AbortError') {
     return transientError(`Lark request timed out after ${timeoutMs}ms: ${safePath}`, {
       code: 'LARK_REQUEST_TIMEOUT',
-      cause: error,
-    });
-  }
-  if (error instanceof TypeError) {
-    return transientError(`Lark network request failed: ${safePath}`, {
-      code: 'LARK_NETWORK_ERROR',
       cause: error,
     });
   }

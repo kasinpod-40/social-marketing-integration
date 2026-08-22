@@ -5,7 +5,7 @@
 ```text
 TASK_STATUS                              = IN_PROGRESS
 CURRENT_PROGRAM                          = CUSTOMER_OWNED_PRODUCTION_PROVISIONING_V1
-BASE_MAIN_SHA                            = 88d7f69fe42a437bdb344893b61a2f02c7b701ca
+BASE_MAIN_SHA                            = b85649fb0f4e5da69624fbc35b8b39a9cb149880
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
 PRODUCTION_D1_PROVISIONED                = TRUE
@@ -14,12 +14,19 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_DARK
-PRODUCTION_WORKER_HEAD                   = 88d7f69fe42a437bdb344893b61a2f02c7b701ca
+PRODUCTION_WORKER_HEAD                   = b85649fb0f4e5da69624fbc35b8b39a9cb149880
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = FALSE
-PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_ONLY
+PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_AND_FAILED_TIKTOK_UAT_ONLY
 PRODUCTION_QUEUE_LARK_BOOTSTRAP_SMOKE    = PASS_IDEMPOTENT
-PRODUCTION_CONNECTOR_UAT                 = BLOCKED_BY_LARGE_ACCOUNT_LIVE_UAT_GATE
+PRODUCTION_CONNECTOR_UAT_ADMISSION       = MERGED_PR_677
+TIKTOK_PRODUCTION_UAT                    = FAILED_BEFORE_BUSINESS_WRITE
+TIKTOK_PRODUCTION_UAT_FAILURE            = LARK_CLIENT_PROGRAMMING_ERROR_ON_MKT_CONTENT_DAILY_SEARCH
+TIKTOK_PRODUCTION_UAT_SOURCE_WRITE       = ZERO
+TIKTOK_PRODUCTION_UAT_TARGET_WRITE       = ZERO
+TIKTOK_PRODUCTION_UAT_DLQ                = ONE_OPEN_RETAIN_FOR_REPLAY
+PRODUCTION_DARK_STATE_RESTORED           = TRUE
+CURRENT_REPAIR_BRANCH                    = work/lark-transport-error-classification-v1
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 ```
@@ -30,28 +37,27 @@ Provision the existing Social MKT Data Hub runtime into customer-owned Productio
 
 Reuse the existing shared Worker, D1 migrations, Queue/DLQ, connector, report, Lark Native AI and notification contracts. Production schedules remain off until bindings, secrets, table mappings, connector UAT, report/AI/notification verification and first controlled scheduled proof are complete.
 
-## Verified production foundation
+## Verified Production foundation
 
-Customer-owned Production has now passed the following external gates:
+Customer-owned Production has passed these external gates:
 
 - Production D1 exists in the customer Cloudflare account;
 - migrations `0001` through `0021` applied exactly once;
-- `d1_migrations` readback reports 21 applied migrations and no pending migration;
+- `d1_migrations` reports 21 applied migrations and no pending migration;
 - `PRAGMA quick_check` returns `ok`;
 - main Queue and DLQ exist;
-- Worker `social-mkt-sync-worker` is dark-deployed from exact source head `88d7f69fe42a437bdb344893b61a2f02c7b701ca`;
+- Worker `social-mkt-sync-worker` is dark-deployed from exact source head `b85649fb0f4e5da69624fbc35b8b39a9cb149880`;
 - main Queue and DLQ each have exactly one Worker consumer;
-- `workers_dev=false`, no Cron trigger, no route, and all connector/schedule/report/notification execution gates remain false;
+- `workers_dev=false`, no Cron trigger, no route;
 - required Lark App secret is configured in customer-owned Cloudflare secret storage;
-- customer Base mappings were resolved read-only from `✨Marketing Content Calendar` and the protected `RAW_TikTok_Creator_Videos` mapping remains read-only.
+- customer Base mappings resolve to `✨Marketing Content Calendar`;
+- protected `RAW_TikTok_Creator_Videos` remains a read-only source.
 
 Production resource IDs and credentials remain local/customer-owned and must not be committed.
 
 ## Verified Queue → Worker → Customer Lark bootstrap smoke
 
-The first controlled Production business-path smoke used the existing non-connector `report.settings.seed` job. This deliberately did not enable any connector, schedule, AI or notification gate.
-
-Verified evidence:
+The controlled non-connector `report.settings.seed` Production smoke passed before connector admission:
 
 - before run: zero `chemistry_k` report-setting rows and zero dead letters;
 - first Queue job created exactly 74 canonical `chemistry_k` report settings;
@@ -63,55 +69,87 @@ Verified evidence:
 - protected TikTok source write count = 0;
 - connector/schedule/notification/AI enable count = 0.
 
-Therefore the customer-owned Queue → Worker → Lark path and stable-key idempotency are externally proven before any connector is admitted.
+Therefore customer-owned Queue → Worker → Lark infrastructure and stable-key idempotency are externally proven independently of connector UAT.
 
-## Current repository blocker — controlled Production connector UAT admission
+## Controlled Production connector-UAT admission
 
-Connector catalog correctly blocks normal Production execution until `largeAccount.productionReady=true`. TikTok, YouTube and WooCommerce are currently `dev_ready`: all technical/large-fixture gates are complete and only `liveAccountUat` is pending. Marking them `verified` before customer Production evidence would be false evidence, while bypassing `assertConnectorRunnable()` would weaken the safety contract.
+PR #677 merged the reviewed fail-closed UAT lane at `b85649fb0f4e5da69624fbc35b8b39a9cb149880`.
 
-This workstream must add one explicit fail-closed lane that lets a `dev_ready` connector perform its missing customer Production UAT without opening scheduled Production execution.
+Contract remains:
 
-### Required contract
+1. Normal Production execution still requires `largeAccount.productionReady=true`.
+2. Controlled UAT requires all of:
+   - `MKT_ENV=production` / `chemistry_k`;
+   - connector feature flag enabled;
+   - connector status `dev_ready` with only `liveAccountUat` pending;
+   - `MKT_PRODUCTION_CONNECTOR_UAT_ENABLED=true`;
+   - exact connector selector match;
+   - canonical Queue trigger `production_connector_uat`.
+3. Planned/foundation-ready connectors remain blocked.
+4. Scheduled and legacy triggers cannot consume the exception.
+5. Release examples keep UAT admission disabled by default.
+6. No readiness promotion occurs before retained live evidence.
+7. No Production Cron is enabled during UAT.
 
-1. Normal Production execution remains unchanged: a connector with `productionReady=false` is rejected.
-2. Controlled Production UAT is admitted only when all are true:
-   - runtime is `MKT_ENV=production` / `chemistry_k`;
-   - connector feature flag itself is enabled;
-   - connector large-account status is `dev_ready`, meaning only `liveAccountUat` is pending;
-   - dedicated Production-UAT feature flag is enabled;
-   - exact connector allowlist matches the connector being executed;
-   - Queue job uses the canonical `production_connector_uat` trigger.
-3. `foundation_ready` and `planned` connectors remain blocked even in the UAT lane.
-4. Scheduled/manual legacy triggers cannot consume the UAT exception.
-5. Default examples keep the UAT feature flag false and connector allowlist empty.
-6. No connector is promoted to `verified` in this change. Promotion requires retained external Production UAT evidence in a later reviewed change.
-7. No Cron/schedule activation is part of this change.
+## TikTok Production UAT incident — 2026-08-22
 
-### First adopter after merge
+TikTok Creator was the first adopter because catalog readiness is `dev_ready` and only `liveAccountUat` is pending.
 
-TikTok Creator is the first Production UAT candidate because it is `dev_ready`, its source is already the customer-owned Lark Native table, and its remaining large-account gate is exactly `liveAccountUat`.
+The first customer-owned Production attempt proved that admission and Queue routing work, but the sync failed before any business write:
 
-The first live UAT must:
+- one `tiktok.creator.native.sync` Queue job used trigger `production_connector_uat`;
+- reliability run started under `chemistry_k` / `tiktok` / `native_import`;
+- failure occurred while searching existing records in logical target `MKT_Content_Daily`;
+- error code was `LARK_CLIENT_PROGRAMMING_ERROR`;
+- `records_pulled`, `records_created`, `records_updated`, `records_skipped`, and `records_written` all remained `0`;
+- one terminal DLQ record and critical reliability evidence were retained;
+- the protected Native TikTok source was not written;
+- the UAT connector flag, UAT admission flag, selector, schedules, AI and notifications were restored to the dark state after the failure.
 
-- enable only TikTok connector + controlled Production-UAT admission;
-- keep all schedules, reports, notifications and unrelated connectors disabled;
-- submit one bounded `tiktok.creator.native.sync` job with trigger `production_connector_uat`;
-- read the protected Native TikTok table only;
-- verify D1 reliability state and Customer Lark `MKT_Accounts` / `MKT_Content` / `MKT_Content_Daily` writes;
-- rerun the same exact scope and prove stable-key idempotency;
-- restore the temporary UAT admission gate to false after evidence capture;
-- only then promote TikTok `liveAccountUat=true` / large-account status `verified` in a separate reviewed PR.
+Do not replay the retained DLQ or resolve the incident alerts until the shared Lark transport-classification repair is reviewed, merged and deployed.
 
-## Remaining Production continuation
+## Current repair — shared Lark transport classification
 
-After the controlled connector-UAT admission change is merged and TikTok external UAT passes:
+Repository evidence shows `LarkBitableClient` currently treats only `TypeError` as a generic network failure in `normalizeRequestError()`. A non-`RuntimeError` exception from the actual Fetch/response-body transport boundary therefore falls through to permanent `LARK_CLIENT_PROGRAMMING_ERROR` and can terminalize a Queue message without normal transient retry.
 
-1. promote TikTok large-account readiness from `dev_ready` to `verified` with retained evidence;
-2. verify retry, lock, DLQ and controlled replay behavior;
-3. verify Report materialization → Lark Native AI → notification using the existing shared system;
-4. repeat the reviewed connector Production-UAT/promotion process for other eligible connectors as customer credentials/assets permit;
-5. enable Production schedules only after all required controlled gates pass;
-6. verify the first scheduled execution before declaring Production cutover complete.
+This is the current repair hypothesis. Per the live verification rule, it becomes the confirmed root cause only after the retained Production DLQ is replayed on the reviewed fix and the same logical read proceeds successfully.
+
+Required implementation contract:
+
+1. Request-body serialization happens before the network transport boundary.
+2. Serialization failure is permanent and must not invoke Fetch or retry as a network failure.
+3. Any non-`RuntimeError` thrown by `fetch()` or `response.text()` inside the transport boundary is normalized to retryable `LARK_NETWORK_ERROR`, regardless of JavaScript Error subclass.
+4. Timeout remains `LARK_REQUEST_TIMEOUT`.
+5. Existing Lark `RuntimeError` classifications are preserved.
+6. Errors outside the transport boundary remain fail-closed as programming errors.
+7. App token/path sanitization remains unchanged.
+8. Ambiguous Create semantics remain unchanged; internal retry is still controlled by the existing retry mode.
+
+## Required tests for current repair
+
+- plain `Error` from Fetch transport is `LARK_NETWORK_ERROR` and a read request can retry/recover;
+- plain `Error` from response-body reading is `LARK_NETWORK_ERROR`;
+- non-serializable request body is permanent `LARK_REQUEST_SERIALIZATION_ERROR` and Fetch is never started;
+- token/path sanitization remains intact;
+- existing Lark connector tests remain green;
+- `npm run check`;
+- `npm test`;
+- `npm run test:report-reliability`;
+- `npm audit`;
+- `npm run deploy:dry-run`.
+
+## Recovery after reviewed merge
+
+1. Refresh isolated Production worktree to exact reviewed `main`.
+2. Deploy the reviewed Worker in dark state; Cron remains absent.
+3. Enable only TikTok + controlled Production-UAT admission for the recovery window.
+4. Use the existing reviewed DLQ/redrive contract to replay the retained failed payload; do not create an unrelated replacement architecture.
+5. Verify TikTok run success, D1 reliability state, Customer Lark `MKT_Accounts` / `MKT_Content` / `MKT_Content_Daily`, and protected source zero-write.
+6. Run the same logical scope again and prove stable-key idempotency.
+7. Resolve retained incident state only through existing reviewed reliability/redrive semantics after recovery is verified.
+8. Restore TikTok/UAT/redrive gates to false.
+9. Promote TikTok `liveAccountUat=true` in a separate reviewed readiness PR only after external evidence passes.
+10. Continue other eligible connectors and enable schedules last.
 
 ## Safety rules
 
@@ -123,23 +161,15 @@ After the controlled connector-UAT admission change is merged and TikTok externa
 - TikTok Ads remains deferred under PR #220.
 - Do not fake `largeAccount.productionReady` or `liveAccountUat` before external evidence exists.
 - Do not create a generic Production bypass around `assertConnectorRunnable()`.
+- Do not replay the retained failed TikTok payload before the reviewed repair is deployed.
+- Do not resolve retained failure evidence before successful recovery verification.
 - Do not enable Cron/schedules before controlled Production verification is complete.
-
-## Required tests for this workstream
-
-- Connector registry: standard Production path still rejects non-verified connectors.
-- Connector registry: controlled UAT admits `dev_ready` only when explicit admission is true.
-- Connector registry: controlled UAT still rejects planned/foundation-ready connectors.
-- Worker routing: `production_connector_uat` + exact UAT env gates admits the intended connector.
-- Worker routing: wrong trigger, disabled UAT flag, wrong connector allowlist and scheduled trigger all fail closed.
-- Job catalog: canonical Production UAT trigger is centralized.
-- Release examples: UAT flag defaults false and connector selector defaults empty.
-- `npm run check`
-- `npm test`
-- `npm run test:report-reliability`
-- `npm audit`
-- `npm run deploy:dry-run`
 
 ## Implementation result
 
-Pending implementation on `work/production-connector-uat-admission-v1`.
+In progress on `work/lark-transport-error-classification-v1`:
+
+- shared Lark client separates request serialization from the transport boundary;
+- transport exceptions are normalized at the boundary instead of inferred later from `TypeError` only;
+- focused regression coverage is being added;
+- Production remains dark and no Cloudflare/Lark/D1/Queue mutation is performed by this code-change workstream.
