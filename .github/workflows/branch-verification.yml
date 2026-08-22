@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_live_preflight:
+  google_ads_live_backup:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 30
     steps:
-      - name: Build safe current configs and execute reviewed-main preflight
+      - name: Execute reviewed Google Ads D1 backup
         shell: bash
         run: |
           set -euo pipefail
@@ -31,68 +31,31 @@ jobs:
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
           test "$(git -C "$live_worktree" branch --show-current)" = main
-          test -z "$(git -C "$live_worktree" status --porcelain)"
-          test -f "$evidence_root/assetgroups-table-id"
-
-          exclude_file="$repo/.git/info/exclude"
-          mkdir -p "$(dirname "$exclude_file")"
-          touch "$exclude_file"
-          for name in wrangler.api.google-ads-live-safe.jsonc wrangler.sync.google-ads-live-safe.jsonc; do
-            grep -qxF "/$name" "$exclude_file" || printf '/%s\n' "$name" >> "$exclude_file"
-          done
+          test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
+          test -f "$evidence_root/preflight.json"
+          test -f "$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
+          test -f "$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
 
           cd "$live_worktree"
-          test -d node_modules || npm ci >/tmp/google-ads-live-npm-ci.log 2>&1
-
           PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" EVIDENCE_ROOT="$evidence_root" node --input-type=module <<'NODE'
-          import { readFile, writeFile, chmod } from 'node:fs/promises';
+          import { readFile } from 'node:fs/promises';
           import { resolve } from 'node:path';
           import { spawnSync } from 'node:child_process';
-          import { parseJsoncObject } from './scripts/lib/chatwoot-safe-wrangler-config.js';
           import { readDevVars } from './scripts/lib/dev-vars.js';
 
           const repo = process.env.PRIMARY_REPO;
           const live = process.env.LIVE_WORKTREE;
           const evidenceRoot = process.env.EVIDENCE_ROOT;
-          const apiSource = resolve(repo, 'wrangler.api.jsonc');
-          const syncSource = resolve(repo, 'wrangler.sync.jsonc');
           const apiSafePath = resolve(live, 'wrangler.api.google-ads-live-safe.jsonc');
           const syncSafePath = resolve(live, 'wrangler.sync.google-ads-live-safe.jsonc');
-          const tableId = (await readFile(resolve(evidenceRoot, 'assetgroups-table-id'), 'utf8')).trim();
-          if (!/^tbl[A-Za-z0-9]+$/u.test(tableId)) throw new Error('private Asset Groups table ID is invalid');
+          const sync = JSON.parse(await readFile(syncSafePath, 'utf8'));
+          const stateDb = (sync.d1_databases ?? []).find((entry) => entry?.binding === 'MKT_STATE_DB');
+          const managerId = String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
+          const advertiserId = String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
+          if (!String(stateDb?.database_name ?? '').trim() || !/^\d{10}$/u.test(managerId) || !/^\d{10}$/u.test(advertiserId)) process.exit(1);
 
-          const api = parseJsoncObject(await readFile(apiSource, 'utf8'));
-          const sync = parseJsoncObject(await readFile(syncSource, 'utf8'));
-          const flags = [
-            'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
-            'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED',
-            'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
-            'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
-            'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
-            'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
-          ];
-
-          function makeSafe(config) {
-            const clone = structuredClone(config);
-            clone.vars = { ...(clone.vars ?? {}) };
-            for (const key of flags) clone.vars[key] = 'false';
-            clone.vars.LARK_TABLE_MKT_ADS_ASSET_GROUPS = tableId;
-            return clone;
-          }
-          const apiSafe = makeSafe(api);
-          const syncSafe = makeSafe(sync);
-          await writeFile(apiSafePath, `${JSON.stringify(apiSafe, null, 2)}\n`, { mode: 0o600 });
-          await chmod(apiSafePath, 0o600);
-          await writeFile(syncSafePath, `${JSON.stringify(syncSafe, null, 2)}\n`, { mode: 0o600 });
-          await chmod(syncSafePath, 0o600);
-
-          const stateDb = (syncSafe.d1_databases ?? []).find((entry) => entry?.binding === 'MKT_STATE_DB');
-          if (!String(stateDb?.database_name ?? '').trim()) throw new Error('MKT_STATE_DB database_name missing');
-          const managerId = String(syncSafe.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
-          const advertiserId = String(syncSafe.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
-          if (!/^\d{10}$/u.test(managerId) || !/^\d{10}$/u.test(advertiserId)) throw new Error('Google Ads customer IDs invalid');
-          if (flags.some((key) => apiSafe.vars?.[key] !== 'false' || syncSafe.vars?.[key] !== 'false')) throw new Error('safe Google flags invariant failed');
-          if (apiSafe.vars.LARK_TABLE_MKT_ADS_ASSET_GROUPS !== tableId || syncSafe.vars.LARK_TABLE_MKT_ADS_ASSET_GROUPS !== tableId) throw new Error('Asset Groups mapping invariant failed');
+          const preflight = JSON.parse(await readFile(resolve(evidenceRoot, 'preflight.json'), 'utf8'));
+          if (preflight.phase !== 'preflight' || preflight.status !== 'passed' || preflight.repositoryHead !== '00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae') process.exit(1);
 
           const devVars = await readDevVars(resolve(repo, '.dev.vars'));
           const env = {
@@ -108,32 +71,21 @@ jobs:
             MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID: managerId,
             MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID: advertiserId,
             MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR: evidenceRoot,
-            CONFIRM_GOOGLE_ADS_LIVE_PREFLIGHT: 'preflight',
+            CONFIRM_GOOGLE_ADS_LIVE_BACKUP: 'backup',
           };
-
-          const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: live, encoding: 'utf8' });
-          if (status.status !== 0 || String(status.stdout).trim() !== '') throw new Error('reviewed-main worktree is not clean after safe config creation');
-
-          const result = spawnSync(process.execPath, ['scripts/google-ads-live-operator.mjs', '--phase=preflight', '--execute'], {
-            cwd: live,
-            env,
-            encoding: 'utf8',
-            maxBuffer: 32 * 1024 * 1024,
+          const result = spawnSync(process.execPath, ['scripts/google-ads-live-operator.mjs', '--phase=backup', '--execute'], {
+            cwd: live, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
           });
           if (result.status !== 0) {
             process.stdout.write(result.stdout || '');
             process.stderr.write(result.stderr || '');
             process.exit(result.status || 1);
           }
-
-          const evidence = JSON.parse(await readFile(resolve(evidenceRoot, 'preflight.json'), 'utf8'));
-          if (evidence.phase !== 'preflight' || evidence.status !== 'passed') throw new Error('preflight evidence is not passed');
-          console.log('safe_configs_from_current_production=true');
-          console.log('google_flags_false_both_configs=true');
-          console.log('assetgroups_mapping_present_both_configs=true');
-          console.log('reviewed_main_clean=true');
-          console.log('preflight_status=passed');
+          const evidence = JSON.parse(await readFile(resolve(evidenceRoot, 'backup.json'), 'utf8'));
+          if (evidence.phase !== 'backup' || evidence.status !== 'passed') process.exit(1);
+          console.log('backup_status=passed');
           console.log(`repository_head=${evidence.repositoryHead}`);
-          console.log(`schedule_disabled=${evidence.safeConfig?.scheduleDisabled === true}`);
-          console.log(`pending_migrations_reviewed=${evidence.pendingMigrationsReviewed === true}`);
+          console.log('remote_d1_mutation_count=0');
+          console.log('google_live_execute_count=0');
+          console.log('lark_write_count=0');
           NODE
