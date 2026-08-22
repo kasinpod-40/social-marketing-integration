@@ -107,9 +107,13 @@ export async function buildLarkBaseViewManualParityManifest(input) {
  * Reduces a full manual manifest to the dimensions that are actually owned by
  * the post-Apply UI procedure. Hidden state is deliberately excluded because it
  * belongs to the automatic hidden-fields mutation + canonical verifier.
+ *
+ * Column width remains available to callers by default, but can be explicitly
+ * excluded from a customer acceptance scope without weakening field-order parity.
  */
-export function buildLarkBaseViewManualParityExecutionPlan(manifest) {
+export function buildLarkBaseViewManualParityExecutionPlan(manifest, options = {}) {
   const source = requireManifest(manifest, 'manifest');
+  const includeColumnWidths = options?.includeColumnWidths !== false;
   const counts = {
     fieldOrderViews: 0,
     sortViews: 0,
@@ -151,11 +155,28 @@ export function buildLarkBaseViewManualParityExecutionPlan(manifest) {
     }
   }
 
+  const manualOwned = includeColumnWidths
+    ? counts
+    : {
+        fieldOrderViews: counts.fieldOrderViews,
+        sortViews: counts.sortViews,
+        groupViews: counts.groupViews,
+        rowHeightViews: counts.rowHeightViews,
+        frozenColumnViews: counts.frozenColumnViews,
+      };
+
   return deepFreeze({
     ok: true,
     contractVersion: 'customer_base_view_manual_parity_execution_plan_v1',
     mode: 'local-read-only-id-redacted',
-    manualOwned: counts,
+    manualOwned,
+    scopeExcluded: includeColumnWidths
+      ? null
+      : {
+          columnWidthViews: counts.columnWidthViews,
+          columnWidthAssignments: counts.columnWidthAssignments,
+          reason: 'column width is excluded from this acceptance scope',
+        },
     automaticExcluded: {
       hiddenFieldViews,
       hiddenFieldAssignments,
@@ -173,11 +194,13 @@ export function buildLarkBaseViewManualParityExecutionPlan(manifest) {
 /**
  * Local manifest-to-manifest verification for the UI-only dimensions. It ignores
  * unrelated Target tables and does not compare hidden/default colInfo metadata.
- * Only explicit non-null widths are manual-owned.
+ * Explicit non-null widths are compared by default and can be excluded by passing
+ * includeColumnWidths: false. Field order remains blocking regardless.
  */
 export function verifyLarkBaseViewManualParityManifests(input) {
   const source = requireManifest(input?.sourceManifest, 'sourceManifest');
   const target = requireManifest(input?.targetManifest, 'targetManifest');
+  const includeColumnWidths = input?.includeColumnWidths !== false;
   const targetTables = uniqueNamedIndex(target.tables, 'target table', (item) => item?.tableName);
   const mismatches = [];
   let comparedViews = 0;
@@ -198,8 +221,8 @@ export function verifyLarkBaseViewManualParityManifests(input) {
         continue;
       }
       comparedViews += 1;
-      const sourceState = manualOwnedState(sourceView?.manual);
-      const targetState = manualOwnedState(targetView?.manual);
+      const sourceState = manualOwnedState(sourceView?.manual, { includeColumnWidths });
+      const targetState = manualOwnedState(targetView?.manual, { includeColumnWidths });
       for (const dimension of Object.keys(sourceState)) {
         if (stableJson(sourceState[dimension]) === stableJson(targetState[dimension])) continue;
         mismatches.push(problem(
@@ -215,29 +238,36 @@ export function verifyLarkBaseViewManualParityManifests(input) {
     ok: mismatches.length === 0,
     contractVersion: 'customer_base_view_manual_parity_verifier_v1',
     mode: 'local-read-only-id-redacted',
+    acceptanceScope: {
+      fieldOrder: 'blocking',
+      columnWidth: includeColumnWidths ? 'blocking' : 'excluded',
+    },
     summary: {
       expectedTables: source.tables.length,
       expectedViews: source.tables.reduce((sum, table) => sum + requireArray(table?.views, 'source views').length, 0),
       comparedViews,
       mismatches: mismatches.length,
+      fieldOrderMismatches: mismatches.filter((item) => item.code === 'VIEW_MANUAL_PARITY_FIELD_ORDER_MISMATCH').length,
     },
-    executionPlan: buildLarkBaseViewManualParityExecutionPlan(source),
+    executionPlan: buildLarkBaseViewManualParityExecutionPlan(source, { includeColumnWidths }),
     mismatches: Object.freeze(mismatches),
     remoteRequestCount: 0,
     remoteMutationCount: 0,
   });
 }
 
-function manualOwnedState(value) {
+function manualOwnedState(value, options = {}) {
   const manual = plainObject(value) ? value : {};
-  return deepFreeze({
+  const includeColumnWidths = options?.includeColumnWidths !== false;
+  const state = {
     fieldOrder: Array.isArray(manual.fieldOrder) ? structuredClone(manual.fieldOrder) : [],
     sortInfo: Array.isArray(manual.sortInfo) ? structuredClone(manual.sortInfo) : [],
     group: Array.isArray(manual.group) ? structuredClone(manual.group) : [],
-    columnWidths: explicitColumnWidths(manual.colInfos),
     rowHeightLevel: manual.rowHeightLevel ?? null,
     frozenColCount: manual.frozenColCount ?? null,
-  });
+  };
+  if (includeColumnWidths) state.columnWidths = explicitColumnWidths(manual.colInfos);
+  return deepFreeze(state);
 }
 
 function explicitColumnWidths(value) {
