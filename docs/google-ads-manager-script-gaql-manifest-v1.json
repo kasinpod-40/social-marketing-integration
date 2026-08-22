@@ -2,7 +2,7 @@
   "schemaVersion": "google_ads_manager_script_gaql_manifest_v1",
   "artifactVersion": "google_ads_manager_script_signed_delivery_v1",
   "scriptArtifact": "scripts/google-ads-manager-script-signed-delivery.js",
-  "scriptSha256": "947b0bf3062cf4c6836e5b3101e36896340ffb0e83f9d2ba29459ae2d0b8a509",
+  "scriptSha256": "73ef8825c20abdc4c62c6992a04d6a8e0b5457b1ba5096213d32df00837f540b",
   "apiVersion": "v24",
   "sourceModeDefault": "DRY_RUN",
   "deliveryEnabledDefault": false,
