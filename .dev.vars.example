@@ -206,6 +206,7 @@ LARK_TABLE_MKT_CONTENT_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ACCOUNT_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ADS_ACCOUNTS=replace-with-table-id
 LARK_TABLE_MKT_ADS_CAMPAIGNS=replace-with-table-id
+LARK_TABLE_MKT_ADS_ASSET_GROUPS=replace-with-table-id
 LARK_TABLE_MKT_ADS_ADGROUPS=replace-with-table-id
 LARK_TABLE_MKT_ADS_ADS=replace-with-table-id
 LARK_TABLE_MKT_ADS_CREATIVES=replace-with-table-id
