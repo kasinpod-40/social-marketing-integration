@@ -78,7 +78,7 @@ function createAdapter() {
     fetchCampaignsPage: inventoryForbidden,
     fetchAdSetsPage: inventoryForbidden,
     fetchAdsPage: inventoryForbidden,
-    fetchCreativesPage: inventoryForbidden,
+    fetchCreativesPage: empty,
     fetchDailyInsightsPage: empty,
   };
 }
@@ -247,7 +247,14 @@ test('durably stages one Meta page per invocation, completes D1-only, then resum
   assert.equal(result.status, 'completed');
   assert.deepEqual(
     [...new Set(tableWrites)],
-    ['tbl_ads_accounts', 'tbl_ads_campaigns', 'tbl_ads_adgroups', 'tbl_ads'],
+    [
+      'tbl_ads_accounts',
+      'tbl_ads_campaigns',
+      'tbl_ads_adgroups',
+      'tbl_ads',
+      'tbl_ads_creatives',
+      'tbl_ads_daily',
+    ],
   );
   const replay = await processMetaEndToEndSync(baseInput({
     resumableWorkStore: workStore,
@@ -502,10 +509,15 @@ test('reads more than 500 staged Meta units through bounded D1 pages', async () 
   ]);
 });
 
-test('Meta Ads stages account then July insights and derives only activity entities', async () => {
+test('Meta Ads stages account then creatives then July insights and derives only activity entities', async () => {
   const workStore = createWorkStore();
+  const creativeCalls = [];
   const calls = [];
   const adapter = createAdapter();
+  adapter.fetchCreativesPage = async (input) => {
+    creativeCalls.push(input);
+    return { rows: [], hasMore: false, nextCursor: null };
+  };
   adapter.fetchDailyInsightsPage = async (input) => {
     calls.push(input);
     return {
@@ -540,6 +552,7 @@ test('Meta Ads stages account then July insights and derives only activity entit
   });
 
   assert.equal((await processMetaEndToEndSync(input)).status, 'source_continuation');
+  assert.equal((await processMetaEndToEndSync(input)).status, 'source_continuation');
   const result = await processMetaEndToEndSync(input);
   assert.equal(result.status, 'source_validated');
   assert.deepEqual(result.sourceSummary, {
@@ -550,6 +563,7 @@ test('Meta Ads stages account then July insights and derives only activity entit
     creativeRows: 0,
     dailyRows: 1,
   });
+  assert.equal(creativeCalls.length, 1);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].since, '2026-07-25');
   assert.equal(calls[0].until, '2026-07-25');
