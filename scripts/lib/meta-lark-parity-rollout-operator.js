@@ -111,11 +111,13 @@ export function loadMetaLarkTarget(env = {}) {
     MKT_META_D1_ONLY_QUEUE_ID: env.MKT_META_LARK_QUEUE_ID,
     MKT_META_D1_ONLY_TERMINAL_RECOVERY: env.MKT_META_LARK_TERMINAL_RECOVERY,
   });
+  const larkTableKeys = parseMetaLarkTableKeys(env.MKT_META_LARK_TABLE_KEYS, base.connectorKey);
   const target = {
     ...base,
     contractVersion: META_LARK_OPERATOR_CONTRACT_VERSION,
     d1SummaryPath: requireText(env.MKT_META_LARK_D1_SUMMARY, 'MKT_META_LARK_D1_SUMMARY'),
-    expectedLarkTableCount: expectedLarkContracts(base.connectorKey).length,
+    ...(larkTableKeys ? { larkTableKeys } : {}),
+    expectedLarkTableCount: expectedLarkContracts(base.connectorKey, larkTableKeys).length,
     orphanedRunningRecovery: env.MKT_META_LARK_ORPHANED_RUNNING_RECOVERY === 'true',
   };
   return deepFreeze({
@@ -128,11 +130,27 @@ export function loadMetaLarkTarget(env = {}) {
 }
 
 export function safeMetaLarkTarget(target = {}) {
+  const larkTableKeys = target.larkTableKeys === undefined || target.larkTableKeys === null
+    ? null
+    : normalizeMetaLarkTableKeys(target.larkTableKeys, target.connectorKey);
+  const expectedLarkTableCount = positiveInteger(
+    target.expectedLarkTableCount,
+    'expectedLarkTableCount',
+  );
+  const resolvedExpectedCount = expectedLarkContracts(target.connectorKey, larkTableKeys).length;
+  if (expectedLarkTableCount !== resolvedExpectedCount) {
+    throw operatorError(
+      'Meta Lark expected table count does not match the requested table scope',
+      'META_LARK_TABLE_SCOPE_INVALID',
+      { expectedLarkTableCount, resolvedExpectedCount },
+    );
+  }
   return deepFreeze({
     ...safeMetaD1OnlyTarget(target),
     contractVersion: META_LARK_OPERATOR_CONTRACT_VERSION,
     d1SummaryPath: requireText(target.d1SummaryPath, 'd1SummaryPath'),
-    expectedLarkTableCount: positiveInteger(target.expectedLarkTableCount, 'expectedLarkTableCount'),
+    ...(larkTableKeys ? { larkTableKeys } : {}),
+    expectedLarkTableCount,
     orphanedRunningRecovery: target.orphanedRunningRecovery === true,
   });
 }
@@ -169,6 +187,9 @@ export function buildMetaLarkConfigWindow(safeText, target = {}) {
 }
 
 export function buildMetaLarkContinuationJob(target = {}) {
+  const larkTableKeys = target.larkTableKeys === undefined || target.larkTableKeys === null
+    ? null
+    : normalizeMetaLarkTableKeys(target.larkTableKeys, target.connectorKey);
   return createStableQueueOperationBody({
     schemaVersion: 1,
     type: target.jobType,
@@ -177,6 +198,7 @@ export function buildMetaLarkContinuationJob(target = {}) {
     periodStart: target.periodStart,
     periodEnd: target.periodEnd,
     ...(target.sourceAccountKey ? { sourceAccountKey: target.sourceAccountKey } : {}),
+    ...(larkTableKeys ? { larkTableKeys: [...larkTableKeys] } : {}),
   }, {
     operationId: target.operationId,
     originalRequestedAt: target.originalRequestedAt,
@@ -444,7 +466,10 @@ export function normalizeMetaLarkSnapshot(value = {}) {
 
 export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
   const value = normalizeMetaLarkSnapshot(snapshot);
-  const expectedCount = expectedLarkContracts(target.connectorKey).length;
+  const expectedCount = expectedLarkContracts(
+    target.connectorKey,
+    target.larkTableKeys ?? null,
+  ).length;
   const resultsValid = value.larkResults.length === expectedCount
     && value.larkResults.every((result) => {
       const expected = count(result?.expected);
@@ -689,20 +714,74 @@ export function evidenceFileForMetaLarkPhase(phase) {
   return `${requirePhase(phase)}.json`;
 }
 
-export function expectedLarkContracts(connectorKey) {
+export function expectedLarkContracts(connectorKey, requestedTableKeys = null) {
+  if (requestedTableKeys !== null && requestedTableKeys !== undefined) {
+    const contracts = connectorLarkContracts(connectorKey);
+    const tableKeys = normalizeMetaLarkTableKeys(requestedTableKeys, connectorKey);
+    const selected = new Set(tableKeys);
+    return Object.freeze(contracts.filter((contract) => selected.has(contract.tableKey)));
+  }
   if (connectorKey === 'meta_ads') {
     const historicalTableKeys = new Set(META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS);
     return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
       (contract) => historicalTableKeys.has(contract.tableKey),
     ));
   }
+  return connectorLarkContracts(connectorKey);
+}
+
+function connectorLarkContracts(connectorKey) {
   const organic = connectorKey === 'facebook' || connectorKey === 'instagram';
   const prefixes = organic
-    ? ['raw.organic', 'canonical.accounts', 'canonical.accountDaily', 'canonical.content']
-    : ['raw.ads', 'canonical.ads'];
+    ? ['canonical.accounts', 'canonical.accountDaily', 'canonical.content']
+    : connectorKey === 'meta_ads'
+      ? ['canonical.ads']
+      : [];
+  if (prefixes.length === 0) {
+    throw operatorError(
+      'Meta Lark connector does not have an approved table contract',
+      'META_LARK_TABLE_SCOPE_INVALID',
+      { connectorKey },
+    );
+  }
   return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
     (contract) => prefixes.some((prefix) => contract.path.startsWith(prefix)),
   ));
+}
+
+function parseMetaLarkTableKeys(value, connectorKey) {
+  const text = optionalText(value);
+  if (text === null) return null;
+  return normalizeMetaLarkTableKeys(
+    text.split(',').map((item) => item.trim()).filter(Boolean),
+    connectorKey,
+  );
+}
+
+function normalizeMetaLarkTableKeys(value, connectorKey) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw operatorError(
+      'Meta Lark table scope must contain at least one table key',
+      'META_LARK_TABLE_SCOPE_INVALID',
+      { connectorKey },
+    );
+  }
+  const tableKeys = value.map((entry, index) => requireText(entry, `larkTableKeys[${index}]`));
+  const unique = new Set(tableKeys);
+  const allowed = new Set(connectorLarkContracts(connectorKey).map((contract) => contract.tableKey));
+  const invalidKeys = tableKeys.filter((tableKey) => !allowed.has(tableKey));
+  if (unique.size !== tableKeys.length || invalidKeys.length > 0) {
+    throw operatorError(
+      'Meta Lark table scope contains duplicate or unavailable contracts',
+      'META_LARK_TABLE_SCOPE_INVALID',
+      {
+        connectorKey,
+        invalidKeys: [...new Set(invalidKeys)].sort(),
+        duplicateTableKeys: unique.size !== tableKeys.length,
+      },
+    );
+  }
+  return Object.freeze([...tableKeys]);
 }
 
 function confirmation(envName, value) {

@@ -80,9 +80,19 @@ async function processMetaJob(input, connectorKey, metaConfig) {
   const larkEnabled = metaConfig.flags.larkWrite === true
     && input.job.body?.dryRun !== true
     && input.job.body?.d1Only !== true;
-  const tableIds = larkEnabled
-    ? readLarkTableIdsFromEnv(input.env, tableKeysFor(connectorKey))
+  const requestedLarkTableKeys = larkEnabled
+    ? resolveMetaLarkTableKeys(connectorKey, input.job.body)
+    : null;
+  const effectiveLarkTableKeys = requestedLarkTableKeys ?? tableKeysFor(connectorKey);
+  const readTableIds = larkEnabled
+    ? readLarkTableIdsFromEnv(input.env, effectiveLarkTableKeys)
     : Object.freeze({});
+  const tableIds = larkEnabled
+    ? Object.freeze({
+      ...readTableIds,
+      __metaLarkTableKeys: requestedLarkTableKeys,
+    })
+    : readTableIds;
   const reliability = infrastructure.getReliability();
   const operationScope = source.sourceAccountKey ?? connectorKey;
   const deterministicSyncRunId = `meta:${connectorKey}:${operationScope}:${operation.operationId}`;
@@ -154,7 +164,7 @@ async function processMetaJob(input, connectorKey, metaConfig) {
 
 /**
  * Compatibility export retained for existing UAT callers.
- * ชื่อ export เดิมคงไว้เพื่อไม่ทำลาย Operator เก่า แต่ทั้งสาม Connector ใช้ Active contract เดียวกัน.
+ * ชื่อ export เดิมคงไว้เพื่อไม่ทำลาย Operator เก่า แต่ทั้งสาม Connectorใช้ Active contract เดียวกัน.
  */
 export function assertMetaManualUatRuntime(runtimeConfig, connectorKey, env = {}) {
   if (runtimeConfig?.environment !== 'development'
@@ -210,6 +220,15 @@ function assertMetaJobDefinition(definition, connectorKey, body) {
   if (body?.dryRun === true && body?.d1Only === true) {
     throw permanentError('Meta dry-run and d1Only cannot be combined', {
       code: 'META_END_TO_END_JOB_INVALID',
+    });
+  }
+  if (body?.larkTableKeys !== undefined && body?.larkTableKeys !== null
+    && (body?.trigger !== JOB_TRIGGERS.META_MANUAL_UAT
+      || body?.dryRun === true
+      || body?.d1Only === true)) {
+    throw permanentError('Meta Lark table scope is allowed only for manual Lark execution', {
+      code: 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+      details: { connectorKey, trigger: body?.trigger ?? null },
     });
   }
 }
@@ -286,6 +305,38 @@ async function enqueueMetaContinuation({ input, operation, connectorKey, result 
     connectorKey,
   }, operation);
   await queue.send(body);
+}
+
+function resolveMetaLarkTableKeys(connectorKey, body = {}) {
+  if (body?.larkTableKeys === undefined || body?.larkTableKeys === null) return null;
+  if (body?.trigger !== JOB_TRIGGERS.META_MANUAL_UAT
+    || body?.dryRun === true
+    || body?.d1Only === true
+    || !Array.isArray(body.larkTableKeys)
+    || body.larkTableKeys.length === 0) {
+    throw permanentError('Meta Lark table scope is invalid', {
+      code: 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+      details: { connectorKey },
+    });
+  }
+  const tableKeys = body.larkTableKeys.map((value, index) => requireJobText(
+    value,
+    `larkTableKeys[${index}]`,
+  ));
+  const unique = new Set(tableKeys);
+  const allowed = new Set(tableKeysFor(connectorKey));
+  const invalidKeys = tableKeys.filter((tableKey) => !allowed.has(tableKey));
+  if (unique.size !== tableKeys.length || invalidKeys.length > 0) {
+    throw permanentError('Meta Lark table scope contains duplicate or unavailable contracts', {
+      code: 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+      details: {
+        connectorKey,
+        invalidKeys: Object.freeze([...new Set(invalidKeys)].sort()),
+        duplicateTableKeys: unique.size !== tableKeys.length,
+      },
+    });
+  }
+  return Object.freeze([...tableKeys]);
 }
 
 function tableKeysFor(connectorKey) {

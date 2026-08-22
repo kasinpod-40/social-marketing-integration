@@ -54,7 +54,7 @@ export async function processMetaEndToEndGeneration(input = {}) {
     });
   }
 
-  const contracts = activeLarkContracts(writeSet);
+  const contracts = activeLarkContracts(writeSet, tables.__metaLarkTableKeys);
   const preflight = input.larkWriteEnabled === true
     ? await ensureDestinationPreflight({
       workStore,
@@ -127,7 +127,11 @@ export async function processMetaEndToEndGeneration(input = {}) {
 
 async function ensureDestinationPreflight(input) {
   const existing = await input.workStore.loadPhase({ workKey: input.workKey, phase: PREFLIGHT_PHASE });
-  if (existing?.complete) return normalizePreflight(existing);
+  if (existing?.complete) {
+    const preflight = normalizePreflight(existing);
+    assertDurablePreflightScope(preflight, input.contracts);
+    return preflight;
+  }
 
   const payloadInspection = await inspectCompleteLarkPayload(input);
   if (payloadInspection.issueCount > 0) {
@@ -228,6 +232,21 @@ async function ensureDestinationPreflight(input) {
     complete: true,
   });
   return normalizePreflight(saved);
+}
+
+function assertDurablePreflightScope(preflight, contracts) {
+  const expectedTableKeys = contracts.map((contract) => contract.tableKey);
+  const observedTableKeys = preflight.state.summaries.map((summary) => optionalText(summary?.tableKey));
+  if (observedTableKeys.some((tableKey) => tableKey === null)
+    || JSON.stringify(observedTableKeys) !== JSON.stringify(expectedTableKeys)) {
+    throw permanentError('Meta Lark durable preflight scope differs from the requested continuation scope', {
+      code: 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+      details: {
+        expectedTableKeys: Object.freeze([...expectedTableKeys]),
+        observedTableKeys: Object.freeze([...observedTableKeys]),
+      },
+    });
+  }
 }
 
 async function inspectCompleteLarkPayload(input) {
@@ -630,25 +649,55 @@ function createReconciliation({ writeSet, preflight, d1, lark }) {
   });
 }
 
-function activeLarkContracts(writeSet) {
+function activeLarkContracts(writeSet, requestedTableKeys = null) {
   const connectorKey = writeSet.connectorKey;
   const organic = connectorKey === 'facebook' || connectorKey === 'instagram';
+  let contracts;
   if (organic) {
     const prefixes = ['canonical.accounts', 'canonical.accountDaily', 'canonical.content'];
-    return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
+    contracts = Object.freeze(META_END_TO_END_LARK_TABLES.filter(
       (contract) => prefixes.some((prefix) => contract.path.startsWith(prefix)),
     ));
+  } else {
+    const currentPaidAds = connectorKey === 'meta_ads'
+      && writeSet.reconciliation?.larkProjectionMode === 'curated_reports';
+    const allowedTableKeys = currentPaidAds
+      ? null
+      : new Set(META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS);
+    contracts = Object.freeze(META_END_TO_END_LARK_TABLES.filter((contract) => (
+      contract.path.startsWith('canonical.ads')
+      && (allowedTableKeys === null || allowedTableKeys.has(contract.tableKey))
+    )));
   }
+  return scopeLarkContracts(contracts, requestedTableKeys, connectorKey);
+}
 
-  const currentPaidAds = connectorKey === 'meta_ads'
-    && writeSet.reconciliation?.larkProjectionMode === 'curated_reports';
-  const allowedTableKeys = currentPaidAds
-    ? null
-    : new Set(META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS);
-  return Object.freeze(META_END_TO_END_LARK_TABLES.filter((contract) => (
-    contract.path.startsWith('canonical.ads')
-    && (allowedTableKeys === null || allowedTableKeys.has(contract.tableKey))
-  )));
+function scopeLarkContracts(contracts, requestedTableKeys, connectorKey) {
+  if (requestedTableKeys === null || requestedTableKeys === undefined) return contracts;
+  if (!Array.isArray(requestedTableKeys) || requestedTableKeys.length === 0) {
+    throw permanentError('Meta Lark table scope must be a non-empty array when provided', {
+      code: 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+      details: { connectorKey },
+    });
+  }
+  const tableKeys = requestedTableKeys.map((value, index) => requireText(
+    value,
+    `tables.__metaLarkTableKeys[${index}]`,
+  ));
+  const uniqueKeys = new Set(tableKeys);
+  const allowedKeys = new Set(contracts.map((contract) => contract.tableKey));
+  const invalidKeys = tableKeys.filter((tableKey) => !allowedKeys.has(tableKey));
+  if (uniqueKeys.size !== tableKeys.length || invalidKeys.length > 0) {
+    throw permanentError('Meta Lark table scope contains duplicate or unavailable contracts', {
+      code: 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+      details: {
+        connectorKey,
+        invalidKeys: Object.freeze([...new Set(invalidKeys)].sort()),
+        duplicateTableKeys: uniqueKeys.size !== tableKeys.length,
+      },
+    });
+  }
+  return Object.freeze(contracts.filter((contract) => uniqueKeys.has(contract.tableKey)));
 }
 
 function disabledPreflight() {
