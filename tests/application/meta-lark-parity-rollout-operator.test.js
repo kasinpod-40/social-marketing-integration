@@ -112,7 +112,7 @@ test('continuation job reuses the same stable operation without d1Only or a prov
   assert.equal(ads.workKey, 'meta_ads:chemistry_k3:meta-lark-chemistry_k3');
 });
 
-test('Lark inventory requires all 8 customer-facing destinations and every stable key field', () => {
+test('Lark inventory requires all 10 customer-facing destinations and every stable key field', () => {
   const tableIds = {};
   const remoteTables = [];
   const fieldsByKey = {};
@@ -123,7 +123,7 @@ test('Lark inventory requires all 8 customer-facing destinations and every stabl
     fieldsByKey[contract.tableKey] = [{ fieldName: contract.keyField }];
   }
   const result = validateMetaLarkInventory({ tableIds, remoteTables, fieldsByKey });
-  assert.equal(result.tableCount, 8);
+  assert.equal(result.tableCount, 10);
   assert.equal(result.allTablesPresent, true);
   assert.equal(result.allStableKeyFieldsPresent, true);
 
@@ -468,7 +468,7 @@ test('evidence chain is target-bound, hash-bound and never authorizes Provider o
   );
 });
 
-test('organic and Ads contracts remain isolated', () => {
+test('organic and historical Ads contracts remain isolated', () => {
   const facebookContracts = expectedLarkContracts('facebook');
   const instagramContracts = expectedLarkContracts('instagram');
   const adsContracts = expectedLarkContracts('meta_ads');

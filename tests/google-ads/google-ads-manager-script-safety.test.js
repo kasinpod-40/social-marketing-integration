@@ -23,6 +23,8 @@ test('sanitized Manager Script is DRY_RUN-first and exact-account scoped', async
     /AdsApp\.search\(query,\s*\{\s*apiVersion:\s*GOOGLE_ADS_SIGNED_DELIVERY\.apiVersion/u,
   );
   assert.match(script, /MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID/u);
+  assert.match(script, /FROM asset_group/u);
+  assert.match(script, /function mapAssetGroupRow_/u);
   assert.doesNotMatch(script, /\basset\.status\b/u);
   assert.doesNotMatch(
     script,
@@ -57,7 +59,7 @@ test('sanitized Manager Script contains no trigger creation or Google Ads mutati
   assert.match(script, /UrlFetchApp\.fetch\(config\.endpoint/u);
 });
 
-test('GAQL manifest matches all six bounded datasets and the exact script bytes', async () => {
+test('GAQL manifest matches all seven bounded datasets and the exact script bytes', async () => {
   const [script, manifestText] = await Promise.all([
     readFile(scriptPath, 'utf8'),
     readFile(manifestPath, 'utf8'),
@@ -66,6 +68,7 @@ test('GAQL manifest matches all six bounded datasets and the exact script bytes'
   const expectedDatasets = [
     'account',
     'campaigns',
+    'assetGroups',
     'adGroups',
     'ads',
     'youtubeAssets',
@@ -76,7 +79,10 @@ test('GAQL manifest matches all six bounded datasets and the exact script bytes'
   assert.equal(manifest.apiVersion, 'v24');
   assert.equal(manifest.sourceModeDefault, 'DRY_RUN');
   assert.equal(manifest.deliveryEnabledDefault, false);
+  assert.equal(manifest.datasets.assetGroups.resource, 'asset_group');
   assert.deepEqual(manifest.datasets.youtubeAssets.nullableOutputOnly, ['status']);
+  assert.equal(manifest.liveEvidence.currentSanitizedArtifactExternallyValidated, false);
+  assert.equal(manifest.liveEvidence.assetGroupsExternallyValidated, false);
   assert.deepEqual(manifest.safetyScan, {
     containsCustomerId: false,
     containsSecret: false,

@@ -2,7 +2,7 @@
   "schemaVersion": "google_ads_manager_script_gaql_manifest_v1",
   "artifactVersion": "google_ads_manager_script_signed_delivery_v1",
   "scriptArtifact": "scripts/google-ads-manager-script-signed-delivery.js",
-  "scriptSha256": "947b0bf3062cf4c6836e5b3101e36896340ffb0e83f9d2ba29459ae2d0b8a509",
+  "scriptSha256": "73ef8825c20abdc4c62c6992a04d6a8e0b5457b1ba5096213d32df00837f540b",
   "apiVersion": "v24",
   "sourceModeDefault": "DRY_RUN",
   "deliveryEnabledDefault": false,
@@ -40,6 +40,17 @@
       "nullableOutputOnly": [
         "campaign.start_date",
         "campaign.end_date"
+      ]
+    },
+    "assetGroups": {
+      "maxRows": 2000,
+      "resource": "asset_group",
+      "fields": [
+        "asset_group.id",
+        "campaign.id",
+        "asset_group.name",
+        "asset_group.status",
+        "asset_group.resource_name"
       ]
     },
     "adGroups": {
@@ -109,14 +120,15 @@
     }
   },
   "liveEvidence": {
-    "classification": "external_dry_run_pass",
+    "classification": "historical_external_dry_run_pass_plus_unvalidated_asset_groups_extension",
     "historicalReviewedSourceInRepository": false,
     "historicalReviewedLineCount": 598,
-    "currentSanitizedArtifactExternallyValidated": true,
+    "currentSanitizedArtifactExternallyValidated": false,
     "externalDryRunDate": "2026-07-25",
     "externalDeliveryWasEnabled": false,
     "adsMutationObserved": false,
-    "allSixDatasetsWereNonEmpty": true,
+    "historicalSixDatasetsWereNonEmpty": true,
+    "assetGroupsExternallyValidated": false,
     "datasetErrors": 0,
     "truncation": 0
   },

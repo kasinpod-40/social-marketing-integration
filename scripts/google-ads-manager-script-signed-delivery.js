@@ -24,6 +24,7 @@ const GOOGLE_ADS_SIGNED_DELIVERY = Object.freeze({
   datasetLimits: Object.freeze({
     account: 1,
     campaigns: 500,
+    assetGroups: 2000,
     adGroups: 2000,
     ads: 5000,
     youtubeAssets: 5000,
@@ -59,6 +60,16 @@ const GOOGLE_ADS_GAQL = Object.freeze({
       campaign.resource_name
     FROM campaign
     ORDER BY campaign.id
+  `,
+  assetGroups: `
+    SELECT
+      asset_group.id,
+      campaign.id,
+      asset_group.name,
+      asset_group.status,
+      asset_group.resource_name
+    FROM asset_group
+    ORDER BY campaign.id, asset_group.id
   `,
   adGroups: `
     SELECT
@@ -224,6 +235,7 @@ function readAllDatasets_() {
   return Object.freeze({
     account,
     campaigns: readQuery_('campaigns', GOOGLE_ADS_GAQL.campaigns, mapCampaignRow_),
+    assetGroups: readQuery_('assetGroups', GOOGLE_ADS_GAQL.assetGroups, mapAssetGroupRow_),
     adGroups: readQuery_('adGroups', GOOGLE_ADS_GAQL.adGroups, mapAdGroupRow_),
     ads: readQuery_('ads', GOOGLE_ADS_GAQL.ads, mapAdRow_),
     youtubeAssets: readQuery_(
@@ -285,6 +297,16 @@ function mapCampaignRow_(row) {
     campaignBudgetId: resourceIdOrNull_(budgetResource),
     campaignBudgetResourceName: budgetResource,
     resourceName: textOrNull_(readPath_(row, 'campaign.resourceName')),
+  };
+}
+
+function mapAssetGroupRow_(row) {
+  return {
+    assetGroupId: idText_(readPath_(row, 'assetGroup.id')),
+    campaignId: idText_(readPath_(row, 'campaign.id')),
+    assetGroupName: textOrNull_(readPath_(row, 'assetGroup.name')),
+    status: textOrNull_(readPath_(row, 'assetGroup.status')),
+    resourceName: textOrNull_(readPath_(row, 'assetGroup.resourceName')),
   };
 }
 

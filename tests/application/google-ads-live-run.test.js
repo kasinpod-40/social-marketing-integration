@@ -43,6 +43,15 @@ const CANONICAL_FIELD_ALLOWLISTS = Object.freeze({
     'start_date',
     'status',
   ]),
+  assetGroups: Object.freeze([
+    'account_id',
+    'ads_asset_group_key',
+    'asset_group_name',
+    'external_asset_group_id',
+    'external_campaign_id',
+    'platform',
+    'status',
+  ]),
   adGroups: Object.freeze([
     'account_id',
     'ad_group_name',
@@ -127,6 +136,7 @@ function liveEnvelopes(overrides = {}) {
   const rowsByDataset = {
     account: overrides.account ?? googleAdsDatasetRows('account'),
     campaigns: overrides.campaigns ?? googleAdsDatasetRows('campaigns'),
+    assetGroups: overrides.assetGroups ?? googleAdsDatasetRows('assetGroups'),
     adGroups: overrides.adGroups ?? googleAdsDatasetRows('adGroups'),
     ads: overrides.ads ?? googleAdsDatasetRows('ads'),
     youtubeAssets: overrides.youtubeAssets ?? googleAdsDatasetRows('youtubeAssets'),
@@ -159,12 +169,13 @@ function assertExactCanonicalFields(writeSet) {
   }
 }
 
-test('LIVE assembler preserves six exact datasets and rejects PREVIEW', () => {
+test('LIVE assembler preserves seven exact datasets and rejects PREVIEW', () => {
   const run = assembleGoogleAdsLiveRun(liveEnvelopes().toReversed());
   assert.equal(run.mode, 'LIVE');
-  assert.equal(run.summary.expectedChunkCount, 6);
-  assert.equal(run.summary.expectedRowCount, 6);
+  assert.equal(run.summary.expectedChunkCount, 7);
+  assert.equal(run.summary.expectedRowCount, 7);
   assert.equal(run.datasets.campaigns[0].campaignId, '10');
+  assert.equal(run.datasets.assetGroups[0].assetGroupId, '15');
 
   const preview = liveEnvelopes().map((envelope) => ({ ...envelope, mode: 'PREVIEW' }));
   assert.throws(
@@ -217,6 +228,10 @@ test('Lark write set matches Canonical Ads v2 fields and preserves source identi
   assert.equal(writeSet.canonical.campaigns[0].external_campaign_id, '10');
   assert.equal(writeSet.canonical.campaigns[0].objective, null);
   assert.equal(writeSet.canonical.campaigns[0].status, 'active');
+  assert.equal(writeSet.canonical.assetGroups[0].ads_asset_group_key, 'google_ads:2222222222:asset_group:15');
+  assert.equal(writeSet.canonical.assetGroups[0].external_campaign_id, '10');
+  assert.equal(writeSet.canonical.assetGroups[0].external_asset_group_id, '15');
+  assert.equal(writeSet.canonical.assetGroups[0].status, 'active');
   assert.equal(writeSet.canonical.adGroups[0].ads_ad_group_key, 'google_ads:2222222222:ad_group:20');
   assert.equal(writeSet.canonical.adGroups[0].external_ad_group_id, '20');
   assert.equal(writeSet.canonical.adGroups[0].status, 'active');

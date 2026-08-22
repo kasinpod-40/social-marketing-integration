@@ -9,7 +9,7 @@ import {
   expectedLarkContracts,
 } from '../../scripts/lib/meta-lark-parity-rollout-operator.js';
 
-test('Meta Ads Lark projection is Account plus July activity Campaign, AdSet and Ad only', () => {
+test('historical July Meta Ads rollout remains Account plus Campaign, AdSet and Ad only', () => {
   const contracts = expectedLarkContracts('meta_ads');
   assert.deepEqual(
     contracts.map((entry) => entry.tableKey),
@@ -24,23 +24,24 @@ test('Meta Ads Lark projection is Account plus July activity Campaign, AdSet and
       'canonical.adsAds',
     ],
   );
-  const serialized = JSON.stringify(contracts);
-  assert.equal(serialized.includes('raw.ads'), false);
-  assert.equal(serialized.includes('adsCreatives'), false);
-  assert.equal(serialized.includes('adsDaily'), false);
 });
 
-test('active Meta Lark inventory contains no Meta Ads RAW, Creative or detailed daily table', () => {
+test('active Meta Ads Lark inventory includes Creative and Daily without RAW tables', () => {
   const tableKeys = META_END_TO_END_LARK_TABLES.map((entry) => entry.tableKey);
   assert.equal(tableKeys.includes('rawAdsEntities'), false);
   assert.equal(tableKeys.includes('rawAdsDaily'), false);
-  assert.equal(tableKeys.includes('mktAdsCreatives'), false);
-  assert.equal(tableKeys.includes('mktAdsDaily'), false);
   assert.deepEqual(
     tableKeys.filter((key) => key.startsWith('mktAds')),
-    META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
+    [
+      'mktAdsAccounts',
+      'mktAdsCampaigns',
+      'mktAdsAdGroups',
+      'mktAdsAds',
+      'mktAdsCreatives',
+      'mktAdsDaily',
+    ],
   );
-  assert.equal(META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length, 8);
+  assert.equal(META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length, 10);
 });
 
 test('Organic Lark projection contains only customer-facing canonical tables', () => {

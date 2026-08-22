@@ -135,7 +135,7 @@ test('empty Meta Ads inventory and spend are no_data_confirmed, not failure', as
   )));
 });
 
-test('July activity scope keeps detailed daily facts in D1 and omits detailed Lark daily rows', async () => {
+test('July activity scope keeps detailed daily facts in D1 and emits one bounded Canonical Lark daily row', async () => {
   const writeSet = await buildMetaAdsWriteSet({
     ...baseInput(),
     entityScopeMode: 'report_range',
@@ -169,12 +169,15 @@ test('July activity scope keeps detailed daily facts in D1 and omits detailed La
   assert.equal(writeSet.d1.adsDailyFacts.length, 1);
   assert.equal(writeSet.raw.adsEntities.length, 4);
   assert.equal(writeSet.raw.adsDaily.length, 0);
-  assert.equal(writeSet.canonical.adsDaily.length, 0);
+  assert.equal(writeSet.canonical.adsDaily.length, 1);
+  assert.equal(writeSet.canonical.adsDaily[0].spend_micros, 1_000_000);
+  assert.equal(writeSet.canonical.adsDaily[0].impressions, 10);
+  assert.equal(writeSet.reconciliation.canonicalDailyRows, 1);
   assert.equal(writeSet.reconciliation.entityScopeMode, 'report_range');
   assert.equal(writeSet.reconciliation.larkProjectionMode, 'curated_reports');
   assert.equal(writeSet.reconciliation.detailedDailyRows, 1);
-  assert.equal(writeSet.d1.coverageRuns.length, 5);
-  assert.equal(writeSet.d1.coverageRuns.some((row) => row.dataset_key.includes('creatives')), false);
+  assert.equal(writeSet.d1.coverageRuns.length, 6);
+  assert.equal(writeSet.d1.coverageRuns.some((row) => row.dataset_key.includes('creatives')), true);
   assert.equal(writeSet.d1.coverageRuns
     .filter((row) => row.dataset_key.endsWith('.activity'))
     .every((row) => (

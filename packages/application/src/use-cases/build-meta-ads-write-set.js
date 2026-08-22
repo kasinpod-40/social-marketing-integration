@@ -77,9 +77,7 @@ export async function buildMetaAdsWriteSet(input = {}) {
     adsDaily: [],
   };
 
-  const entityDatasets = entityScopeMode === 'report_range'
-    ? DATASETS.filter((dataset) => dataset.entityType !== 'creative')
-    : DATASETS;
+  const entityDatasets = DATASETS;
   for (const dataset of entityDatasets) {
     const resources = resourcesByDataset[dataset.inputField];
     const coverageRunId = `${operationId}:meta_ads:${accountId}:${dataset.key}`;
@@ -258,7 +256,7 @@ export async function buildMetaAdsWriteSet(input = {}) {
     accountTimezone,
     currency,
   });
-  if (!curatedLark) canonical.adsDaily.push(...canonicalDaily);
+  canonical.adsDaily.push(...canonicalDaily);
 
   return deepFreeze({
     schemaVersion: 'meta_ads_write_set_v1',

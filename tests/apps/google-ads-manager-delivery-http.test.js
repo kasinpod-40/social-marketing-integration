@@ -62,6 +62,7 @@ test('signed PREVIEW reserves nonce, validates the run and redacts staged payloa
       datasets: {
         account: { chunks: 1, rows: 1 },
         campaigns: { chunks: 0, rows: 0 },
+        assetGroups: { chunks: 0, rows: 0 },
         adGroups: { chunks: 0, rows: 0 },
         ads: { chunks: 0, rows: 0 },
         youtubeAssets: { chunks: 0, rows: 0 },

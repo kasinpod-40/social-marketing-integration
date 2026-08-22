@@ -14,6 +14,7 @@ const RUN_STARTED_AT = Date.parse('2026-07-25T04:00:00.000Z');
 const EXPECTED_LARK_KEY_CONTRACT = Object.freeze([
   Object.freeze({ tableId: 'accounts', keyField: 'ads_account_key' }),
   Object.freeze({ tableId: 'campaigns', keyField: 'ads_campaign_key' }),
+  Object.freeze({ tableId: 'asset-groups', keyField: 'ads_asset_group_key' }),
   Object.freeze({ tableId: 'ad-groups', keyField: 'ads_ad_group_key' }),
   Object.freeze({ tableId: 'ads', keyField: 'ads_ad_key' }),
   Object.freeze({ tableId: 'creatives', keyField: 'ads_creative_key' }),
@@ -22,9 +23,9 @@ const EXPECTED_LARK_KEY_CONTRACT = Object.freeze([
 
 function liveEnvelopes() {
   const manifest = createGoogleAdsDeliveryManifest(Object.fromEntries([
-    'campaigns', 'adGroups', 'ads', 'youtubeAssets', 'campaignDailyMetrics',
+    'campaigns', 'assetGroups', 'adGroups', 'ads', 'youtubeAssets', 'campaignDailyMetrics',
   ].map((key) => [key, { totalRows: 1, chunkCount: 1 }])));
-  return ['account', 'campaigns', 'adGroups', 'ads', 'youtubeAssets', 'campaignDailyMetrics']
+  return ['account', 'campaigns', 'assetGroups', 'adGroups', 'ads', 'youtubeAssets', 'campaignDailyMetrics']
     .map((datasetKey) => createGoogleAdsDeliveryEnvelope({
       mode: 'LIVE',
       datasetKey,
@@ -151,6 +152,7 @@ function createFixture() {
         rawAdsDaily: 'raw-daily',
         mktAdsAccounts: 'accounts',
         mktAdsCampaigns: 'campaigns',
+        mktAdsAssetGroups: 'asset-groups',
         mktAdsAdGroups: 'ad-groups',
         mktAdsAds: 'ads',
         mktAdsCreatives: 'creatives',
@@ -176,10 +178,10 @@ test('durable processor completes D1 first then one Lark table per continuation'
   assert.equal(result.status, 'completed');
   assert.equal(fixture.admission.status, 'completed');
   assert.equal(fixture.historyCalls.length, 18);
-  assert.equal(fixture.continuations.length, 5);
+  assert.equal(fixture.continuations.length, 6);
   assert.equal(fixture.continuations.every((body) => body.operationId === RUN_ID), true);
   assert.equal(result.reconciliation.failed, 0);
-  assert.equal(result.reconciliation.lark.length, 6);
+  assert.equal(result.reconciliation.lark.length, 7);
 
   const normalizedCalls = fixture.planCalls.map(({ tableId, keyField }) => ({ tableId, keyField }));
   assert.equal(normalizedCalls.length, EXPECTED_LARK_KEY_CONTRACT.length * 2);

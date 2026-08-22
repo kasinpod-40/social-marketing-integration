@@ -22,6 +22,7 @@ const ORGANIC_STAGES = Object.freeze([
 ]);
 const ADS_STAGES = Object.freeze([
   'account',
+  'creatives',
   'daily',
   'complete',
 ]);
@@ -341,6 +342,7 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
   }
   const adsDatasets = {
     account: 'meta_ads.account.latest',
+    creatives: 'meta_ads.creatives.inventory',
     daily: 'meta_ads.performance.daily',
   };
   return {
@@ -395,6 +397,12 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
       code: 'META_END_TO_END_SOURCE_ACCOUNT_INVALID',
     });
   }
+  const hasCreativeInventoryUnit = staged.some(
+    (entry) => entry.datasetKey === 'meta_ads.creatives.inventory',
+  );
+  const creatives = staged
+    .filter((entry) => entry.datasetKey === 'meta_ads.creatives.inventory')
+    .flatMap((entry) => entry.rows);
   const dailyInsights = staged
     .filter((entry) => entry.datasetKey === 'meta_ads.performance.daily')
     .flatMap((entry) => entry.rows);
@@ -406,10 +414,10 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
     campaigns: activity.campaigns,
     adSets: activity.adSets,
     ads: activity.ads,
-    creatives: [],
+    creatives,
     dailyInsights,
     entityScopeMode: 'report_range',
-    larkProjectionMode: 'curated_reports',
+    larkProjectionMode: hasCreativeInventoryUnit ? 'curated_reports' : 'detailed',
     sourceWatermark: state.sourceWatermark,
   });
 }
