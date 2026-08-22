@@ -19,6 +19,10 @@ test('paid Meta closeout plan uses fresh current-contract July operations for K2
     'meta-chemistry_k2-history-20260701-20260731-c71d63044b82',
     'meta-chemistry_k3-history-20260701-20260731-5bbf75b9af2c',
   ]);
+  assert.deepEqual(plan.operations.map((item) => item.originalRequestedAt), [
+    '2026-08-22T15:45:00.000Z',
+    '2026-08-22T15:45:00.001Z',
+  ]);
   assert.equal(plan.operations.every((item) => item.periodStart === '2026-07-01'), true);
   assert.equal(plan.operations.every((item) => item.periodEnd === '2026-07-31'), true);
   assert.equal(plan.operations.every((item) => (
@@ -73,12 +77,19 @@ test('paid Meta reconciliation accepts exactly Creatives and Daily and rejects e
   );
 });
 
-test('paid Meta plan rejects scope drift and repository-head drift', () => {
+test('paid Meta plan rejects scope, generation and repository-head drift', () => {
   const plan = structuredClone(createMetaPaidLarkCloseoutPlan(HEAD, CREATED_AT));
   plan.operations[0].larkTableKeys = ['mktAdsCreatives', 'mktAdsDaily', 'mktAdsAdGroups'];
   assert.throws(
     () => validateMetaPaidLarkCloseoutPlan(plan, HEAD),
     (error) => error.code === 'META_PAID_LARK_CLOSEOUT_SCOPE_INVALID',
+  );
+
+  const generationDrift = structuredClone(createMetaPaidLarkCloseoutPlan(HEAD, CREATED_AT));
+  generationDrift.operations[0].originalRequestedAt = '2026-08-22T15:45:01.000Z';
+  assert.throws(
+    () => validateMetaPaidLarkCloseoutPlan(generationDrift, HEAD),
+    (error) => error.code === 'META_PAID_LARK_CLOSEOUT_PLAN_INVALID',
   );
 
   const clean = createMetaPaidLarkCloseoutPlan(HEAD, CREATED_AT);
