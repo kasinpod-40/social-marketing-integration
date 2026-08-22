@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_assetgroups_transport_post_migration_verify:
+  google_ads_safe_runtime_and_script_stage:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Verify applied 0021 from retained remote export
+      - name: Deploy safe merged runtime and stage current script locally
         shell: bash
         run: |
           set -euo pipefail
@@ -26,41 +26,48 @@ jobs:
           live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
           expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
           evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-assetgroups-transport-20260822"
-          after_export="$evidence_root/google-ads-after-0021.sql"
+          api_config="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
           sync_config="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
+          script_source="$live_worktree/scripts/google-ads-manager-script-signed-delivery.js"
+          desktop_script="$HOME/Desktop/google-ads-manager-script-signed-delivery-current.js"
 
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
-          test -s "$after_export"
+          test -f "$api_config"
           test -f "$sync_config"
+          test -f "$script_source"
+          mkdir -p "$evidence_root"
 
-          AFTER_EXPORT="$after_export" node <<'NODE'
+          API_CONFIG="$api_config" SYNC_CONFIG="$sync_config" SCRIPT_SOURCE="$script_source" node <<'NODE'
           const fs=require('fs');
-          const text=fs.readFileSync(process.env.AFTER_EXPORT,'utf8');
-          const create=/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"google_ads_delivery_chunks"|'google_ads_delivery_chunks'|`google_ads_delivery_chunks`|google_ads_delivery_chunks)\s*\(/iu.exec(text);
-          if(!create){
-            console.log('transport_table_schema_present=false');
-            process.exit(1);
-          }
-          const start=create.index;
-          const semicolon=text.indexOf(';',start);
-          const ddl=text.slice(start,semicolon>start?semicolon+1:Math.min(text.length,start+12000));
-          const supported=/['"]assetGroups['"]/.test(ddl);
-          const oldSixOnly=!supported && /['"]campaignDailyMetrics['"]/.test(ddl);
-          console.log('transport_table_schema_present=true');
-          console.log(`assetgroups_dataset_constraint_supported=${supported}`);
-          console.log(`historical_six_only_constraint=${oldSixOnly}`);
-          console.log('remote_mutation_count=0');
-          if(!supported) process.exit(2);
+          const api=JSON.parse(fs.readFileSync(process.env.API_CONFIG,'utf8'));
+          const sync=JSON.parse(fs.readFileSync(process.env.SYNC_CONFIG,'utf8'));
+          const flags=['MKT_CONNECTOR_GOOGLE_ADS_ENABLED','MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED','MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED','MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED','MKT_GOOGLE_ADS_LARK_WRITE_ENABLED','MKT_SCHEDULE_GOOGLE_ADS_ENABLED'];
+          const safe=flags.every(k=>api.vars?.[k]==='false'&&sync.vars?.[k]==='false');
+          const assetId=String(sync.vars?.LARK_TABLE_MKT_ADS_ASSET_GROUPS??'');
+          const mapping=/^tbl[A-Za-z0-9]+$/u.test(assetId)&&api.vars?.LARK_TABLE_MKT_ADS_ASSET_GROUPS===assetId;
+          const script=fs.readFileSync(process.env.SCRIPT_SOURCE,'utf8');
+          const scriptCurrent=script.includes("assetGroups: 2000")&&script.includes("readQuery_('assetGroups'")&&script.includes("schemaVersion: 'google_ads_manager_script_signed_delivery_v1'");
+          console.log(`safe_flags_false=${safe}`);
+          console.log(`assetgroups_mapping_present=${mapping}`);
+          console.log(`current_manager_script_has_assetgroups=${scriptCurrent}`);
+          if(!safe||!mapping||!scriptCurrent)process.exit(1);
           NODE
 
           cd "$live_worktree"
-          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$sync_config")"
-          npx wrangler d1 migrations list "$database_name" --remote --config "$sync_config" > "$evidence_root/pending-final.txt"
-          grep -Fq "No migrations to apply" "$evidence_root/pending-final.txt"
-          echo "pending_migrations=0"
-          echo "migration_0021_applied=true"
+          npx wrangler deploy --config "$api_config" > "$evidence_root/api-safe-deploy-b923.txt"
+          npx wrangler deploy --config "$sync_config" > "$evidence_root/sync-safe-deploy-b923.txt"
+
+          cp "$script_source" "$desktop_script"
+          chmod 600 "$desktop_script"
+          shasum -a 256 "$desktop_script" > "$desktop_script.sha256"
+
+          echo "safe_runtime_deployed_head=$expected_sha"
+          echo "google_execution_flags_enabled=false"
+          echo "google_schedule_enabled=false"
+          echo "desktop_script_ready=true"
+          echo "desktop_script_path=$desktop_script"
           echo "google_live_execute_count=0"
           echo "lark_write_count=0"
