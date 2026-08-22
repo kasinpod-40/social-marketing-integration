@@ -5,6 +5,7 @@ import { basename, join } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import { inspectLarkBaseExport } from './lib/lark-base-export.js';
 import { createLarkBaseExportSourceClient } from './lib/lark-base-export-source-client.js';
+import { createVisibleFieldOrderNoOperationGuard } from './lib/lark-visible-field-order-no-operation-guard.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import {
   CUSTOMER_BASE_VISIBLE_FIELD_ORDER_CONFIRMATION,
@@ -41,7 +42,9 @@ const EXPECTED_CLONE = Object.freeze({
 try {
   await main();
 } catch (error) {
-  console.error(JSON.stringify({
+  // Final machine-readable error goes to stdout so `tee` captures it. Progress
+  // events remain stderr and therefore cannot corrupt the JSON result file.
+  console.log(JSON.stringify({
     ok: false,
     contractVersion: 'customer_base_visible_field_order_operator_v1',
     code: error?.code ?? 'CUSTOMER_BASE_VISIBLE_FIELD_ORDER_OPERATOR_FAILED',
@@ -138,10 +141,11 @@ async function main() {
     );
   }
 
+  const noOperationGuard = createVisibleFieldOrderNoOperationGuard(targetClient, preview.steps);
   const result = await applyLarkBaseDocumentedVisibleFieldOrderParity({
     confirmation,
     sourceClient,
-    targetClient,
+    targetClient: noOperationGuard.client,
     expectedTableNames,
     onProgress: (event) => console.error(JSON.stringify(event)),
   });
@@ -179,6 +183,7 @@ async function main() {
       ...zeroMutationSafety(),
       viewVisibleFieldOrderMutationCount: result.remoteMutationCount,
       rollbackMutationCount: result.rollbackMutationCount,
+      verifiedLarkNoOperationCount: noOperationGuard.stats.verifiedNoOperationCount,
     },
   });
 }
