@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_connection_gate:
+  google_ads_live_ready:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 15
     steps:
-      - name: Execute read-only Google Ads customer connection gate
+      - name: Complete external Google Ads LIVE readiness gate
         shell: bash
         run: |
           set -euo pipefail
@@ -30,8 +30,9 @@ jobs:
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test "$(git -C "$live_worktree" branch --show-current)" = main
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
-          test -f "$evidence_root/deploy.json"
+          test -f "$evidence_root/connection-gate.json"
 
           cd "$live_worktree"
           PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" EVIDENCE_ROOT="$evidence_root" node --input-type=module <<'NODE'
@@ -39,6 +40,7 @@ jobs:
           import { resolve } from 'node:path';
           import { spawnSync } from 'node:child_process';
           import { readDevVars } from './scripts/lib/dev-vars.js';
+
           const repo=process.env.PRIMARY_REPO, live=process.env.LIVE_WORKTREE, evidenceRoot=process.env.EVIDENCE_ROOT;
           const apiPath=resolve(live,'wrangler.api.google-ads-live-safe.jsonc');
           const syncPath=resolve(live,'wrangler.sync.google-ads-live-safe.jsonc');
@@ -47,23 +49,19 @@ jobs:
           const manager=String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
           const advertiser=String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
           if(!db?.database_name||!/^\d{10}$/u.test(manager)||!/^\d{10}$/u.test(advertiser))process.exit(1);
+          const connection=JSON.parse(await readFile(resolve(evidenceRoot,'connection-gate.json'),'utf8'));
+          if(connection.phase!=='connection-gate'||connection.status!=='passed')process.exit(1);
           const devVars=await readDevVars(resolve(repo,'.dev.vars'));
-          const env={...process.env,...devVars,MKT_ENV:'development',MKT_CUSTOMER_PROFILE:'integration_workspace',MKT_CONNECTION_CUSTOMER_KEY:'chemistry_k',MKT_GOOGLE_ADS_SOURCE_TIMEZONE:'Asia/Bangkok',MKT_GOOGLE_ADS_LIVE_DATABASE_NAME:db.database_name,MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG:apiPath,MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG:syncPath,MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID:manager,MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID:advertiser,MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR:evidenceRoot,CONFIRM_GOOGLE_ADS_CONNECTION_GATE_READ:'connection-gate'};
-          const r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=connection-gate','--execute'],{cwd:live,env,encoding:'utf8',maxBuffer:32*1024*1024});
+          const env={...process.env,...devVars,MKT_ENV:'development',MKT_CUSTOMER_PROFILE:'integration_workspace',MKT_CONNECTION_CUSTOMER_KEY:'chemistry_k',MKT_GOOGLE_ADS_SOURCE_TIMEZONE:'Asia/Bangkok',MKT_GOOGLE_ADS_LIVE_DATABASE_NAME:db.database_name,MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG:apiPath,MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG:syncPath,MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID:manager,MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID:advertiser,MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR:evidenceRoot,CONFIRM_GOOGLE_ADS_EXTERNAL_LIVE_READY_CHECK:'live-ready'};
+          const r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=live-ready','--execute'],{cwd:live,env,encoding:'utf8',maxBuffer:16*1024*1024});
           if(r.status!==0){process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.exit(r.status||1);}
-          const e=JSON.parse(await readFile(resolve(evidenceRoot,'connection-gate.json'),'utf8'));
-          if(e.phase!=='connection-gate'||e.status!=='passed')process.exit(1);
-          const g=e.gate??{};
-          if(g.script_authorized_connection_count!==1||g.connected!==1||g.script_access_allowed!==1||g.advertiser_matches!==1||g.active_credential_matches!==1||g.manager_matches!==1||g.scope_matches!==1)process.exit(1);
-          console.log('connection_gate_status=passed');
-          console.log('authorized_connection_count=1');
-          console.log('connected=true');
-          console.log('script_access_allowed=true');
-          console.log('advertiser_matches=true');
-          console.log('manager_matches=true');
-          console.log('active_credential_matches=true');
-          console.log('adwords_scope_matches=true');
-          console.log('secret_or_ciphertext_read=false');
+          const e=JSON.parse(await readFile(resolve(evidenceRoot,'live-ready.json'),'utf8'));
+          if(e.phase!=='live-ready'||e.status!=='passed'||e.executionPerformed!==false||e.scheduleEnabled!==false||!Array.isArray(e.externalActionRequired)||e.externalActionRequired.length<5)process.exit(1);
+          console.log('live_ready_status=passed');
+          console.log('execution_performed=false');
+          console.log('external_action_required=true');
+          console.log('google_schedule_enabled=false');
+          console.log('google_execution_flags_enabled=false');
           console.log('google_live_execute_count=0');
           console.log('lark_write_count=0');
           NODE
