@@ -161,17 +161,26 @@ jobs:
           expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
 
           test -d "$repo/.git"
-          cd "$repo"
-          git fetch origin main
-          git switch main
-          git pull --ff-only origin main
-          test "$(git rev-parse HEAD)" = "$expected_sha"
-          test -z "$(git status --porcelain)"
-          test -f .dev.vars
-          test -f wrangler.sync.jsonc
+          git -C "$repo" fetch origin main
+          test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
+
+          main_worktree="$(git -C "$repo" worktree list --porcelain | awk '
+            /^worktree / { path=substr($0,10) }
+            /^branch refs\/heads\/main$/ { print path; exit }
+          ')"
+          if [[ -z "$main_worktree" || ! -e "$main_worktree/.git" ]]; then
+            echo "main_worktree=missing"
+            exit 1
+          fi
+
+          test "$(git -C "$main_worktree" rev-parse --abbrev-ref HEAD)" = "main"
+          test "$(git -C "$main_worktree" rev-parse HEAD)" = "$expected_sha"
+          test -z "$(git -C "$main_worktree" status --porcelain)"
+          test -f "$repo/.dev.vars"
+          test -f "$repo/wrangler.sync.jsonc"
 
           set -a
-          source .dev.vars
+          source "$repo/.dev.vars"
           set +a
 
           required=(
@@ -191,8 +200,10 @@ jobs:
             fi
           done
 
+          cd "$repo"
           npx wrangler whoami >/tmp/google-ads-live-wrangler-whoami.txt 2>&1
-          echo "local_repo_exact_main=true"
+          echo "origin_main_exact=true"
+          echo "main_worktree_exact_clean=true"
           echo "local_ignored_configs_present=true"
           echo "required_operator_env_present=true"
           echo "wrangler_identity_ok=true"
