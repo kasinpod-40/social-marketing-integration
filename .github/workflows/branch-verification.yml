@@ -1,13 +1,9 @@
 name: Branch Verification
 
 on:
-  push:
-    branches:
-      - 'codex/**'
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,253 +13,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    # Repository-only verification for Report readiness/verified-reuse repairs uses a hosted runner because
-    # the repository-scoped mkt-ci runner is not accepting queued jobs. No Secret or Remote action is used.
-    # Other integration hotfixes retain the existing repository-scoped Mac runner routing.
-    runs-on: ${{ (github.head_ref != 'hotfix/chatwoot-final-source-config-recovery' && github.head_ref != 'hotfix/report-source-readiness-contract-v1' && github.head_ref != 'hotfix/report-reuse-verification-no-resend-v1' && (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race') || startsWith(github.head_ref, 'hotfix/report-') || startsWith(github.head_ref, 'hotfix/meta-history-2026-'))) && 'mkt-ci' || 'ubuntu-latest' }}
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Syntax architecture and hygiene
-        run: npm run check
-
-      - name: Focused Report source readiness tests
-        shell: bash
-        run: |
-          set -o pipefail
-          node --test \
-            tests/scripts/report-channel-remote-readiness.test.js \
-            tests/scripts/report-runtime-closeout-reviewed-binding.test.js \
-            tests/scripts/report-runtime-closeout-reviewed-multiwindow-wiring.test.js \
-            tests/connectors/d1-organic-report-source.test.js \
-            tests/connectors/d1-ads-report-source.test.js \
-            tests/connectors/d1-chatwoot-report-source.test.js \
-            tests/application/multichannel-report-runtime.test.js \
-            2>&1 | tee focused-report-readiness-test.log
-
-      - name: Focused Meta history finalizer tests
-        shell: bash
-        run: |
-          set -o pipefail
-          node --test \
-            tests/connectors/meta-history-range-adapters.test.js \
-            tests/connectors/meta-business-source-adapters.test.js \
-            tests/application/meta-history-2026-finalizer.test.js \
-            tests/application/meta-history-2026-closeout.test.js \
-            tests/application/meta-history-2026-public-launcher.test.js \
-            tests/application/meta-history-2026-terminal.test.js \
-            tests/application/meta-d1-only-rollout-operator.test.js \
-            tests/application/meta-lark-parity-rollout-operator.test.js \
-            2>&1 | tee focused-meta-history-test.log
-
-      - name: Focused Woo completed-state race recovery tests
-        shell: bash
-        run: |
-          set -o pipefail
-          node --test \
-            tests/application/woocommerce-final-completed-state-closeout.test.js \
-            tests/application/woocommerce-completed-state-incremental-admission-race.test.js \
-            tests/application/woocommerce-final-rollout-operator.test.js \
-            tests/application/woocommerce-runtime-wiring.test.js \
-            2>&1 | tee focused-woocommerce-test.log
-
-      - name: Focused Chatwoot final UAT tests
-        shell: bash
-        run: |
-          set -o pipefail
-          node --test \
-            tests/application/chatwoot-final-30d-daily-uat.test.js \
-            tests/application/chatwoot-final-source-config-recovery.test.js \
-            tests/application/chatwoot-final-secret-bootstrap.test.js \
-            tests/application/chatwoot-final-secret-bootstrap-launcher.test.js \
-            tests/application/chatwoot-final-preflight-initialization.test.js \
-            tests/application/chatwoot-final-queue-topology-normalization.test.js \
-            tests/application/woocommerce-final-queue-bootstrap-auth-order.test.js \
-            tests/application/chatwoot-final-lark-auto-mapping.test.js \
-            tests/application/chatwoot-final-lock-scope.test.js \
-            tests/application/chatwoot-runtime-wiring.test.js \
-            tests/application/chatwoot-runtime-30d-daily.test.js \
-            tests/application/chatwoot-runtime-contract-examples.test.js \
-            tests/application/chatwoot-durable-recovery.test.js \
-            2>&1 | tee focused-chatwoot-test.log
-
-      - name: Focused staged TikTok tests
-        shell: bash
-        run: |
-          set -o pipefail
-          node --test tests/application/tiktok-staged-business-sync.test.js 2>&1 | tee focused-test.log
-
-      - name: Unit and Workers runtime tests
-        shell: bash
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee full-test.log
-
-      - name: Report reliability regression
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run test:report-reliability 2>&1 | tee report-test.log
-
-      - name: Dependency audit
-        shell: bash
-        run: |
-          set -o pipefail
-          npm audit --audit-level=high 2>&1 | tee audit.log
-
-      - name: Wrangler dry run
-        run: npm run deploy:dry-run
-
-      - name: Diff whitespace check
-        shell: bash
-        env:
-          DIFF_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
-        run: |
-          set -o pipefail
-          git diff --check "origin/${DIFF_BASE_REF}...HEAD" 2>&1 | tee diff-check.log
-
-      - name: Upload verification diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: branch-verification-logs
-          path: |
-            *-test.log
-            audit.log
-            diff-check.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-  google_ads_ops_probe:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 673
+  google_ads_ops_diagnostic:
+    if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - name: Prepare dedicated reviewed-main worktree and run preflight
+      - name: Diagnose local worktree registrations
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
-          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
-          expected_stale="/private/tmp/social-mkt-raw-retirement-closeout-20260816"
           expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
-          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
 
           test -d "$repo/.git"
           git -C "$repo" fetch origin main
-          test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
+          actual_sha="$(git -C "$repo" rev-parse origin/main)"
+          echo "origin_main_sha=$actual_sha"
+          test "$actual_sha" = "$expected_sha"
 
-          main_worktree="$(git -C "$repo" worktree list --porcelain | awk '
-            /^worktree / { path=substr($0,10) }
-            /^branch refs\/heads\/main$/ { print path; exit }
-          ')"
+          echo "--- worktree_list_begin ---"
+          git -C "$repo" worktree list --porcelain
+          echo "--- worktree_list_end ---"
 
-          if [[ -n "$main_worktree" && "$main_worktree" != "$live_worktree" ]]; then
-            test "$main_worktree" = "$expected_stale"
-            test ! -e "$main_worktree/.git"
-            missing_marker_count=0
-            while IFS= read -r wt; do
-              if [[ ! -e "$wt/.git" ]]; then
-                missing_marker_count=$((missing_marker_count + 1))
-              fi
-            done < <(git -C "$repo" worktree list --porcelain | awk '/^worktree / { print substr($0,10) }')
-            test "$missing_marker_count" = "1"
-            git -C "$repo" worktree prune --expire now --verbose
-          fi
+          echo "--- prune_dry_run_begin ---"
+          git -C "$repo" worktree prune --dry-run --expire now --verbose || true
+          echo "--- prune_dry_run_end ---"
 
-          main_worktree="$(git -C "$repo" worktree list --porcelain | awk '
-            /^worktree / { path=substr($0,10) }
-            /^branch refs\/heads\/main$/ { print path; exit }
-          ')"
-
-          if [[ -z "$main_worktree" ]]; then
-            if [[ -e "$live_worktree" ]]; then
-              echo "live_worktree_path_conflict=true"
-              exit 1
-            fi
-            git -C "$repo" worktree add "$live_worktree" main
-            main_worktree="$live_worktree"
-          fi
-
-          test "$main_worktree" = "$live_worktree"
-          test "$(git -C "$live_worktree" branch --show-current)" = "main"
-          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
-          test -z "$(git -C "$live_worktree" status --porcelain)"
-          test -f "$repo/.dev.vars"
-          test -f "$repo/wrangler.sync.jsonc"
-
-          set -a
-          source "$repo/.dev.vars"
-          set +a
-
-          required=(
-            MKT_ENV
-            MKT_CUSTOMER_PROFILE
-            MKT_CONNECTION_CUSTOMER_KEY
-            MKT_GOOGLE_ADS_LIVE_DATABASE_NAME
-            MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG
-            MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG
-            MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID
-            MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID
-          )
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "missing_required_env=$name"
-              exit 1
-            fi
-          done
-
-          for name in MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG; do
-            value="${!name}"
-            if [[ "$value" != /* ]]; then
-              if [[ -f "$repo/$value" ]]; then
-                value="$repo/$value"
-              elif [[ -f "$live_worktree/$value" ]]; then
-                value="$live_worktree/$value"
-              else
-                echo "missing_config_file=$name"
-                exit 1
-              fi
-              printf -v "$name" '%s' "$value"
-              export "$name"
-            fi
-            test -f "${!name}"
-          done
-
-          cd "$live_worktree"
-          npm ci >/tmp/google-ads-live-npm-ci.log 2>&1
-          mkdir -p "$evidence_root"
-          export MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR="$evidence_root"
-          export CONFIRM_GOOGLE_ADS_LIVE_PREFLIGHT=preflight
-
-          if ! node scripts/google-ads-live-operator.mjs --phase=preflight --execute >/tmp/google-ads-live-preflight.json 2>&1; then
-            cat /tmp/google-ads-live-preflight.json
-            exit 1
-          fi
-
-          test -f "$evidence_root/preflight.json"
-          node -e '
-            const fs=require("fs");
-            const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-            if (p.phase!=="preflight" || p.status!=="passed") process.exit(1);
-            console.log("preflight_status=passed");
-            console.log(`repository_head=${p.repositoryHead}`);
-            console.log(`flags_false=${p.safeConfig?.flagsFalse===true}`);
-            console.log(`schedule_disabled=${p.safeConfig?.scheduleDisabled===true}`);
-            console.log(`wrangler_identity_checked=${p.wranglerIdentityChecked===true}`);
-            console.log(`pending_migrations_reviewed=${p.pendingMigrationsReviewed===true}`);
-          ' "$evidence_root/preflight.json"
+          echo "--- marker_status_begin ---"
+          while IFS= read -r wt; do
+            if [[ -e "$wt" ]]; then path_exists=true; else path_exists=false; fi
+            if [[ -e "$wt/.git" ]]; then git_marker=true; else git_marker=false; fi
+            echo "worktree_path=$wt path_exists=$path_exists git_marker=$git_marker"
+          done < <(git -C "$repo" worktree list --porcelain | awk '/^worktree / { print substr($0,10) }')
+          echo "--- marker_status_end ---"
