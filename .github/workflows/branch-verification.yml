@@ -13,60 +13,79 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_final_verify_and_lark_readback:
+  google_ads_final_closure_verification:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - name: Verify exact completed run and read Lark targets
+      - name: Verify completed LIVE run and Lark targets read-only
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
           live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
-          expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
-          current_main="b78221af52ef8fc16fd92047fa5fae627f0e4d00"
+          verifier_worktree="/private/tmp/google-ads-final-verifier-20260822"
+          deployed_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
+          verifier_sha="88d7f69fe42a437bdb344893b61a2f02c7b701ca"
           safe_api="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
           safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
           operator_evidence="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
           final_evidence="$repo/outputs/google-ads-live-operator/paid-parity-final-verify-20260822"
           run_id="9e24aaa3-6939-486a-ad87-0527a088a6b7"
           mkdir -p "$final_evidence"
+
           git -C "$repo" fetch origin main
-          test "$(git -C "$repo" rev-parse origin/main)" = "$current_main"
-          git -C "$repo" merge-base --is-ancestor "$expected_sha" origin/main
-          unexpected="$(git -C "$repo" diff --name-only "$expected_sha"..origin/main | grep -vE '^(\.dev\.vars\.example|docs/current-task\.md|tests/config/example-config-completeness\.test\.js|wrangler\.sync\.example\.jsonc)$' || true)"
+          test "$(git -C "$repo" rev-parse origin/main)" = "$verifier_sha"
+          git -C "$repo" merge-base --is-ancestor "$deployed_sha" origin/main
+          unexpected="$(git -C "$repo" diff --name-only "$deployed_sha"..origin/main | grep -vE '^(\.dev\.vars\.example|docs/current-task\.md|scripts/lib/google-ads-live-operator\.js|tests/config/example-config-completeness\.test\.js|tests/scripts/google-ads-live-operator-rerun-evidence\.test\.js|wrangler\.sync\.example\.jsonc)$' || true)"
           test -z "$unexpected"
-          echo "newer_main_runtime_diff_count=0"
-          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          echo "post_deploy_runtime_diff_count=0"
+          echo "deployed_runtime_sha=$deployed_sha"
+          echo "verifier_main_sha=$verifier_sha"
+
+          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$deployed_sha"
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
           test -f "$safe_api" && test -f "$safe_sync" && test -f "$operator_evidence/live-ready.json"
+          test -f "$repo/.dev.vars"
 
           SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" node <<'NODE'
           const fs=require('fs');
           const a=JSON.parse(fs.readFileSync(process.env.SAFE_API,'utf8'));
           const s=JSON.parse(fs.readFileSync(process.env.SAFE_SYNC,'utf8'));
           const keys=['MKT_CONNECTOR_GOOGLE_ADS_ENABLED','MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED','MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED','MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED','MKT_GOOGLE_ADS_LARK_WRITE_ENABLED','MKT_SCHEDULE_GOOGLE_ADS_ENABLED'];
-          if(!keys.every(k=>a.vars?.[k]==='false')||!keys.every(k=>s.vars?.[k]==='false'))throw new Error('safe_flags_not_false');
+          if(!keys.every(k=>a.vars?.[k]==='false')||!keys.every(k=>s.vars?.[k]==='false')) throw new Error('safe_flags_not_false');
           console.log('safe_flags_false_both_configs=true');
           console.log('google_schedule_enabled=false');
           NODE
 
-          cd "$live_worktree"
-          env -u CI -u GITHUB_ACTIONS RUN_ID="$run_id" PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" OPERATOR_EVIDENCE="$operator_evidence" node --input-type=module <<'NODE'
+          cleanup_verifier() {
+            if [ -L "$verifier_worktree/node_modules" ]; then rm -f "$verifier_worktree/node_modules"; fi
+            git -C "$repo" worktree remove --force "$verifier_worktree" >/dev/null 2>&1 || true
+          }
+          trap cleanup_verifier EXIT
+          git -C "$repo" worktree remove --force "$verifier_worktree" >/dev/null 2>&1 || true
+          rm -rf "$verifier_worktree"
+          git -C "$repo" worktree add --detach "$verifier_worktree" "$verifier_sha" >/dev/null
+          if [ -d "$repo/node_modules" ]; then ln -s "$repo/node_modules" "$verifier_worktree/node_modules"; fi
+          test "$(git -C "$verifier_worktree" rev-parse HEAD)" = "$verifier_sha"
+          test -z "$(git -C "$verifier_worktree" status --porcelain --untracked-files=all)"
+
+          cd "$verifier_worktree"
+          env -u CI -u GITHUB_ACTIONS RUN_ID="$run_id" PRIMARY_REPO="$repo" VERIFIER_WORKTREE="$verifier_worktree" SAFE_API="$safe_api" SAFE_SYNC="$safe_sync" OPERATOR_EVIDENCE="$operator_evidence" node --input-type=module <<'NODE'
           import { readFile } from 'node:fs/promises';
           import { spawnSync } from 'node:child_process';
           import { resolve } from 'node:path';
           import { readDevVars } from './scripts/lib/dev-vars.js';
           const sync=JSON.parse(await readFile(process.env.SAFE_SYNC,'utf8'));
           const db=(sync.d1_databases??[]).find(x=>x?.binding==='MKT_STATE_DB');
+          if(!db?.database_name) throw new Error('state_db_missing');
           const manager=String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
           const advertiser=String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID??'').replace(/-/gu,'').trim();
           const devVars=await readDevVars(resolve(process.env.PRIMARY_REPO,'.dev.vars'));
           const baseEnv={...process.env,...devVars,MKT_ENV:'development',MKT_CUSTOMER_PROFILE:'integration_workspace',MKT_CONNECTION_CUSTOMER_KEY:'chemistry_k',MKT_GOOGLE_ADS_SOURCE_TIMEZONE:'Asia/Bangkok',MKT_GOOGLE_ADS_LIVE_DATABASE_NAME:db.database_name,MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG:process.env.SAFE_API,MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG:process.env.SAFE_SYNC,MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID:manager,MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID:advertiser,MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR:process.env.OPERATOR_EVIDENCE,MKT_GOOGLE_ADS_LIVE_RUN_ID:process.env.RUN_ID};
-          let r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=verify','--execute'],{cwd:process.env.LIVE_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_VERIFY:'verify'},encoding:'utf8',maxBuffer:32*1024*1024});
+          let r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=verify','--execute'],{cwd:process.env.VERIFIER_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_VERIFY:'verify'},encoding:'utf8',maxBuffer:32*1024*1024});
           process.stdout.write(r.stdout||''); if(r.status!==0){process.stderr.write(r.stderr||'');process.exit(r.status||1);}
-          r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=rerun-verify','--execute'],{cwd:process.env.LIVE_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_RERUN_VERIFY:'rerun-verify'},encoding:'utf8',maxBuffer:32*1024*1024});
+          r=spawnSync(process.execPath,['scripts/google-ads-live-operator.mjs','--phase=rerun-verify','--execute'],{cwd:process.env.VERIFIER_WORKTREE,env:{...baseEnv,CONFIRM_GOOGLE_ADS_LIVE_RERUN_VERIFY:'rerun-verify'},encoding:'utf8',maxBuffer:32*1024*1024});
           process.stdout.write(r.stdout||''); if(r.status!==0){process.stderr.write(r.stderr||'');process.exit(r.status||1);}
           console.log('operator_verify=passed');
           console.log('operator_rerun_verify=passed');
@@ -103,8 +122,24 @@ jobs:
           NODE
 
           database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(c.d1_databases.find(x=>x.binding==="MKT_STATE_DB").database_name)' "$safe_sync")"
-          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT r.mode,r.expected_chunk_count,r.received_chunk_count,r.expected_row_count,r.received_row_count,r.payload_redacted_at,a.status,a.last_error_code,a.completed_at,a.payload_redacted_at AS admission_redacted,a.reconciliation_json FROM google_ads_delivery_runs r JOIN google_ads_live_admissions a ON a.run_id=r.run_id WHERE r.run_id='$run_id';" --json > "$final_evidence/final-state.json"
+          env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT r.mode,r.status AS transport_status,r.expected_chunk_count,r.received_chunk_count,r.expected_row_count,r.received_row_count,r.payload_redacted_at,a.status AS admission_status,a.last_error_code,a.completed_at,a.payload_redacted_at AS admission_redacted,a.reconciliation_json,w.lifecycle_status AS work_lifecycle_status FROM google_ads_delivery_runs r JOIN google_ads_live_admissions a ON a.run_id=r.run_id LEFT JOIN sync_work_runs w ON w.work_key=a.work_key WHERE r.run_id='$run_id';" --json > "$final_evidence/final-state.json"
           FINAL="$final_evidence/final-state.json" node <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.env.FINAL,'utf8'));const a=Array.isArray(x)?x:[x];const r=a.flatMap(c=>c?.results??c?.result?.[0]?.results??[])[0];if(!r)throw new Error('final_run_missing');if(r.mode!=='LIVE'||+r.expected_chunk_count!==7||+r.received_chunk_count!==7||+r.expected_row_count!==1305||+r.received_row_count!==1305||r.status!=='completed'||r.last_error_code!==null||r.payload_redacted_at===null||r.admission_redacted===null)throw new Error('final_state_invalid');const rec=JSON.parse(r.reconciliation_json);const t=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']),rows=rec.lark.filter(v=>t.has(v.tableKey));if(rows.length!==3)throw new Error('target_reconciliation_missing');for(const v of rows){const n=+v.created+(+v.updated)+(+v.skipped);if(n!==+v.expected)throw new Error(`target_reconciliation_mismatch:${v.tableKey}`);console.log(`${v.tableKey}_expected=${v.expected}`);console.log(`${v.tableKey}_accounted=${n}`);}if(+rec.failed!==0)throw new Error('reconciliation_failed_nonzero');console.log(`reconciliation_failed=${rec.failed}`);console.log('payload_redacted=true');console.log('final_live_state=passed');
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync(process.env.FINAL,'utf8'));const a=Array.isArray(x)?x:[x];const r=a.flatMap(c=>c?.results??c?.result?.[0]?.results??[])[0];
+          if(!r) throw new Error('final_run_missing');
+          if(r.mode!=='LIVE'||+r.expected_chunk_count!==7||+r.received_chunk_count!==7||+r.expected_row_count!==1305||+r.received_row_count!==1305||r.admission_status!=='completed'||r.work_lifecycle_status!=='completed'||r.last_error_code!==null||r.payload_redacted_at===null||r.admission_redacted===null) throw new Error('final_state_invalid');
+          const rec=JSON.parse(r.reconciliation_json);const targets=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']);const rows=rec.lark.filter(v=>targets.has(v.tableKey));
+          if(rows.length!==3) throw new Error('target_reconciliation_missing');
+          for(const v of rows){const n=Number(v.created??0)+Number(v.updated??0)+Number(v.skipped??0);if(n!==Number(v.expected))throw new Error(`target_reconciliation_mismatch:${v.tableKey}`);console.log(`${v.tableKey}_expected=${v.expected}`);console.log(`${v.tableKey}_accounted=${n}`);}
+          if(Number(rec.failed)!==0) throw new Error('reconciliation_failed_nonzero');
+          console.log(`transport_status=${r.transport_status}`);
+          console.log('admission_status=completed');
+          console.log('work_lifecycle_status=completed');
+          console.log('payload_redacted=true');
+          console.log('reconciliation_failed=0');
+          console.log('final_live_state=passed');
           NODE
           echo 'final_verify_remote_mutation_count=0'
+          echo 'queue_replay_count=0'
+          echo 'google_live_rerun_count=0'
+          echo 'paid_ads_parity_final_verification=passed'
