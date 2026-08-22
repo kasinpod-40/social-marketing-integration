@@ -58,16 +58,34 @@ export function validateMetaPaidLarkCloseoutPlan(value, repositoryHead) {
     || value.operations.length !== META_PAID_LARK_CLOSEOUT_TARGETS.length) {
     throw closeoutError('Meta paid closeout plan is invalid', 'META_PAID_LARK_CLOSEOUT_PLAN_INVALID');
   }
-  const expected = createMetaPaidLarkCloseoutPlan(expectedHead, Date.parse(value.createdAt));
+  const createdAt = requireIso(value.createdAt, 'createdAt');
+  const createdTimestamp = Date.parse(createdAt);
+  const expected = createMetaPaidLarkCloseoutPlan(expectedHead, createdTimestamp);
+  const observedRequestedAt = new Set();
   for (let index = 0; index < expected.operations.length; index += 1) {
     const observed = value.operations[index];
     const authority = expected.operations[index];
-    for (const field of ['target', 'periodStart', 'periodEnd', 'operationId']) {
+    for (const field of ['target', 'periodStart', 'periodEnd', 'operationId', 'originalRequestedAt']) {
       if (observed?.[field] !== authority[field]) {
-        throw closeoutError('Meta paid closeout operation differs from authority', 'META_PAID_LARK_CLOSEOUT_PLAN_INVALID', { index, field });
+        throw closeoutError(
+          'Meta paid closeout operation differs from authority',
+          'META_PAID_LARK_CLOSEOUT_PLAN_INVALID',
+          { index, field },
+        );
       }
     }
-    requireIso(observed.originalRequestedAt, `operations[${index}].originalRequestedAt`);
+    const requestedAt = requireIso(
+      observed.originalRequestedAt,
+      `operations[${index}].originalRequestedAt`,
+    );
+    if (observedRequestedAt.has(requestedAt)) {
+      throw closeoutError(
+        'Meta paid closeout generations must be unique',
+        'META_PAID_LARK_CLOSEOUT_PLAN_INVALID',
+        { index, field: 'originalRequestedAt' },
+      );
+    }
+    observedRequestedAt.add(requestedAt);
     if (JSON.stringify(observed.larkTableKeys) !== JSON.stringify(META_PAID_LARK_CLOSEOUT_TABLE_KEYS)) {
       throw closeoutError('Meta paid closeout Lark scope is invalid', 'META_PAID_LARK_CLOSEOUT_SCOPE_INVALID', { index });
     }
