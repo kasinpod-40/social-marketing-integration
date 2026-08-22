@@ -151,14 +151,17 @@ jobs:
   google_ads_ops_probe:
     if: github.event_name == 'pull_request' && github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Probe local live operator readiness
+      - name: Prepare dedicated reviewed-main worktree and run preflight
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
+          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
+          expected_stale="/private/tmp/social-mkt-raw-retirement-closeout-20260816"
           expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
+          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
 
           test -d "$repo/.git"
           git -C "$repo" fetch origin main
@@ -168,14 +171,33 @@ jobs:
             /^worktree / { path=substr($0,10) }
             /^branch refs\/heads\/main$/ { print path; exit }
           ')"
-          if [[ -z "$main_worktree" || ! -e "$main_worktree/.git" ]]; then
-            echo "main_worktree=missing"
-            exit 1
+
+          if [[ -n "$main_worktree" && "$main_worktree" != "$live_worktree" ]]; then
+            test "$main_worktree" = "$expected_stale"
+            prunable_count="$(git -C "$repo" worktree list --porcelain | grep -c '^prunable ' || true)"
+            test "$prunable_count" = "1"
+            test ! -e "$main_worktree/.git"
+            git -C "$repo" worktree prune --expire now --verbose
           fi
 
-          test "$(git -C "$main_worktree" rev-parse --abbrev-ref HEAD)" = "main"
-          test "$(git -C "$main_worktree" rev-parse HEAD)" = "$expected_sha"
-          test -z "$(git -C "$main_worktree" status --porcelain)"
+          main_worktree="$(git -C "$repo" worktree list --porcelain | awk '
+            /^worktree / { path=substr($0,10) }
+            /^branch refs\/heads\/main$/ { print path; exit }
+          ')"
+
+          if [[ -z "$main_worktree" ]]; then
+            if [[ -e "$live_worktree" ]]; then
+              echo "live_worktree_path_conflict=true"
+              exit 1
+            fi
+            git -C "$repo" worktree add "$live_worktree" main
+            main_worktree="$live_worktree"
+          fi
+
+          test "$main_worktree" = "$live_worktree"
+          test "$(git -C "$live_worktree" branch --show-current)" = "main"
+          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test -z "$(git -C "$live_worktree" status --porcelain)"
           test -f "$repo/.dev.vars"
           test -f "$repo/wrangler.sync.jsonc"
 
@@ -200,10 +222,43 @@ jobs:
             fi
           done
 
-          cd "$repo"
-          npx wrangler whoami >/tmp/google-ads-live-wrangler-whoami.txt 2>&1
-          echo "origin_main_exact=true"
-          echo "main_worktree_exact_clean=true"
-          echo "local_ignored_configs_present=true"
-          echo "required_operator_env_present=true"
-          echo "wrangler_identity_ok=true"
+          for name in MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG; do
+            value="${!name}"
+            if [[ "$value" != /* ]]; then
+              if [[ -f "$repo/$value" ]]; then
+                value="$repo/$value"
+              elif [[ -f "$live_worktree/$value" ]]; then
+                value="$live_worktree/$value"
+              else
+                echo "missing_config_file=$name"
+                exit 1
+              fi
+              printf -v "$name" '%s' "$value"
+              export "$name"
+            fi
+            test -f "${!name}"
+          done
+
+          cd "$live_worktree"
+          npm ci >/tmp/google-ads-live-npm-ci.log 2>&1
+          mkdir -p "$evidence_root"
+          export MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR="$evidence_root"
+          export CONFIRM_GOOGLE_ADS_LIVE_PREFLIGHT=preflight
+
+          if ! node scripts/google-ads-live-operator.mjs --phase=preflight --execute >/tmp/google-ads-live-preflight.json 2>&1; then
+            cat /tmp/google-ads-live-preflight.json
+            exit 1
+          fi
+
+          test -f "$evidence_root/preflight.json"
+          node -e '
+            const fs=require("fs");
+            const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+            if (p.phase!=="preflight" || p.status!=="passed") process.exit(1);
+            console.log("preflight_status=passed");
+            console.log(`repository_head=${p.repositoryHead}`);
+            console.log(`flags_false=${p.safeConfig?.flagsFalse===true}`);
+            console.log(`schedule_disabled=${p.safeConfig?.scheduleDisabled===true}`);
+            console.log(`wrangler_identity_checked=${p.wranglerIdentityChecked===true}`);
+            console.log(`pending_migrations_reviewed=${p.pendingMigrationsReviewed===true}`);
+          ' "$evidence_root/preflight.json"
