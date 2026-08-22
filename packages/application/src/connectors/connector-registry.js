@@ -3,7 +3,13 @@ import {
   getConnectorCatalogEntry,
   listConnectorCatalog,
 } from '../../../config/src/connector-catalog.js';
+import { LARGE_ACCOUNT_STATUS } from '../../../config/src/large-account-readiness.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+
+export const CONNECTOR_RUN_MODES = Object.freeze({
+  STANDARD: 'standard',
+  CONTROLLED_PRODUCTION_UAT: 'controlled_production_uat',
+});
 
 /**
  * ตรวจว่า Connector พร้อมให้ Runtime เรียกจริง
@@ -11,10 +17,12 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
  * การมีชื่ออยู่ใน Catalog ไม่ได้แปลว่าใช้งานได้ทันที:
  * - implementationStatus ต้องเป็น active
  * - Customer profile/feature flag ต้องเปิด enabled=true
- * - Production ต้องผ่าน large-account gate ครบ
+ * - Production ปกติต้องผ่าน large-account gate ครบ
+ * - Production UAT ชั่วคราวรับได้เฉพาะ dev_ready ที่ขาด liveAccountUat เพียง Gate เดียว
  */
-export function assertConnectorRunnable(runtimeConfig, connectorKey) {
+export function assertConnectorRunnable(runtimeConfig, connectorKey, options = {}) {
   const definition = getConnectorCatalogEntry(connectorKey);
+  const runMode = readConnectorRunMode(options.runMode);
   if (definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE) {
     const uatPending = definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING;
     throw permanentError(`${definition.displayName} connector is ${uatPending ? 'waiting for Live DEV UAT' : 'not implemented'}`, {
@@ -39,17 +47,15 @@ export function assertConnectorRunnable(runtimeConfig, connectorKey) {
       },
     });
   }
+
+  if (runMode === CONNECTOR_RUN_MODES.CONTROLLED_PRODUCTION_UAT) {
+    assertControlledProductionUatEligible(runtimeConfig, definition);
+    return connector;
+  }
+
   if (runtimeConfig?.environment === 'production'
     && definition.largeAccount?.productionReady !== true) {
-    throw permanentError(`${definition.displayName} connector has not passed the large-account Production gate`, {
-      code: 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING',
-      details: {
-        connectorKey: definition.key,
-        largeAccountStatus: definition.largeAccount?.status ?? null,
-        minimumFixtureItems: definition.largeAccount?.minimumFixtureItems ?? null,
-        missingGates: definition.largeAccount?.missingGates ?? [],
-      },
-    });
+    throwLargeAccountProductionPending(definition);
   }
   return connector;
 }
@@ -78,4 +84,51 @@ export function listConnectorReadiness(runtimeConfig) {
       productionRunnable,
     });
   }));
+}
+
+function assertControlledProductionUatEligible(runtimeConfig, definition) {
+  if (runtimeConfig?.environment !== 'production') {
+    throw permanentError('Controlled connector Production UAT is valid only in Production', {
+      code: 'MKT_PRODUCTION_CONNECTOR_UAT_ENV_INVALID',
+      details: {
+        connectorKey: definition.key,
+        environment: runtimeConfig?.environment ?? null,
+      },
+    });
+  }
+
+  const missingGates = definition.largeAccount?.missingGates ?? [];
+  const eligible = definition.largeAccount?.status === LARGE_ACCOUNT_STATUS.DEV_READY
+    && definition.largeAccount?.productionReady !== true
+    && missingGates.length === 1
+    && missingGates[0] === 'liveAccountUat';
+  if (!eligible) {
+    throwLargeAccountProductionPending(definition, {
+      controlledProductionUatEligible: false,
+    });
+  }
+}
+
+function throwLargeAccountProductionPending(definition, extraDetails = {}) {
+  throw permanentError(`${definition.displayName} connector has not passed the large-account Production gate`, {
+    code: 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING',
+    details: {
+      connectorKey: definition.key,
+      largeAccountStatus: definition.largeAccount?.status ?? null,
+      minimumFixtureItems: definition.largeAccount?.minimumFixtureItems ?? null,
+      missingGates: definition.largeAccount?.missingGates ?? [],
+      ...extraDetails,
+    },
+  });
+}
+
+function readConnectorRunMode(value) {
+  const runMode = value ?? CONNECTOR_RUN_MODES.STANDARD;
+  if (!Object.values(CONNECTOR_RUN_MODES).includes(runMode)) {
+    throw permanentError(`Unsupported connector run mode: ${String(runMode)}`, {
+      code: 'MKT_CONNECTOR_RUN_MODE_INVALID',
+      details: { runMode: String(runMode) },
+    });
+  }
+  return runMode;
 }

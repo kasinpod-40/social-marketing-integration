@@ -51,6 +51,38 @@ TIKTOK_SOURCE_HANDLE=ft.pumkin
 
 `accountKey` สำหรับ Stable key ยังอยู่ใน Customer profile และห้ามเปลี่ยนหลังเริ่มใช้งานจริง
 
+## Controlled Production connector UAT
+
+Normal Production runtime ต้องใช้ Connector ที่ผ่าน `largeAccount.productionReady=true` เท่านั้น ห้ามแก้ `liveAccountUat=true` ล่วงหน้าและห้าม bypass `assertConnectorRunnable()` เพื่อให้ Production ทำงานได้
+
+กรณี Connector อยู่สถานะ `dev_ready` ซึ่งหมายถึง Technical/Large-fixture gates ผ่านครบและขาดเพียง `liveAccountUat` ระบบมี lane ชั่วคราวสำหรับเก็บ Customer-owned Production evidence โดยต้องเปิดพร้อมกันทุกเงื่อนไข:
+
+```env
+MKT_ENV=production
+MKT_CUSTOMER_PROFILE=chemistry_k
+MKT_CONNECTOR_TIKTOK_ENABLED=true
+MKT_PRODUCTION_CONNECTOR_UAT_ENABLED=true
+MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR=tiktok
+```
+
+Queue job ต้องใช้ Trigger กลาง `production_connector_uat` ด้วย การเปิด Environment gate อย่างเดียวไม่ทำให้ Scheduled หรือ Legacy manual job ข้าม Production readiness gate ได้
+
+กฎของ lane นี้:
+
+- ใช้ได้ทีละ Connector ผ่าน exact selector เท่านั้น
+- รับเฉพาะ Connector สถานะ `dev_ready` ที่ `missingGates=['liveAccountUat']`
+- Connector สถานะ `foundation_ready` หรือ `planned` ยังถูกปฏิเสธ
+- ห้ามเปิด Cron/Schedule เพื่อทำ Live UAT
+- หลังเก็บหลักฐาน First run + exact rerun/idempotency แล้ว ต้องปิด `MKT_PRODUCTION_CONNECTOR_UAT_ENABLED=false` ก่อน Promote readiness
+- การ Promote `liveAccountUat=true` / `verified` ต้องเป็น Reviewed change แยกที่อ้างอิง External evidence จริง
+
+Release example ต้องคงค่า Default ดังนี้เสมอ:
+
+```env
+MKT_PRODUCTION_CONNECTOR_UAT_ENABLED=false
+MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR=
+```
+
 ## Source code กับ Secret
 
 เก็บใน Source codeได้:

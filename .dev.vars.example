@@ -36,6 +36,10 @@ MKT_CONNECTION_SELECTION_SIGNING_KEY=replace-with-random-signing-key
 # Base64URL ของ random 32 bytes; ห้ามใช้ Password/ข้อความธรรมดาแทน Encryption key
 MKT_CONNECTION_ENCRYPTION_KEY_V1=replace-with-256-bit-base64url-key
 
+# Controlled Production connector UAT เปิดได้ทีละ Connector ผ่าน production_connector_uat เท่านั้น
+MKT_PRODUCTION_CONNECTOR_UAT_ENABLED=false
+MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR=
+
 # เปิดเฉพาะ Connector ที่ Implement และได้รับอนุมัติให้รันแบบ Manual แล้ว
 MKT_CONNECTOR_TIKTOK_ENABLED=false
 MKT_CONNECTOR_FACEBOOK_ENABLED=false

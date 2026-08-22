@@ -31,6 +31,7 @@ export const JOB_TYPES = Object.freeze({
 
 /** Trigger กลางที่เปลี่ยน Queue identity หรือสิทธิ์ Runtime ห้ามกระจาย String literal */
 export const JOB_TRIGGERS = Object.freeze({
+  PRODUCTION_CONNECTOR_UAT: 'production_connector_uat',
   TIKTOK_POST_LARK_WATERMARK: 'post_lark_watermark',
   META_MANUAL_UAT: 'manual_uat',
   META_ORGANIC_SCHEDULED: 'scheduled',
