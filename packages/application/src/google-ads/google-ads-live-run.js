@@ -24,7 +24,7 @@ const ENTITY_DATASETS = Object.freeze({
   youtubeAssets: 'creative',
 });
 
-/** Reconstruct one bounded six-dataset run after transport authentication and cross-chunk validation. */
+/** Reconstruct one bounded signed-delivery run after transport authentication and cross-chunk validation. */
 export function assembleGoogleAdsLiveRun(values) {
   const summary = validateGoogleAdsManagerDeliveryRun(values);
   if (summary.mode !== 'LIVE') {
@@ -231,7 +231,7 @@ export async function buildGoogleAdsD1WriteSet(input = {}) {
   });
 }
 
-/** Build only customer-facing Canonical Lark rows; D1 owns raw/source facts. */
+/** Build only customer-facing Canonical Lark rows; D1 owns shared entity/daily facts. */
 export function buildGoogleAdsLarkWriteSet(input = {}) {
   const run = requireRun(input.run);
   const account = run.datasets.account[0];
@@ -262,6 +262,15 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
     start_date: larkOptionalDate(row.startDate, run.sourceTimezone, 'Google Ads campaign startDate'),
     end_date: larkOptionalDate(row.endDate, run.sourceTimezone, 'Google Ads campaign endDate'),
     bidding_strategy_type: row.biddingStrategyType,
+  }));
+  const assetGroups = run.datasets.assetGroups.map((row) => compact({
+    ads_asset_group_key: ['google_ads', run.customerId, 'asset_group', row.assetGroupId].join(':'),
+    platform: 'google_ads',
+    account_id: run.customerId,
+    external_campaign_id: row.campaignId,
+    external_asset_group_id: row.assetGroupId,
+    asset_group_name: row.assetGroupName,
+    status: normalizeGoogleAdsStatus(row.status),
   }));
   const adGroups = run.datasets.adGroups.map((row) => compact({
     ads_ad_group_key: canonicalEntityKey(run.customerId, 'ad_group', row.adGroupId),
@@ -326,7 +335,7 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
   });
 
   return deepFreeze({
-    canonical: { accounts, campaigns, adGroups, ads, creatives, daily },
+    canonical: { accounts, campaigns, assetGroups, adGroups, ads, creatives, daily },
   });
 }
 
