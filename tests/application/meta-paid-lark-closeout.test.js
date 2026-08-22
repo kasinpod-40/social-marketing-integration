@@ -7,6 +7,7 @@ import {
   createMetaPaidLarkCloseoutPlan,
   validateMetaPaidLarkCloseoutPlan,
   validateMetaPaidLarkReconciliation,
+  validateMetaPaidLarkRemoteFlagState,
 } from '../../scripts/lib/meta-paid-lark-closeout.js';
 
 const HEAD = '21179971b7a5f3631303260614bd768ebfe47d54';
@@ -44,6 +45,42 @@ test('paid Meta Lark environment pins the exact two-table allowlist', () => {
   assert.equal(env.MKT_META_LARK_TABLE_KEYS, 'mktAdsCreatives,mktAdsDaily');
   assert.equal(env.MKT_META_LARK_PERIOD_START, '2026-07-01');
   assert.equal(env.MKT_META_LARK_PERIOD_END, '2026-07-31');
+});
+
+test('paid Meta closeout admits the existing DEV runtime only before the controlled baseline', () => {
+  const activeRuntime = {
+    bindings: [
+      { name: 'MKT_CONNECTOR_META_ADS_ENABLED', text: 'true' },
+      { name: 'MKT_SCHEDULE_META_ADS_ENABLED', text: 'true' },
+      { name: 'MKT_CONNECTOR_FACEBOOK_ENABLED', text: 'true' },
+    ],
+  };
+  const initial = validateMetaPaidLarkRemoteFlagState(activeRuntime, {
+    allowExistingRuntimeFlags: true,
+  });
+  assert.equal(initial.allFalse, false);
+  assert.equal(initial.existingRuntimeAdmitted, true);
+  assert.deepEqual(initial.enabledFlags, [
+    'MKT_CONNECTOR_FACEBOOK_ENABLED',
+    'MKT_CONNECTOR_META_ADS_ENABLED',
+    'MKT_SCHEDULE_META_ADS_ENABLED',
+  ]);
+
+  assert.throws(
+    () => validateMetaPaidLarkRemoteFlagState(activeRuntime),
+    (error) => error.code === 'META_PAID_LARK_CLOSEOUT_REMOTE_FLAGS_ACTIVE',
+  );
+
+  const restored = validateMetaPaidLarkRemoteFlagState({
+    bindings: [
+      { name: 'MKT_CONNECTOR_META_ADS_ENABLED', text: 'false' },
+      { name: 'MKT_META_D1_WRITE_ENABLED', text: 'false' },
+      { name: 'MKT_META_LARK_WRITE_ENABLED', text: 'false' },
+    ],
+  });
+  assert.equal(restored.allFalse, true);
+  assert.equal(restored.existingRuntimeAdmitted, false);
+  assert.deepEqual(restored.enabledFlags, []);
 });
 
 test('paid Meta reconciliation accepts exactly Creatives and Daily and rejects expanded paid scope', () => {
