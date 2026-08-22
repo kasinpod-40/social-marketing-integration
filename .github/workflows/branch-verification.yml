@@ -13,12 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_pending_migrations:
+  google_ads_live_migrate:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - name: List exact remote pending migrations read-only
+      - name: Execute reviewed migration phase with zero pending migrations
         shell: bash
         run: |
           set -euo pipefail
@@ -26,19 +26,51 @@ jobs:
           live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
           expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
           evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
-          sync_config="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
 
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
           test -f "$evidence_root/backup.json"
-          test -f "$sync_config"
 
           cd "$live_worktree"
-          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$sync_config")"
-          npx wrangler d1 migrations list "$database_name" --remote --config "$sync_config" > /tmp/google-ads-pending-migrations.txt
-          cat /tmp/google-ads-pending-migrations.txt
-          echo "remote_d1_mutation_count=0"
-          echo "google_live_execute_count=0"
-          echo "lark_write_count=0"
+          PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" EVIDENCE_ROOT="$evidence_root" node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import { resolve } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          import { readDevVars } from './scripts/lib/dev-vars.js';
+
+          const repo = process.env.PRIMARY_REPO;
+          const live = process.env.LIVE_WORKTREE;
+          const evidenceRoot = process.env.EVIDENCE_ROOT;
+          const apiSafePath = resolve(live, 'wrangler.api.google-ads-live-safe.jsonc');
+          const syncSafePath = resolve(live, 'wrangler.sync.google-ads-live-safe.jsonc');
+          const sync = JSON.parse(await readFile(syncSafePath, 'utf8'));
+          const stateDb = (sync.d1_databases ?? []).find((x) => x?.binding === 'MKT_STATE_DB');
+          const managerId = String(sync.vars?.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
+          const advertiserId = String(sync.vars?.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID ?? '').replace(/-/gu, '').trim();
+          if (!stateDb?.database_name || !/^\d{10}$/u.test(managerId) || !/^\d{10}$/u.test(advertiserId)) process.exit(1);
+          const devVars = await readDevVars(resolve(repo, '.dev.vars'));
+          const env = {
+            ...process.env, ...devVars,
+            MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'integration_workspace', MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+            MKT_GOOGLE_ADS_SOURCE_TIMEZONE: 'Asia/Bangkok',
+            MKT_GOOGLE_ADS_LIVE_DATABASE_NAME: stateDb.database_name,
+            MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG: apiSafePath,
+            MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG: syncSafePath,
+            MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID: managerId,
+            MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID: advertiserId,
+            MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR: evidenceRoot,
+            CONFIRM_GOOGLE_ADS_LIVE_MIGRATION: 'migrate',
+          };
+          const r = spawnSync(process.execPath, ['scripts/google-ads-live-operator.mjs','--phase=migrate','--execute'], { cwd: live, env, encoding:'utf8', maxBuffer:64*1024*1024 });
+          if (r.status !== 0) { process.stdout.write(r.stdout||''); process.stderr.write(r.stderr||''); process.exit(r.status||1); }
+          const e = JSON.parse(await readFile(resolve(evidenceRoot,'migrate.json'),'utf8'));
+          if (e.phase !== 'migrate' || e.status !== 'passed' || e.migrationApplyCompleted !== true || e.migrationListAfterReviewed !== true) process.exit(1);
+          console.log('migrate_status=passed');
+          console.log('pending_before=0');
+          console.log('pending_after=0');
+          console.log('schema_change_count=0');
+          console.log('google_live_execute_count=0');
+          console.log('lark_write_count=0');
+          NODE
