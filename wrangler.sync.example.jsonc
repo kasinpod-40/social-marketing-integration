@@ -78,6 +78,10 @@
     "MKT_GOOGLE_ADS_API_VERSION": "v24",
     "MKT_GOOGLE_ADS_SOURCE_TIMEZONE": "Asia/Bangkok",
 
+    // One-connector-at-a-time customer-owned Production evidence lane; default is fail-closed.
+    "MKT_PRODUCTION_CONNECTOR_UAT_ENABLED": "false",
+    "MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR": "",
+
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
