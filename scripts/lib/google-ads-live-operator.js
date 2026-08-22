@@ -43,7 +43,7 @@ const REQUIRED_FALSE_FLAGS = Object.freeze([
   'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
   'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
 ]);
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{12}$/u;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const ADWORDS_SCOPE = 'https://www.googleapis.com/auth/adwords';
 
 export function parseGoogleAdsLiveOperatorArgs(args = []) {
