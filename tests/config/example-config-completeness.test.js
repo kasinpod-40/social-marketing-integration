@@ -8,6 +8,12 @@ import { STORAGE_FEATURE_FLAG_ENV } from '../../packages/config/src/storage-runt
 import { YOUTUBE_REQUIRED_LARK_TABLE_KEYS } from '../../packages/config/src/youtube-organic-runtime-config.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const ACTIVE_RELEASE_LARK_TABLE_ENV = Object.freeze(
+  Object.values(LARK_TABLE_ENV).filter(
+    (envName) =>
+      envName.startsWith('LARK_TABLE_MKT_') || envName === 'LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS',
+  ),
+);
 
 test('safe examples declare every YouTube table required by activation preflight', async () => {
   const [devVars, wrangler] = await Promise.all([
@@ -16,6 +22,18 @@ test('safe examples declare every YouTube table required by activation preflight
   ]);
   for (const tableKey of YOUTUBE_REQUIRED_LARK_TABLE_KEYS) {
     const envName = LARK_TABLE_ENV[tableKey];
+    assert.match(devVars, new RegExp(`^${envName}=replace-with-table-id$`, 'mu'));
+    assert.match(wrangler, new RegExp(`"${envName}"\\s*:\\s*"replace-with-table-id"`, 'u'));
+  }
+});
+
+test('safe examples declare every active release Lark table mapping', async () => {
+  const [devVars, wrangler] = await Promise.all([
+    readFile(resolve(root, '.dev.vars.example'), 'utf8'),
+    readFile(resolve(root, 'wrangler.sync.example.jsonc'), 'utf8'),
+  ]);
+
+  for (const envName of ACTIVE_RELEASE_LARK_TABLE_ENV) {
     assert.match(devVars, new RegExp(`^${envName}=replace-with-table-id$`, 'mu'));
     assert.match(wrangler, new RegExp(`"${envName}"\\s*:\\s*"replace-with-table-id"`, 'u'));
   }

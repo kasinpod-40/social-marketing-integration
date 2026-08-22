@@ -239,6 +239,7 @@
     "LARK_TABLE_MKT_ACCOUNT_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_CAMPAIGNS": "replace-with-table-id",
+    "LARK_TABLE_MKT_ADS_ASSET_GROUPS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_ADGROUPS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_ADS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_CREATIVES": "replace-with-table-id",
@@ -249,6 +250,8 @@
     "LARK_TABLE_MKT_REPORT_SNAPSHOTS": "replace-with-table-id",
     "LARK_TABLE_MKT_REPORT_METRIC_VALUES": "replace-with-table-id",
     "LARK_TABLE_MKT_REPORT_TOP_CONTENT": "replace-with-table-id",
+    "LARK_TABLE_MKT_REPORT_TOP_ADS": "replace-with-table-id",
+    "LARK_TABLE_MKT_AI_REPORT_RUNS": "replace-with-table-id",
     "LARK_TABLE_MKT_SYNC_LOG": "replace-with-table-id",
     "LARK_TABLE_MKT_SYSTEM_ALERTS": "replace-with-table-id",
 
