@@ -147,3 +147,44 @@ jobs:
             diff-check.log
           if-no-files-found: ignore
           retention-days: 7
+
+  tiktok-production-recovery-readonly:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ops/tiktok-production-uat-recovery-20260822'
+    runs-on: mkt-ci
+    timeout-minutes: 15
+    steps:
+      - name: Checkout temporary recovery carrier
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Confirm carrier is based on reviewed main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 673431ad618a077f039a3844355ef36ff9a231ba HEAD
+          test "$(git rev-parse 673431ad618a077f039a3844355ef36ff9a231ba)" = "673431ad618a077f039a3844355ef36ff9a231ba"
+
+      - name: Diagnose exact retained TikTok Production UAT DLQ read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/tiktok-production-uat-recovery-operator.mjs --execute
+
+      - name: Upload Production recovery diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-production-uat-recovery-readonly
+          path: outputs/customer-production/tiktok-uat-recovery-readonly.json
+          if-no-files-found: ignore
+          retention-days: 3
