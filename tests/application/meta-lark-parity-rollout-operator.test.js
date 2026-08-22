@@ -72,11 +72,11 @@ test('target loader preserves the exact D1 operation identity for each target', 
 
   const k2 = target('chemistry_k2');
   assert.equal(k2.workKey, 'meta_ads:chemistry_k2:meta-lark-chemistry_k2');
-  assert.equal(k2.expectedLarkTableCount, 6);
+  assert.equal(k2.expectedLarkTableCount, 4);
 
   const k3 = target('chemistry_k3');
   assert.equal(k3.workKey, 'meta_ads:chemistry_k3:meta-lark-chemistry_k3');
-  assert.equal(k3.expectedLarkTableCount, 6);
+  assert.equal(k3.expectedLarkTableCount, 4);
   assert.notEqual(k2.targetFingerprint, k3.targetFingerprint);
 });
 
@@ -468,7 +468,7 @@ test('evidence chain is target-bound, hash-bound and never authorizes Provider o
   );
 });
 
-test('organic and Ads contracts remain isolated', () => {
+test('organic and historical Ads contracts remain isolated', () => {
   const facebookContracts = expectedLarkContracts('facebook');
   const instagramContracts = expectedLarkContracts('instagram');
   const adsContracts = expectedLarkContracts('meta_ads');
@@ -476,7 +476,7 @@ test('organic and Ads contracts remain isolated', () => {
   assert.equal(instagramContracts.length, 4);
   assert.deepEqual(
     adsContracts.map((entry) => entry.tableKey),
-    [...META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS, 'mktAdsCreatives', 'mktAdsDaily'],
+    META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
   );
   assert.equal(
     facebookContracts.every((entry) => !entry.path.startsWith('raw.ads')),
@@ -487,8 +487,8 @@ test('organic and Ads contracts remain isolated', () => {
     true,
   );
   assert.equal(adsContracts.some((entry) => entry.path.startsWith('raw.ads')), false);
-  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsCreatives')), true);
-  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsDaily')), true);
+  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsCreatives')), false);
+  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsDaily')), false);
 });
 
 function target(targetKey) {
