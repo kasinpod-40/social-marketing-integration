@@ -23,6 +23,7 @@ import {
 const GOOGLE_ADS_TABLE_KEYS = Object.freeze([
   'mktAdsAccounts',
   'mktAdsCampaigns',
+  'mktAdsAssetGroups',
   'mktAdsAdGroups',
   'mktAdsAds',
   'mktAdsCreatives',
@@ -107,6 +108,7 @@ export async function processGoogleAdsManualUatJob(input = {}) {
       tables: {
         mktAdsAccounts: tableIds.mktAdsAccounts,
         mktAdsCampaigns: tableIds.mktAdsCampaigns,
+        mktAdsAssetGroups: tableIds.mktAdsAssetGroups,
         mktAdsAdGroups: tableIds.mktAdsAdGroups,
         mktAdsAds: tableIds.mktAdsAds,
         mktAdsCreatives: tableIds.mktAdsCreatives,
