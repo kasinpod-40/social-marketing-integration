@@ -146,7 +146,10 @@ class VisibleOrderSourceClient {
 }
 
 class VisibleOrderTargetClient {
-  constructor({ initial = ['target_key', 'target_date', 'target_platform'], transformAfterPut = null } = {}) {
+  constructor({
+    initial = ['target_key', 'target_date', 'target_platform'],
+    transformAfterPut = null,
+  } = {}) {
     this.appToken = 'app_target';
     this.visibleFields = [...initial];
     this.transformAfterPut = transformAfterPut;
@@ -172,9 +175,12 @@ class VisibleOrderTargetClient {
     return [{ viewId: 'target_view', viewName: 'All Content', viewType: 'grid' }];
   }
   async requestBitableJson(path, options = {}) {
-    assert.equal(path, '/open-apis/base/v3/bases/app_target/tables/target_tbl/views/target_view/visible_fields');
+    assert.equal(
+      path,
+      '/open-apis/base/v3/bases/app_target/tables/target_tbl/views/target_view/visible_fields',
+    );
     if (options.method === 'GET') {
-      return { code: 0, data: { visible_fields: [...this.visibleFields] } };
+      return { code: 0, data: [...this.visibleFields] };
     }
     if (options.method === 'PUT') {
       const requested = [...options.body.visible_fields];
@@ -182,13 +188,13 @@ class VisibleOrderTargetClient {
       this.visibleFields = this.transformAfterPut
         ? [...this.transformAfterPut(requested, this.puts.length)]
         : requested;
-      return { code: 0, data: { visible_fields: [...this.visibleFields] } };
+      return { code: 0, data: [...this.visibleFields] };
     }
     throw new Error(`unexpected request ${options.method} ${path}`);
   }
 }
 
-test('visible-field order plan detects order drift without changing hidden membership', async () => {
+test('visible-field order plan detects order drift when GET returns field IDs', async () => {
   const targetClient = new VisibleOrderTargetClient();
   const result = await planLarkBaseDocumentedVisibleFieldOrderParity({
     sourceClient: new VisibleOrderSourceClient(),
@@ -205,8 +211,35 @@ test('visible-field order plan detects order drift without changing hidden membe
   assert.deepEqual(targetClient.puts, []);
 });
 
-test('visible-field order apply uses documented visible_fields PUT and verifies exact ordered readback', async () => {
-  const targetClient = new VisibleOrderTargetClient();
+test('visible-field order plan accepts live Base v3 field-name readback', async () => {
+  const targetClient = new VisibleOrderTargetClient({
+    initial: ['content_key', 'published_at', 'platform'],
+  });
+  const result = await planLarkBaseDocumentedVisibleFieldOrderParity({
+    sourceClient: new VisibleOrderSourceClient(),
+    targetClient,
+    expectedTableNames: ['Content'],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.representedViews, 1);
+  assert.equal(result.mismatchedViews, 1);
+  assert.deepEqual(result.steps[0].beforeVisibleFieldIds, [
+    'target_key',
+    'target_date',
+    'target_platform',
+  ]);
+  assert.deepEqual(result.steps[0].beforeVisibleFields, [
+    'content_key',
+    'published_at',
+    'platform',
+  ]);
+});
+
+test('visible-field order apply writes exact Target field names and verifies ordered readback', async () => {
+  const targetClient = new VisibleOrderTargetClient({
+    initial: ['content_key', 'published_at', 'platform'],
+  });
   const result = await applyLarkBaseDocumentedVisibleFieldOrderParity({
     confirmation: CUSTOMER_BASE_VISIBLE_FIELD_ORDER_CONFIRMATION,
     sourceClient: new VisibleOrderSourceClient(),
@@ -218,12 +251,14 @@ test('visible-field order apply uses documented visible_fields PUT and verifies 
   assert.equal(result.updatedViews, 1);
   assert.equal(result.verifiedExactViews, 1);
   assert.equal(result.remoteMutationCount, 1);
-  assert.deepEqual(targetClient.puts, [['target_key', 'target_platform', 'target_date']]);
-  assert.deepEqual(targetClient.visibleFields, ['target_key', 'target_platform', 'target_date']);
+  assert.deepEqual(targetClient.puts, [['content_key', 'platform', 'published_at']]);
+  assert.deepEqual(targetClient.visibleFields, ['content_key', 'platform', 'published_at']);
 });
 
 test('visible-field order preflight blocks membership drift before any write', async () => {
-  const targetClient = new VisibleOrderTargetClient({ initial: ['target_key', 'target_date'] });
+  const targetClient = new VisibleOrderTargetClient({
+    initial: ['content_key', 'published_at'],
+  });
   const result = await planLarkBaseDocumentedVisibleFieldOrderParity({
     sourceClient: new VisibleOrderSourceClient(),
     targetClient,
@@ -236,11 +271,30 @@ test('visible-field order preflight blocks membership drift before any write', a
   assert.deepEqual(targetClient.puts, []);
 });
 
-test('visible-field order apply rolls back if ordered readback does not persist', async () => {
-  const initial = ['target_key', 'target_date', 'target_platform'];
+test('visible-field order plan reports one blocker per View for unresolved live references', async () => {
+  const targetClient = new VisibleOrderTargetClient({
+    initial: ['content_key', 'unknown_live_reference', 'platform'],
+  });
+  const result = await planLarkBaseDocumentedVisibleFieldOrderParity({
+    sourceClient: new VisibleOrderSourceClient(),
+    targetClient,
+    expectedTableNames: ['Content'],
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.blockers.length, 1);
+  assert.equal(result.blockers[0].code, 'VISIBLE_FIELD_ORDER_TARGET_READBACK_FIELD_UNKNOWN');
+  assert.deepEqual(result.blockers[0].details.unresolvedReferences, ['unknown_live_reference']);
+  assert.deepEqual(targetClient.puts, []);
+});
+
+test('visible-field order apply rolls back by field name if ordered readback does not persist', async () => {
+  const initial = ['content_key', 'published_at', 'platform'];
   const targetClient = new VisibleOrderTargetClient({
     initial,
-    transformAfterPut: (requested, putCount) => putCount === 1 ? [...requested].reverse() : requested,
+    transformAfterPut: (requested, putCount) => (
+      putCount === 1 ? [...requested].reverse() : requested
+    ),
   });
 
   await assert.rejects(
@@ -256,7 +310,7 @@ test('visible-field order apply rolls back if ordered readback does not persist'
   );
 
   assert.deepEqual(targetClient.puts, [
-    ['target_key', 'target_platform', 'target_date'],
+    ['content_key', 'platform', 'published_at'],
     initial,
   ]);
   assert.deepEqual(targetClient.visibleFields, initial);
