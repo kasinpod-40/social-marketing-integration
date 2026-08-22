@@ -1,35 +1,39 @@
-# Customer Base manual View field-order closeout
+# Customer Base View field-order closeout
 
-Use the generated checklist `Lark_View_Field_Order_Parity_Checklist.xlsx` from the working session as the operator reference.
+## Superseded manual procedure
 
-## Operator sequence
+The earlier 105-View drag checklist is **no longer the primary closeout path**.
 
-1. Work only inside `Setup Phase | Social MKT Data Hub`.
-2. Open each Pending grid view.
-3. Open `Customize Field`.
-4. Drag fields to the exact Source order recorded for that view.
-5. Do not toggle visibility while dragging.
-6. Do not modify filter, sort, group, row height or width.
-7. Do not touch `🎵 RAW_TikTok_Creator_Videos`.
-8. Mark the checklist row `Done` only after the full sequence is visually exact.
-9. Skip every `🔄 MKT_Sync_Log` view because those five are already exact.
-10. After all Pending rows are done, export the Target `.base` and run a read-only comparison.
+A later review of the official `larksuite/cli` Base shortcuts found the documented Base v3 `visible_fields` View property. Lark states that `visible_fields` controls both visibility and order. The supported write is:
 
-## Efficient batching
+```text
+PUT /open-apis/base/v3/bases/:base_token/tables/:table_id/views/:view_id/visible_fields
+```
 
-Perform tables whose views share a single Source order profile consecutively. The current closeout begins with:
+The customer Base lane now uses `scripts/customer-base-visible-field-order-parity.mjs` and the shared documented View parity implementation.
 
-- `🎬 MKT_Content` — 5 views, one Source order profile.
-- `📅 MKT_Content_Daily` — 5 views, one Source order profile.
+## Safe automated sequence
 
-Continue using the checklist's Batch/Priority order. This minimizes context switching and reduces the chance of dragging a field according to the wrong table profile.
+1. Load the exact approved Source export SHA.
+2. Exclude protected `🎵 RAW_TikTok_Creator_Videos` from clone scope.
+3. Verify Target identity anchors and all 32 clone Tables.
+4. Read all 110 cloned Views.
+5. Derive Source visible order from Source `fieldOrder` minus Source hidden fields.
+6. Require Target visible membership to equal Source membership before any write.
+7. PUT only mismatching `visible_fields` arrays in Source order.
+8. GET-readback each changed View in exact order.
+9. On any failure, restore all changed Views to their pre-run `visible_fields` arrays.
+10. Re-export Target and run `scripts/customer-base-view-export-parity.mjs`.
+
+## Manual fallback
+
+Manual dragging is allowed only if the documented API lane fails closed for a specific proven Lark capability/readback reason. It is not the default procedure anymore.
 
 ## Acceptance
 
-Field-order lane closes only when the final exported Target reports:
+The field-order lane closes only when:
 
-- `fieldOrderMismatchCount = 0`
-- `missingTargetViewCount = 0`
-- `extraTargetViewCount = 0`
-
-Width is not part of this acceptance.
+- all 110 cloned Views have exact **visible-field order**;
+- hidden membership remains unchanged and already-passed;
+- final exported Target has zero in-scope View parity mismatches;
+- width remains excluded by user decision.
