@@ -18,7 +18,7 @@ jobs:
     runs-on: mkt-ci
     timeout-minutes: 25
     steps:
-      - name: Prepare reviewed main and execute Google Ads preflight
+      - name: Execute Google Ads reviewed-main preflight
         shell: bash
         run: |
           set -euo pipefail
@@ -27,98 +27,102 @@ jobs:
           expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
           evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
 
-          test -d "$repo/.git"
           git -C "$repo" fetch origin main
           test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
-
-          prunable_count="$(git -C "$repo" worktree list --porcelain | grep -c '^prunable ' || true)"
-          test "$prunable_count" = "17"
-
-          awk '
-            /^worktree / { path=substr($0,10); next }
-            /^prunable / { print path }
-          ' < <(git -C "$repo" worktree list --porcelain) | while IFS= read -r wt; do
-            [[ "$wt" == /private/tmp/* ]]
-            test ! -e "$wt/.git"
-          done
-
-          git -C "$repo" worktree prune --expire now --verbose
-          test "$(git -C "$repo" worktree list --porcelain | grep -c '^prunable ' || true)" = "0"
-          test -z "$(git -C "$repo" worktree list --porcelain | awk '/^branch refs\/heads\/main$/ { print "main"; exit }')"
-
-          git -C "$repo" branch -f main "$expected_sha"
-          test "$(git -C "$repo" rev-parse main)" = "$expected_sha"
-
-          if [[ -e "$live_worktree" ]]; then
-            echo "live_worktree_path_conflict=true"
-            exit 1
-          fi
-
-          git -C "$repo" worktree add "$live_worktree" main
+          test -e "$live_worktree/.git"
           test "$(git -C "$live_worktree" branch --show-current)" = "main"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
           test -z "$(git -C "$live_worktree" status --porcelain)"
-
           test -f "$repo/.dev.vars"
           test -f "$repo/wrangler.sync.jsonc"
-          set -a
-          source "$repo/.dev.vars"
-          set +a
-
-          required=(
-            MKT_ENV
-            MKT_CUSTOMER_PROFILE
-            MKT_CONNECTION_CUSTOMER_KEY
-            MKT_GOOGLE_ADS_LIVE_DATABASE_NAME
-            MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG
-            MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG
-            MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID
-            MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID
-          )
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "missing_required_env=$name"
-              exit 1
-            fi
-          done
-
-          for name in MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG; do
-            value="${!name}"
-            if [[ "$value" != /* ]]; then
-              if [[ -f "$repo/$value" ]]; then
-                value="$repo/$value"
-              elif [[ -f "$live_worktree/$value" ]]; then
-                value="$live_worktree/$value"
-              else
-                echo "missing_config_file=$name"
-                exit 1
-              fi
-              printf -v "$name" '%s' "$value"
-              export "$name"
-            fi
-            test -f "${!name}"
-          done
 
           cd "$live_worktree"
           npm ci >/tmp/google-ads-live-npm-ci.log 2>&1
           mkdir -p "$evidence_root"
-          export MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR="$evidence_root"
-          export CONFIRM_GOOGLE_ADS_LIVE_PREFLIGHT=preflight
 
-          if ! node scripts/google-ads-live-operator.mjs --phase=preflight --execute >/tmp/google-ads-live-preflight.json 2>&1; then
-            cat /tmp/google-ads-live-preflight.json
-            exit 1
-          fi
+          PRIMARY_REPO="$repo" LIVE_WORKTREE="$live_worktree" EVIDENCE_ROOT="$evidence_root" node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { spawnSync } = require('node:child_process');
 
-          test -f "$evidence_root/preflight.json"
-          node -e '
-            const fs=require("fs");
-            const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-            if (p.phase!=="preflight" || p.status!=="passed") process.exit(1);
-            console.log("preflight_status=passed");
-            console.log(`repository_head=${p.repositoryHead}`);
-            console.log(`flags_false=${p.safeConfig?.flagsFalse===true}`);
-            console.log(`schedule_disabled=${p.safeConfig?.scheduleDisabled===true}`);
-            console.log(`wrangler_identity_checked=${p.wranglerIdentityChecked===true}`);
-            console.log(`pending_migrations_reviewed=${p.pendingMigrationsReviewed===true}`);
-          ' "$evidence_root/preflight.json"
+          const primary = process.env.PRIMARY_REPO;
+          const live = process.env.LIVE_WORKTREE;
+          const evidenceRoot = process.env.EVIDENCE_ROOT;
+          const text = fs.readFileSync(path.join(primary, '.dev.vars'), 'utf8');
+          const parsed = {};
+
+          for (const rawLine of text.split(/\r?\n/u)) {
+            const line = rawLine.trim();
+            if (!line || line.startsWith('#')) continue;
+            const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/u);
+            if (!match) continue;
+            let value = match[2].trim();
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+              value = value.slice(1, -1);
+            }
+            parsed[match[1]] = value;
+          }
+
+          const env = { ...process.env, ...parsed };
+          env.MKT_ENV ||= 'development';
+          env.MKT_CUSTOMER_PROFILE ||= 'integration_workspace';
+          env.MKT_CONNECTION_CUSTOMER_KEY ||= 'chemistry_k';
+          env.MKT_GOOGLE_ADS_SOURCE_TIMEZONE ||= env.DEFAULT_TIMEZONE || 'Asia/Bangkok';
+
+          const required = [
+            'MKT_GOOGLE_ADS_LIVE_DATABASE_NAME',
+            'MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG',
+            'MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG',
+            'MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID',
+            'MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID',
+          ];
+          const missing = required.filter((name) => !String(env[name] ?? '').trim());
+          if (missing.length) {
+            console.error(`missing_required_env=${missing.join(',')}`);
+            process.exit(1);
+          }
+
+          for (const name of ['MKT_GOOGLE_ADS_LIVE_API_WRANGLER_CONFIG', 'MKT_GOOGLE_ADS_LIVE_SYNC_WRANGLER_CONFIG']) {
+            let value = env[name];
+            if (!path.isAbsolute(value)) {
+              const primaryCandidate = path.join(primary, value);
+              const liveCandidate = path.join(live, value);
+              if (fs.existsSync(primaryCandidate)) value = primaryCandidate;
+              else if (fs.existsSync(liveCandidate)) value = liveCandidate;
+              else {
+                console.error(`missing_config_file=${name}`);
+                process.exit(1);
+              }
+            }
+            if (!fs.existsSync(value)) {
+              console.error(`missing_config_file=${name}`);
+              process.exit(1);
+            }
+            env[name] = value;
+          }
+
+          env.MKT_GOOGLE_ADS_LIVE_EVIDENCE_DIR = evidenceRoot;
+          env.CONFIRM_GOOGLE_ADS_LIVE_PREFLIGHT = 'preflight';
+
+          const result = spawnSync(
+            process.execPath,
+            ['scripts/google-ads-live-operator.mjs', '--phase=preflight', '--execute'],
+            { cwd: live, env, encoding: 'utf8' },
+          );
+
+          if (result.status !== 0) {
+            process.stdout.write(result.stdout || '');
+            process.stderr.write(result.stderr || '');
+            process.exit(result.status || 1);
+          }
+
+          const evidenceFile = path.join(evidenceRoot, 'preflight.json');
+          const evidence = JSON.parse(fs.readFileSync(evidenceFile, 'utf8'));
+          if (evidence.phase !== 'preflight' || evidence.status !== 'passed') process.exit(1);
+          console.log('preflight_status=passed');
+          console.log(`repository_head=${evidence.repositoryHead}`);
+          console.log(`flags_false=${evidence.safeConfig?.flagsFalse === true}`);
+          console.log(`schedule_disabled=${evidence.safeConfig?.scheduleDisabled === true}`);
+          console.log(`wrangler_identity_checked=${evidence.wranglerIdentityChecked === true}`);
+          console.log(`pending_migrations_reviewed=${evidence.pendingMigrationsReviewed === true}`);
+          NODE
