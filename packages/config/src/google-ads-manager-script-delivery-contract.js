@@ -9,6 +9,7 @@ export const GOOGLE_ADS_MANAGER_DELIVERY_MODES = Object.freeze(['PREVIEW', 'LIVE
 export const GOOGLE_ADS_MANAGER_DATASET_KEYS = Object.freeze([
   'account',
   'campaigns',
+  'assetGroups',
   'adGroups',
   'ads',
   'youtubeAssets',
@@ -25,6 +26,7 @@ export const GOOGLE_ADS_MANAGER_TRANSPORT_LIMITS = Object.freeze({
 export const GOOGLE_ADS_MANAGER_DATASET_LIMITS = Object.freeze({
   account: 1,
   campaigns: 500,
+  assetGroups: 2_000,
   adGroups: 2_000,
   ads: 5_000,
   youtubeAssets: 5_000,
@@ -57,6 +59,9 @@ const ROW_FIELDS = deepFreeze({
     'advertisingChannelType', 'advertisingChannelSubType', 'startDate', 'endDate',
     'biddingStrategyType', 'campaignBudgetId', 'campaignBudgetResourceName', 'resourceName',
   ],
+  assetGroups: [
+    'assetGroupId', 'campaignId', 'assetGroupName', 'status', 'resourceName',
+  ],
   adGroups: [
     'adGroupId', 'campaignId', 'adGroupName', 'status', 'primaryStatus', 'type',
     'resourceName',
@@ -83,40 +88,22 @@ const AD_CHANNELS = Object.freeze([
   'google_other',
 ]);
 
-/**
- * ตรวจ Contract ของ Signed chunk หลัง HMAC ผ่านแล้ว โดยไม่ทำ D1/Queue/Lark side effect.
- * Cross-chunk completeness และ Parent relation ทั้ง Run เป็นหน้าที่ Transport assembler ระยะถัดไป.
- */
 export function validateGoogleAdsManagerDeliveryChunk(value, options = {}) {
   const envelope = exactObject(value, ENVELOPE_FIELDS, 'envelope');
   const identity = exactRuntimeIdentity(options.runtimeIdentity);
-
-  requireEqual(
-    envelope.schemaVersion,
-    GOOGLE_ADS_MANAGER_DELIVERY_SCHEMA_VERSION,
-    'schemaVersion',
-  );
+  requireEqual(envelope.schemaVersion, GOOGLE_ADS_MANAGER_DELIVERY_SCHEMA_VERSION, 'schemaVersion');
   const runId = requireUuidV4(envelope.runId, 'runId');
   const mode = requireChoice(envelope.mode, 'mode', GOOGLE_ADS_MANAGER_DELIVERY_MODES);
   const runStartedAt = requireUtcTimestamp(envelope.runStartedAt, 'runStartedAt');
   const fetchedAt = requireUtcTimestamp(envelope.fetchedAt, 'fetchedAt');
-  if (fetchedAt < runStartedAt) {
-    throw invalid('fetchedAt cannot be before runStartedAt', { fieldName: 'fetchedAt' });
-  }
+  if (fetchedAt < runStartedAt) throw invalid('fetchedAt cannot be before runStartedAt', { fieldName: 'fetchedAt' });
   if (fetchedAt - runStartedAt > GOOGLE_ADS_MANAGER_TRANSPORT_LIMITS.assemblyWindowMs) {
-    throw invalid('Signed delivery run exceeds the assembly window', {
-      fieldName: 'fetchedAt',
-    });
+    throw invalid('Signed delivery run exceeds the assembly window', { fieldName: 'fetchedAt' });
   }
-  const headerTimestampSeconds = requireNonNegativeInteger(
-    options.headerTimestampSeconds,
-    'headerTimestampSeconds',
-  );
+  const headerTimestampSeconds = requireNonNegativeInteger(options.headerTimestampSeconds, 'headerTimestampSeconds');
   if (Math.abs(Math.trunc(fetchedAt / 1_000) - headerTimestampSeconds)
     > GOOGLE_ADS_MANAGER_TRANSPORT_LIMITS.clockSkewSeconds) {
-    throw invalid('fetchedAt does not match the signed request timestamp', {
-      fieldName: 'fetchedAt',
-    });
+    throw invalid('fetchedAt does not match the signed request timestamp', { fieldName: 'fetchedAt' });
   }
 
   const managerCustomerId = requireCustomerId(envelope.managerCustomerId, 'managerCustomerId');
@@ -131,12 +118,7 @@ export function validateGoogleAdsManagerDeliveryChunk(value, options = {}) {
   requireEqual(sourceTimezone, identity.sourceTimezone, 'sourceTimezone');
 
   const manifest = validateManifest(envelope.manifest);
-  const dataset = validateDataset(envelope.dataset, {
-    customerId,
-    sourceTimezone,
-    manifest,
-  });
-
+  const dataset = validateDataset(envelope.dataset, { customerId, sourceTimezone, manifest });
   return deepFreeze({
     ...envelope,
     runId,
@@ -162,14 +144,8 @@ export function createGoogleAdsManagerIdempotencyKey(envelope) {
   ].join(':');
 }
 
-/**
- * ประกอบ Run ที่ผ่าน per-chunk auth/schema แล้ว เพื่อตรวจ completeness, global order,
- * duplicate identity, parent relation และ Currency ก่อน PREVIEW completion/Queue admission.
- */
 export function validateGoogleAdsManagerDeliveryRun(values) {
-  if (!Array.isArray(values) || values.length === 0) {
-    throw invalid('Signed delivery run requires at least one chunk');
-  }
+  if (!Array.isArray(values) || values.length === 0) throw invalid('Signed delivery run requires at least one chunk');
   if (values.length > GOOGLE_ADS_MANAGER_TRANSPORT_LIMITS.chunksPerRun) {
     throw invalid('Signed delivery run exceeds the maximum chunks per run');
   }
@@ -194,18 +170,9 @@ export function validateGoogleAdsManagerDeliveryRun(values) {
   const manifestJson = stableSerialize(first.manifest);
   for (const envelope of normalized) {
     for (const fieldName of [
-      'schemaVersion',
-      'runId',
-      'mode',
-      'runStartedAt',
-      'managerCustomerId',
-      'customerId',
-      'customerKey',
-      'accountKey',
-      'sourceTimezone',
-    ]) {
-      requireEqual(envelope[fieldName], first[fieldName], fieldName);
-    }
+      'schemaVersion', 'runId', 'mode', 'runStartedAt', 'managerCustomerId',
+      'customerId', 'customerKey', 'accountKey', 'sourceTimezone',
+    ]) requireEqual(envelope[fieldName], first[fieldName], fieldName);
     requireEqual(stableSerialize(envelope.manifest), manifestJson, 'manifest');
   }
 
@@ -221,17 +188,12 @@ export function validateGoogleAdsManagerDeliveryRun(values) {
       .sort((left, right) => left.dataset.chunkIndex - right.dataset.chunkIndex);
     const manifestEntry = first.manifest[datasetKey];
     requireEqual(chunks.length, manifestEntry.chunkCount, `${datasetKey}.chunkCount`);
-    chunks.forEach((envelope, index) => {
-      requireEqual(envelope.dataset.chunkIndex, index, `${datasetKey}.chunkIndex`);
-    });
+    chunks.forEach((envelope, index) => requireEqual(envelope.dataset.chunkIndex, index, `${datasetKey}.chunkIndex`));
     const rows = chunks.flatMap((envelope) => envelope.dataset.rows);
     requireEqual(rows.length, manifestEntry.totalRows, `${datasetKey}.totalRows`);
     if (rows.length > 0) assertStableOrderAndUnique(datasetKey, rows);
     rowsByDataset[datasetKey] = rows;
-    counts[datasetKey] = Object.freeze({
-      chunks: chunks.length,
-      rows: rows.length,
-    });
+    counts[datasetKey] = Object.freeze({ chunks: chunks.length, rows: rows.length });
   }
 
   validateRunRelations(rowsByDataset);
@@ -239,8 +201,7 @@ export function validateGoogleAdsManagerDeliveryRun(values) {
     runId: first.runId,
     mode: first.mode,
     expectedChunkCount,
-    expectedRowCount: Object.values(counts)
-      .reduce((total, value) => total + value.rows, 0),
+    expectedRowCount: Object.values(counts).reduce((total, value) => total + value.rows, 0),
     datasets: counts,
   });
 }
@@ -249,23 +210,21 @@ function validateRunRelations(rowsByDataset) {
   const account = rowsByDataset.account;
   if (account.length !== 1) throw invalid('Signed delivery run requires exactly one account row');
   const campaignIds = new Set(rowsByDataset.campaigns.map((row) => row.campaignId));
+  for (const row of rowsByDataset.assetGroups) {
+    if (!campaignIds.has(row.campaignId)) throw invalid('Signed delivery asset group parent campaign is missing');
+  }
   const adGroupCampaigns = new Map();
   for (const row of rowsByDataset.adGroups) {
-    if (!campaignIds.has(row.campaignId)) {
-      throw invalid('Signed delivery ad group parent campaign is missing');
-    }
+    if (!campaignIds.has(row.campaignId)) throw invalid('Signed delivery ad group parent campaign is missing');
     adGroupCampaigns.set(row.adGroupId, row.campaignId);
   }
   for (const row of rowsByDataset.ads) {
-    if (!campaignIds.has(row.campaignId)
-      || adGroupCampaigns.get(row.adGroupId) !== row.campaignId) {
+    if (!campaignIds.has(row.campaignId) || adGroupCampaigns.get(row.adGroupId) !== row.campaignId) {
       throw invalid('Signed delivery ad parent relation is invalid');
     }
   }
   for (const row of rowsByDataset.campaignDailyMetrics) {
-    if (!campaignIds.has(row.campaignId)) {
-      throw invalid('Signed delivery daily metric parent campaign is missing');
-    }
+    if (!campaignIds.has(row.campaignId)) throw invalid('Signed delivery daily metric parent campaign is missing');
     if (row.currency !== account[0].currencyCode) {
       throw invalid('Signed delivery daily metric currency does not match account currency');
     }
@@ -277,33 +236,17 @@ function validateManifest(value) {
   let totalChunks = 0;
   const normalized = {};
   for (const datasetKey of GOOGLE_ADS_MANAGER_DATASET_KEYS) {
-    const entry = exactObject(
-      manifest[datasetKey],
-      MANIFEST_ENTRY_FIELDS,
-      `manifest.${datasetKey}`,
-    );
-    const totalRows = requireNonNegativeInteger(
-      entry.totalRows,
-      `manifest.${datasetKey}.totalRows`,
-    );
-    const chunkCount = requireNonNegativeInteger(
-      entry.chunkCount,
-      `manifest.${datasetKey}.chunkCount`,
-    );
+    const entry = exactObject(manifest[datasetKey], MANIFEST_ENTRY_FIELDS, `manifest.${datasetKey}`);
+    const totalRows = requireNonNegativeInteger(entry.totalRows, `manifest.${datasetKey}.totalRows`);
+    const chunkCount = requireNonNegativeInteger(entry.chunkCount, `manifest.${datasetKey}.chunkCount`);
     if (totalRows > GOOGLE_ADS_MANAGER_DATASET_LIMITS[datasetKey]) {
-      throw invalid(`manifest.${datasetKey}.totalRows exceeds the v1 dataset cap`, {
-        datasetKey,
-      });
+      throw invalid(`manifest.${datasetKey}.totalRows exceeds the v1 dataset cap`, { datasetKey });
     }
     if ((totalRows === 0) !== (chunkCount === 0)) {
-      throw invalid(`manifest.${datasetKey} empty rows/chunks must match`, {
-        datasetKey,
-      });
+      throw invalid(`manifest.${datasetKey} empty rows/chunks must match`, { datasetKey });
     }
     if (totalRows > 0 && chunkCount > totalRows) {
-      throw invalid(`manifest.${datasetKey}.chunkCount cannot exceed totalRows`, {
-        datasetKey,
-      });
+      throw invalid(`manifest.${datasetKey}.chunkCount cannot exceed totalRows`, { datasetKey });
     }
     if (datasetKey === 'account' && (totalRows !== 1 || chunkCount !== 1)) {
       throw invalid('manifest.account must contain exactly one row and one chunk');
@@ -326,33 +269,13 @@ function validateDataset(value, context) {
   const manifestEntry = context.manifest[key];
   requireEqual(chunkCount, manifestEntry.chunkCount, 'dataset.chunkCount');
   requireEqual(totalRows, manifestEntry.totalRows, 'dataset.totalRows');
-  if (chunkIndex >= chunkCount) {
-    throw invalid('dataset.chunkIndex is outside the declared chunk range', {
-      datasetKey: key,
-      chunkIndex,
-    });
-  }
-  if (!Array.isArray(dataset.rows) || dataset.rows.length === 0) {
-    throw invalid('dataset.rows must be a non-empty array');
-  }
+  if (chunkIndex >= chunkCount) throw invalid('dataset.chunkIndex is outside the declared chunk range', { datasetKey: key, chunkIndex });
+  if (!Array.isArray(dataset.rows) || dataset.rows.length === 0) throw invalid('dataset.rows must be a non-empty array');
   if (dataset.rows.length > GOOGLE_ADS_MANAGER_TRANSPORT_LIMITS.rowsPerChunk) {
-    throw invalid('dataset.rows exceeds the per-chunk row cap', {
-      datasetKey: key,
-      rows: dataset.rows.length,
-    });
+    throw invalid('dataset.rows exceeds the per-chunk row cap', { datasetKey: key, rows: dataset.rows.length });
   }
-  if (dataset.rows.length > totalRows) {
-    throw invalid('dataset.rows cannot exceed the manifest totalRows', {
-      datasetKey: key,
-    });
-  }
-
-  const rows = dataset.rows.map((row, index) => validateRow(
-    key,
-    row,
-    index,
-    context,
-  ));
+  if (dataset.rows.length > totalRows) throw invalid('dataset.rows cannot exceed the manifest totalRows', { datasetKey: key });
+  const rows = dataset.rows.map((row, index) => validateRow(key, row, index, context));
   assertStableOrderAndUnique(key, rows);
   return deepFreeze({ key, chunkIndex, chunkCount, totalRows, rows });
 }
@@ -375,33 +298,30 @@ function validateRow(datasetKey, value, index, context) {
       break;
     case 'campaigns':
       requireId(row.campaignId, `${label}.campaignId`);
-      validateOptionalTextFields(row, label, ROW_FIELDS.campaigns.filter((field) => (
-        !['campaignId', 'startDate', 'endDate'].includes(field)
-      )));
+      validateOptionalTextFields(row, label, ROW_FIELDS.campaigns.filter((field) => !['campaignId', 'startDate', 'endDate'].includes(field)));
       optionalDate(row.startDate, `${label}.startDate`);
       optionalDate(row.endDate, `${label}.endDate`);
+      break;
+    case 'assetGroups':
+      requireId(row.assetGroupId, `${label}.assetGroupId`);
+      requireId(row.campaignId, `${label}.campaignId`);
+      validateOptionalTextFields(row, label, ROW_FIELDS.assetGroups.filter((field) => !['assetGroupId', 'campaignId'].includes(field)));
       break;
     case 'adGroups':
       requireId(row.adGroupId, `${label}.adGroupId`);
       requireId(row.campaignId, `${label}.campaignId`);
-      validateOptionalTextFields(row, label, ROW_FIELDS.adGroups.filter((field) => (
-        !['adGroupId', 'campaignId'].includes(field)
-      )));
+      validateOptionalTextFields(row, label, ROW_FIELDS.adGroups.filter((field) => !['adGroupId', 'campaignId'].includes(field)));
       break;
     case 'ads':
       requireId(row.adId, `${label}.adId`);
       requireId(row.adGroupId, `${label}.adGroupId`);
       requireId(row.campaignId, `${label}.campaignId`);
-      validateOptionalTextFields(row, label, ROW_FIELDS.ads.filter((field) => (
-        !['adId', 'adGroupId', 'campaignId', 'finalUrls'].includes(field)
-      )));
+      validateOptionalTextFields(row, label, ROW_FIELDS.ads.filter((field) => !['adId', 'adGroupId', 'campaignId', 'finalUrls'].includes(field)));
       validateFinalUrls(row.finalUrls, `${label}.finalUrls`);
       break;
     case 'youtubeAssets':
       requireId(row.assetId, `${label}.assetId`);
-      validateOptionalTextFields(row, label, ROW_FIELDS.youtubeAssets.filter((field) => (
-        !['assetId', 'assetType'].includes(field)
-      )));
+      validateOptionalTextFields(row, label, ROW_FIELDS.youtubeAssets.filter((field) => !['assetId', 'assetType'].includes(field)));
       requireEqual(row.assetType, 'YOUTUBE_VIDEO', `${label}.assetType`);
       break;
     case 'campaignDailyMetrics':
@@ -420,23 +340,13 @@ function validateCampaignDailyRow(row, label) {
   requireEqual(requireId(row.externalEntityId, `${label}.externalEntityId`), campaignId, `${label}.externalEntityId`);
   requireNull(row.adGroupId, `${label}.adGroupId`);
   requireNull(row.adId, `${label}.adId`);
-  const advertisingChannelType = requireText(
-    row.advertisingChannelType,
-    `${label}.advertisingChannelType`,
-  );
+  const advertisingChannelType = requireText(row.advertisingChannelType, `${label}.advertisingChannelType`);
   optionalText(row.advertisingChannelSubType, `${label}.advertisingChannelSubType`);
   const adChannel = requireChoice(row.adChannel, `${label}.adChannel`, AD_CHANNELS);
   requireEqual(adChannel, deriveAdChannel(advertisingChannelType), `${label}.adChannel`);
   requireEqual(row.segmentKey, 'all', `${label}.segmentKey`);
   requireCurrency(row.currency, `${label}.currency`);
-  for (const field of [
-    'spendMicros',
-    'impressions',
-    'clicks',
-    'conversionValueMicros',
-    'videoViews',
-    'averageCpvMicros',
-  ]) {
+  for (const field of ['spendMicros', 'impressions', 'clicks', 'conversionValueMicros', 'videoViews', 'averageCpvMicros']) {
     optionalNonNegativeInteger(row[field], `${label}.${field}`);
   }
   optionalNonNegativeNumber(row.conversions, `${label}.conversions`);
@@ -448,18 +358,10 @@ function assertStableOrderAndUnique(datasetKey, rows) {
   let previous = null;
   for (const row of rows) {
     const identity = rowIdentity(datasetKey, row);
-    if (identities.has(identity)) {
-      throw invalid(`${datasetKey} contains a duplicate row identity`, {
-        datasetKey,
-      });
-    }
+    if (identities.has(identity)) throw invalid(`${datasetKey} contains a duplicate row identity`, { datasetKey });
     identities.add(identity);
     const order = rowOrder(datasetKey, row);
-    if (previous && compareOrder(previous, order) >= 0) {
-      throw invalid(`${datasetKey} rows are not in strict stable order`, {
-        datasetKey,
-      });
-    }
+    if (previous && compareOrder(previous, order) >= 0) throw invalid(`${datasetKey} rows are not in strict stable order`, { datasetKey });
     previous = order;
   }
 }
@@ -468,6 +370,7 @@ function rowIdentity(datasetKey, row) {
   switch (datasetKey) {
     case 'account': return row.customerId;
     case 'campaigns': return row.campaignId;
+    case 'assetGroups': return row.assetGroupId;
     case 'adGroups': return row.adGroupId;
     case 'ads': return `${row.adGroupId}:${row.adId}`;
     case 'youtubeAssets': return row.assetId;
@@ -480,6 +383,7 @@ function rowOrder(datasetKey, row) {
   switch (datasetKey) {
     case 'account': return [idOrder(row.customerId)];
     case 'campaigns': return [idOrder(row.campaignId)];
+    case 'assetGroups': return [idOrder(row.campaignId), idOrder(row.assetGroupId)];
     case 'adGroups': return [idOrder(row.adGroupId)];
     case 'ads': return [idOrder(row.campaignId), idOrder(row.adGroupId), idOrder(row.adId)];
     case 'youtubeAssets': return [idOrder(row.assetId)];
@@ -511,11 +415,7 @@ function deriveAdChannel(value) {
 
 function exactRuntimeIdentity(value) {
   const identity = exactObject(value, [
-    'managerCustomerId',
-    'customerId',
-    'customerKey',
-    'accountKey',
-    'sourceTimezone',
+    'managerCustomerId', 'customerId', 'customerKey', 'accountKey', 'sourceTimezone',
   ], 'runtimeIdentity');
   return Object.freeze({
     managerCustomerId: requireCustomerId(identity.managerCustomerId, 'runtimeIdentity.managerCustomerId'),
@@ -535,11 +435,7 @@ function exactObject(value, fields, label) {
   const unknown = actual.filter((field) => !expected.has(field));
   const missing = fields.filter((field) => !Object.hasOwn(value, field));
   if (unknown.length > 0 || missing.length > 0) {
-    throw invalid(`${label} fields do not match the v1 contract`, {
-      fieldName: label,
-      unknown,
-      missing,
-    });
+    throw invalid(`${label} fields do not match the v1 contract`, { fieldName: label, unknown, missing });
   }
   return value;
 }
@@ -551,9 +447,7 @@ function validateOptionalTextFields(row, label, fields) {
 function validateFinalUrls(value, fieldName) {
   if (value === null) return null;
   if (!Array.isArray(value) || value.length > 20) {
-    throw invalid(`${fieldName} must be null or an array of at most 20 URLs`, {
-      fieldName,
-    });
+    throw invalid(`${fieldName} must be null or an array of at most 20 URLs`, { fieldName });
   }
   for (const item of value) requireText(item, fieldName);
   return value;
@@ -569,11 +463,7 @@ function requireUuidV4(value, fieldName) {
 
 function requireCustomerId(value, fieldName) {
   const text = requireText(value, fieldName);
-  if (!/^\d{10}$/u.test(text)) {
-    throw invalid(`${fieldName} must be a 10-digit Google Ads customer ID`, {
-      fieldName,
-    });
-  }
+  if (!/^\d{10}$/u.test(text)) throw invalid(`${fieldName} must be a 10-digit Google Ads customer ID`, { fieldName });
   return text;
 }
 
@@ -592,9 +482,7 @@ function requireCurrency(value, fieldName) {
 function requireUtcTimestamp(value, fieldName) {
   const text = requireText(value, fieldName);
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(text)) {
-    throw invalid(`${fieldName} must be an exact UTC RFC3339 millisecond timestamp`, {
-      fieldName,
-    });
+    throw invalid(`${fieldName} must be an exact UTC RFC3339 millisecond timestamp`, { fieldName });
   }
   const timestamp = Date.parse(text);
   if (!Number.isSafeInteger(timestamp)) throw invalid(`${fieldName} is invalid`, { fieldName });
@@ -615,9 +503,7 @@ function optionalDate(value, fieldName) {
 }
 
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw invalid(`${fieldName} must be a non-empty string`, { fieldName });
-  }
+  if (typeof value !== 'string' || value.trim() === '') throw invalid(`${fieldName} must be a non-empty string`, { fieldName });
   return value.trim();
 }
 
@@ -637,9 +523,7 @@ function requireNull(value, fieldName) {
 }
 
 function requireNonNegativeInteger(value, fieldName) {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw invalid(`${fieldName} must be a non-negative safe integer`, { fieldName });
-  }
+  if (!Number.isSafeInteger(value) || value < 0) throw invalid(`${fieldName} must be a non-negative safe integer`, { fieldName });
   return value;
 }
 
@@ -657,43 +541,30 @@ function optionalNonNegativeInteger(value, fieldName) {
 function optionalNonNegativeNumber(value, fieldName) {
   if (value === null) return null;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw invalid(`${fieldName} must be a non-negative finite number or null`, {
-      fieldName,
-    });
+    throw invalid(`${fieldName} must be a non-negative finite number or null`, { fieldName });
   }
   return value;
 }
 
 function optionalRatio(value, fieldName) {
   const number = optionalNonNegativeNumber(value, fieldName);
-  if (number !== null && number > 1) {
-    throw invalid(`${fieldName} must be between zero and one`, { fieldName });
-  }
+  if (number !== null && number > 1) throw invalid(`${fieldName} must be between zero and one`, { fieldName });
   return number;
 }
 
 function requireChoice(value, fieldName, choices) {
   const text = requireText(value, fieldName);
-  if (!choices.includes(text)) {
-    throw invalid(`${fieldName} is not supported by the v1 contract`, { fieldName });
-  }
+  if (!choices.includes(text)) throw invalid(`${fieldName} is not supported by the v1 contract`, { fieldName });
   return text;
 }
 
 function requireEqual(actual, expected, fieldName) {
-  if (actual !== expected) {
-    throw invalid(`${fieldName} does not match the signed-delivery contract`, {
-      fieldName,
-    });
-  }
+  if (actual !== expected) throw invalid(`${fieldName} does not match the signed-delivery contract`, { fieldName });
   return actual;
 }
 
 function invalid(message, details = {}) {
-  return permanentError(message, {
-    code: 'GOOGLE_ADS_DELIVERY_CONTRACT_INVALID',
-    details,
-  });
+  return permanentError(message, { code: 'GOOGLE_ADS_DELIVERY_CONTRACT_INVALID', details });
 }
 
 function deepFreeze(value) {
