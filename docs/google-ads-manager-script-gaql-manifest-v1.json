@@ -42,6 +42,17 @@
         "campaign.end_date"
       ]
     },
+    "assetGroups": {
+      "maxRows": 2000,
+      "resource": "asset_group",
+      "fields": [
+        "asset_group.id",
+        "campaign.id",
+        "asset_group.name",
+        "asset_group.status",
+        "asset_group.resource_name"
+      ]
+    },
     "adGroups": {
       "maxRows": 2000,
       "resource": "ad_group",
@@ -109,14 +120,15 @@
     }
   },
   "liveEvidence": {
-    "classification": "external_dry_run_pass",
+    "classification": "historical_external_dry_run_pass_plus_unvalidated_asset_groups_extension",
     "historicalReviewedSourceInRepository": false,
     "historicalReviewedLineCount": 598,
-    "currentSanitizedArtifactExternallyValidated": true,
+    "currentSanitizedArtifactExternallyValidated": false,
     "externalDryRunDate": "2026-07-25",
     "externalDeliveryWasEnabled": false,
     "adsMutationObserved": false,
-    "allSixDatasetsWereNonEmpty": true,
+    "historicalSixDatasetsWereNonEmpty": true,
+    "assetGroupsExternallyValidated": false,
     "datasetErrors": 0,
     "truncation": 0
   },
