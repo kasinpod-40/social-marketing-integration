@@ -174,9 +174,14 @@ jobs:
 
           if [[ -n "$main_worktree" && "$main_worktree" != "$live_worktree" ]]; then
             test "$main_worktree" = "$expected_stale"
-            prunable_count="$(git -C "$repo" worktree list --porcelain | grep -c '^prunable ' || true)"
-            test "$prunable_count" = "1"
             test ! -e "$main_worktree/.git"
+            missing_marker_count=0
+            while IFS= read -r wt; do
+              if [[ ! -e "$wt/.git" ]]; then
+                missing_marker_count=$((missing_marker_count + 1))
+              fi
+            done < <(git -C "$repo" worktree list --porcelain | awk '/^worktree / { print substr($0,10) }')
+            test "$missing_marker_count" = "1"
             git -C "$repo" worktree prune --expire now --verbose
           fi
 
