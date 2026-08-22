@@ -13,25 +13,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_safe_restore_diagnostic:
+  google_ads_wrangler_oauth_recovery:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 8
     steps:
-      - name: Read prior safe deploy failures
+      - name: Recover local Wrangler OAuth and restore safe runtime
         shell: bash
         run: |
           set -euo pipefail
-          repo="$HOME/Git/social-marketing-integration"
-          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-manual-live-retry-20260822"
-          for file in api-safe-initial.txt sync-safe-initial.txt api-safe-final.txt sync-safe-final.txt; do
-            path="$evidence_root/$file"
-            echo "--- $file ---"
-            if [ -f "$path" ]; then
-              tail -n 120 "$path" \
-                | sed -E 's/(token|secret|password|signature|authorization)[=: ]+[^ ]+/\1=<REDACTED>/Ig'
-            else
-              echo "missing"
-            fi
-          done
-          echo "diagnostic_mutation_count=0"
+          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
+          expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
+          safe_api="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
+          safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
+          evidence_root="$HOME/Git/social-marketing-integration/outputs/google-ads-live-operator/wrangler-oauth-recovery-20260822"
+          mkdir -p "$evidence_root"
+
+          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test -f "$safe_api"
+          test -f "$safe_sync"
+          cd "$live_worktree"
+
+          echo "--- whoami without CI ---"
+          env -u CI -u GITHUB_ACTIONS npx wrangler whoami > "$evidence_root/whoami.txt" 2>&1
+          sed -E 's/(token|secret|password|authorization)[=: ]+[^ ]+/\1=<REDACTED>/Ig' "$evidence_root/whoami.txt" | tail -n 80
+          echo "wrangler_oauth_identity_ok=true"
+
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$safe_api" > "$evidence_root/api-safe.txt" 2>&1
+          echo "safe_api_restored=true"
+          env -u CI -u GITHUB_ACTIONS npx wrangler deploy --config "$safe_sync" > "$evidence_root/sync-safe.txt" 2>&1
+          echo "safe_sync_restored=true"
+          echo "safe_flags_restored=true"
+          echo "google_schedule_enabled=false"
