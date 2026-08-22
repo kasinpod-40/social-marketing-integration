@@ -127,7 +127,11 @@ export async function processMetaEndToEndGeneration(input = {}) {
 
 async function ensureDestinationPreflight(input) {
   const existing = await input.workStore.loadPhase({ workKey: input.workKey, phase: PREFLIGHT_PHASE });
-  if (existing?.complete) return normalizePreflight(existing);
+  if (existing?.complete) {
+    const preflight = normalizePreflight(existing);
+    assertDurablePreflightScope(preflight, input.contracts);
+    return preflight;
+  }
 
   const payloadInspection = await inspectCompleteLarkPayload(input);
   if (payloadInspection.issueCount > 0) {
@@ -228,6 +232,21 @@ async function ensureDestinationPreflight(input) {
     complete: true,
   });
   return normalizePreflight(saved);
+}
+
+function assertDurablePreflightScope(preflight, contracts) {
+  const expectedTableKeys = contracts.map((contract) => contract.tableKey);
+  const observedTableKeys = preflight.state.summaries.map((summary) => optionalText(summary?.tableKey));
+  if (observedTableKeys.some((tableKey) => tableKey === null)
+    || JSON.stringify(observedTableKeys) !== JSON.stringify(expectedTableKeys)) {
+    throw permanentError('Meta Lark durable preflight scope differs from the requested continuation scope', {
+      code: 'META_END_TO_END_LARK_TABLE_SCOPE_INVALID',
+      details: {
+        expectedTableKeys: Object.freeze([...expectedTableKeys]),
+        observedTableKeys: Object.freeze([...observedTableKeys]),
+      },
+    });
+  }
 }
 
 async function inspectCompleteLarkPayload(input) {
