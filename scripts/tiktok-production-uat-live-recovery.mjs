@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -7,22 +7,26 @@ import { dirname, join, resolve } from 'node:path';
 import {
   TIKTOK_PRODUCTION_RECOVERY,
   assertDarkProductionConfig,
-  buildIdempotencyEnvelope,
   buildRecoveryConfigText,
-  buildRedriveEnvelope,
   extractD1Rows,
   readJsoncScalar,
-  validateRetainedDlqRow,
-  validateSuccessfulSyncRun,
 } from './lib/tiktok-production-uat-recovery-contract.js';
+import {
+  TIKTOK_PRODUCTION_RESUME,
+  buildResumeIdempotencyEnvelope,
+  buildResumeRedriveEnvelope,
+  validateResumeDlqRow,
+  validateResumeSuccessRun,
+  validateRootRedrivenRow,
+} from './lib/tiktok-production-uat-resume-contract.js';
 
 const CONFIRM_NAME = 'TIKTOK_PRODUCTION_RECOVERY_CONFIRM';
-const CONFIRM_VALUE = 'RECOVER_RETAINED_TERMINAL_F7081_AND_RESTORE_DARK';
-const POLL_MS = Number(process.env.TIKTOK_PRODUCTION_RECOVERY_POLL_MS ?? 2_000);
-const POLL_ATTEMPTS = Number(process.env.TIKTOK_PRODUCTION_RECOVERY_POLL_ATTEMPTS ?? 120);
+const CONFIRM_VALUE = 'RESUME_TERMINAL_B86_AFTER_DARK_RESTORE';
+const POLL_MS = positiveIntegerEnv('TIKTOK_PRODUCTION_RECOVERY_POLL_MS', 2_000);
+const POLL_ATTEMPTS = positiveIntegerEnv('TIKTOK_PRODUCTION_RECOVERY_POLL_ATTEMPTS', 1_800);
 const EVIDENCE_FILE = resolve(
   process.env.TIKTOK_PRODUCTION_RECOVERY_LIVE_EVIDENCE
-    ?? 'outputs/customer-production/tiktok-uat-live-recovery.json',
+    ?? 'outputs/customer-production/tiktok-uat-live-resume.json',
 );
 
 let finalEvidence = null;
@@ -33,96 +37,99 @@ try {
     console.log(JSON.stringify({
       ok: true,
       executed: false,
-      mode: 'live-recovery-plan',
+      mode: 'live-resume-plan',
       reviewedMain: TIKTOK_PRODUCTION_RECOVERY.reviewedMain,
+      rootDlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId,
+      resumeDlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
       requiredConfirmation: `${CONFIRM_NAME}=${CONFIRM_VALUE}`,
-      note: 'No Production mutation was performed. Use --recover only from the customer-owned Production authority host.',
+      note: 'No Production mutation was performed.',
     }, null, 2));
   } else {
-    finalEvidence = await runLiveRecovery();
+    finalEvidence = await runLiveResume();
     await persistEvidence(finalEvidence);
     console.log(JSON.stringify(finalEvidence, null, 2));
   }
 } catch (error) {
   const failure = {
     ok: false,
-    mode: 'live-recovery',
+    mode: 'live-resume',
     capturedAt: new Date().toISOString(),
-    code: error?.code ?? 'TIKTOK_PRODUCTION_UAT_LIVE_RECOVERY_FAILED',
+    code: error?.code ?? 'TIKTOK_PRODUCTION_UAT_LIVE_RESUME_FAILED',
     message: error?.message ?? String(error),
     details: sanitizeEvidence(error?.details ?? {}),
-    ...(finalEvidence ? { partialEvidence: finalEvidence } : {}),
+    ...(finalEvidence ? { partialEvidence: sanitizeEvidence(finalEvidence) } : {}),
   };
   try { await persistEvidence(failure); } catch { /* best effort only */ }
   console.error(JSON.stringify(failure, null, 2));
   process.exitCode = 1;
 }
 
-async function runLiveRecovery() {
+async function runLiveResume() {
   requireConfirmation();
   const cloudflare = readCloudflareAuthority();
   const production = await discoverProductionWorktree();
   assertDarkProductionConfig(production.configText);
 
-  const wrangler = resolve(process.cwd(), 'node_modules/.bin/wrangler');
+  const wrangler = resolve(production.repositoryRoot, 'node_modules/.bin/wrangler');
   await requireReadable(wrangler);
 
-  const retainedRows = queryD1({
+  const rootRow = readDlqById({
     wrangler,
     production,
     configPath: production.configPath,
-    sql: [
-      'SELECT dlq_id, message_id, queue_name, job_type, schema_version,',
-      'payload_json, replay_payload_json, error_code, retry_count, status,',
-      'created_at, updated_at, redrive_requested_at, redrive_reference, redriven_at',
-      'FROM dead_letter_jobs',
-      `WHERE status='open' AND job_type='${TIKTOK_PRODUCTION_RECOVERY.jobType}'`,
-      'ORDER BY created_at DESC;',
-    ].join(' '),
+    dlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId,
   });
-  if (retainedRows.length !== 1) {
-    throw operatorError('Expected exactly one open retained TikTok Production UAT DLQ', 'TIKTOK_PRODUCTION_UAT_DLQ_CARDINALITY_MISMATCH', {
-      count: retainedRows.length,
-      candidates: retainedRows.map(summarizeDlq),
-    });
-  }
-  const retained = validateRetainedDlqRow(retainedRows[0]);
+  validateRootRedrivenRow(rootRow);
 
-  const newerOpenBefore = readOpenTikTokDlqs({
+  const resumeRow = readDlqById({
     wrangler,
     production,
     configPath: production.configPath,
-    excludeDlqId: retained.dlqId,
+    dlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
   });
-  if (newerOpenBefore.length !== 0) {
-    throw operatorError('Unexpected additional open TikTok dead letters exist before recovery', 'TIKTOK_PRODUCTION_UAT_EXTRA_DLQ_PRESENT', {
-      rows: newerOpenBefore.map(summarizeDlq),
+  const resume = validateResumeDlqRow(resumeRow);
+
+  const openBefore = readOpenTikTokDlqs({
+    wrangler,
+    production,
+    configPath: production.configPath,
+  });
+  if (openBefore.length !== 1 || openBefore[0]?.dlq_id !== TIKTOK_PRODUCTION_RESUME.resumeDlqId) {
+    throw operatorError('Expected b86 to be the only open TikTok DLQ before resume', 'TIKTOK_PRODUCTION_RESUME_OPEN_DLQ_CARDINALITY_MISMATCH', {
+      rows: openBefore.map(summarizeDlq),
     });
   }
 
-  const tempWorktree = await mkdtemp(join(tmpdir(), 'mkt-tiktok-prod-recovery-'));
+  const tempWorktree = join(
+    tmpdir(),
+    `mkt-tiktok-prod-resume-${process.pid}-${Date.now()}`,
+  );
   const darkConfigPath = join(tempWorktree, 'wrangler.sync.jsonc');
-  const recoveryConfigPath = join(tempWorktree, 'wrangler.sync.recovery.jsonc');
+  const recoveryConfigPath = join(tempWorktree, 'wrangler.sync.resume.jsonc');
   let baselineWorktreeAdded = false;
   let anyDeploySucceeded = false;
-  let recoveryConfigDeployed = false;
-  let restore = { attempted: false, ok: false };
+  let restore = { attempted: false, ok: false, required: false };
   let primaryError = null;
   const mutationLog = [];
 
   const evidence = {
     ok: false,
-    mode: 'live-recovery',
+    mode: 'live-resume',
     capturedAt: new Date().toISOString(),
     reviewedMain: TIKTOK_PRODUCTION_RECOVERY.reviewedMain,
+    lineage: {
+      rootDlq: summarizeDlq(rootRow),
+      resumeDlqBefore: summarizeDlq(resume.row),
+      rootRedriveReference: TIKTOK_PRODUCTION_RESUME.rootRedriveReference,
+      verified: true,
+    },
     production: {
       worktree: production.worktree,
       workerName: readJsoncScalar(production.configText, 'name'),
       environment: readJsoncScalar(production.configText, 'MKT_ENV'),
       customerProfile: readJsoncScalar(production.configText, 'MKT_CUSTOMER_PROFILE'),
-      workersDev: readJsoncScalar(production.configText, 'workers_dev'),
+      initialState: 'dark',
     },
-    retainedDlq: summarizeDlq(retained.row),
     recovery: null,
     idempotency: null,
     postChecks: null,
@@ -141,7 +148,7 @@ async function runLiveRecovery() {
 
     const baselineHead = run('git', ['-C', tempWorktree, 'rev-parse', 'HEAD']).stdout;
     if (baselineHead !== TIKTOK_PRODUCTION_RECOVERY.reviewedMain) {
-      throw operatorError('Temporary deploy worktree is not exact reviewed TikTok recovery main', 'TIKTOK_PRODUCTION_RECOVERY_HEAD_MISMATCH', {
+      throw operatorError('Temporary deploy worktree is not exact reviewed TikTok baseline', 'TIKTOK_PRODUCTION_RESUME_HEAD_MISMATCH', {
         expected: TIKTOK_PRODUCTION_RECOVERY.reviewedMain,
         actual: baselineHead,
       });
@@ -150,14 +157,14 @@ async function runLiveRecovery() {
     await writeFile(darkConfigPath, production.configText, 'utf8');
     await writeFile(recoveryConfigPath, buildRecoveryConfigText(production.configText), 'utf8');
 
-    deployWorker({ wrangler, cwd: production.worktree, configPath: darkConfigPath, dryRun: true });
-    deployWorker({ wrangler, cwd: production.worktree, configPath: darkConfigPath });
+    deployWorker({ wrangler, cwd: tempWorktree, configPath: darkConfigPath, dryRun: true });
+    deployWorker({ wrangler, cwd: tempWorktree, configPath: darkConfigPath });
     anyDeploySucceeded = true;
+    restore.required = true;
     mutationLog.push({ type: 'worker_deploy', state: 'reviewed_dark', sourceHead: baselineHead });
 
-    deployWorker({ wrangler, cwd: production.worktree, configPath: recoveryConfigPath, dryRun: true });
-    deployWorker({ wrangler, cwd: production.worktree, configPath: recoveryConfigPath });
-    recoveryConfigDeployed = true;
+    deployWorker({ wrangler, cwd: tempWorktree, configPath: recoveryConfigPath, dryRun: true });
+    deployWorker({ wrangler, cwd: tempWorktree, configPath: recoveryConfigPath });
     mutationLog.push({
       type: 'worker_deploy',
       state: 'temporary_tiktok_uat_redrive',
@@ -168,103 +175,123 @@ async function runLiveRecovery() {
       notificationRuntime: false,
     });
 
-    const redriveEnvelope = buildRedriveEnvelope(retained.dlqId);
-    const redrivePush = await pushQueue({ cloudflare, envelope: redriveEnvelope });
-    mutationLog.push({ type: 'queue_send', purpose: 'canonical_dead_letter_redrive', responseStatus: redrivePush.status });
+    const redrivePush = await pushQueue({ cloudflare, envelope: buildResumeRedriveEnvelope() });
+    mutationLog.push({
+      type: 'queue_send',
+      purpose: 'canonical_continuation_dead_letter_redrive',
+      dlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
+      responseStatus: redrivePush.status,
+    });
 
-    const redriven = await waitForRetainedRedrive({
+    const redrivenResume = await waitForDlqRedriven({
       wrangler,
       production,
       configPath: recoveryConfigPath,
-      dlqId: retained.dlqId,
+      dlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
     });
-    const redriveBoundary = Number(redriven.redrive_requested_at ?? 0);
-    if (!Number.isSafeInteger(redriveBoundary) || redriveBoundary <= 0) {
-      throw operatorError('Retained DLQ did not persist a valid redrive generation', 'TIKTOK_PRODUCTION_REDRIVE_GENERATION_MISSING', {
-        dlqId: retained.dlqId,
-        redriveRequestedAt: redriven.redrive_requested_at ?? null,
-      });
-    }
+    const recoveryBoundary = requirePositiveSafeInteger(
+      redrivenResume.redrive_requested_at,
+      'resume redrive_requested_at',
+    );
 
-    const recoveredRun = await waitForSuccessfulTikTokRun({
+    const recoveredRun = await waitForTikTokTerminalOutcome({
       wrangler,
       production,
       configPath: recoveryConfigPath,
-      startedAtMin: redriveBoundary,
-      excludeSyncRunIds: [],
-      retainedDlqId: retained.dlqId,
+      startedAtMin: recoveryBoundary,
+      excludeSyncRunIds: [TIKTOK_PRODUCTION_RESUME.staleRunId],
+      phase: 'recovery',
     });
-    validateSuccessfulSyncRun(recoveredRun);
+    validateResumeSuccessRun(recoveredRun);
     evidence.recovery = {
       queue: redrivePush.publicResult,
-      deadLetter: summarizeDlq(redriven),
+      deadLetter: summarizeDlq(redrivenResume),
       syncRun: summarizeRun(recoveredRun),
-      targetVerification: 'successful_staged_business_completion_to_customer_lark',
+      customerLarkRuntimeCompletion: true,
+      directCustomerLarkReadback: 'pending_separate_read_only_verification',
       protectedTikTokSourceRuntimeWritePath: 'none',
     };
 
-    const idempotencyRequestedAt = Math.max(Date.now(), Number(recoveredRun.finished_at ?? 0) + 1);
-    const idempotencyEnvelope = buildIdempotencyEnvelope(retained.payload, idempotencyRequestedAt);
+    const finishedAt = Number(recoveredRun.finished_at ?? 0);
+    const idempotencyBoundary = Number.isSafeInteger(finishedAt) && finishedAt > 0
+      ? finishedAt + 1
+      : Math.max(0, Date.now() - 5_000);
+    const idempotencyRequestedAt = Date.now();
+    const idempotencyEnvelope = buildResumeIdempotencyEnvelope(resume.payload, idempotencyRequestedAt);
     const idempotencyPush = await pushQueue({ cloudflare, envelope: idempotencyEnvelope });
-    mutationLog.push({ type: 'queue_send', purpose: 'same_logical_scope_idempotency_proof', responseStatus: idempotencyPush.status });
+    mutationLog.push({
+      type: 'queue_send',
+      purpose: 'same_logical_scope_idempotency_proof',
+      responseStatus: idempotencyPush.status,
+    });
 
-    const idempotentRun = await waitForSuccessfulTikTokRun({
+    const idempotentRun = await waitForTikTokTerminalOutcome({
       wrangler,
       production,
       configPath: recoveryConfigPath,
-      startedAtMin: idempotencyRequestedAt,
-      excludeSyncRunIds: [recoveredRun.sync_run_id],
-      retainedDlqId: retained.dlqId,
+      startedAtMin: idempotencyBoundary,
+      excludeSyncRunIds: [TIKTOK_PRODUCTION_RESUME.staleRunId, recoveredRun.sync_run_id],
+      phase: 'idempotency',
     });
-    validateSuccessfulSyncRun(idempotentRun, { idempotency: true });
+    validateResumeSuccessRun(idempotentRun, { idempotency: true });
     evidence.idempotency = {
       queue: idempotencyPush.publicResult,
+      requestedAt: new Date(idempotencyRequestedAt).toISOString(),
       syncRun: summarizeRun(idempotentRun),
       businessWrites: 0,
       stableKeyIdempotency: true,
     };
 
-    const originalDlq = readDlqById({
+    const rootAfter = readDlqById({
       wrangler,
       production,
       configPath: recoveryConfigPath,
-      dlqId: retained.dlqId,
+      dlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId,
     });
-    if (originalDlq?.status !== 'redriven') {
-      throw operatorError('Original retained DLQ is not redriven after successful recovery', 'TIKTOK_PRODUCTION_REDRIVE_STATUS_INVALID', {
-        dlq: summarizeDlq(originalDlq),
-      });
-    }
-    const extraOpen = readOpenTikTokDlqs({
+    validateRootRedrivenRow(rootAfter);
+    const resumeAfter = readDlqById({
       wrangler,
       production,
       configPath: recoveryConfigPath,
-      excludeDlqId: retained.dlqId,
+      dlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
     });
-    if (extraOpen.length !== 0) {
-      throw operatorError('Recovery created a new open TikTok dead letter', 'TIKTOK_PRODUCTION_RECOVERY_NEW_DLQ_DETECTED', {
-        rows: extraOpen.map(summarizeDlq),
+    if (resumeAfter?.status !== 'redriven') {
+      throw operatorError('Continuation DLQ is not redriven after recovery', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_STATUS_INVALID', {
+        row: summarizeDlq(resumeAfter),
       });
     }
+    const openAfter = readOpenTikTokDlqs({
+      wrangler,
+      production,
+      configPath: recoveryConfigPath,
+    });
+    if (openAfter.length !== 0) {
+      throw operatorError('Open TikTok DLQ remains after resume and idempotency proof', 'TIKTOK_PRODUCTION_RESUME_OPEN_DLQ_REMAINS', {
+        rows: openAfter.map(summarizeDlq),
+      });
+    }
+
     evidence.postChecks = {
-      originalDlqStatus: originalDlq.status,
-      additionalOpenTikTokDlqCount: 0,
+      rootDlqStatus: rootAfter.status,
+      continuationDlqStatus: resumeAfter.status,
+      openTikTokDlqCount: 0,
       recoveryRunStatus: recoveredRun.status,
       idempotencyRunStatus: idempotentRun.status,
+      stalePreResumeRunIdUntouched: TIKTOK_PRODUCTION_RESUME.staleRunId,
     };
     evidence.ok = true;
   } catch (error) {
     primaryError = error;
     evidence.failure = {
-      code: error?.code ?? 'TIKTOK_PRODUCTION_UAT_LIVE_RECOVERY_FAILED',
+      code: error?.code ?? 'TIKTOK_PRODUCTION_UAT_LIVE_RESUME_FAILED',
       message: error?.message ?? String(error),
       details: sanitizeEvidence(error?.details ?? {}),
     };
   } finally {
-    if (anyDeploySucceeded || recoveryConfigDeployed) {
+    if (anyDeploySucceeded) {
       restore.attempted = true;
       try {
-        deployWorker({ wrangler, cwd: production.worktree, configPath: darkConfigPath });
+        deployWorker({ wrangler, cwd: tempWorktree, configPath: darkConfigPath });
         restore.ok = true;
         restore.state = 'reviewed_dark';
         mutationLog.push({ type: 'worker_deploy', state: 'restored_reviewed_dark' });
@@ -281,7 +308,7 @@ async function runLiveRecovery() {
         run('git', ['-C', production.repositoryRoot, 'worktree', 'remove', '--force', tempWorktree]);
       } catch (cleanupError) {
         evidence.cleanupWarning = {
-          code: cleanupError?.code ?? 'TIKTOK_PRODUCTION_RECOVERY_WORKTREE_CLEANUP_FAILED',
+          code: cleanupError?.code ?? 'TIKTOK_PRODUCTION_RESUME_WORKTREE_CLEANUP_FAILED',
           message: cleanupError?.message ?? String(cleanupError),
         };
       }
@@ -291,14 +318,19 @@ async function runLiveRecovery() {
   }
 
   evidence.completedAt = new Date().toISOString();
-  if (!restore.attempted || restore.ok !== true) {
+  if (restore.required && (!restore.attempted || restore.ok !== true)) {
     evidence.ok = false;
-    throw operatorError('Production dark-state restore was not proven', 'TIKTOK_PRODUCTION_DARK_RESTORE_NOT_PROVEN', {
+    const restoreFailure = operatorError('Production dark-state restore was not proven', 'TIKTOK_PRODUCTION_DARK_RESTORE_NOT_PROVEN', {
       restore,
       primaryFailure: evidence.failure ?? null,
     });
+    await persistEvidence(evidence).catch(() => undefined);
+    throw restoreFailure;
   }
-  if (primaryError) throw primaryError;
+  if (primaryError) {
+    await persistEvidence(evidence).catch(() => undefined);
+    throw primaryError;
+  }
   return evidence;
 }
 
@@ -325,7 +357,7 @@ async function discoverProductionWorktree() {
         candidates.push({ worktree, configPath, configText });
       }
     } catch {
-      // Non-Production worktrees may not have local Wrangler config; ignore them.
+      // Ignore non-Production worktrees and worktrees without local config.
     }
   }
   if (candidates.length !== 1) {
@@ -369,62 +401,84 @@ async function pushQueue({ cloudflare, envelope }) {
   });
 }
 
-async function waitForRetainedRedrive(input) {
+async function waitForDlqRedriven(input) {
   let last = null;
   for (let attempt = 1; attempt <= POLL_ATTEMPTS; attempt += 1) {
     last = readDlqById(input);
     if (last?.status === 'redriven') return last;
     if (last && !['open', 'redrive_pending'].includes(last.status)) {
-      throw operatorError('Retained DLQ entered an unexpected state', 'TIKTOK_PRODUCTION_REDRIVE_STATUS_INVALID', {
-        dlq: summarizeDlq(last),
+      throw operatorError('Continuation DLQ entered an unexpected redrive state', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_STATUS_INVALID', {
+        row: summarizeDlq(last),
       });
     }
     await sleep(POLL_MS);
   }
-  throw operatorError('Timed out waiting for retained DLQ redrive', 'TIKTOK_PRODUCTION_REDRIVE_TIMEOUT', {
-    dlq: summarizeDlq(last),
+  throw operatorError('Continuation DLQ redrive did not reach redriven state', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_TIMEOUT', {
+    row: summarizeDlq(last),
   });
 }
 
-async function waitForSuccessfulTikTokRun(input) {
+async function waitForTikTokTerminalOutcome(input) {
   let recent = [];
   for (let attempt = 1; attempt <= POLL_ATTEMPTS; attempt += 1) {
-    recent = readTikTokRuns(input).filter((row) => !input.excludeSyncRunIds.includes(row.sync_run_id));
+    recent = readTikTokRuns(input)
+      .filter((row) => !input.excludeSyncRunIds.includes(row.sync_run_id));
+
     const success = recent.find((row) => row.status === 'success');
     if (success) return success;
 
-    const newOpenDlq = readOpenTikTokDlqs({
-      ...input,
-      excludeDlqId: input.retainedDlqId,
+    const openDlqs = readOpenTikTokDlqs({
+      wrangler: input.wrangler,
+      production: input.production,
+      configPath: input.configPath,
       createdAtMin: input.startedAtMin,
     });
-    if (newOpenDlq.length > 0) {
-      throw operatorError('TikTok recovery job terminalized into a new DLQ', 'TIKTOK_PRODUCTION_RECOVERY_NEW_DLQ_DETECTED', {
-        rows: newOpenDlq.map(summarizeDlq),
+    if (openDlqs.length > 0) {
+      throw operatorError(`TikTok ${input.phase} terminalized into a new DLQ`, 'TIKTOK_PRODUCTION_RESUME_NEW_DLQ_DETECTED', {
+        phase: input.phase,
+        rows: openDlqs.map(summarizeDlq),
         recentRuns: recent.map(summarizeRun),
       });
     }
+
+    const terminalNonRetryable = recent.find((row) => {
+      if (row.status !== 'failed') return false;
+      const details = parseJsonOrText(row.details_json ?? '{}');
+      return details && typeof details === 'object' && details.retryable === false;
+    });
+    if (terminalNonRetryable) {
+      throw operatorError(`TikTok ${input.phase} failed non-retryably`, 'TIKTOK_PRODUCTION_RESUME_NON_RETRYABLE_FAILURE', {
+        phase: input.phase,
+        run: summarizeRun(terminalNonRetryable),
+      });
+    }
+
     await sleep(POLL_MS);
   }
-  throw operatorError('Timed out waiting for successful TikTok Production UAT sync run', 'TIKTOK_PRODUCTION_SYNC_RUN_TIMEOUT', {
+  throw operatorError(`TikTok ${input.phase} did not reach a terminal success outcome`, 'TIKTOK_PRODUCTION_RESUME_SYNC_RUN_TIMEOUT', {
+    phase: input.phase,
     startedAtMin: input.startedAtMin,
     recentRuns: recent.map(summarizeRun),
   });
 }
 
 function readTikTokRuns({ wrangler, production, configPath, startedAtMin }) {
-  const threshold = Number(startedAtMin);
-  const sql = [
-    'SELECT sync_run_id, customer_profile, platform, account_key, source, sync_type, status,',
-    'started_at, finished_at, records_pulled, records_created, records_updated, records_skipped,',
-    'records_written, retry_count, error_code, details_json, created_at, updated_at',
-    'FROM sync_runs',
-    `WHERE customer_profile='${TIKTOK_PRODUCTION_RECOVERY.customerProfile}'`,
-    "AND platform='tiktok' AND sync_type='native_import'",
-    `AND started_at >= ${Number.isSafeInteger(threshold) && threshold >= 0 ? threshold : 0}`,
-    'ORDER BY started_at DESC LIMIT 20;',
-  ].join(' ');
-  return queryD1({ wrangler, production, configPath, sql });
+  const threshold = requireNonNegativeSafeInteger(startedAtMin, 'startedAtMin');
+  return queryD1({
+    wrangler,
+    production,
+    configPath,
+    sql: [
+      'SELECT sync_run_id, customer_profile, platform, account_key, source, sync_type, status,',
+      'started_at, finished_at, records_pulled, records_created, records_updated, records_skipped,',
+      'records_written, retry_count, error_code, details_json, created_at, updated_at',
+      'FROM sync_runs',
+      `WHERE customer_profile='${TIKTOK_PRODUCTION_RECOVERY.customerProfile}'`,
+      "AND platform='tiktok' AND sync_type='native_import'",
+      `AND started_at >= ${threshold}`,
+      'ORDER BY started_at DESC LIMIT 50;',
+    ].join(' '),
+  });
 }
 
 function readDlqById({ wrangler, production, configPath, dlqId }) {
@@ -433,7 +487,7 @@ function readDlqById({ wrangler, production, configPath, dlqId }) {
     production,
     configPath,
     sql: [
-      'SELECT dlq_id, message_id, queue_name, job_type, schema_version, payload_json,',
+      'SELECT dlq_id, message_id, queue_name, job_type, schema_version, payload_json, replay_payload_json,',
       'error_code, retry_count, status, created_at, updated_at,',
       'redrive_requested_at, redrive_reference, redriven_at',
       'FROM dead_letter_jobs',
@@ -443,20 +497,21 @@ function readDlqById({ wrangler, production, configPath, dlqId }) {
   return rows[0] ?? null;
 }
 
-function readOpenTikTokDlqs({ wrangler, production, configPath, excludeDlqId, createdAtMin = 0 }) {
-  const threshold = Number(createdAtMin);
+function readOpenTikTokDlqs({ wrangler, production, configPath, createdAtMin = 0 }) {
+  const threshold = requireNonNegativeSafeInteger(createdAtMin, 'createdAtMin');
   return queryD1({
     wrangler,
     production,
     configPath,
     sql: [
-      'SELECT dlq_id, message_id, queue_name, job_type, schema_version, error_code, retry_count, status, created_at, updated_at',
+      'SELECT dlq_id, message_id, queue_name, job_type, schema_version, payload_json,',
+      'error_code, retry_count, status, created_at, updated_at,',
+      'redrive_requested_at, redrive_reference, redriven_at',
       'FROM dead_letter_jobs',
       `WHERE status='open' AND job_type='${TIKTOK_PRODUCTION_RECOVERY.jobType}'`,
-      excludeDlqId ? `AND dlq_id <> '${sqlText(excludeDlqId)}'` : '',
-      `AND created_at >= ${Number.isSafeInteger(threshold) && threshold >= 0 ? threshold : 0}`,
+      `AND created_at >= ${threshold}`,
       'ORDER BY created_at DESC;',
-    ].filter(Boolean).join(' '),
+    ].join(' '),
   });
 }
 
@@ -472,15 +527,16 @@ function queryD1({ wrangler, production, configPath, sql }) {
 }
 
 function readCloudflareAuthority() {
-  const accountId = requireEnv('CF_ACCOUNT_ID');
-  const queueId = requireEnv('CF_QUEUE_ID');
-  const apiToken = requireEnv('CLOUDFLARE_API_TOKEN');
-  return Object.freeze({ accountId, queueId, apiToken });
+  return Object.freeze({
+    accountId: requireEnv('CF_ACCOUNT_ID'),
+    queueId: requireEnv('CF_QUEUE_ID'),
+    apiToken: requireEnv('CLOUDFLARE_API_TOKEN'),
+  });
 }
 
 function requireConfirmation() {
   if (process.env[CONFIRM_NAME] !== CONFIRM_VALUE) {
-    throw operatorError('Explicit Production recovery confirmation is required', 'TIKTOK_PRODUCTION_RECOVERY_CONFIRMATION_REQUIRED', {
+    throw operatorError('Explicit Production resume confirmation is required', 'TIKTOK_PRODUCTION_RESUME_CONFIRMATION_REQUIRED', {
       envName: CONFIRM_NAME,
       expectedValue: CONFIRM_VALUE,
     });
@@ -490,14 +546,40 @@ function requireConfirmation() {
 function requireEnv(name) {
   const value = process.env[name];
   if (typeof value !== 'string' || value.trim() === '') {
-    throw operatorError(`Production recovery requires ${name}`, 'TIKTOK_PRODUCTION_RECOVERY_ENV_MISSING', { envName: name });
+    throw operatorError(`Production resume requires ${name}`, 'TIKTOK_PRODUCTION_RESUME_ENV_MISSING', { envName: name });
   }
   return value.trim();
 }
 
+function positiveIntegerEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw operatorError(`${name} must be a positive integer`, 'TIKTOK_PRODUCTION_RESUME_POLL_CONFIG_INVALID', { name, value: raw });
+  }
+  return value;
+}
+
+function requirePositiveSafeInteger(value, label) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw operatorError(`${label} must be a positive safe integer`, 'TIKTOK_PRODUCTION_RESUME_GENERATION_MISSING', { label, value });
+  }
+  return number;
+}
+
+function requireNonNegativeSafeInteger(value, label) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw operatorError(`${label} must be a non-negative safe integer`, 'TIKTOK_PRODUCTION_RESUME_BOUNDARY_INVALID', { label, value });
+  }
+  return number;
+}
+
 function safeId(value, name) {
   if (!/^[A-Za-z0-9_-]+$/u.test(String(value))) {
-    throw operatorError(`${name} contains unsafe characters`, 'TIKTOK_PRODUCTION_RECOVERY_AUTHORITY_INVALID', { name });
+    throw operatorError(`${name} contains unsafe characters`, 'TIKTOK_PRODUCTION_RESUME_AUTHORITY_INVALID', { name });
   }
   return String(value);
 }
@@ -556,7 +638,7 @@ function run(command, args, options = {}) {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.status !== 0) {
-    throw operatorError(`Command failed: ${command} ${args.join(' ')}`, 'TIKTOK_PRODUCTION_RECOVERY_COMMAND_FAILED', {
+    throw operatorError(`Command failed: ${command} ${args.join(' ')}`, 'TIKTOK_PRODUCTION_RESUME_COMMAND_FAILED', {
       command,
       args,
       status: result.status,
@@ -571,7 +653,7 @@ async function requireReadable(path) {
   try {
     await access(path, constants.R_OK);
   } catch (cause) {
-    throw operatorError('Required path is not readable', 'TIKTOK_PRODUCTION_RECOVERY_PATH_UNREADABLE', {
+    throw operatorError('Required path is not readable', 'TIKTOK_PRODUCTION_RESUME_PATH_UNREADABLE', {
       path,
       cause: cause instanceof Error ? cause.message : String(cause),
     });
@@ -604,7 +686,7 @@ function sleep(ms) {
 
 function operatorError(message, code, details = {}) {
   const error = new Error(message);
-  error.name = 'TikTokProductionUatLiveRecoveryError';
+  error.name = 'TikTokProductionUatLiveResumeError';
   error.code = code;
   error.details = Object.freeze({ ...details });
   return error;
