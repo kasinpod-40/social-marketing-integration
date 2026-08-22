@@ -1,4 +1,5 @@
 import { createMetaHistoryOperationId } from './meta-history-2026-finalizer.js';
+import { collectEnabledMktFlags } from './woocommerce-2026-completion-one-command.js';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const META_PAID_LARK_CLOSEOUT_CONTRACT_VERSION = 'meta_paid_lark_closeout_v1';
@@ -110,6 +111,23 @@ export function buildMetaPaidLarkEnvironment(base = {}, operation = {}) {
     MKT_META_LARK_PERIOD_START: requireDate(operation.periodStart, 'operation.periodStart'),
     MKT_META_LARK_PERIOD_END: requireDate(operation.periodEnd, 'operation.periodEnd'),
     MKT_META_LARK_TABLE_KEYS: META_PAID_LARK_CLOSEOUT_TABLE_KEYS.join(','),
+  });
+}
+
+export function validateMetaPaidLarkRemoteFlagState(versionView = {}, options = {}) {
+  const enabledFlags = collectEnabledMktFlags(versionView);
+  const allowExistingRuntimeFlags = options.allowExistingRuntimeFlags === true;
+  if (!allowExistingRuntimeFlags && enabledFlags.length !== 0) {
+    throw closeoutError(
+      'Paid Meta closeout requires an all-false Worker after the controlled baseline starts',
+      'META_PAID_LARK_CLOSEOUT_REMOTE_FLAGS_ACTIVE',
+      { enabledFlags },
+    );
+  }
+  return deepFreeze({
+    enabledFlags,
+    allFalse: enabledFlags.length === 0,
+    existingRuntimeAdmitted: allowExistingRuntimeFlags && enabledFlags.length !== 0,
   });
 }
 

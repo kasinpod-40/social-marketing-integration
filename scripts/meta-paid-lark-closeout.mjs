@@ -39,9 +39,9 @@ import {
   createMetaPaidLarkCloseoutPlan,
   validateMetaPaidLarkCloseoutPlan,
   validateMetaPaidLarkReconciliation,
+  validateMetaPaidLarkRemoteFlagState,
 } from './lib/meta-paid-lark-closeout.js';
 import {
-  assertWooCommerce2026RemoteSafeFlags,
   selectExactlyOneActiveWorkerVersion,
 } from './lib/woocommerce-2026-completion-one-command.js';
 import {
@@ -122,6 +122,7 @@ async function executeCloseout() {
   await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
   const planPath = join(evidenceRoot, 'runtime-plan.json');
   const plan = await loadOrCreatePlan(planPath, repositoryHead);
+  let controlledBaselineEstablished = false;
 
   currentStage = 'materialize-private-safe-config';
   const sourceConfigPath = resolve(
@@ -138,20 +139,25 @@ async function executeCloseout() {
 
   currentStage = 'resolve-safe-runtime';
   const cloudflare = await resolveCloudflareContext(baseEnv, configPath);
-  await assertRemoteSafe(baseEnv, configPath, cloudflare);
+  await assertRemoteSafe(baseEnv, configPath, cloudflare, {
+    allowExistingRuntimeFlags: true,
+  });
 
   currentStage = 'fresh-read-only-validation';
   const readOnlySummaryPath = await runFreshReadOnlyValidation(
     baseEnv,
     join(evidenceRoot, 'read-only-validation'),
   );
-  await assertRemoteSafe(baseEnv, configPath, cloudflare);
+  await assertRemoteSafe(baseEnv, configPath, cloudflare, {
+    allowExistingRuntimeFlags: true,
+  });
 
   const completed = [];
   for (const operation of plan.operations) {
     currentStage = `d1-${operation.target}`;
     await assertRemoteSafe(baseEnv, configPath, cloudflare, {
       allowOperationWorkKey: workKey(operation),
+      allowExistingRuntimeFlags: !controlledBaselineEstablished,
     });
     const d1Root = join(
       repositoryRoot,
@@ -193,6 +199,7 @@ async function executeCloseout() {
         { target: operation.target, operationId: operation.operationId },
       );
     }
+    controlledBaselineEstablished = true;
 
     currentStage = `lark-${operation.target}`;
     await assertRemoteSafe(baseEnv, configPath, cloudflare, {
@@ -480,7 +487,9 @@ async function assertRemoteSafe(env, configPath, cloudflare, options = {}) {
     '--config', configPath,
     '--json',
   ], { ...env, CLOUDFLARE_ACCOUNT_ID: cloudflare.accountId }));
-  assertWooCommerce2026RemoteSafeFlags(version);
+  const flagState = validateMetaPaidLarkRemoteFlagState(version, {
+    allowExistingRuntimeFlags: options.allowExistingRuntimeFlags === true,
+  });
   const allowedWork = options.allowOperationWorkKey
     ? ` AND work_key <> ${sqlText(options.allowOperationWorkKey)}`
     : '';
@@ -507,7 +516,12 @@ async function assertRemoteSafe(env, configPath, cloudflare, options = {}) {
       remote,
     );
   }
-  return Object.freeze({ executionFlagsAllFalse: true, activeVersion, remote });
+  return Object.freeze({
+    executionFlagsAllFalse: flagState.allFalse,
+    existingRuntimeAdmitted: flagState.existingRuntimeAdmitted,
+    activeVersion,
+    remote,
+  });
 }
 
 async function readActiveVersion(env, configPath) {
