@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createStableQueueOperationBody } from '../../packages/application/src/jobs/queue-operation.js';
 import {
+  META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
   META_END_TO_END_LARK_TABLES,
   META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
 } from '../../packages/config/src/meta-end-to-end-runtime-config.js';
@@ -689,10 +690,16 @@ export function evidenceFileForMetaLarkPhase(phase) {
 }
 
 export function expectedLarkContracts(connectorKey) {
+  if (connectorKey === 'meta_ads') {
+    const historicalTableKeys = new Set(META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS);
+    return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
+      (contract) => historicalTableKeys.has(contract.tableKey),
+    ));
+  }
   const organic = connectorKey === 'facebook' || connectorKey === 'instagram';
   const prefixes = organic
     ? ['raw.organic', 'canonical.accounts', 'canonical.accountDaily', 'canonical.content']
-    : ['raw.ads', 'canonical.ads'];
+    : [];
   return Object.freeze(META_END_TO_END_LARK_TABLES.filter(
     (contract) => prefixes.some((prefix) => contract.path.startsWith(prefix)),
   ));
@@ -804,7 +811,7 @@ function requireFingerprint(value, fieldName) {
 
 function requireObject(value, fieldName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw operatorError(`${fieldName} must be an object`, 'META_LARK_INPUT_INVALID', { fieldName });
+    throw operatorError(`${fieldName} must be an object`, 'META_LARK_INPUT_INVALID');
   }
   return value;
 }
