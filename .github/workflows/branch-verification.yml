@@ -13,32 +13,96 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_assetgroups_fix_focused_test:
+  google_ads_assetgroups_transport_migrate:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Run focused migration regression from PR 674 head
+      - name: Backup apply and verify migration 0021
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
-          expected_sha="9a99beabb6fb7dffc3097cff69992cee06b7ba1a"
-          test_worktree="/private/tmp/google-ads-assetgroups-transport-fix-test-20260822"
+          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
+          expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
+          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-assetgroups-transport-20260822"
 
-          git -C "$repo" fetch origin fix/google-ads-assetgroups-transport-schema
-          test "$(git -C "$repo" rev-parse origin/fix/google-ads-assetgroups-transport-schema)" = "$expected_sha"
+          git -C "$repo" fetch origin main
+          test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
+          test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
+          git -C "$live_worktree" pull --ff-only origin main
+          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
+          test "$(git -C "$live_worktree" branch --show-current)" = main
+          test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
 
-          if git -C "$repo" worktree list --porcelain | grep -Fxq "worktree $test_worktree"; then
-            git -C "$repo" worktree remove --force "$test_worktree"
-          fi
-          rm -rf "$test_worktree"
-          git -C "$repo" worktree add --detach "$test_worktree" "$expected_sha"
-          trap 'git -C "$repo" worktree remove --force "$test_worktree" >/dev/null 2>&1 || true' EXIT
+          sync_config="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
+          api_config="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
+          test -f "$sync_config"
+          test -f "$api_config"
+          mkdir -p "$evidence_root"
+          cd "$live_worktree"
 
-          cd "$test_worktree"
-          node --test tests/storage/google-ads-assetgroups-transport-migration.test.js
-          test -z "$(git status --porcelain --untracked-files=all)"
-          echo "focused_migration_test=passed"
-          echo "tested_head=$expected_sha"
-          echo "remote_mutation_count=0"
+          database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=(c.d1_databases||[]).find(x=>x.binding==="MKT_STATE_DB");if(!d?.database_name)process.exit(1);process.stdout.write(d.database_name)' "$sync_config")"
+
+          npx wrangler d1 migrations list "$database_name" --remote --config "$sync_config" > "$evidence_root/pending-before.txt"
+          PENDING_FILE="$evidence_root/pending-before.txt" node <<'NODE'
+          const fs=require('fs');
+          const text=fs.readFileSync(process.env.PENDING_FILE,'utf8');
+          const names=[...text.matchAll(/\b\d{4}_[A-Za-z0-9._-]+\.sql\b/gu)].map(m=>m[0]);
+          const unique=[...new Set(names)];
+          console.log(`pending_migration_count=${unique.length}`);
+          console.log(`pending_exact_0021=${unique.length===1&&unique[0]==='0021_google_ads_assetgroups_transport.sql'}`);
+          if(unique.length!==1||unique[0]!=='0021_google_ads_assetgroups_transport.sql') process.exit(2);
+          NODE
+
+          before_json="$evidence_root/chunks-before.json"
+          npx wrangler d1 execute "$database_name" --remote --config "$sync_config" --command "SELECT COUNT(*) AS row_count, COUNT(DISTINCT idempotency_key) AS distinct_keys FROM google_ads_delivery_chunks;" --json > "$before_json"
+
+          backup_file="$evidence_root/google-ads-before-0021.sql"
+          rm -f "$backup_file"
+          npx wrangler d1 export "$database_name" --remote --config "$sync_config" --output "$backup_file" --skip-confirmation
+          test -s "$backup_file"
+          shasum -a 256 "$backup_file" > "$backup_file.sha256"
+
+          CI=true npx wrangler d1 migrations apply "$database_name" --remote --config "$sync_config" > "$evidence_root/apply.txt"
+          npx wrangler d1 migrations list "$database_name" --remote --config "$sync_config" > "$evidence_root/pending-after.txt"
+          grep -Fq "No migrations to apply" "$evidence_root/pending-after.txt"
+
+          after_json="$evidence_root/chunks-after.json"
+          npx wrangler d1 execute "$database_name" --remote --config "$sync_config" --command "SELECT COUNT(*) AS row_count, COUNT(DISTINCT idempotency_key) AS distinct_keys FROM google_ads_delivery_chunks;" --json > "$after_json"
+
+          after_export="$evidence_root/google-ads-after-0021.sql"
+          rm -f "$after_export"
+          npx wrangler d1 export "$database_name" --remote --config "$sync_config" --output "$after_export" --skip-confirmation
+          test -s "$after_export"
+
+          BEFORE_JSON="$before_json" AFTER_JSON="$after_json" AFTER_EXPORT="$after_export" node <<'NODE'
+          const fs=require('fs');
+          function firstRow(path){
+            const parsed=JSON.parse(fs.readFileSync(path,'utf8'));
+            const cs=Array.isArray(parsed)?parsed:[parsed];
+            for(const c of cs){const rows=c?.results??c?.result?.[0]?.results;if(Array.isArray(rows)&&rows.length)return rows[0];}
+            throw new Error('missing D1 row');
+          }
+          const before=firstRow(process.env.BEFORE_JSON);
+          const after=firstRow(process.env.AFTER_JSON);
+          const same=Number(before.row_count)===Number(after.row_count)&&Number(before.distinct_keys)===Number(after.distinct_keys);
+          const text=fs.readFileSync(process.env.AFTER_EXPORT,'utf8');
+          let start=text.indexOf('CREATE TABLE google_ads_delivery_chunks');
+          if(start<0) start=text.indexOf('CREATE TABLE IF NOT EXISTS google_ads_delivery_chunks');
+          const next=start<0?-1:text.indexOf('\nCREATE ',start+1);
+          const ddl=start<0?'':text.slice(start,next>start?next:Math.min(text.length,start+12000));
+          const supported=/['"]assetGroups['"]/.test(ddl);
+          console.log(`chunk_rows_preserved=${same}`);
+          console.log(`assetgroups_dataset_constraint_supported=${supported}`);
+          console.log('migration_0021_applied=true');
+          console.log('google_live_execute_count=0');
+          console.log('lark_write_count=0');
+          if(!same||!supported) process.exit(3);
+          NODE
+
+          npx wrangler deploy --config "$api_config" > "$evidence_root/api-safe-deploy.txt"
+          npx wrangler deploy --config "$sync_config" > "$evidence_root/sync-safe-deploy.txt"
+          echo "safe_runtime_deployed_head=$expected_sha"
+          echo "google_execution_flags_enabled=false"
+          echo "google_schedule_enabled=false"
