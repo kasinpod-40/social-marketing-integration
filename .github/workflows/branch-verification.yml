@@ -25,6 +25,7 @@ jobs:
           repo="$HOME/Git/social-marketing-integration"
           live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
           expected_sha="b92308ea649d0bed45c2ad893c1be2d4fef0592d"
+          current_main="b78221af52ef8fc16fd92047fa5fae627f0e4d00"
           safe_api="$live_worktree/wrangler.api.google-ads-live-safe.jsonc"
           safe_sync="$live_worktree/wrangler.sync.google-ads-live-safe.jsonc"
           operator_evidence="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
@@ -32,7 +33,11 @@ jobs:
           run_id="9e24aaa3-6939-486a-ad87-0527a088a6b7"
           mkdir -p "$final_evidence"
           git -C "$repo" fetch origin main
-          test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
+          test "$(git -C "$repo" rev-parse origin/main)" = "$current_main"
+          git -C "$repo" merge-base --is-ancestor "$expected_sha" origin/main
+          unexpected="$(git -C "$repo" diff --name-only "$expected_sha"..origin/main | grep -vE '^(\.dev\.vars\.example|docs/current-task\.md|tests/config/example-config-completeness\.test\.js|wrangler\.sync\.example\.jsonc)$' || true)"
+          test -z "$unexpected"
+          echo "newer_main_runtime_diff_count=0"
           test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
           test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
           test -f "$safe_api" && test -f "$safe_sync" && test -f "$operator_evidence/live-ready.json"
@@ -100,6 +105,6 @@ jobs:
           database_name="$(node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(c.d1_databases.find(x=>x.binding==="MKT_STATE_DB").database_name)' "$safe_sync")"
           env -u CI -u GITHUB_ACTIONS npx wrangler d1 execute "$database_name" --remote --config "$safe_sync" --command "SELECT r.mode,r.expected_chunk_count,r.received_chunk_count,r.expected_row_count,r.received_row_count,r.payload_redacted_at,a.status,a.last_error_code,a.completed_at,a.payload_redacted_at AS admission_redacted,a.reconciliation_json FROM google_ads_delivery_runs r JOIN google_ads_live_admissions a ON a.run_id=r.run_id WHERE r.run_id='$run_id';" --json > "$final_evidence/final-state.json"
           FINAL="$final_evidence/final-state.json" node <<'NODE'
-          const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.env.FINAL,'utf8'));const a=Array.isArray(x)?x:[x];const r=a.flatMap(c=>c?.results??c?.result?.[0]?.results??[])[0];if(!r)throw new Error('final_run_missing');if(r.mode!=='LIVE'||+r.expected_chunk_count!==7||+r.received_chunk_count!==7||+r.expected_row_count!==1305||+r.received_row_count!==1305||r.status!=='completed'||r.last_error_code!==null||r.payload_redacted_at===null||r.admission_redacted===null)throw new Error('final_state_invalid');const rec=JSON.parse(r.reconciliation_json);const t=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']),rows=rec.lark.filter(v=>t.has(v.tableKey));for(const v of rows){const n=+v.created+(+v.updated)+(+v.skipped);console.log(`${v.tableKey}_expected=${v.expected}`);console.log(`${v.tableKey}_accounted=${n}`);}console.log(`reconciliation_failed=${rec.failed}`);console.log('payload_redacted=true');console.log('final_live_state=passed');
+          const fs=require('fs');const x=JSON.parse(fs.readFileSync(process.env.FINAL,'utf8'));const a=Array.isArray(x)?x:[x];const r=a.flatMap(c=>c?.results??c?.result?.[0]?.results??[])[0];if(!r)throw new Error('final_run_missing');if(r.mode!=='LIVE'||+r.expected_chunk_count!==7||+r.received_chunk_count!==7||+r.expected_row_count!==1305||+r.received_row_count!==1305||r.status!=='completed'||r.last_error_code!==null||r.payload_redacted_at===null||r.admission_redacted===null)throw new Error('final_state_invalid');const rec=JSON.parse(r.reconciliation_json);const t=new Set(['mktAdsCreatives','mktAdsDaily','mktAdsAssetGroups']),rows=rec.lark.filter(v=>t.has(v.tableKey));if(rows.length!==3)throw new Error('target_reconciliation_missing');for(const v of rows){const n=+v.created+(+v.updated)+(+v.skipped);if(n!==+v.expected)throw new Error(`target_reconciliation_mismatch:${v.tableKey}`);console.log(`${v.tableKey}_expected=${v.expected}`);console.log(`${v.tableKey}_accounted=${n}`);}if(+rec.failed!==0)throw new Error('reconciliation_failed_nonzero');console.log(`reconciliation_failed=${rec.failed}`);console.log('payload_redacted=true');console.log('final_live_state=passed');
           NODE
           echo 'final_verify_remote_mutation_count=0'
