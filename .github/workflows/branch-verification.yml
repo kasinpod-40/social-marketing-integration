@@ -13,50 +13,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  google_ads_assetgroups_transport_backup_schema:
+  google_ads_assetgroups_fix_focused_test:
     if: github.event.pull_request.number == 673
     runs-on: mkt-ci
     timeout-minutes: 10
     steps:
-      - name: Verify exported remote D1 transport schema supports Asset Groups
+      - name: Run focused migration regression from PR 674 head
         shell: bash
         run: |
           set -euo pipefail
           repo="$HOME/Git/social-marketing-integration"
-          live_worktree="/private/tmp/google-ads-paid-parity-live-closure-20260822"
-          expected_sha="00dfd43c795a2b79dfa72ff1dc0514bc66b6eaae"
-          evidence_root="$repo/outputs/google-ads-live-operator/paid-parity-20260822"
+          expected_sha="9a99beabb6fb7dffc3097cff69992cee06b7ba1a"
+          test_worktree="/private/tmp/google-ads-assetgroups-transport-fix-test-20260822"
 
-          git -C "$repo" fetch origin main
-          test "$(git -C "$repo" rev-parse origin/main)" = "$expected_sha"
-          test "$(git -C "$live_worktree" rev-parse HEAD)" = "$expected_sha"
-          test -z "$(git -C "$live_worktree" status --porcelain --untracked-files=all)"
-          test -f "$evidence_root/backup.json"
+          git -C "$repo" fetch origin fix/google-ads-assetgroups-transport-schema
+          test "$(git -C "$repo" rev-parse origin/fix/google-ads-assetgroups-transport-schema)" = "$expected_sha"
 
-          BACKUP_JSON="$evidence_root/backup.json" node <<'NODE'
-          const fs=require('fs');
-          const evidence=JSON.parse(fs.readFileSync(process.env.BACKUP_JSON,'utf8'));
-          const backup=evidence.backupFile;
-          if(typeof backup!=='string'||!fs.existsSync(backup)){
-            console.log('backup_file_present=false');
-            process.exit(1);
-          }
-          const text=fs.readFileSync(backup,'utf8');
-          const marker='CREATE TABLE google_ads_delivery_chunks';
-          let start=text.indexOf(marker);
-          if(start<0) start=text.indexOf('CREATE TABLE IF NOT EXISTS google_ads_delivery_chunks');
-          if(start<0){
-            console.log('transport_table_schema_present=false');
-            process.exit(1);
-          }
-          const next=text.indexOf('\nCREATE ', start+1);
-          const ddl=text.slice(start,next>start?next:Math.min(text.length,start+12000));
-          const supported=/['"]assetGroups['"]/.test(ddl);
-          console.log('backup_file_present=true');
-          console.log('transport_table_schema_present=true');
-          console.log(`assetgroups_dataset_constraint_supported=${supported}`);
-          console.log('remote_d1_mutation_count=0');
-          console.log('google_live_execute_count=0');
-          console.log('lark_write_count=0');
-          if(!supported) process.exit(2);
-          NODE
+          if git -C "$repo" worktree list --porcelain | grep -Fxq "worktree $test_worktree"; then
+            git -C "$repo" worktree remove --force "$test_worktree"
+          fi
+          rm -rf "$test_worktree"
+          git -C "$repo" worktree add --detach "$test_worktree" "$expected_sha"
+          trap 'git -C "$repo" worktree remove --force "$test_worktree" >/dev/null 2>&1 || true' EXIT
+
+          cd "$test_worktree"
+          node --test tests/storage/google-ads-assetgroups-transport-migration.test.js
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "focused_migration_test=passed"
+          echo "tested_head=$expected_sha"
+          echo "remote_mutation_count=0"
