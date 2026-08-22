@@ -29,11 +29,13 @@ import {
 } from './lib/meta-history-runtime-authority.js';
 import {
   createMetaHistoryCloudflarePhaseEnvironment,
+  injectMetaHistoryConfig,
 } from './lib/meta-history-2026-finalizer.js';
 import {
   META_PAID_LARK_CLOSEOUT_CONTRACT_VERSION,
   META_PAID_LARK_CLOSEOUT_EXCLUDED_TABLE_KEYS,
   META_PAID_LARK_CLOSEOUT_TABLE_KEYS,
+  buildMetaPaidLarkEnvironment,
   createMetaPaidLarkCloseoutPlan,
   validateMetaPaidLarkCloseoutPlan,
   validateMetaPaidLarkReconciliation,
@@ -121,12 +123,20 @@ async function executeCloseout() {
   const planPath = join(evidenceRoot, 'runtime-plan.json');
   const plan = await loadOrCreatePlan(planPath, repositoryHead);
 
-  currentStage = 'resolve-safe-runtime';
-  const configPath = resolve(
+  currentStage = 'materialize-private-safe-config';
+  const sourceConfigPath = resolve(
     baseEnv.MKT_META_D1_ONLY_WRANGLER_CONFIG
       ?? baseEnv.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG
       ?? 'wrangler.sync.jsonc',
   );
+  const sourceConfigText = await readRegularSourceText(sourceConfigPath, 'Meta Wrangler config');
+  const configPath = join(evidenceRoot, 'wrangler.meta-paid-lark.safe.jsonc');
+  const safeConfigText = injectMetaHistoryConfig(sourceConfigText, undefined, {
+    baseDirectory: repositoryRoot,
+  });
+  await writePrivateText(configPath, safeConfigText);
+
+  currentStage = 'resolve-safe-runtime';
   const cloudflare = await resolveCloudflareContext(baseEnv, configPath);
   await assertRemoteSafe(baseEnv, configPath, cloudflare);
 
@@ -140,7 +150,9 @@ async function executeCloseout() {
   const completed = [];
   for (const operation of plan.operations) {
     currentStage = `d1-${operation.target}`;
-    await assertRemoteSafe(baseEnv, configPath, cloudflare);
+    await assertRemoteSafe(baseEnv, configPath, cloudflare, {
+      allowOperationWorkKey: workKey(operation),
+    });
     const d1Root = join(
       repositoryRoot,
       'outputs',
@@ -183,7 +195,9 @@ async function executeCloseout() {
     }
 
     currentStage = `lark-${operation.target}`;
-    await assertRemoteSafe(baseEnv, configPath, cloudflare, { allowOperationWorkKey: workKey(operation) });
+    await assertRemoteSafe(baseEnv, configPath, cloudflare, {
+      allowOperationWorkKey: workKey(operation),
+    });
     const larkRoot = join(
       repositoryRoot,
       'outputs',
@@ -289,7 +303,9 @@ async function runPhaseChain({ kind, phases, confirmations, launcher, evidenceRo
     for (const phase of beforeRestore) {
       const path = join(evidenceRoot, `${phase}.json`);
       if (await fileExists(path)) continue;
-      if ((phase === 'send-one-d1-only' || phase === 'send-lark-continuation' || phase === 'resend-same-operation')
+      if ((phase === 'send-one-d1-only'
+        || phase === 'send-lark-continuation'
+        || phase === 'resend-same-operation')
         && await fileExists(join(evidenceRoot, `${phase}.attempt.json`))) {
         throw closeoutError(
           'Queue acceptance is uncertain; blind resend is blocked',
@@ -351,10 +367,15 @@ async function runFreshReadOnlyValidation(baseEnv, evidenceRoot) {
   }
   const summaryPath = join(evidenceRoot, 'summary.json');
   const summary = JSON.parse(await readFile(summaryPath, 'utf8'));
-  if (summary?.details?.accepted !== true || Number(summary?.details?.validationCount) !== 4
-    || summary?.mutationPerformed !== false || Number(summary?.businessWrites) !== 0
+  if (summary?.details?.accepted !== true
+    || Number(summary?.details?.validationCount) !== 4
+    || summary?.mutationPerformed !== false
+    || Number(summary?.businessWrites) !== 0
     || Number(summary?.queueMessages) !== 0) {
-    throw closeoutError('Fresh Meta read-only validation is not accepted', 'META_PAID_LARK_CLOSEOUT_READ_ONLY_INVALID');
+    throw closeoutError(
+      'Fresh Meta read-only validation is not accepted',
+      'META_PAID_LARK_CLOSEOUT_READ_ONLY_INVALID',
+    );
   }
   return summaryPath;
 }
@@ -480,7 +501,11 @@ async function assertRemoteSafe(env, configPath, cloudflare, options = {}) {
     activeQueueOperations: Number(row.active_queue_operations ?? 0),
   });
   if (Object.values(remote).some((value) => value !== 0)) {
-    throw closeoutError('Remote Reliability state is not idle', 'META_PAID_LARK_CLOSEOUT_REMOTE_NOT_IDLE', remote);
+    throw closeoutError(
+      'Remote Reliability state is not idle',
+      'META_PAID_LARK_CLOSEOUT_REMOTE_NOT_IDLE',
+      remote,
+    );
   }
   return Object.freeze({ executionFlagsAllFalse: true, activeVersion, remote });
 }
@@ -506,13 +531,21 @@ function readD1Row(env, configPath, sql) {
   const row = Array.isArray(value)
     ? value.flatMap((entry) => entry?.results ?? [])[0]
     : value?.results?.[0];
-  if (!row) throw closeoutError('Remote D1 query returned no row', 'META_PAID_LARK_CLOSEOUT_D1_QUERY_EMPTY');
+  if (!row) {
+    throw closeoutError(
+      'Remote D1 query returned no row',
+      'META_PAID_LARK_CLOSEOUT_D1_QUERY_EMPTY',
+    );
+  }
   return row;
 }
 
 async function loadOrCreatePlan(path, repositoryHead) {
   if (await fileExists(path)) {
-    return validateMetaPaidLarkCloseoutPlan(JSON.parse(await readFile(path, 'utf8')), repositoryHead);
+    return validateMetaPaidLarkCloseoutPlan(
+      JSON.parse(await readFile(path, 'utf8')),
+      repositoryHead,
+    );
   }
   const plan = createMetaPaidLarkCloseoutPlan(repositoryHead);
   await writePrivateJson(path, plan);
@@ -535,7 +568,11 @@ function workKey(operation) {
 function parseArgs(args) {
   const unknown = args.filter((arg) => arg !== '--execute');
   if (unknown.length > 0) {
-    throw closeoutError('Unsupported paid Meta closeout arguments', 'META_PAID_LARK_CLOSEOUT_ARGUMENT_INVALID', { unknown });
+    throw closeoutError(
+      'Unsupported paid Meta closeout arguments',
+      'META_PAID_LARK_CLOSEOUT_ARGUMENT_INVALID',
+      { unknown },
+    );
   }
   return args.includes('--execute');
 }
@@ -575,10 +612,11 @@ function runVisible(command, args, env) {
     stdio: 'inherit',
   });
   if (result.error || result.status !== 0) {
-    throw closeoutError(`Required command failed: ${command} ${args.join(' ')}`, 'META_PAID_LARK_CLOSEOUT_COMMAND_FAILED', {
-      command,
-      exitCode: result.status ?? 1,
-    });
+    throw closeoutError(
+      `Required command failed: ${command} ${args.join(' ')}`,
+      'META_PAID_LARK_CLOSEOUT_COMMAND_FAILED',
+      { command, exitCode: result.status ?? 1 },
+    );
   }
 }
 
@@ -591,10 +629,11 @@ function runText(command, args, env) {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.error || result.status !== 0) {
-    throw closeoutError(`Command failed: ${command} ${args.join(' ')}`, 'META_PAID_LARK_CLOSEOUT_COMMAND_FAILED', {
-      command,
-      exitCode: result.status ?? 1,
-    });
+    throw closeoutError(
+      `Command failed: ${command} ${args.join(' ')}`,
+      'META_PAID_LARK_CLOSEOUT_COMMAND_FAILED',
+      { command, exitCode: result.status ?? 1 },
+    );
   }
   return String(result.stdout ?? '').trim();
 }
@@ -607,14 +646,42 @@ function gitText(args, trim = true) {
 async function assertPrivateRegularFile(path, label) {
   const info = await lstat(path).catch(() => null);
   if (!info || !info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
-    throw closeoutError(`${label} must be a private regular non-symlink file`, 'META_PAID_LARK_CLOSEOUT_PRIVATE_FILE_INVALID', { label });
+    throw closeoutError(
+      `${label} must be a private regular non-symlink file`,
+      'META_PAID_LARK_CLOSEOUT_PRIVATE_FILE_INVALID',
+      { label },
+    );
+  }
+}
+
+async function readRegularSourceText(path, label) {
+  const info = await stat(path).catch(() => null);
+  if (!info || !info.isFile()) {
+    throw closeoutError(
+      `${label} must resolve to a readable regular file`,
+      'META_PAID_LARK_CLOSEOUT_SOURCE_FILE_INVALID',
+      { label },
+    );
+  }
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    throw closeoutError(
+      `${label} must resolve to a readable regular file`,
+      'META_PAID_LARK_CLOSEOUT_SOURCE_FILE_INVALID',
+      { label },
+    );
   }
 }
 
 async function writePrivateJson(path, value) {
+  await writePrivateText(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function writePrivateText(path, text) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.tmp-${process.pid}`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(temporary, text, { mode: 0o600 });
   await rename(temporary, path);
   await chmod(path, 0o600);
 }
@@ -630,7 +697,11 @@ function optionalText(value) {
 
 function requireExact(value, expected, fieldName) {
   if (value !== expected) {
-    throw closeoutError(`${fieldName} must equal ${expected}`, 'META_PAID_LARK_CLOSEOUT_ENV_INVALID', { fieldName });
+    throw closeoutError(
+      `${fieldName} must equal ${expected}`,
+      'META_PAID_LARK_CLOSEOUT_ENV_INVALID',
+      { fieldName },
+    );
   }
 }
 
