@@ -12,6 +12,14 @@ const ORIGINAL_JOB = Object.freeze({
   analyticsEnabled: false,
 });
 
+const TIKTOK_UAT_JOB = Object.freeze({
+  schemaVersion: 1,
+  type: 'tiktok.creator.native.sync',
+  trigger: 'production_connector_uat',
+  requestedAt: '2026-08-22T10:43:35.801Z',
+  metricDate: '2026-08-22',
+});
+
 const GOOGLE_RUN_ID = '123e4567-e89b-42d3-a456-426614174000';
 const GOOGLE_GENERATION = Date.parse('2026-07-25T04:00:00.000Z');
 const GOOGLE_JOB = Object.freeze({
@@ -73,11 +81,68 @@ test('redrive reserves one generation, sends the original payload, and marks it 
   });
   assert.equal(calls[0][0], 'read');
   assert.ok(calls[1][1].forbiddenJobTypes.includes('system.dead-letter.redrive'));
-  assert.ok(calls[1][1].forbiddenJobTypes.includes('tiktok.creator.native.sync'));
+  assert.equal(calls[1][1].forbiddenJobTypes.includes('tiktok.creator.native.sync'), false);
   assert.equal(calls[1][1].forbiddenJobTypes.includes('youtube.channel.organic.sync'), false);
   assert.equal(calls[1][1].forbiddenJobTypes.includes('google.ads.manager.signed-delivery.process'), false);
   assert.equal(calls[2][0], 'mark');
   assert.equal(calls[2][1].dlqId, 'dlq:message-old');
+});
+
+test('TikTok Production UAT redrive preserves the controlled trigger and metric date on a fresh generation', async () => {
+  const calls = [];
+  const sent = [];
+  const redriveAt = Date.parse('2026-08-22T11:30:00.000Z');
+  const store = {
+    async readDeadLetterRedriveCandidate(input) {
+      calls.push(['read', input]);
+      return {
+        dlqId: input.dlqId,
+        schemaVersion: 1,
+        payload: TIKTOK_UAT_JOB,
+        status: 'open',
+        redriveRequestedAt: null,
+        redriveReference: null,
+      };
+    },
+    async prepareDeadLetterRedrive(input) {
+      calls.push(['prepare', input]);
+      return {
+        dlqId: input.dlqId,
+        schemaVersion: 1,
+        payload: TIKTOK_UAT_JOB,
+        status: 'redrive_pending',
+        redriveRequestedAt: input.requestedAt,
+        redriveReference: input.redriveReference,
+      };
+    },
+    async markDeadLetterRedriven(input) { calls.push(['mark', input]); },
+  };
+
+  const result = await redriveDeadLetterJob({
+    store,
+    queue: { async send(body) { sent.push(structuredClone(body)); } },
+    dlqId: 'terminal:tiktok-production-uat',
+    now: (() => {
+      const values = [redriveAt, redriveAt + 1000];
+      return () => values.shift();
+    })(),
+  });
+
+  assert.equal(result.status, 'redriven');
+  assert.equal(result.queueSend, 'sent');
+  assert.equal(result.jobType, TIKTOK_UAT_JOB.type);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0], {
+    ...TIKTOK_UAT_JOB,
+    requestedAt: '2026-08-22T11:30:00.000Z',
+    redriveOfDlqId: 'terminal:tiktok-production-uat',
+    redriveReference: `redrive:terminal:tiktok-production-uat:${redriveAt}`,
+  });
+  assert.equal(sent[0].trigger, 'production_connector_uat');
+  assert.equal(sent[0].metricDate, '2026-08-22');
+  assert.notEqual(sent[0].requestedAt, TIKTOK_UAT_JOB.requestedAt);
+  assert.equal(calls[1][1].forbiddenJobTypes.includes('tiktok.creator.native.sync'), false);
+  assert.equal(calls[2][0], 'mark');
 });
 
 test('retry after queue send reuses the persisted generation so duplicate messages fence each other', async () => {
@@ -262,7 +327,7 @@ test('unsupported job types fail before prepare mutation or Queue send', async (
           return {
             status: 'open',
             schemaVersion: 1,
-            payload: { schemaVersion: 1, type: 'tiktok.creator.native.sync' },
+            payload: { schemaVersion: 1, type: 'metric.definitions.seed' },
             redriveRequestedAt: null,
             redriveReference: null,
           };
@@ -271,7 +336,7 @@ test('unsupported job types fail before prepare mutation or Queue send', async (
         async markDeadLetterRedriven() {},
       },
       queue: { async send() { sent = true; } },
-      dlqId: 'dlq:tiktok-old',
+      dlqId: 'dlq:unsupported-old',
     }),
     (error) => error?.code === 'DEAD_LETTER_REDRIVE_JOB_TYPE_UNSUPPORTED'
       && error.retryable === false,

@@ -6,6 +6,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const META_SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
 const SUPPORTED_REDRIVE_JOB_TYPES = new Set([
+  JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
   JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
   JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,
   JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
@@ -21,7 +22,7 @@ const FORBIDDEN_REDRIVE_JOB_TYPES = Object.freeze(
 /**
  * Redrive Dead-letter แบบ Idempotent:
  * - D1 จอง requestedAt/redriveReference ก่อน Queue send
- * - YouTube ใช้ generation ใหม่ตาม Contract เดิม
+ * - TikTok/YouTube ใช้ generation ใหม่ตาม Contract เดิม
  * - Google Ads ส่ง exact original reference และ revive same-generation durable Work แบบควบคุม
  * - Facebook ส่ง exact original stable operation เฉพาะเมื่อ Source phase เดิม complete แล้ว
  * - Retry หลัง send/mark ล้มส่ง duplicate ที่ consumer fence ด้วย stable operation identity

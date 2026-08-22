@@ -5,7 +5,7 @@
 ```text
 TASK_STATUS                              = IN_PROGRESS
 CURRENT_PROGRAM                          = CUSTOMER_OWNED_PRODUCTION_PROVISIONING_V1
-BASE_MAIN_SHA                            = b85649fb0f4e5da69624fbc35b8b39a9cb149880
+BASE_MAIN_SHA                            = 62bf0aa388ffc27c91242fd29f623fdf2fca518f
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
 PRODUCTION_D1_PROVISIONED                = TRUE
@@ -20,13 +20,16 @@ PRODUCTION_SCHEDULE_ENABLED              = FALSE
 PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_AND_FAILED_TIKTOK_UAT_ONLY
 PRODUCTION_QUEUE_LARK_BOOTSTRAP_SMOKE    = PASS_IDEMPOTENT
 PRODUCTION_CONNECTOR_UAT_ADMISSION       = MERGED_PR_677
+LARK_TRANSPORT_REPAIR                    = MERGED_PR_678
+LARK_TRANSPORT_REPAIR_MAIN_SHA           = 62bf0aa388ffc27c91242fd29f623fdf2fca518f
 TIKTOK_PRODUCTION_UAT                    = FAILED_BEFORE_BUSINESS_WRITE
 TIKTOK_PRODUCTION_UAT_FAILURE            = LARK_CLIENT_PROGRAMMING_ERROR_ON_MKT_CONTENT_DAILY_SEARCH
 TIKTOK_PRODUCTION_UAT_SOURCE_WRITE       = ZERO
 TIKTOK_PRODUCTION_UAT_TARGET_WRITE       = ZERO
 TIKTOK_PRODUCTION_UAT_DLQ                = ONE_OPEN_RETAIN_FOR_REPLAY
+TIKTOK_DLQ_REDRIVE_SUPPORT               = UNDER_REVIEW
 PRODUCTION_DARK_STATE_RESTORED           = TRUE
-CURRENT_REPAIR_BRANCH                    = work/lark-transport-error-classification-v1
+CURRENT_REPAIR_BRANCH                    = work/tiktok-dlq-redrive-admission-v1
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 ```
@@ -46,7 +49,7 @@ Customer-owned Production has passed these external gates:
 - `d1_migrations` reports 21 applied migrations and no pending migration;
 - `PRAGMA quick_check` returns `ok`;
 - main Queue and DLQ exist;
-- Worker `social-mkt-sync-worker` is dark-deployed from exact source head `b85649fb0f4e5da69624fbc35b8b39a9cb149880`;
+- Worker `social-mkt-sync-worker` remains dark-deployed from reviewed source head `b85649fb0f4e5da69624fbc35b8b39a9cb149880` until the current reviewed fixes are deployed for recovery;
 - main Queue and DLQ each have exactly one Worker consumer;
 - `workers_dev=false`, no Cron trigger, no route;
 - required Lark App secret is configured in customer-owned Cloudflare secret storage;
@@ -95,7 +98,7 @@ Contract remains:
 
 TikTok Creator was the first adopter because catalog readiness is `dev_ready` and only `liveAccountUat` is pending.
 
-The first customer-owned Production attempt proved that admission and Queue routing work, but the sync failed before any business write:
+The first customer-owned Production attempt proved admission and Queue routing, but failed before any business write:
 
 - one `tiktok.creator.native.sync` Queue job used trigger `production_connector_uat`;
 - reliability run started under `chemistry_k` / `tiktok` / `native_import`;
@@ -106,50 +109,71 @@ The first customer-owned Production attempt proved that admission and Queue rout
 - the protected Native TikTok source was not written;
 - the UAT connector flag, UAT admission flag, selector, schedules, AI and notifications were restored to the dark state after the failure.
 
-Do not replay the retained DLQ or resolve the incident alerts until the shared Lark transport-classification repair is reviewed, merged and deployed.
+Retained DLQ authority:
 
-## Current repair — shared Lark transport classification
+- job type `tiktok.creator.native.sync`;
+- trigger `production_connector_uat`;
+- metric date `2026-08-22`;
+- status remains open until reviewed redrive support is deployed and recovery is executed.
 
-Repository evidence shows `LarkBitableClient` currently treats only `TypeError` as a generic network failure in `normalizeRequestError()`. A non-`RuntimeError` exception from the actual Fetch/response-body transport boundary therefore falls through to permanent `LARK_CLIENT_PROGRAMMING_ERROR` and can terminalize a Queue message without normal transient retry.
+Do not manually alter the retained DLQ row or resolve its incident alerts before verified recovery.
 
-This is the current repair hypothesis. Per the live verification rule, it becomes the confirmed root cause only after the retained Production DLQ is replayed on the reviewed fix and the same logical read proceeds successfully.
+## Reviewed shared Lark transport repair
 
-Required implementation contract:
+PR #678 merged at `62bf0aa388ffc27c91242fd29f623fdf2fca518f` after full Branch Verification.
 
-1. Request-body serialization happens before the network transport boundary.
-2. Serialization failure is permanent and must not invoke Fetch or retry as a network failure.
-3. Any non-`RuntimeError` thrown by `fetch()` or `response.text()` inside the transport boundary is normalized to retryable `LARK_NETWORK_ERROR`, regardless of JavaScript Error subclass.
-4. Timeout remains `LARK_REQUEST_TIMEOUT`.
-5. Existing Lark `RuntimeError` classifications are preserved.
-6. Errors outside the transport boundary remain fail-closed as programming errors.
-7. App token/path sanitization remains unchanged.
-8. Ambiguous Create semantics remain unchanged; internal retry is still controlled by the existing retry mode.
+The reviewed repair:
+
+1. serializes request bodies before entering the network transport boundary;
+2. classifies serialization failure as permanent `LARK_REQUEST_SERIALIZATION_ERROR` without starting Fetch;
+3. normalizes any non-`RuntimeError` thrown by `fetch()` or `response.text()` inside the transport boundary to retryable `LARK_NETWORK_ERROR`;
+4. preserves `LARK_REQUEST_TIMEOUT` for timeouts;
+5. preserves existing Lark `RuntimeError` classifications;
+6. keeps errors outside the transport boundary fail-closed as programming errors;
+7. preserves App-token/path sanitization;
+8. preserves existing ambiguous Create/retry-mode semantics.
+
+The original Production incident is still treated as a repair hypothesis until the retained failed payload is replayed on the reviewed repair and the same logical read proceeds successfully.
+
+## Current repair — TikTok retained-DLQ redrive admission
+
+The existing shared dead-letter redrive use case already supports reviewed fresh-generation recovery for non-stable jobs such as YouTube, plus special exact-stable handling for Google Ads and Facebook. TikTok was not in its supported allowlist, so the retained Production UAT DLQ could not be replayed through the canonical recovery path.
+
+Current branch `work/tiktok-dlq-redrive-admission-v1` makes the minimal shared change:
+
+1. add only `tiktok.creator.native.sync` to the existing supported redrive set;
+2. reuse the existing fresh-generation redrive semantics rather than creating a TikTok-only replay engine;
+3. preserve the original TikTok UAT `type`, `trigger=production_connector_uat`, and `metricDate`;
+4. reserve a fresh durable `requestedAt` / redrive generation;
+5. attach the existing `redriveOfDlqId` and `redriveReference` audit metadata;
+6. leave Google Ads and Facebook exact-stable semantics unchanged;
+7. keep unsupported job types fail-closed;
+8. perform no Production mutation in this code-change workstream.
 
 ## Required tests for current repair
 
-- plain `Error` from Fetch transport is `LARK_NETWORK_ERROR` and a read request can retry/recover;
-- plain `Error` from response-body reading is `LARK_NETWORK_ERROR`;
-- non-serializable request body is permanent `LARK_REQUEST_SERIALIZATION_ERROR` and Fetch is never started;
-- token/path sanitization remains intact;
-- existing Lark connector tests remain green;
-- `npm run check`;
-- `npm test`;
-- `npm run test:report-reliability`;
-- `npm audit`;
-- `npm run deploy:dry-run`.
+- TikTok sync is removed from the forbidden redrive set;
+- exact Production UAT trigger and metric date survive redrive;
+- redrive reserves a fresh requested generation;
+- audit metadata is attached through the existing generic path;
+- dead letter is marked redriven only through existing durable store semantics;
+- unsupported job types still fail before prepare mutation or Queue send;
+- existing YouTube, Google Ads and Facebook redrive tests remain green;
+- full Branch Verification passes before Ready/Merge.
 
 ## Recovery after reviewed merge
 
-1. Refresh isolated Production worktree to exact reviewed `main`.
+1. Refresh isolated Production worktree to the exact reviewed `main` containing #678 and the TikTok redrive admission.
 2. Deploy the reviewed Worker in dark state; Cron remains absent.
-3. Enable only TikTok + controlled Production-UAT admission for the recovery window.
-4. Use the existing reviewed DLQ/redrive contract to replay the retained failed payload; do not create an unrelated replacement architecture.
-5. Verify TikTok run success, D1 reliability state, Customer Lark `MKT_Accounts` / `MKT_Content` / `MKT_Content_Daily`, and protected source zero-write.
-6. Run the same logical scope again and prove stable-key idempotency.
-7. Resolve retained incident state only through existing reviewed reliability/redrive semantics after recovery is verified.
-8. Restore TikTok/UAT/redrive gates to false.
-9. Promote TikTok `liveAccountUat=true` in a separate reviewed readiness PR only after external evidence passes.
-10. Continue other eligible connectors and enable schedules last.
+3. Enable only TikTok + controlled Production-UAT admission + DLQ redrive for the recovery window.
+4. Submit one canonical `system.dead-letter.redrive` command for the exact retained TikTok DLQ ID; do not manufacture a replacement TikTok business job.
+5. Verify the retained DLQ is redriven through existing store semantics and a new TikTok run succeeds.
+6. Verify Customer Lark `MKT_Accounts`, `MKT_Content`, `MKT_Content_Daily`, D1 reliability state, and protected source zero-write.
+7. Run the same logical TikTok scope once more and prove stable-key idempotency.
+8. Resolve/close retained incident state only through existing reviewed reliability semantics after recovery evidence passes.
+9. Restore TikTok/UAT/redrive gates to false; schedules/AI/notifications remain false.
+10. Promote TikTok `liveAccountUat=true` in a separate reviewed readiness PR only after external evidence passes.
+11. Continue other eligible connectors and enable schedules last.
 
 ## Safety rules
 
@@ -161,15 +185,16 @@ Required implementation contract:
 - TikTok Ads remains deferred under PR #220.
 - Do not fake `largeAccount.productionReady` or `liveAccountUat` before external evidence exists.
 - Do not create a generic Production bypass around `assertConnectorRunnable()`.
-- Do not replay the retained failed TikTok payload before the reviewed repair is deployed.
+- Do not create a TikTok-only replay engine when the existing generic redrive semantics are sufficient.
+- Do not replay the retained failed TikTok payload before the reviewed redrive admission is merged and deployed.
 - Do not resolve retained failure evidence before successful recovery verification.
 - Do not enable Cron/schedules before controlled Production verification is complete.
 
 ## Implementation result
 
-In progress on `work/lark-transport-error-classification-v1`:
+In progress on `work/tiktok-dlq-redrive-admission-v1`:
 
-- shared Lark client separates request serialization from the transport boundary;
-- transport exceptions are normalized at the boundary instead of inferred later from `TypeError` only;
-- focused regression coverage is being added;
+- shared redrive allowlist admits `tiktok.creator.native.sync`;
+- TikTok reuses generic fresh-generation redrive semantics;
+- focused regression preserves the exact Production-UAT trigger and metric date;
 - Production remains dark and no Cloudflare/Lark/D1/Queue mutation is performed by this code-change workstream.
