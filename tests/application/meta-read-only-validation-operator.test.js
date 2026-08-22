@@ -106,7 +106,7 @@ test('every executable phase requires its exact confirmation', () => {
   }
 });
 
-test('target locks exact Chemistry K mappings, requires credentials and keeps all execution flags false', () => {
+test('target locks exact Chemistry K mappings, treats absent flags as disabled and rejects true execution flags', () => {
   const target = loadMetaReadOnlyValidationTarget(baseEnv());
   assert.deepEqual(target.metaAdAccountKeys, ['chemistry_k2', 'chemistry_k3']);
   assert.equal(target.executionFlagsEnabled, false);
@@ -114,6 +114,13 @@ test('target locks exact Chemistry K mappings, requires credentials and keeps al
   const serialized = JSON.stringify(target);
   assert.doesNotMatch(serialized, /505898710119851|851206695716861|982406442148381|17841413521012797/u);
   assert.doesNotMatch(serialized, /facebook-private-token|instagram-private-token/u);
+
+  const absentScheduleFlags = baseEnv();
+  delete absentScheduleFlags.MKT_SCHEDULE_FACEBOOK_ENABLED;
+  delete absentScheduleFlags.MKT_SCHEDULE_INSTAGRAM_ENABLED;
+  const absentAccepted = loadMetaReadOnlyValidationTarget(absentScheduleFlags);
+  assert.equal(absentAccepted.executionFlagsEnabled, false);
+  assert.equal(absentAccepted.schedulesEnabled, false);
 
   assert.throws(
     () => loadMetaReadOnlyValidationTarget({
