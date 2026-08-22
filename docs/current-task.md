@@ -91,25 +91,29 @@ The five exact Views are the `🔄 MKT_Sync_Log` Views and must not be touched.
 
 This defect is display order only. Record values remain attached to the correct Field IDs. Never rewrite, backfill, move or copy record values to fix it.
 
-Field order is a blocking parity dimension. `FULL_PARITY_PASS` is forbidden while `fieldOrderMismatchCount > 0`, unless the user later explicitly excludes field order. The user excluded width, not field order.
+Field order is a blocking parity dimension. `FULL_PARITY_PASS` is forbidden while the in-scope field-order mismatch count is greater than zero, unless the user later explicitly excludes field order. The user excluded width, not field order.
 
 Official Grid View JS SDK documentation exposes `getFieldMetaList()` to read fields in UI order, but no documented setter for reordering fields in an existing Grid View. Therefore:
 
 - do not guess `property.fields`, `fieldOrder` or any undocumented remote write payload;
 - close mismatching View order through the safe UI/manual lane;
 - preserve filter, hidden state, sort, group, row height, frozen state and record/schema state;
-- after completion, export Target once and run a read-only comparison.
+- after completion, export Target once and run the shared read-only comparison.
 
-Closeout assets:
+Closeout implementation uses the existing shared parity path only:
 
-- `scripts/customer-base-view-order-audit.mjs`
-- `tests/customer-base-view-order-audit.test.js`
+- `scripts/lib/lark-base-view-manual-parity-manifest.js` — Source/Target manifest builder + shared verifier; `includeColumnWidths:false` keeps field order blocking while excluding width.
+- `tests/scripts/lark-base-view-manual-parity-scope.test.js` — regression proving width-only drift is ignored and field-order drift still blocks.
+- `scripts/customer-base-view-manual-parity-manifest.mjs` — pinned current Source authority manifest operator.
+- `scripts/customer-base-view-export-parity.mjs` — direct Source `.base` vs Target `.base` local/read-only verifier for the 32-table clone scope.
 - `docs/customer-base-view-order-closeout.md`
 - `docs/customer-base-view-order-manual-closeout.md`
 - `docs/customer-base-view-order-capability-note.md`
 - `docs/customer-base-view-order-root-cause.md`
 - `docs/customer-base-field-order-acceptance.md`
 - `docs/customer-base-width-out-of-scope.md`
+
+No second/parallel field-order engine is retained.
 
 ## OPEN blocker 2 — Dashboard manual parity
 
@@ -166,7 +170,7 @@ The earlier Base v3 Workflow object was a different Lark product surface, was pr
 ## Required next sequence
 
 1. Close the 105 mismatching View field orders in place using the exact Source order checklist; leave the 5 exact `🔄 MKT_Sync_Log` Views untouched.
-2. Export Target and run read-only field-order verification; required result `fieldOrderMismatchCount = 0`, `missingTargetViewCount = 0`, `extraTargetViewCount = 0`.
+2. Export Target and run `scripts/customer-base-view-export-parity.mjs`; required result is 32 Tables / 705 Fields / 110 Views in clone scope with zero blocking View mismatches and zero field-order mismatches. Width is excluded.
 3. Close Dashboard manual remainder: 7 slicers + 2 table_view widgets + `summerBreeze` presentation.
 4. Export Target once more and run final read-only parity within the agreed scope.
 5. Only after both UI blockers are closed may the workstream report `FULL_PARITY_PASS`.
