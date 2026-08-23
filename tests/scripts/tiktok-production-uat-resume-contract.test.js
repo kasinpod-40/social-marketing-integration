@@ -5,6 +5,7 @@ import {
   TIKTOK_PRODUCTION_RESUME,
   buildResumeIdempotencyEnvelope,
   buildResumeRedriveEnvelope,
+  validateIdempotencyDurableProof,
   validateResumeDlqRow,
   validateResumeSuccessRun,
   validateRootRedrivenRow,
@@ -97,7 +98,7 @@ test('idempotency rerun strips redrive lineage and uses a fresh requestedAt', ()
   assert.equal('redriveReference' in envelope.body, false);
 });
 
-test('success validation rejects latest stale row and idempotency business writes', () => {
+test('success validation rejects stale rows, empty-source idempotency, and aggregate writes', () => {
   const success = {
     sync_run_id: 'fresh-success',
     customer_profile: 'chemistry_k',
@@ -105,6 +106,7 @@ test('success validation rejects latest stale row and idempotency business write
     sync_type: 'native_import',
     status: 'success',
     error_code: null,
+    records_pulled: 4,
     records_created: 0,
     records_updated: 0,
     records_written: 0,
@@ -115,7 +117,75 @@ test('success validation rejects latest stale row and idempotency business write
     /Stale pre-resume/u,
   );
   assert.throws(
+    () => validateResumeSuccessRun({ ...success, records_pulled: 0 }, { idempotency: true }),
+    /non-empty TikTok source/u,
+  );
+  assert.throws(
     () => validateResumeSuccessRun({ ...success, records_written: 1 }, { idempotency: true }),
     /Idempotency rerun produced a business write/u,
+  );
+});
+
+test('durable idempotency proof requires zero writes and existing-row matches in all three Lark tables', () => {
+  const generation = 1787453000000;
+  const proof = validateIdempotencyDurableProof({
+    expectedGeneration: generation,
+    workRow: {
+      work_key: 'tiktok:message-idempotency',
+      work_type: TIKTOK_PRODUCTION_RESUME.workType,
+      generation,
+      requested_at: generation,
+      lifecycle_status: 'completed',
+    },
+    sourcePhase: {
+      phase: TIKTOK_PRODUCTION_RESUME.sourcePhase,
+      processed_items: 4,
+      pages_processed: 1,
+      complete: 1,
+    },
+    businessWritePhase: {
+      phase: TIKTOK_PRODUCTION_RESUME.businessWritePhase,
+      complete: 1,
+      state_json: JSON.stringify({
+        accountResult: { created: 0, updated: 0, skipped: 1 },
+        contentResult: { created: 0, updated: 0, skipped: 4 },
+        dailyResult: { created: 0, updated: 0, skipped: 4 },
+      }),
+    },
+  });
+
+  assert.equal(proof.larkReadbackVerified, true);
+  assert.equal(proof.businessWrites, 0);
+  assert.deepEqual(proof.tables.account, { created: 0, updated: 0, skipped: 1 });
+  assert.deepEqual(proof.tables.content, { created: 0, updated: 0, skipped: 4 });
+  assert.deepEqual(proof.tables.contentDaily, { created: 0, updated: 0, skipped: 4 });
+
+  assert.throws(
+    () => validateIdempotencyDurableProof({
+      expectedGeneration: generation,
+      workRow: {
+        work_key: 'tiktok:message-idempotency',
+        work_type: TIKTOK_PRODUCTION_RESUME.workType,
+        generation,
+        requested_at: generation,
+        lifecycle_status: 'completed',
+      },
+      sourcePhase: {
+        phase: TIKTOK_PRODUCTION_RESUME.sourcePhase,
+        processed_items: 4,
+        pages_processed: 1,
+        complete: 1,
+      },
+      businessWritePhase: {
+        phase: TIKTOK_PRODUCTION_RESUME.businessWritePhase,
+        complete: 1,
+        state_json: JSON.stringify({
+          accountResult: { created: 0, updated: 1, skipped: 0 },
+          contentResult: { created: 0, updated: 0, skipped: 4 },
+          dailyResult: { created: 0, updated: 0, skipped: 4 },
+        }),
+      },
+    }),
+    /MKT_Accounts business write/u,
   );
 });
