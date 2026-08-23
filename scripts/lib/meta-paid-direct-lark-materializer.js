@@ -58,7 +58,7 @@ JOIN sync_work_phases s
   ON s.work_key = r.work_key AND s.phase = ${sourcePhase}
 JOIN sync_work_phases d
   ON d.work_key = r.work_key AND d.phase = ${d1Phase}
-WHERE r.work_key LIKE ${prefix} || '%'
+WHERE substr(r.work_key, 1, length(${prefix})) = ${prefix}
   AND s.complete = 1
   AND d.complete = 1
 ORDER BY r.generation DESC, r.updated_at DESC, r.work_key ASC
