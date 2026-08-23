@@ -56,6 +56,14 @@ function resolveStableOperationContract(type, body) {
       operationIdPattern: SAFE_OPERATION_ID,
     });
   }
+  if (type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC
+    && body?.trigger === JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT
+    && body?.dryRun === false) {
+    return Object.freeze({
+      prefix: 'youtube',
+      operationIdPattern: SAFE_OPERATION_ID,
+    });
+  }
   return STABLE_OPERATION_CONTRACTS.get(type) ?? null;
 }
 

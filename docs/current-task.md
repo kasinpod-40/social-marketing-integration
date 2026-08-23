@@ -278,6 +278,31 @@ reviewed repair makes the same logical read proceed successfully. The retained f
 
 ## Implementation result
 
+### 2026-08-23 — Stable YouTube Production-UAT recovery identity
+
+- added a stable Queue-operation contract for `youtube.channel.organic.sync` only when the canonical
+  `production_connector_uat` trigger is used with `dryRun=false`;
+- the controlled Production-UAT route now consumes the reviewed `operation.workKey`, allowing a recovery
+  delivery to resume the exact existing YouTube page/chunk checkpoint even when Cloudflare assigns a new
+  message ID;
+- scheduled and ordinary YouTube jobs retain their existing delivery-scoped work key; no generic Production
+  bypass or scheduled readiness exception was added;
+- malformed, unstable, drifted work keys/generations fail closed before Provider or business writes;
+- focused Queue-operation, Production-UAT admission and Worker-routing tests pass `53/53`;
+- `npm run check` passes with 800 source files, 2,393 local dependencies and zero cycles;
+- full tests pass `3,188` unit plus `18` Workers-runtime tests; Report reliability passes `105/105`;
+- `npm audit --audit-level=high` reports zero vulnerabilities and `npm run deploy:dry-run` passes;
+- Customer Production schedule remains disabled while live UAT resumes the retained exact checkpoint.
+
+Files changed:
+
+- `packages/application/src/jobs/queue-operation.js`
+- `apps/sync-worker/src/active-job-router.js`
+- `tests/application/queue-operation.test.js`
+- `tests/application/production-connector-uat-admission.test.js`
+- `docs/current-task.md`
+- `CHANGELOG.md`
+
 YouTube no-reconnect credential cutover implementation on
 `codex/youtube-customer-credential-rewrap-20260823`:
 

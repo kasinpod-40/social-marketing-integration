@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-23 — YouTube Production-UAT stable recovery delivery
+
+- made controlled YouTube Production UAT use a stable reviewed Queue operation identity so a new Cloudflare
+  delivery can resume the exact prior D1 page/chunk checkpoint after a retry, CPU termination or DLQ handoff;
+- kept scheduled and ordinary YouTube work scoped to their existing message identity and kept normal
+  Production readiness fail-closed;
+- added focused drift, recovery-delivery and legacy-behavior regression coverage; no schedule activation or
+  readiness promotion is implied by this code change.
+
 ## 2026-08-23 — YouTube customer credential no-reconnect cutover path
 
 - added an exact reviewed Customer Production credential runtime while preserving the Integration Workspace

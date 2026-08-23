@@ -132,6 +132,31 @@ test('ordinary YouTube jobs retain the legacy delivery-scoped identity', () => {
   assert.equal(operation.workKey, 'youtube:legacy-youtube-message');
 });
 
+test('controlled Production YouTube UAT keeps stable identity across recovery deliveries', () => {
+  const body = {
+    schemaVersion: 1,
+    type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+    trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT,
+    dryRun: false,
+    analyticsEnabled: true,
+    operationId: OPERATION_ID,
+    workKey: `youtube:${OPERATION_ID}`,
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+    requestedAt: new Date(REQUESTED_AT).toISOString(),
+  };
+  const resolve = (id) => resolveQueueOperation({
+    job: normalizeQueueJobMessage({ id, body }),
+    message: { id },
+  });
+
+  const first = resolve('youtube-production-uat-a');
+  const recovery = resolve('youtube-production-uat-recovery-b');
+  assert.deepEqual(recovery, first);
+  assert.equal(first.stable, true);
+  assert.equal(first.workKey, `youtube:${OPERATION_ID}`);
+});
+
 
 test('Meta Ads operation identity is scoped by configured account alias', () => {
   const create = (sourceAccountKey) => resolveQueueOperation({
@@ -228,6 +253,13 @@ test('bootstrap, admitted sync and YouTube operator reject workKey or generation
       type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
       trigger: JOB_TRIGGERS.YOUTUBE_WORKER_DRY_RUN,
       dryRun: true,
+      workKey: `youtube:${OPERATION_ID}`,
+    },
+    {
+      ...BODY,
+      type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+      trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT,
+      dryRun: false,
       workKey: `youtube:${OPERATION_ID}`,
     },
   ]) {

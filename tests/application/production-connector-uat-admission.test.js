@@ -11,6 +11,7 @@ import {
 import {
   processJob,
   resolveConnectorRunMode,
+  resolveYouTubeActiveWorkKey,
 } from '../../apps/sync-worker/src/active-job-router.js';
 
 function productionRuntime(overrides = {}) {
@@ -183,6 +184,40 @@ test('worker integration passes exact controlled UAT through readiness before in
   );
 
   assert.equal(infrastructureCalls, 1);
+});
+
+test('controlled YouTube Production UAT resumes from stable operation workKey across message IDs', () => {
+  const operationId = 'a97f16d52bf8d1cf89befca7fa6ed455';
+  const input = {
+    job: { body: { trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT } },
+    message: { id: 'new-delivery-id' },
+    operation: {
+      stable: true,
+      operationId,
+      workKey: `youtube:${operationId}`,
+    },
+  };
+
+  assert.equal(resolveYouTubeActiveWorkKey(input), `youtube:${operationId}`);
+});
+
+test('ordinary YouTube execution remains scoped to its Cloudflare message ID', () => {
+  assert.equal(resolveYouTubeActiveWorkKey({
+    job: { body: { trigger: 'scheduled' } },
+    message: { id: 'scheduled-delivery' },
+  }), 'youtube:scheduled-delivery');
+});
+
+test('controlled YouTube Production UAT rejects unstable recovery identity', () => {
+  assert.throws(() => resolveYouTubeActiveWorkKey({
+    job: { body: { trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT } },
+    message: { id: 'different-delivery' },
+    operation: {
+      stable: false,
+      operationId: 'youtube-operation',
+      workKey: 'youtube:youtube-operation',
+    },
+  }), (error) => error.code === 'YOUTUBE_PRODUCTION_UAT_OPERATION_INVALID');
 });
 
 test('worker integration admits scheduled Production TikTok after verified readiness', async () => {
