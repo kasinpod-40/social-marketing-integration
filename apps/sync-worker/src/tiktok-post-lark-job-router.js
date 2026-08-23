@@ -56,7 +56,7 @@ export async function processJobWithTikTokPostLark(input) {
 async function processProbeJob(input) {
   const definition = assertJobImplemented(getJobDefinition(input.job.body.type));
   const runtimeConfig = input.getRuntimeConfig();
-  assertIntegrationWorkspace(runtimeConfig);
+  assertTikTokPostLarkRuntime(runtimeConfig);
   const connectorConfig = assertConnectorRunnable(runtimeConfig, definition.connectorKey);
   const config = readTikTokPostLarkRuntimeConfig(input.env);
   if (!config.watermarkAdmissionEnabled) {
@@ -181,7 +181,7 @@ async function processAdmittedSyncJob(input) {
 async function processPostLarkD1FirstSync(input) {
   const definition = assertJobImplemented(getJobDefinition(input.job.body.type));
   const runtimeConfig = input.getRuntimeConfig();
-  assertIntegrationWorkspace(runtimeConfig);
+  assertTikTokPostLarkRuntime(runtimeConfig);
   const connectorConfig = assertConnectorRunnable(runtimeConfig, definition.connectorKey);
   const storage = readStorageRuntimeConfig(input.env);
   if (!storage.timeSeriesD1WriteEnabled) {
@@ -388,13 +388,26 @@ function assertAdmissionMatches(admission, body, operation) {
   }
 }
 
-function assertIntegrationWorkspace(runtimeConfig) {
-  if (runtimeConfig.environment !== 'development'
-    || runtimeConfig.profileKey !== 'integration_workspace') {
-    throw permanentError('TikTok post-Lark pipeline is restricted to the Integration Workspace', {
+export function assertTikTokPostLarkRuntime(runtimeConfig = {}) {
+  const integrationWorkspace = runtimeConfig.environment === 'development'
+    && runtimeConfig.profileKey === 'integration_workspace'
+    && runtimeConfig.infrastructureOwner === 'developer'
+    && runtimeConfig.customerKey === 'chemistry_k';
+  const customerProduction = runtimeConfig.environment === 'production'
+    && runtimeConfig.profileKey === 'chemistry_k'
+    && runtimeConfig.infrastructureOwner === 'customer'
+    && runtimeConfig.customerKey === 'chemistry_k';
+  if (!integrationWorkspace && !customerProduction) {
+    throw permanentError('TikTok post-Lark pipeline requires the reviewed Integration or customer Production runtime', {
       code: 'TIKTOK_POST_LARK_ENVIRONMENT_BLOCKED',
+      details: {
+        environment: runtimeConfig.environment ?? null,
+        profileKey: runtimeConfig.profileKey ?? null,
+        infrastructureOwner: runtimeConfig.infrastructureOwner ?? null,
+      },
     });
   }
+  return runtimeConfig;
 }
 
 function reliabilityLogger(event) {
