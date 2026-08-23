@@ -26,6 +26,10 @@ import {
   YOUTUBE_CONNECTION_PATHS,
 } from './youtube-customer-connection-http.js';
 import {
+  createYouTubeCredentialRewrapHttpHandler,
+  YOUTUBE_CREDENTIAL_REWRAP_PATH,
+} from './youtube-credential-rewrap-http.js';
+import {
   connectionRequestError,
   readBoundedConnectionJson,
   requireConnectionText,
@@ -41,6 +45,7 @@ KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.select, Object.freeze(['POST']));
+KNOWN_METHODS.set(YOUTUBE_CREDENTIAL_REWRAP_PATH, Object.freeze(['POST']));
 
 /** Explicit HTTP boundary; guarded diagnostics and Connector handlers are composed independently. */
 export function createCustomerConnectionHttpHandler(dependencies = {}) {
@@ -53,6 +58,9 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
       ),
       createWooCommerceProviderDiagnosticsHttpHandler(
         dependencies.woocommerceProviderDiagnosticsDependencies,
+      ),
+      createYouTubeCredentialRewrapHttpHandler(
+        dependencies.youtubeCredentialRewrapDependencies,
       ),
       createGoogleAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
       createYouTubeCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),

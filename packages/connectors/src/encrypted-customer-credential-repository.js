@@ -69,6 +69,55 @@ export class EncryptedCustomerCredentialRepository {
     });
   }
 
+  /** ถอดและเข้ารหัส Credential เดิมใหม่ใน memory เท่านั้น โดยไม่คืน plaintext ออกจาก boundary */
+  async rewrap(input = {}) {
+    const connectionId = requireText(input.connectionId, 'connectionId');
+    const connectorKey = requireText(input.connectorKey, 'connectorKey');
+    const credentialKind = requireCredentialKind(input.credentialKind);
+    const credentialReference = requireText(input.credentialReference, 'credentialReference');
+    const sourceKeyVersion = requireText(input.sourceKeyVersion, 'sourceKeyVersion');
+    if (sourceKeyVersion === this.keyVersion) {
+      throw permanentError('Credential rewrap requires a different current key version', {
+        code: 'CONNECTION_CREDENTIAL_REWRAP_TARGET_UNCHANGED',
+      });
+    }
+    const row = await this.store.getEncryptedCredential(credentialReference);
+    if (!row || row.status !== 'active') {
+      throw permanentError('Encrypted customer credential is unavailable for rewrap', {
+        code: 'CONNECTION_CREDENTIAL_UNAVAILABLE',
+      });
+    }
+    if (row.connectionId !== connectionId || row.credentialKind !== credentialKind) {
+      throw permanentError('Encrypted customer credential binding does not match', {
+        code: 'CONNECTION_CREDENTIAL_BINDING_MISMATCH',
+      });
+    }
+    if (row.keyVersion !== sourceKeyVersion) {
+      throw permanentError('Encrypted customer credential source key version does not match', {
+        code: 'CONNECTION_CREDENTIAL_REWRAP_SOURCE_MISMATCH',
+      });
+    }
+    const plaintext = await this.read({
+      credentialReference,
+      connectionId,
+      connectorKey,
+      credentialKind,
+    });
+    const nextReference = await this.replace({
+      connectionId,
+      connectorKey,
+      credentialKind,
+      plaintext,
+      previousReference: credentialReference,
+    });
+    return Object.freeze({
+      previousReference: credentialReference,
+      credentialReference: nextReference,
+      sourceKeyVersion,
+      keyVersion: this.keyVersion,
+    });
+  }
+
   async findActive(input) {
     if (typeof this.store.findActiveEncryptedCredential !== 'function') return null;
     return this.store.findActiveEncryptedCredential(input);

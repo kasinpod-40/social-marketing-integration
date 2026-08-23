@@ -73,6 +73,8 @@
     "MKT_YOUTUBE_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/youtube/callback",
     "GOOGLE_OAUTH_CLIENT_ID": "replace-with-google-oauth-client-id",
     "MKT_CONNECTION_ENCRYPTION_KEY_VERSION": "v1",
+    "MKT_CONNECTION_ENCRYPTION_KEY_PREVIOUS_VERSIONS": "",
+    "MKT_YOUTUBE_CREDENTIAL_REWRAP_ENABLED": "false",
     "MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID": "replace-with-10-digit-manager-customer-id",
     "MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID": "replace-with-10-digit-advertiser-customer-id",
     "MKT_GOOGLE_ADS_API_VERSION": "v24",

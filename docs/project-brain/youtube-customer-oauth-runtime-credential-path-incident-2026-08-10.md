@@ -161,3 +161,24 @@ CUSTOMER_RECONNECT        = COMPLETE_NO_DAILY_ACTION_REQUIRED
 FAILED_WORK_REPLAY        = PROHIBITED_NOT_RUN
 PRODUCTION                = BLOCKED
 ```
+
+## Customer Production credential cutover — 2026-08-23
+
+Customer Production D1 retains the exact connected/validated YouTube Connection and active encrypted Refresh
+Token that passed the Live closure above. A migrated ciphertext cannot be decrypted by a different Customer
+Worker key, while Cloudflare correctly prevents reading the Integration Worker Secret value. This is a key
+ownership boundary, not a missing OAuth grant and not a reason to request customer consent again.
+
+The reviewed cutover contract therefore rewraps the same plaintext only inside the Integration Worker:
+
+1. the exact active v1 envelope is decrypted with the existing Integration Secret;
+2. the Refresh Token is immediately encrypted under a new Customer-owned v2 AES-256-GCM Secret;
+3. only the new encrypted envelope/reference is moved to Customer D1;
+4. Customer Production performs Owner identity/refresh proof before schedule activation;
+5. legacy `YOUTUBE_OAUTH_*` credentials remain prohibited as Analytics fallback.
+
+The operator boundary is disabled by default, authenticated, restricted to the canonical Integration profile,
+requires exact connection/reference/source/target/confirmation values, and returns no plaintext, ciphertext or
+key material. Customer Production runtime admission reuses the canonical reviewed ownership predicate and
+rejects historical aliases and mixed tuples. Live rewrap/deploy/schedule completion remains pending reviewed
+merge and external readback.

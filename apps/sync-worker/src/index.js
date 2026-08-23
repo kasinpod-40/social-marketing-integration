@@ -39,6 +39,11 @@ export {
   createYouTubeCustomerConnectionHttpHandler,
   YOUTUBE_CONNECTION_PATHS,
 } from './youtube-customer-connection-http.js';
+export {
+  createYouTubeCredentialRewrapHttpHandler,
+  YOUTUBE_CREDENTIAL_REWRAP_CONFIRMATION,
+  YOUTUBE_CREDENTIAL_REWRAP_PATH,
+} from './youtube-credential-rewrap-http.js';
 
 const syncWorker = createSyncWorker();
 export default syncWorker;

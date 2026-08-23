@@ -6,6 +6,10 @@ import { D1CustomerConnectionStore } from '../../../packages/connectors/src/d1-c
 import {
   EncryptedCustomerCredentialRepository,
 } from '../../../packages/connectors/src/encrypted-customer-credential-repository.js';
+import {
+  isReviewedConnectorRuntime,
+  loadCustomerRuntimeConfig,
+} from '../../../packages/config/src/customer-profiles.js';
 
 const REDIRECT_ENV_KEYS = Object.freeze({
   [CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS]: 'MKT_GOOGLE_ADS_REDIRECT_URI',
@@ -19,7 +23,7 @@ export function createCustomerConnectionRuntime(env, dependencies = {}) {
   const credentials = dependencies.credentials ?? new EncryptedCustomerCredentialRepository({
     store,
     keyVersion: config.encryptionKeyVersion,
-    keys: { [config.encryptionKeyVersion]: config.encryptionKey },
+    keys: config.encryptionKeys,
   });
   const service = dependencies.service ?? new CustomerConnectionOAuthService({
     store,
@@ -62,29 +66,47 @@ export function loadCustomerConnectionRuntimeConfig(env = {}) {
 
 /** โหลดเฉพาะขอบเขตที่ Queue/Cron ต้องใช้เพื่ออ่าน Dynamic Customer credential จาก D1 */
 export function loadCustomerCredentialRuntimeConfig(env = {}) {
-  const environment = requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
-  requireExact(
-    env.MKT_CUSTOMER_PROFILE,
-    'integration_workspace',
-    'MKT_CUSTOMER_PROFILE',
-  );
+  const runtime = loadCustomerRuntimeConfig(env);
+  if (
+    !isReviewedConnectorRuntime(runtime)
+    || runtime.requestedProfileKey !== runtime.profileKey
+  ) {
+    throw new TypeError('Customer credential runtime must use a reviewed environment/profile tuple');
+  }
   const encryptionKeyVersion = requireText(
     env.MKT_CONNECTION_ENCRYPTION_KEY_VERSION ?? 'v1',
     'MKT_CONNECTION_ENCRYPTION_KEY_VERSION',
   );
+  if (!/^v[1-9]\d*$/u.test(encryptionKeyVersion)) {
+    throw new TypeError('MKT_CONNECTION_ENCRYPTION_KEY_VERSION is invalid');
+  }
+  const previousKeyVersions = readKeyVersions(
+    env.MKT_CONNECTION_ENCRYPTION_KEY_PREVIOUS_VERSIONS,
+  ).filter((version) => version !== encryptionKeyVersion);
+  const encryptionKeyVersions = Object.freeze([
+    encryptionKeyVersion,
+    ...previousKeyVersions,
+  ]);
+  const encryptionKeys = Object.freeze(Object.fromEntries(encryptionKeyVersions.map((version) => [
+    version,
+    requireSecret(
+      env[`MKT_CONNECTION_ENCRYPTION_KEY_${version.toUpperCase()}`],
+      `MKT_CONNECTION_ENCRYPTION_KEY_${version.toUpperCase()}`,
+    ),
+  ])));
   return Object.freeze({
-    environment,
-    customerProfile: 'integration_workspace',
+    environment: runtime.environment,
+    customerProfile: runtime.profileKey,
+    infrastructureOwner: runtime.infrastructureOwner,
     customerKey: requireExact(
       env.MKT_CONNECTION_CUSTOMER_KEY,
       'chemistry_k',
       'MKT_CONNECTION_CUSTOMER_KEY',
     ),
     encryptionKeyVersion,
-    encryptionKey: requireSecret(
-      env[`MKT_CONNECTION_ENCRYPTION_KEY_${encryptionKeyVersion.toUpperCase()}`],
-      `MKT_CONNECTION_ENCRYPTION_KEY_${encryptionKeyVersion.toUpperCase()}`,
-    ),
+    encryptionKey: encryptionKeys[encryptionKeyVersion],
+    encryptionKeyVersions,
+    encryptionKeys,
   });
 }
 
@@ -176,4 +198,13 @@ function requireApiVersion(value) {
   const version = requireText(value, 'MKT_GOOGLE_ADS_API_VERSION');
   if (!/^v\d+$/u.test(version)) throw new TypeError('MKT_GOOGLE_ADS_API_VERSION is invalid');
   return version;
+}
+
+function readKeyVersions(value) {
+  if (value === undefined || value === null || value === '') return [];
+  const versions = String(value).split(',').map((item) => item.trim()).filter(Boolean);
+  if (versions.length > 4 || versions.some((version) => !/^v[1-9]\d*$/u.test(version))) {
+    throw new TypeError('MKT_CONNECTION_ENCRYPTION_KEY_PREVIOUS_VERSIONS is invalid');
+  }
+  return [...new Set(versions)];
 }
