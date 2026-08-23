@@ -51,7 +51,7 @@ test('runtime diagnosis SQL is read-only and excludes the retained forensic work
     assert.match(sql, /^SELECT\b/u);
     assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE)\b/iu);
   }
-  assert.match(queries.work, new RegExp(META_PAID_LARK_RETAINED_FORENSIC_WORK_KEY.replaceAll(':', '\\:'), 'u'));
+  assert.equal(queries.work.includes(META_PAID_LARK_RETAINED_FORENSIC_WORK_KEY), true);
   assert.match(queries.queue, /queue_operation_attempts/u);
   assert.match(queries.locks, /expires_at > \(unixepoch\(\) \* 1000\)/u);
 });
