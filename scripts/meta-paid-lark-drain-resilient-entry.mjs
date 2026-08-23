@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readDevVars } from './lib/dev-vars.js';
 import { buildMetaPaidLarkRuntimeDiagnosisQueries } from './lib/meta-paid-lark-runtime-blocker-diagnosis.js';
+import { sanitizeCliOutput } from './lib/sanitize-cli-output.js';
 import { resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -79,6 +80,8 @@ async function executeResilientEntry() {
       exitCode: probe.exitCode ?? null,
       signal: probe.signal ?? null,
       timedOut: probe.timedOut ?? false,
+      errorMessage: probe.errorMessage ?? null,
+      stdout: probe.stdout ?? null,
       stderr: probe.stderr ?? null,
       directRemoteMutationPerformed: false,
     }, null, 2)}\n`);
@@ -187,20 +190,13 @@ async function diagnoseReadOnlyD1() {
         exitCode: Number.isInteger(error?.code) ? error.code : (error?.exitCode ?? null),
         signal: error?.signal ?? null,
         timedOut: error?.killed === true && error?.signal === 'SIGTERM',
-        stderr: sanitizeStderr(error?.stderr),
+        errorMessage: sanitizeCliOutput(error instanceof Error ? error.message : error),
+        stdout: sanitizeCliOutput(error?.stdout),
+        stderr: sanitizeCliOutput(error?.stderr),
       };
     }
   }
   return { ok: true, queryCount: completed };
-}
-
-function sanitizeStderr(value) {
-  const text = String(value ?? '')
-    .replace(/(authorization\s*[:=]\s*bearer\s+)[^\s]+/giu, '$1[REDACTED]')
-    .replace(/((?:api|access|auth|refresh|client)[_-]?token\s*[:=]\s*)[^\s]+/giu, '$1[REDACTED]')
-    .replace(/((?:secret|password)\s*[:=]\s*)[^\s]+/giu, '$1[REDACTED]')
-    .trim();
-  return text ? text.slice(-8_192) : null;
 }
 
 function parseArgs(args) {
