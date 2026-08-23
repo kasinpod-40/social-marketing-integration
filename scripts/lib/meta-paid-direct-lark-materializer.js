@@ -24,7 +24,10 @@ const MAX_CANDIDATES = 25;
 
 export function buildMetaPaidDirectCandidateSql(target) {
   const safeTarget = requireTarget(target);
-  const prefix = sqlLiteral(`meta_ads:${safeTarget}:meta-${safeTarget}-history-20260701-20260731-`);
+  const targetPrefix = sqlLiteral(`meta_ads:${safeTarget}:`);
+  const exactJulyPrefix = sqlLiteral(
+    `meta_ads:${safeTarget}:meta-${safeTarget}-history-20260701-20260731-`,
+  );
   const sourcePhase = sqlLiteral(META_PAID_DIRECT_LARK_SOURCE_PHASE);
   const d1Phase = sqlLiteral(META_PAID_DIRECT_LARK_D1_PHASE);
   return `
@@ -58,10 +61,13 @@ JOIN sync_work_phases s
   ON s.work_key = r.work_key AND s.phase = ${sourcePhase}
 JOIN sync_work_phases d
   ON d.work_key = r.work_key AND d.phase = ${d1Phase}
-WHERE substr(r.work_key, 1, length(${prefix})) = ${prefix}
+WHERE substr(r.work_key, 1, length(${targetPrefix})) = ${targetPrefix}
   AND s.complete = 1
   AND d.complete = 1
-ORDER BY r.generation DESC, r.updated_at DESC, r.work_key ASC
+ORDER BY r.generation DESC,
+  CASE WHEN substr(r.work_key, 1, length(${exactJulyPrefix})) = ${exactJulyPrefix} THEN 0 ELSE 1 END,
+  r.updated_at DESC,
+  r.work_key ASC
 LIMIT ${MAX_CANDIDATES};`.trim();
 }
 
@@ -115,17 +121,33 @@ export function normalizeMetaPaidDirectCandidate(row, target) {
       workKey,
     });
   }
+
   const operationId = workKey.slice(expectedPrefix.length);
   const operationPattern = new RegExp(
-    `^meta-${escapeRegExp(safeTarget)}-history-20260701-20260731-${OPERATION_SUFFIX}$`,
+    `^meta-${escapeRegExp(safeTarget)}-history-(\\d{8})-(\\d{8})-${OPERATION_SUFFIX}$`,
     'u',
   );
-  if (!operationPattern.test(operationId)) {
-    throw sourceError('Paid Meta work is not the exact July history operation shape', {
+  const operationMatch = operationPattern.exec(operationId);
+  if (!operationMatch) {
+    throw sourceError('Paid Meta work is not a supported historical operation shape', {
       target: safeTarget,
       workKey,
     });
   }
+  const sourcePeriod = deepFreeze({
+    since: compactDateToIso(operationMatch[1], 'operation period start'),
+    until: compactDateToIso(operationMatch[2], 'operation period end'),
+  });
+  if (sourcePeriod.since > sourcePeriod.until
+    || sourcePeriod.since > META_PAID_DIRECT_LARK_PERIOD.since
+    || sourcePeriod.until < META_PAID_DIRECT_LARK_PERIOD.until) {
+    throw sourceError('Paid Meta historical work does not cover the approved July range', {
+      target: safeTarget,
+      workKey,
+      sourcePeriod,
+    });
+  }
+
   const sourcePhase = normalizePhaseRow(value, 'source');
   const d1Phase = normalizePhaseRow(value, 'd1');
   if (!sourcePhase.complete || !d1Phase.complete) {
@@ -145,6 +167,7 @@ export function normalizeMetaPaidDirectCandidate(row, target) {
     target: safeTarget,
     workKey,
     operationId,
+    sourcePeriod,
     cursorKey: requireText(value.cursor_key, 'candidate.cursor_key'),
     workType: requireText(value.work_type, 'candidate.work_type'),
     generation: timestamp(value.generation, 'candidate.generation'),
@@ -171,6 +194,7 @@ export function normalizeMetaPaidDirectUnits(rows) {
 export function validateMetaPaidDirectSourceSnapshot(candidateInput, unitsInput) {
   const candidate = requireObject(candidateInput, 'candidate');
   const target = requireTarget(candidate.target);
+  const sourcePeriod = requireObject(candidate.sourcePeriod, 'candidate.sourcePeriod');
   const units = Array.isArray(unitsInput) ? unitsInput : [];
   const expectedUnits = nonNegativeInteger(candidate.sourcePhase?.state?.unitCount, 'source.unitCount');
   if (expectedUnits <= 0 || units.length !== expectedUnits) {
@@ -224,29 +248,39 @@ export function validateMetaPaidDirectSourceSnapshot(candidateInput, unitsInput)
     });
   }
   const creativeRows = creativeUnits.flatMap((unit) => requireRows(unit.payload, 'creative'));
-  const dailyRows = dailyUnits.flatMap((unit) => requireRows(unit.payload, 'daily'));
-  for (const row of dailyRows) {
-    const dateStart = requireDate(row?.date_start, 'daily.date_start');
-    const dateStop = requireDate(row?.date_stop ?? row?.date_start, 'daily.date_stop');
-    if (dateStart < META_PAID_DIRECT_LARK_PERIOD.since
-      || dateStart > META_PAID_DIRECT_LARK_PERIOD.until
-      || dateStop < META_PAID_DIRECT_LARK_PERIOD.since
-      || dateStop > META_PAID_DIRECT_LARK_PERIOD.until) {
-      throw sourceError('Paid Meta Daily source contains a row outside the approved July range', {
+  const sourceDailyRows = dailyUnits.flatMap((unit) => requireRows(unit.payload, 'daily'));
+  for (const row of sourceDailyRows) {
+    const { dateStart, dateStop } = dailyDateRange(row);
+    if (dateStart < sourcePeriod.since || dateStop > sourcePeriod.until) {
+      throw sourceError('Paid Meta Daily row escapes its persisted historical operation range', {
         target,
         workKey: candidate.workKey,
+        sourcePeriod,
         dateStart,
         dateStop,
       });
     }
   }
 
+  const scopedUnits = units.map((unit) => {
+    const copy = structuredClone(unit);
+    if (copy?.payload?.datasetKey === 'meta_ads.performance.daily') {
+      copy.payload.rows = requireRows(copy.payload, 'daily')
+        .filter((row) => isApprovedJulyDailyRow(row))
+        .map((row) => structuredClone(row));
+    }
+    return copy;
+  });
+  const dailyRows = scopedUnits
+    .filter((unit) => unit?.payload?.datasetKey === 'meta_ads.performance.daily')
+    .flatMap((unit) => requireRows(unit.payload, 'daily'));
+
   const account = requireObject(accountRows[0], 'Meta Ads account row');
   const sourceAccountId = normalizeAdAccountId(account.account_id ?? account.id);
   return deepFreeze({
     ...candidate,
     sourceAccountId,
-    units: units.map((unit) => structuredClone(unit)),
+    units: scopedUnits,
     sourceSummary: {
       sourceUnits: units.length,
       accountRows: accountRows.length,
@@ -436,6 +470,7 @@ export function summarizeMetaPaidDirectSnapshot(snapshotInput) {
     target: requireTarget(snapshot.target),
     workKey: requireText(snapshot.workKey, 'snapshot.workKey'),
     operationId: requireText(snapshot.operationId, 'snapshot.operationId'),
+    sourcePeriod: structuredClone(requireObject(snapshot.sourcePeriod, 'snapshot.sourcePeriod')),
     generation: timestamp(snapshot.generation, 'snapshot.generation'),
     requestedAt: timestamp(snapshot.requestedAt, 'snapshot.requestedAt'),
     sourceAccountId: requireText(snapshot.sourceAccountId, 'snapshot.sourceAccountId'),
@@ -464,6 +499,22 @@ function requireRows(payload, label) {
     throw sourceError(`Paid Meta ${label} staged payload rows are invalid`);
   }
   return rows;
+}
+
+function dailyDateRange(row) {
+  const value = requireObject(row, 'Meta Ads Daily row');
+  const dateStart = requireDate(value.date_start, 'daily.date_start');
+  const dateStop = requireDate(value.date_stop ?? value.date_start, 'daily.date_stop');
+  if (dateStop < dateStart) {
+    throw sourceError('Paid Meta Daily row has an invalid date range', { dateStart, dateStop });
+  }
+  return { dateStart, dateStop };
+}
+
+function isApprovedJulyDailyRow(row) {
+  const { dateStart, dateStop } = dailyDateRange(row);
+  return dateStart >= META_PAID_DIRECT_LARK_PERIOD.since
+    && dateStop <= META_PAID_DIRECT_LARK_PERIOD.until;
 }
 
 function normalizeAdAccountId(value) {
@@ -502,6 +553,17 @@ function sqlLiteral(value) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function compactDateToIso(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (!/^\d{8}$/u.test(text)) {
+    throw sourceError(`${fieldName} must be YYYYMMDD`);
+  }
+  return requireDate(
+    `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`,
+    fieldName,
+  );
 }
 
 function parseJson(value, fieldName) {
