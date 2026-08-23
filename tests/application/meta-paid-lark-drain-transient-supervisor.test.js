@@ -26,7 +26,7 @@ test('transient supervisor recognizes Cloudflare D1 7500 and transport failures 
 test('transient supervisor blocks every automatic retry after closeout evidence', async () => {
   const source = await readFile(sourcePath, 'utf8');
   assert.match(source, /if \(closeoutLaunched\)[\s\S]*automatic retry is blocked/u);
-  assert.match(source, /launch_existing_closeout\|private-safe-config-materialized\|META_PAID_LARK_CLOSEOUT_COMPLETED_SAFE/u);
+  assert.match(source, /launch_existing_closeout\|private-safe-config-materialized\|META_PAID_LARK_CLOSEOUT_COMPLETED_SAFE\|\\"closeoutLaunched\\"\\s\*:\\s\*true/u);
   assert.match(source, /META_PAID_LARK_TRANSIENT_SUPERVISOR_CLOSEOUT_STARTED/u);
 });
 
