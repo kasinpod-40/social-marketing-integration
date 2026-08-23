@@ -101,7 +101,7 @@ function runQueryableEntry() {
       stream.setEncoding('utf8');
       stream.on('data', (chunk) => {
         outputTail = `${outputTail}${chunk}`.slice(-65_536);
-        if (/launch_existing_closeout|private-safe-config-materialized|META_PAID_LARK_CLOSEOUT_COMPLETED_SAFE/u.test(outputTail)) {
+        if (/(?:launch_existing_closeout|private-safe-config-materialized|META_PAID_LARK_CLOSEOUT_COMPLETED_SAFE|"closeoutLaunched"\s*:\s*true)/u.test(outputTail)) {
           childCloseoutLaunched = true;
         }
         destination.write(chunk);
