@@ -58,7 +58,7 @@ test('signed-delivery path exposes only POST and stays hidden while disabled', a
 });
 
 
-test('health endpoint reports a production connector as not runnable until its large-account gate closes', async () => {
+test('health endpoint reports verified TikTok as runnable without exposing secrets', async () => {
   const response = await apiWorker.fetch(
     new Request('https://example.test/health'),
     {
@@ -73,6 +73,6 @@ test('health endpoint reports a production connector as not runnable until its l
 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
-  assert.equal(body.connectors.find((item) => item.key === 'tiktok').runnable, false);
+  assert.equal(body.connectors.find((item) => item.key === 'tiktok').runnable, true);
   assert.equal(JSON.stringify(body).includes('must-never-appear'), false);
 });

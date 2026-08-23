@@ -54,8 +54,9 @@ test('every retained-UAT connector is active while production readiness stays se
   assert.deepEqual(youtube.largeAccount.missingGates, ['liveAccountUat']);
   assert.equal(youtube.largeAccount.productionReady, false);
 
-  assert.equal(tiktok.largeAccount.status, 'dev_ready');
-  assert.deepEqual(tiktok.largeAccount.missingGates, ['liveAccountUat']);
+  assert.equal(tiktok.largeAccount.status, 'verified');
+  assert.deepEqual(tiktok.largeAccount.missingGates, []);
+  assert.equal(tiktok.largeAccount.productionReady, true);
 
   assert.equal(instagram.largeAccount.status, 'planned');
   assert.equal(instagram.implementationStatus, 'active');

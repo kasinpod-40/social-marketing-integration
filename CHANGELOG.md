@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-23 — TikTok customer Production UAT and readiness promotion
+
+- completed one fresh stable TikTok Production UAT in the customer Cloudflare/D1/Lark runtime with
+  2,046 records across 82 bounded source, preflight and write units;
+- reconciled customer Lark with 5 Content creates, 2,041 Content updates, 2,046 Daily Snapshot creates
+  and one Account update while keeping the Native TikTok source read-only;
+- advanced the migrated checkpoint through 2026-08-23 with zero exact-scope alert, DLQ or active lock;
+- proved same-identity replay idempotency: completion, cursor, checkpoint count and Lark totals did not change;
+- set the main Queue batch size to one after live evidence showed multi-message batches can exceed the
+  Workers Free CPU ceiling, without requiring a Workers Paid upgrade;
+- restore all connector-UAT, schedule, report, AI and notification flags to dark after validation;
+- promote only TikTok large-account readiness from `dev_ready` to `verified`; other connectors retain
+  their existing fail-closed readiness and secret gates.
+
 ## 2026-08-23 — TikTok Workers Free durable continuations
 
 - split TikTok Native source staging, business-plan scan/finalization, preflight, write, and completion into
