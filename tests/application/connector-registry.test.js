@@ -82,23 +82,17 @@ test('registry rejects runtime profiles that omit an active connector state', ()
   );
 });
 
-test('Production rejects active connectors until the large-account Live validation gate is verified', () => {
+test('Production admits verified TikTok while keeping dev-ready YouTube gated', () => {
   const tiktokProduction = loadCustomerRuntimeConfig({
     MKT_ENV: 'production',
     MKT_CUSTOMER_PROFILE: 'chemistry_k',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
   });
-  assert.throws(
-    () => assertConnectorRunnable(tiktokProduction, 'tiktok'),
-    (error) => error?.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING'
-      && error?.details?.minimumFixtureItems === 1000
-      && error?.details?.missingGates?.includes('liveAccountUat')
-      && !error?.details?.missingGates?.includes('durableResume'),
-  );
+  assert.equal(assertConnectorRunnable(tiktokProduction, 'tiktok').enabled, true);
   const productionReadiness = listConnectorReadiness(tiktokProduction)
     .find((item) => item.key === 'tiktok');
-  assert.equal(productionReadiness.runnable, false);
-  assert.equal(productionReadiness.productionRunnable, false);
+  assert.equal(productionReadiness.runnable, true);
+  assert.equal(productionReadiness.productionRunnable, true);
 
   const youtubeProduction = loadCustomerRuntimeConfig({
     MKT_ENV: 'production',

@@ -76,6 +76,12 @@ Queue job ต้องใช้ Trigger กลาง `production_connector_uat` 
 - หลังเก็บหลักฐาน First run + exact rerun/idempotency แล้ว ต้องปิด `MKT_PRODUCTION_CONNECTOR_UAT_ENABLED=false` ก่อน Promote readiness
 - การ Promote `liveAccountUat=true` / `verified` ต้องเป็น Reviewed change แยกที่อ้างอิง External evidence จริง
 
+TikTok ผ่าน lane นี้เมื่อ 2026-08-23 ด้วย fresh customer Production operation 2,046 records, bounded
+source/preflight/write 82/82 units, final reconciliation, checkpoint `2026-08-23`, zero exact-scope
+alert/DLQ/lock และ same-identity replay ที่ไม่เปลี่ยน Business state. ดังนั้น TikTok ถูก promote เป็น
+`verified` ผ่าน reviewed change แยก; UAT flags ถูกปิดก่อน promotion และกฎ lane ข้างต้นยังใช้กับ
+Connector อื่นโดยไม่เปลี่ยนแปลง.
+
 Release example ต้องคงค่า Default ดังนี้เสมอ:
 
 ```env

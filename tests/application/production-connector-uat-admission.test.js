@@ -24,6 +24,10 @@ function productionRuntime(overrides = {}) {
         accountKey: 'chemistry_k',
         sourceHandle: 'chemistry_k',
       },
+      youtube: {
+        enabled: true,
+        accountKey: 'chemistry_k',
+      },
       instagram: {
         enabled: true,
         accountKey: 'instagram-account',
@@ -45,15 +49,15 @@ test('job catalog centralizes the controlled Production connector UAT trigger', 
   assert.equal(JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT, 'production_connector_uat');
 });
 
-test('standard Production execution still rejects a dev_ready connector', () => {
-  assert.throws(
-    () => assertConnectorRunnable(productionRuntime(), 'tiktok'),
-    (error) => error.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING',
-  );
+test('standard Production execution admits a verified connector', () => {
+  const connector = assertConnectorRunnable(productionRuntime(), 'tiktok');
+
+  assert.equal(connector.enabled, true);
+  assert.equal(connector.accountKey, 'chemistry_k');
 });
 
 test('controlled Production UAT admits a dev_ready connector missing only liveAccountUat', () => {
-  const connector = assertConnectorRunnable(productionRuntime(), 'tiktok', {
+  const connector = assertConnectorRunnable(productionRuntime(), 'youtube', {
     runMode: CONNECTOR_RUN_MODES.CONTROLLED_PRODUCTION_UAT,
   });
 
@@ -164,11 +168,11 @@ test('worker integration passes exact controlled UAT through readiness before in
       job: {
         schemaVersion: 1,
         body: {
-          type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+          type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
           trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT,
         },
       },
-      env: controlledUatEnv(),
+      env: controlledUatEnv({ MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR: 'youtube' }),
       getRuntimeConfig: () => productionRuntime(),
       getInfrastructure() {
         infrastructureCalls += 1;
@@ -181,7 +185,7 @@ test('worker integration passes exact controlled UAT through readiness before in
   assert.equal(infrastructureCalls, 1);
 });
 
-test('worker integration keeps scheduled Production TikTok behind large-account readiness', async () => {
+test('worker integration admits scheduled Production TikTok after verified readiness', async () => {
   let infrastructureCalls = 0;
 
   await assert.rejects(
@@ -197,11 +201,11 @@ test('worker integration keeps scheduled Production TikTok behind large-account 
       getRuntimeConfig: () => productionRuntime(),
       getInfrastructure() {
         infrastructureCalls += 1;
-        throw new Error('must not start infrastructure');
+        throw new Error('VERIFIED_TIKTOK_PASSED_READINESS');
       },
     }),
-    (error) => error.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING',
+    (error) => error.message === 'VERIFIED_TIKTOK_PASSED_READINESS',
   );
 
-  assert.equal(infrastructureCalls, 0);
+  assert.equal(infrastructureCalls, 1);
 });

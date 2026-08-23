@@ -12,8 +12,13 @@ Customer Workers ยังเป็น Free และอัปเกรดไม
 Business plan scan/finalization, preflight, write และ completion ทำงานเป็น durable Queue continuations
 แบบ bounded. ทุก continuation รักษา stable operation/work/generation, checkpoint ก่อน Queue send,
 รองรับ ambiguous duplicate แบบ idempotent และ fail closed เมื่อ sequence นำ durable state.
-Production ยัง dark และ retained TikTok DLQ เป็น forensic evidence ห้าม blind redrive; recovery ต้องใช้
-fresh stable UAT หลัง reviewed merge.
+Fresh stable TikTok Production UAT `tiktok-prod-cutover-20260823-r1` ผ่านแล้วด้วย 2,046 records และ
+82 bounded units: Lark Content 5 create/2,041 update, Daily 2,046 create, Account 1 update, checkpoint
+เลื่อนถึง `2026-08-23`, exact alert/DLQ/lock เป็นศูนย์ และ same-identity replay ไม่เปลี่ยน completion,
+cursor, checkpoint count หรือ Lark totals. Main Queue ใช้ `max_batch_size=1` ตาม live Free-plan CPU
+evidence. Retained TikTok DLQ เดิมยังเป็น forensic evidenceและไม่ถูก redrive. UAT flags/schedules/
+reports/AI/notifications กลับสู่ dark ที่ Worker version `1dc1ae9c-7c98-4e23-974b-3e43050c9aa1`.
+TikTok จึงมีหลักฐานครบสำหรับ reviewed `verified` promotion; connector อื่นไม่ถูก promote ตามไปด้วย.
 
 หลัง controlled connector proofs ต้องเปิด schedule ทีละ connector และพิสูจน์ continuation จาก migrated
 checkpoint, expected time coverage, zero duplicate/zero gap และ D1/Lark parity. วันจันทร์ 2026-08-24

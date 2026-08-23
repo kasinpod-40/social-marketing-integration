@@ -40,7 +40,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     sourceHandleEnv: 'TIKTOK_SOURCE_HANDLE',
     requiredRuntimeFields: ['accountKey', 'sourceHandle'],
     largeAccount: createLargeAccountReadiness({
-      status: LARGE_ACCOUNT_STATUS.DEV_READY,
+      status: LARGE_ACCOUNT_STATUS.VERIFIED,
       primaryEntity: 'videos',
       minimumFixtureItems: 1000,
       gates: {
@@ -54,7 +54,7 @@ const CONNECTOR_CATALOG = Object.freeze({
         completenessAccounting: true,
         rateLimitAwareRetry: true,
         largeAccountFixture: true,
-        liveAccountUat: false,
+        liveAccountUat: true,
       },
     }),
   }),
