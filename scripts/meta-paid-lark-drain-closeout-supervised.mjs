@@ -60,6 +60,7 @@ async function executeSupervisedDrain() {
   let lastOutputAt = Date.now();
   let rollingOutput = '';
   let readOnlyStallDetected = false;
+  let readOnlyInterruptSignal = null;
   let settled = false;
 
   const observe = (stream, destination) => {
@@ -77,6 +78,28 @@ async function executeSupervisedDrain() {
   };
   observe(child.stdout, process.stdout);
   observe(child.stderr, process.stderr);
+
+  const handleSignal = (signal) => {
+    if (closeoutLaunched) {
+      process.stderr.write(`${JSON.stringify({
+        ok: true,
+        stage: 'closeout-interrupt-ignored',
+        signal,
+        closeoutLaunched: true,
+        message: 'Guarded closeout has started; supervisor will not terminate mutation in flight',
+        directRemoteMutationPerformed: false,
+      }, null, 2)}\n`);
+      return;
+    }
+    if (readOnlyInterruptSignal) return;
+    readOnlyInterruptSignal = signal;
+    currentStage = 'read-only-drain-interrupted';
+    terminateProcessGroup(child.pid);
+  };
+  const onSigint = () => handleSignal('SIGINT');
+  const onSigterm = () => handleSignal('SIGTERM');
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
 
   const heartbeat = setInterval(() => {
     const quietMs = Date.now() - lastOutputAt;
@@ -110,6 +133,17 @@ async function executeSupervisedDrain() {
       child.once('exit', (code, signal) => resolvePromise({ code, signal }));
     });
     settled = true;
+    if (readOnlyInterruptSignal) {
+      throw supervisorError(
+        'Paid Meta read-only drain was stopped by operator signal before closeout mutation',
+        'META_PAID_LARK_DRAIN_READ_ONLY_INTERRUPTED',
+        {
+          signal: readOnlyInterruptSignal,
+          childExitCode: result.code,
+          childSignal: result.signal,
+        },
+      );
+    }
     if (readOnlyStallDetected) {
       throw supervisorError(
         'Paid Meta read-only drain produced no output for the bounded silence window and was stopped before closeout mutation',
@@ -139,6 +173,8 @@ async function executeSupervisedDrain() {
     }, null, 2)}\n`);
   } finally {
     clearInterval(heartbeat);
+    process.off('SIGINT', onSigint);
+    process.off('SIGTERM', onSigterm);
     if (!settled && !closeoutLaunched) terminateProcessGroup(child.pid);
   }
 }
