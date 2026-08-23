@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-23 — Customer Production first source schedules activated
+
+- deployed reviewed main `400a17795f3a2fee0175504c20f3758f377675f8` to the customer Worker as version
+  `d93072cb-a179-4158-944c-0eb08cf0e759`, authored by `dev.datahub.2026@gmail.com` and receiving 100% traffic;
+- activated the shared five-minute primary Cron and only the Instagram, Meta Ads and Chatwoot source/D1/Lark
+  schedule paths, while preserving `workers_dev=false` and the Workers Free Queue batch size of one;
+- retained TikTok, Facebook, Google Ads, YouTube, WooCommerce, Report, AI, Notification, retention, webhook
+  and DLQ-redrive paths as disabled pending their exact time/secret/live-proof gates;
+- recorded pre-run Customer D1 counts/checkpoints and zero active locks for Monday one-connector-at-a-time
+  reconciliation; retained TikTok forensic alert/DLQ evidence was not mutated;
+- created the thread heartbeat `customer-production-cutover-monitor` to resume the reviewed cutover at 06:50
+  `Asia/Bangkok`; automatic source and Lark group exactly-once results remain explicitly pending.
+
 ## 2026-08-23 — Customer multichannel Production runtime admission
 
 - centralized the reviewed runtime ownership tuple for the existing Integration Workspace and exact
