@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JOB_TYPES, getJobDefinition } from '../../packages/application/src/jobs/job-catalog.js';
+import { JOB_TRIGGERS, JOB_TYPES, getJobDefinition } from '../../packages/application/src/jobs/job-catalog.js';
 import { resolveQueueOperation, withQueueOperation } from '../../packages/application/src/jobs/queue-operation.js';
 import { normalizeQueueJobMessage } from '../../packages/application/src/jobs/queue-job.js';
 import { getConnectorCatalogEntry } from '../../packages/config/src/connector-catalog.js';
@@ -56,7 +56,36 @@ test('WooCommerce catalog and Queue job are active with exact trigger allowlist'
   const job = getJobDefinition(JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC);
   assert.equal(connector.implementationStatus, 'active');
   assert.equal(job.implementationStatus, 'active');
-  assert.deepEqual(job.allowedTriggers, ['manual_uat', 'scheduled']);
+  assert.deepEqual(job.allowedTriggers, ['manual_uat', 'scheduled', 'production_connector_uat']);
+});
+
+test('Customer Production WooCommerce uses only the dedicated controlled-UAT lane', async () => {
+  const env = protectedEnv({
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_PRODUCTION_CONNECTOR_UAT_ENABLED: 'true',
+    MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR: 'woocommerce',
+  });
+  const sentinel = new Error('WOOCOMMERCE_CONTROLLED_UAT_ADMITTED');
+  await assert.rejects(processWooCommerceCommerceJob({
+    job: {
+      body: {
+        type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
+        trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT,
+        fullReconciliation: false,
+      },
+    },
+    operation: {
+      stable: true,
+      operationId: OPERATION_ID,
+      workKey: `woocommerce:${OPERATION_ID}`,
+      generation: REQUESTED_AT,
+      originalRequestedAt: REQUESTED_AT,
+    },
+    env,
+    getRuntimeConfig: () => loadCustomerRuntimeConfig(env),
+    getInfrastructure: () => { throw sentinel; },
+  }), (error) => error === sentinel);
 });
 
 test('Integration Workspace supports explicit Manual UAT and Scheduled gate windows', () => {
