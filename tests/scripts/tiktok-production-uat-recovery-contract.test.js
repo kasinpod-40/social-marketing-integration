@@ -36,7 +36,7 @@ const ORIGINAL = Object.freeze({
   metricDate: '2026-08-22',
 });
 
-test('dark config opens only TikTok/UAT/redrive with bounded recovery execution budget', () => {
+test('dark config opens only TikTok/UAT/redrive with bounded Lark transport attempts', () => {
   assert.equal(assertDarkProductionConfig(DARK_CONFIG), true);
   const recovery = buildRecoveryConfigText(DARK_CONFIG);
   assert.match(recovery, /"MKT_CONNECTOR_TIKTOK_ENABLED": "true"/u);
@@ -45,7 +45,7 @@ test('dark config opens only TikTok/UAT/redrive with bounded recovery execution 
   assert.match(recovery, /"MKT_DLQ_REDRIVE_ENABLED": "true"/u);
   assert.match(recovery, /"LARK_REQUEST_TIMEOUT_MS": "15000"/u);
   assert.match(recovery, /"LARK_MAX_ATTEMPTS": "1"/u);
-  assert.match(recovery, /"cpu_ms": 300000/u);
+  assert.doesNotMatch(recovery, /"cpu_ms"/u);
   assert.match(recovery, /"MKT_SCHEDULE_TIKTOK_ENABLED": "false"/u);
   assert.match(recovery, /"MKT_NOTIFICATION_RUNTIME_ENABLED": "false"/u);
   assert.match(DARK_CONFIG, /"MKT_CONNECTOR_TIKTOK_ENABLED": "false"/u);
@@ -53,14 +53,14 @@ test('dark config opens only TikTok/UAT/redrive with bounded recovery execution 
   assert.match(DARK_CONFIG, /"LARK_MAX_ATTEMPTS": "5"/u);
 });
 
-test('recovery config replaces an existing CPU limit without duplicating it', () => {
+test('recovery config preserves an existing account-supported CPU limit without changing it', () => {
   const withLimits = DARK_CONFIG.replace(
     '  "workers_dev": false,',
     '  "workers_dev": false,\n  "limits": { "cpu_ms": 30000 },',
   );
   const recovery = buildRecoveryConfigText(withLimits);
   assert.equal((recovery.match(/"cpu_ms"/gu) ?? []).length, 1);
-  assert.match(recovery, /"cpu_ms": 300000/u);
+  assert.match(recovery, /"cpu_ms": 30000/u);
 });
 
 test('canonical redrive envelope only points at the retained DLQ', () => {

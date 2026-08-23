@@ -96,8 +96,7 @@ async function main() {
       recoveryPayloadRedriveReference: recovery.payload.redriveReference,
       verified: true,
     },
-    executionBudget: {
-      cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
+    transportBudget: {
       larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
       larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
     },

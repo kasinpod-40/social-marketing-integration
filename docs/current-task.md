@@ -192,9 +192,24 @@ Current branch `work/tiktok-dlq-redrive-admission-v1` makes the minimal shared c
 
 ## Implementation result
 
-In progress on `work/tiktok-dlq-redrive-admission-v1`:
+The TikTok redrive admission was merged through PR #679 at reviewed runtime
+`673431ad618a077f039a3844355ef36ff9a231ba`.
+
+Customer Production recovery evidence on 2026-08-23:
+
+- the exact retained recovery target remained the only open TikTok DLQ;
+- the immutable root and parent generations were not replayed;
+- the first recovery carrier stopped before Queue send because Customer Cloudflare is on the Free plan and rejected `limits.cpu_ms=300000` with API code `100328`;
+- the `finally` path restored reviewed-dark runtime and readback confirmed every connector/UAT/redrive/schedule/report/AI/notification gate false;
+- Queue sends, DLQ redrives and business writes from that attempt were all zero;
+- PR #681 and PR #689 were closed without merge as required.
+
+Current Free-plan-compatible recovery carrier:
 
 - shared redrive allowlist admits `tiktok.creator.native.sync`;
 - TikTok reuses generic fresh-generation redrive semantics;
-- focused regression preserves the exact Production-UAT trigger and metric date;
-- Production remains dark and no Cloudflare/Lark/D1/Queue mutation is performed by this code-change workstream.
+- reviewed deployed source returns to exact merged runtime `673431ad618a077f039a3844355ef36ff9a231ba`;
+- temporary recovery changes only `LARK_REQUEST_TIMEOUT_MS=15000` and `LARK_MAX_ATTEMPTS=1`;
+- no unsupported `limits.cpu_ms` field is added or changed;
+- focused recovery/resume/auth regression passes 12/12;
+- Production remains reviewed-dark pending review of this new carrier; the retained DLQ has not been redriven.

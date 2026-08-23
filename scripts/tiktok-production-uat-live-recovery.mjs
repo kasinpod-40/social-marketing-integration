@@ -21,7 +21,7 @@ import {
 } from './lib/tiktok-production-uat-resume-contract.js';
 
 const CONFIRM_NAME = 'TIKTOK_PRODUCTION_RECOVERY_CONFIRM';
-const CONFIRM_VALUE = 'RECOVER_DLQ_FEF9919E_AFTER_EXECUTION_BUDGET_REVIEW';
+const CONFIRM_VALUE = 'RECOVER_DLQ_FEF9919E_AFTER_TRANSPORT_BOUND_REVIEW';
 const POLL_MS = positiveIntegerEnv('TIKTOK_PRODUCTION_RECOVERY_POLL_MS', 2_000);
 const POLL_ATTEMPTS = positiveIntegerEnv('TIKTOK_PRODUCTION_RECOVERY_POLL_ATTEMPTS', 1_800);
 const EVIDENCE_FILE = resolve(
@@ -42,8 +42,7 @@ try {
       rootDlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId,
       parentDlqId: TIKTOK_PRODUCTION_RESUME.parentDlqId,
       resumeDlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
-      recoveryExecutionBudget: {
-        cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
+      recoveryTransportBudget: {
         larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
         larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
       },
@@ -137,8 +136,7 @@ async function runLiveResume() {
       customerProfile: readJsoncScalar(production.configText, 'MKT_CUSTOMER_PROFILE'),
       initialState: 'dark',
     },
-    recoveryExecutionBudget: {
-      cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
+    recoveryTransportBudget: {
       larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
       larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
     },
@@ -186,7 +184,6 @@ async function runLiveResume() {
       dlqRedrive: true,
       tiktokSchedule: false,
       notificationRuntime: false,
-      cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
       larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
       larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
     });
