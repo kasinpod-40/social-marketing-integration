@@ -18,6 +18,7 @@ import {
   META_PAID_LARK_ACTIVE_D1_CONFIG_CONTRACT_VERSION,
   materializeActiveD1Config,
   parseActiveDeploymentVersionIds,
+  resolveAccountD1Authority,
   resolveSharedActiveD1BindingId,
 } from './lib/meta-paid-lark-active-d1-config.js';
 import { buildMetaPaidLarkRuntimeDiagnosisQueries } from './lib/meta-paid-lark-runtime-blocker-diagnosis.js';
@@ -37,9 +38,9 @@ try {
     process.stdout.write(`${JSON.stringify({
       ok: true,
       planOnly: true,
-      action: 'resolve_active_worker_d1_then_retry_transient_read_only_d1_then_existing_supervised_drain',
+      action: 'resolve_account_live_d1_then_retry_transient_read_only_d1_then_existing_supervised_drain',
       activeD1AuthorityContractVersion: META_PAID_LARK_ACTIVE_D1_CONFIG_CONTRACT_VERSION,
-      activeD1Authority: 'current_traffic_bearing_worker_versions',
+      activeD1Authority: 'traffic_bearing_worker_versions_cross_checked_with_account_d1_inventory',
       activeD1MutationAllowed: false,
       sourceWranglerConfigMutationAllowed: false,
       maxAttempts: MAX_ATTEMPTS,
@@ -73,6 +74,10 @@ async function executeResilientEntry() {
       activeVersionIds: runtime.activeVersionIds,
       activeVersionCount: runtime.activeVersionIds.length,
       bindingName: 'MKT_STATE_DB',
+      authoritySource: runtime.authoritySource,
+      databaseName: runtime.databaseName,
+      activeBindingDatabaseId: runtime.activeBindingDatabaseId,
+      activeBindingPresentInAccount: runtime.activeBindingPresentInAccount,
       databaseId: runtime.databaseId,
       sourceConfigModified: false,
       temporaryConfigMode: 0o600,
@@ -186,8 +191,23 @@ async function prepareActiveD1Runtime() {
       'versions-view',
     ));
   }
-  const databaseId = resolveSharedActiveD1BindingId(versionJsonTexts, 'MKT_STATE_DB');
+  const activeBindingDatabaseId = resolveSharedActiveD1BindingId(
+    versionJsonTexts,
+    'MKT_STATE_DB',
+  );
   const sourceText = await readFile(sourceConfigPath, 'utf8');
+  const d1ListJson = await runWranglerJson(
+    ['d1', 'list', '--json', '--config', sourceConfigPath],
+    env,
+    'd1-list',
+  );
+  const authority = resolveAccountD1Authority({
+    sourceText,
+    activeDatabaseId: activeBindingDatabaseId,
+    d1ListJsonText: d1ListJson,
+    bindingName: 'MKT_STATE_DB',
+  });
+  const databaseId = authority.databaseId;
   const materialized = materializeActiveD1Config(sourceText, databaseId, 'MKT_STATE_DB');
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'meta-paid-lark-active-d1-'));
   const temporaryConfigPath = join(temporaryRoot, 'wrangler.meta-paid-lark.active-d1.jsonc');
@@ -201,6 +221,10 @@ async function prepareActiveD1Runtime() {
 
   return Object.freeze({
     activeVersionIds,
+    authoritySource: authority.authoritySource,
+    databaseName: authority.databaseName,
+    activeBindingDatabaseId,
+    activeBindingPresentInAccount: authority.activeBindingPresentInAccount,
     databaseId,
     temporaryRoot,
     env: Object.freeze({
