@@ -6,6 +6,12 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
 
+  "limits": {
+    // Queue Production UAT can exceed the Workers default 30s CPU budget while
+    // preserving the existing 15-minute Queue wall-clock ceiling.
+    "cpu_ms": 300000
+  },
+
   "observability": {
     "enabled": true,
     "logs": {
