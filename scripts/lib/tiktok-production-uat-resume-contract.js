@@ -15,6 +15,9 @@ export const TIKTOK_PRODUCTION_RESUME = Object.freeze({
   resumeErrorCode: 'QUEUE_RETRY_EXHAUSTED',
   resumeCreatedAt: 1787452321754,
   staleRunId: '9a6dd495-a098-4533-a023-0bf7302012dc',
+  workType: 'tiktok_creator_native_sync',
+  sourcePhase: 'tiktok_native_source_pages',
+  businessWritePhase: 'tiktok_native_business_write_v1',
 });
 
 export function validateRootRedrivenRow(row) {
@@ -81,7 +84,82 @@ export function validateResumeSuccessRun(row, options = {}) {
       syncRunId: row?.sync_run_id ?? null,
     });
   }
-  return validateSuccessfulSyncRun(row, options);
+  const validated = validateSuccessfulSyncRun(row, options);
+  if (options.idempotency === true && Number(row?.records_pulled ?? 0) <= 0) {
+    throw contractError('Idempotency proof must read a non-empty TikTok source', 'TIKTOK_PRODUCTION_IDEMPOTENCY_EMPTY_SOURCE', {
+      recordsPulled: Number(row?.records_pulled ?? 0),
+      syncRunId: row?.sync_run_id ?? null,
+    });
+  }
+  return validated;
+}
+
+/**
+ * Proves the idempotency generation actually traversed the staged source and that the
+ * durable business-write phase recorded zero creates/updates for all three TikTok
+ * destination tables. This closes the historical sync_runs aggregation gap where the
+ * singular `account` result was not included in records_written.
+ */
+export function validateIdempotencyDurableProof(input = {}) {
+  const expectedGeneration = requirePositiveSafeInteger(input.expectedGeneration, 'expectedGeneration');
+  const work = input.workRow ?? {};
+  assertEqual(work?.work_type, TIKTOK_PRODUCTION_RESUME.workType, 'idempotency work_type');
+  assertEqual(Number(work?.generation), expectedGeneration, 'idempotency generation');
+  assertEqual(Number(work?.requested_at), expectedGeneration, 'idempotency requested_at');
+  assertEqual(work?.lifecycle_status, 'completed', 'idempotency lifecycle_status');
+  const workKey = requireText(work?.work_key, 'idempotency work_key');
+
+  const source = input.sourcePhase ?? {};
+  assertEqual(source?.phase, TIKTOK_PRODUCTION_RESUME.sourcePhase, 'idempotency source phase');
+  assertEqual(Number(source?.complete), 1, 'idempotency source phase complete');
+  const sourceRecords = requirePositiveSafeInteger(source?.processed_items, 'idempotency source processed_items');
+  const sourcePages = requirePositiveSafeInteger(source?.pages_processed, 'idempotency source pages_processed');
+
+  const write = input.businessWritePhase ?? {};
+  assertEqual(write?.phase, TIKTOK_PRODUCTION_RESUME.businessWritePhase, 'idempotency business write phase');
+  assertEqual(Number(write?.complete), 1, 'idempotency business write phase complete');
+  const state = parseObject(write?.state_json, 'idempotency business write state_json');
+  const results = Object.freeze({
+    account: validateZeroWriteTableResult(state?.accountResult, 'MKT_Accounts'),
+    content: validateZeroWriteTableResult(state?.contentResult, 'MKT_Content'),
+    contentDaily: validateZeroWriteTableResult(state?.dailyResult, 'MKT_Content_Daily'),
+  });
+
+  if (results.content.skipped <= 0 || results.contentDaily.skipped <= 0 || results.account.skipped <= 0) {
+    throw contractError('Idempotency proof did not match existing rows in all three Lark destination tables', 'TIKTOK_PRODUCTION_IDEMPOTENCY_LARK_READBACK_INCOMPLETE', {
+      accountSkipped: results.account.skipped,
+      contentSkipped: results.content.skipped,
+      contentDailySkipped: results.contentDaily.skipped,
+      sourceRecords,
+    });
+  }
+
+  return Object.freeze({
+    workKey,
+    generation: expectedGeneration,
+    sourceRecords,
+    sourcePages,
+    tables: results,
+    larkReadbackVerified: true,
+    businessWrites: 0,
+  });
+}
+
+function validateZeroWriteTableResult(value, tableName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw contractError(`Missing durable ${tableName} result`, 'TIKTOK_PRODUCTION_IDEMPOTENCY_DURABLE_RESULT_MISSING', { tableName });
+  }
+  const created = nonNegativeSafeInteger(value.created, `${tableName}.created`);
+  const updated = nonNegativeSafeInteger(value.updated, `${tableName}.updated`);
+  const skipped = nonNegativeSafeInteger(value.skipped, `${tableName}.skipped`);
+  if (created !== 0 || updated !== 0) {
+    throw contractError(`Idempotency durable proof detected a ${tableName} business write`, 'TIKTOK_PRODUCTION_IDEMPOTENCY_WRITE_DETECTED', {
+      tableName,
+      created,
+      updated,
+    });
+  }
+  return Object.freeze({ created, updated, skipped });
 }
 
 function parsePayload(value) {
@@ -102,6 +180,46 @@ function parsePayload(value) {
     ? parsed.body
     : parsed;
   return { ...payload };
+}
+
+function parseObject(value, fieldName) {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch (cause) {
+      throw contractError(`${fieldName} is not valid JSON`, 'TIKTOK_PRODUCTION_RESUME_PAYLOAD_INVALID', {
+        fieldName,
+        cause: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw contractError(`${fieldName} must be an object`, 'TIKTOK_PRODUCTION_RESUME_PAYLOAD_INVALID', { fieldName });
+  }
+  return parsed;
+}
+
+function nonNegativeSafeInteger(value, fieldName) {
+  const number = Number(value ?? 0);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw contractError(`${fieldName} must be a non-negative safe integer`, 'TIKTOK_PRODUCTION_RESUME_CONTRACT_MISMATCH', {
+      fieldName,
+      value,
+    });
+  }
+  return number;
+}
+
+function requirePositiveSafeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw contractError(`${fieldName} must be a positive safe integer`, 'TIKTOK_PRODUCTION_RESUME_CONTRACT_MISMATCH', {
+      fieldName,
+      value,
+    });
+  }
+  return number;
 }
 
 function assertEqual(actual, expected, label) {
