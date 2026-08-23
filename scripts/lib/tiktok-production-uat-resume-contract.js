@@ -9,9 +9,12 @@ export const TIKTOK_PRODUCTION_RESUME = Object.freeze({
   rootDlqId: 'terminal:f7081a5a92bced0c5eb9550a259c7bd8',
   rootRedriveRequestedAt: 1787424210138,
   rootRedriveReference: 'redrive:terminal:f7081a5a92bced0c5eb9550a259c7bd8:1787424210138',
-  resumeDlqId: 'terminal:b86ecb1940084e52caf21c2aa5bc091f',
-  resumeErrorCode: 'MKT_PRODUCTION_CONNECTOR_UAT_DISABLED',
-  staleRunId: 'ccd51b10-4139-4f23-a39f-5c5d7f15432f',
+  parentDlqId: 'terminal:b86ecb1940084e52caf21c2aa5bc091f',
+  resumeDlqId: 'dlq:fef9919e843e33a0ec6d111fc315f662',
+  resumeMessageId: 'fef9919e843e33a0ec6d111fc315f662',
+  resumeErrorCode: 'QUEUE_RETRY_EXHAUSTED',
+  resumeCreatedAt: 1787452321754,
+  staleRunId: '9a6dd495-a098-4533-a023-0bf7302012dc',
 });
 
 export function validateRootRedrivenRow(row) {
@@ -30,21 +33,29 @@ export function validateRootRedrivenRow(row) {
 
 export function validateResumeDlqRow(row) {
   assertEqual(row?.dlq_id, TIKTOK_PRODUCTION_RESUME.resumeDlqId, 'resume dlq_id');
+  assertEqual(String(row?.message_id ?? ''), TIKTOK_PRODUCTION_RESUME.resumeMessageId, 'resume message_id');
   assertEqual(row?.job_type, TIKTOK_PRODUCTION_RECOVERY.jobType, 'resume job_type');
   assertEqual(row?.status, 'open', 'resume status');
   assertEqual(row?.error_code, TIKTOK_PRODUCTION_RESUME.resumeErrorCode, 'resume error_code');
+  assertEqual(Number(row?.created_at), TIKTOK_PRODUCTION_RESUME.resumeCreatedAt, 'resume created_at');
 
   const payload = parsePayload(row?.payload_json);
   assertEqual(payload?.type, TIKTOK_PRODUCTION_RECOVERY.jobType, 'resume payload type');
   assertEqual(payload?.trigger, TIKTOK_PRODUCTION_RECOVERY.trigger, 'resume payload trigger');
   assertEqual(payload?.metricDate, TIKTOK_PRODUCTION_RECOVERY.metricDate, 'resume payload metricDate');
-  assertEqual(payload?.redriveOfDlqId, TIKTOK_PRODUCTION_RESUME.rootDlqId, 'resume payload redriveOfDlqId');
-  assertEqual(payload?.redriveReference, TIKTOK_PRODUCTION_RESUME.rootRedriveReference, 'resume payload redriveReference');
+  assertEqual(payload?.redriveOfDlqId, TIKTOK_PRODUCTION_RESUME.parentDlqId, 'resume payload redriveOfDlqId');
+  const redriveReference = requireText(payload?.redriveReference, 'resume payload redriveReference');
+  const expectedPrefix = `redrive:${TIKTOK_PRODUCTION_RESUME.parentDlqId}:`;
+  if (!redriveReference.startsWith(expectedPrefix)) {
+    throw contractError('Resume payload redriveReference does not preserve the b86 parent lineage', 'TIKTOK_PRODUCTION_RESUME_LINEAGE_MISMATCH', {
+      expectedPrefix,
+      redriveReference,
+    });
+  }
 
-  const createdAt = Number(row?.created_at);
-  if (!Number.isSafeInteger(createdAt) || createdAt <= TIKTOK_PRODUCTION_RESUME.rootRedriveRequestedAt) {
-    throw contractError('Resume DLQ must be newer than the root redrive generation', 'TIKTOK_PRODUCTION_RESUME_LINEAGE_MISMATCH', {
-      createdAt: row?.created_at ?? null,
+  if (TIKTOK_PRODUCTION_RESUME.resumeCreatedAt <= TIKTOK_PRODUCTION_RESUME.rootRedriveRequestedAt) {
+    throw contractError('Resume DLQ must be newer than the immutable root generation', 'TIKTOK_PRODUCTION_RESUME_LINEAGE_MISMATCH', {
+      resumeCreatedAt: TIKTOK_PRODUCTION_RESUME.resumeCreatedAt,
       rootRedriveRequestedAt: TIKTOK_PRODUCTION_RESUME.rootRedriveRequestedAt,
     });
   }
@@ -101,6 +112,16 @@ function assertEqual(actual, expected, label) {
       actual,
     });
   }
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw contractError(`${fieldName} is required`, 'TIKTOK_PRODUCTION_RESUME_CONTRACT_MISMATCH', {
+      fieldName,
+      value,
+    });
+  }
+  return value.trim();
 }
 
 function contractError(message, code, details = {}) {
