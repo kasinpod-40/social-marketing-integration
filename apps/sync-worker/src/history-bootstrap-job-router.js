@@ -20,7 +20,14 @@ import {
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { createStableFingerprint } from '../../../packages/shared/src/hash/stable-fingerprint.js';
 import { permanentError, transientError } from '../../../packages/shared/src/errors/runtime-error.js';
-import { processJob as processActiveJob } from './active-job-router.js';
+import {
+  processJob as processActiveJob,
+  resolveConnectorRunMode,
+} from './active-job-router.js';
+import {
+  enqueueTikTokSyncContinuation,
+  resolveTikTokSyncInvocation,
+} from './tiktok-sync-continuation.js';
 import {
   DEFAULT_LOCK_LEASE_MS,
   DEFAULT_LOCK_RENEW_INTERVAL_MS,
@@ -246,8 +253,14 @@ async function enqueueBootstrapContinuation(input) {
 async function processD1FirstTikTokSync(input) {
   const definition = assertJobImplemented(getJobDefinition(input.job.body.type));
   const runtimeConfig = input.getRuntimeConfig();
-  assertIntegrationWorkspace(runtimeConfig);
-  const connectorConfig = assertConnectorRunnable(runtimeConfig, definition.connectorKey);
+  const connectorConfig = assertConnectorRunnable(runtimeConfig, definition.connectorKey, {
+    runMode: resolveConnectorRunMode({
+      runtimeConfig,
+      connectorKey: definition.connectorKey,
+      trigger: input.job?.body?.trigger,
+      env: input.env,
+    }),
+  });
   const infrastructure = input.getInfrastructure();
   const tableIds = readLarkTableIdsFromEnv(input.env, [
     'rawTikTokCreatorVideos',
@@ -260,10 +273,11 @@ async function processD1FirstTikTokSync(input) {
   ]);
   const reliability = infrastructure.getReliability(tableIds);
   const resumableWorkStore = infrastructure.getResumableWorkStore();
-  const requestedAt = readSyncJobGeneration(input.job, 'TikTok', input.message?.timestamp);
+  const invocation = resolveTikTokSyncInvocation(input);
+  const requestedAt = invocation.requestedAt;
   const incrementalEnabled = readBoolean(input.env?.MKT_TIKTOK_INCREMENTAL_ENABLED, false);
   const metricDate = readMetricDate(input.job.body?.metricDate, input.env);
-  const workKey = `tiktok:${requireJobText(input.message?.id, 'message.id')}`;
+  const workKey = invocation.workKey;
   const sourceWatermark = await createStableFingerprint({
     contract: 'tiktok-d1-first-source-v1',
     workKey,
@@ -328,7 +342,8 @@ async function processD1FirstTikTokSync(input) {
         cursorKey: lockKey,
         workKey,
         requestedAt,
-        generation: requestedAt,
+        generation: invocation.generation,
+        continuationSequence: invocation.continuationSequence,
         resumableWorkStore,
         sourcePageSize: readPositiveInteger(
           input.env?.MKT_TIKTOK_SOURCE_PAGE_SIZE,
@@ -338,6 +353,10 @@ async function processD1FirstTikTokSync(input) {
           input.env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? input.env?.LARK_MAX_PAGES,
           DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
         ),
+        ...(invocation.operation ? {
+          maxSourcePagesPerInvocation: invocation.maxSourcePagesPerInvocation,
+          maxBusinessUnitsPerInvocation: invocation.maxBusinessUnitsPerInvocation,
+        } : {}),
         syncMode: input.job.body?.syncMode,
         incrementalEnabled,
         incrementalStateStore: incrementalEnabled
@@ -361,6 +380,12 @@ async function processD1FirstTikTokSync(input) {
         sourceWatermark,
       });
     },
+  });
+  await enqueueTikTokSyncContinuation({
+    env: input.env,
+    originalBody: input.job.body,
+    operation: invocation.operation,
+    result,
   });
   await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
   return result;

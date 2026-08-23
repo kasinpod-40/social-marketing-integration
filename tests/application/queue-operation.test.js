@@ -55,6 +55,28 @@ test('post-Lark sync operation identity is independent from Queue delivery messa
   assert.equal(first.workKey, `tiktok:${OPERATION_ID}`);
 });
 
+test('controlled Production TikTok UAT keeps stable identity across continuation deliveries', () => {
+  const body = {
+    ...BODY,
+    type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+    trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT,
+  };
+  const first = resolveQueueOperation({
+    job: normalizeQueueJobMessage({ id: 'uat-first', body }),
+    message: { id: 'uat-first' },
+  });
+  const continuation = resolveQueueOperation({
+    job: normalizeQueueJobMessage({
+      id: 'uat-continuation',
+      body: { ...body, continuation: true, continuationSequence: 7 },
+    }),
+    message: { id: 'uat-continuation' },
+  });
+  assert.deepEqual(continuation, first);
+  assert.equal(first.stable, true);
+  assert.equal(first.workKey, `tiktok:${OPERATION_ID}`);
+});
+
 test('ordinary TikTok sync keeps the existing message-scoped operation', () => {
   const job = normalizeQueueJobMessage({
     id: 'legacy-tiktok-message',
@@ -196,6 +218,11 @@ test('bootstrap, admitted sync and YouTube operator reject workKey or generation
   for (const body of [
     BODY,
     { ...BODY, type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC, trigger: 'post_lark_watermark' },
+    {
+      ...BODY,
+      type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+      trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT,
+    },
     {
       ...BODY,
       type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,

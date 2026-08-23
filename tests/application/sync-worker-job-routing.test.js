@@ -188,6 +188,12 @@ test('reliability-handled permanent YouTube failure still marks resumable work t
 
 for (const input of [
   {
+    type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+    trigger: 'production_connector_uat',
+    operationId: 'tiktok-prod-terminal-test',
+    workKey: 'tiktok:tiktok-prod-terminal-test',
+  },
+  {
     type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
     operationId: 'facebook-daily-terminal-test',
     workKey: 'facebook:facebook-daily-terminal-test',

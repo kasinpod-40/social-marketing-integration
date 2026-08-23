@@ -4,6 +4,8 @@ import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerp
 import { iterateTikTokStagedSourceUnits } from './tiktok-resumable-unit-reader.js';
 
 export const TIKTOK_STAGED_BUSINESS_PHASES = Object.freeze({
+  PLAN_SCAN: 'tiktok_native_business_plan_scan_v1',
+  PLAN: 'tiktok_native_business_plan_v1',
   PREFLIGHT: 'tiktok_native_business_preflight_v1',
   WRITE: 'tiktok_native_business_write_v1',
   COMPLETION: 'tiktok_native_business_completion_v1',

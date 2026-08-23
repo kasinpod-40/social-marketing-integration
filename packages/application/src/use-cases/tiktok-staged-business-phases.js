@@ -32,9 +32,17 @@ import {
 export async function preflightAllUnits(input) {
   let phase = await loadPhase(input.context, TIKTOK_STAGED_BUSINESS_PHASES.PREFLIGHT);
   assertPhasePlanCompatible(phase, input.planFingerprint);
-  if (phase?.complete) return normalizePreflightState(phase.state);
+  if (phase?.complete) {
+    return phaseExecutionResult(input, {
+      state: normalizePreflightState(phase.state),
+      complete: true,
+      unitsProcessed: 0,
+    });
+  }
 
   let state = normalizePreflightState(phase?.state, input.planFingerprint);
+  const maxUnits = readInvocationUnitLimit(input.maxUnitsPerInvocation);
+  let unitsProcessed = 0;
   for await (const unit of iterateTikTokStagedSourceUnits({
     context: input.context,
     afterSequence: state.nextSequence,
@@ -81,11 +89,18 @@ export async function preflightAllUnits(input) {
       recordsPreflighted: state.recordsPreflighted,
       d1HistoryRows: historyPlan?.contentRows ?? 0,
     });
+    unitsProcessed += 1;
+    if (unitsProcessed >= maxUnits) break;
   }
 
-  if (state.recordsPreflighted !== input.sourceSummary.records
-    || state.unitsPreflighted !== input.sourceSummary.pagesProcessed
-    || state.selectedRowsPreflighted !== input.incrementalPlan.selectedRecords) {
+  const unitsComplete = state.recordsPreflighted === input.sourceSummary.records
+    && state.unitsPreflighted === input.sourceSummary.pagesProcessed
+    && state.selectedRowsPreflighted === input.incrementalPlan.selectedRecords;
+  if (!unitsComplete && unitsProcessed >= maxUnits) {
+    return phaseExecutionResult(input, { state, complete: false, unitsProcessed });
+  }
+
+  if (!unitsComplete) {
     throw permanentError('TikTok staged business preflight completeness check failed', {
       code: 'TIKTOK_BUSINESS_PREFLIGHT_INCOMPLETE',
       details: {
@@ -116,15 +131,23 @@ export async function preflightAllUnits(input) {
     chunksProcessed: state.unitsPreflighted,
     complete: true,
   });
-  return state;
+  return phaseExecutionResult(input, { state, complete: true, unitsProcessed });
 }
 
 export async function writeAllUnits(input) {
   let phase = await loadPhase(input.context, TIKTOK_STAGED_BUSINESS_PHASES.WRITE);
   assertPhasePlanCompatible(phase, input.planFingerprint);
-  if (phase?.complete) return normalizeWriteState(phase.state, input.planFingerprint);
+  if (phase?.complete) {
+    return phaseExecutionResult(input, {
+      state: normalizeWriteState(phase.state, input.planFingerprint),
+      complete: true,
+      unitsProcessed: 0,
+    });
+  }
 
   let state = normalizeWriteState(phase?.state, input.planFingerprint);
+  const maxUnits = readInvocationUnitLimit(input.maxUnitsPerInvocation);
+  let unitsProcessed = 0;
   for await (const unit of iterateTikTokStagedSourceUnits({
     context: input.context,
     afterSequence: state.nextSequence,
@@ -235,11 +258,26 @@ export async function writeAllUnits(input) {
       unitsCompleted: state.unitsCompleted,
       d1HistoryEnabled: state.historyResult.enabled,
     });
+    unitsProcessed += 1;
+    if (unitsProcessed >= maxUnits) break;
   }
 
-  if (state.sourceRecordsCompleted !== input.sourceSummary.records
-    || state.unitsCompleted !== input.sourceSummary.pagesProcessed
-    || state.selectedRecordsCompleted !== input.incrementalPlan.selectedRecords) {
+  const unitsComplete = state.sourceRecordsCompleted === input.sourceSummary.records
+    && state.unitsCompleted === input.sourceSummary.pagesProcessed
+    && state.selectedRecordsCompleted === input.incrementalPlan.selectedRecords;
+  if (!unitsComplete && unitsProcessed >= maxUnits) {
+    return phaseExecutionResult(input, { state, complete: false, unitsProcessed });
+  }
+  if (unitsComplete && unitsProcessed > 0 && input.yieldAfterUnits === true) {
+    return phaseExecutionResult(input, {
+      state,
+      complete: false,
+      unitsComplete: true,
+      unitsProcessed,
+    });
+  }
+
+  if (!unitsComplete) {
     throw permanentError('TikTok staged business write completeness check failed', {
       code: 'TIKTOK_BUSINESS_WRITE_INCOMPLETE',
       details: {
@@ -313,7 +351,7 @@ export async function writeAllUnits(input) {
   });
   state = Object.freeze({ ...state, resultDraft });
   await saveWriteState({ ...input, state, complete: true });
-  return state;
+  return phaseExecutionResult(input, { state, complete: true, unitsProcessed });
 }
 
 function emptyPlan() {
@@ -436,4 +474,18 @@ async function savePhase(context, phase, value) {
     phase,
     ...value,
   });
+}
+
+function readInvocationUnitLimit(value) {
+  if (value === null || value === undefined) return Number.MAX_SAFE_INTEGER;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError('TikTok staged business maxUnitsPerInvocation must be positive');
+  }
+  return number;
+}
+
+function phaseExecutionResult(input, execution) {
+  const value = Object.freeze(execution);
+  return input.returnExecution === true ? value : value.state;
 }

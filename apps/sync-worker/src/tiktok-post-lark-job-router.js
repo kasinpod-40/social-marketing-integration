@@ -35,6 +35,10 @@ import {
   requireJobText,
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
+import {
+  enqueueTikTokSyncContinuation,
+  resolveTikTokSyncInvocation,
+} from './tiktok-sync-continuation.js';
 
 /** Intercept only the new probe and admitted sync; all legacy/manual paths remain unchanged. */
 export async function processJobWithTikTokPostLark(input) {
@@ -124,6 +128,18 @@ async function processAdmittedSyncJob(input) {
       operation,
       syncRunId,
     });
+    if (result.continuationRequired === true) {
+      await enqueueTikTokSyncContinuation({
+        env: input.env,
+        originalBody: input.job.body,
+        operation,
+        result,
+      });
+      return Object.freeze({
+        ...result,
+        postLarkAdmission: admission,
+      });
+    }
     let coverageProof = null;
     let reportRequest = null;
     if (config.postProcessReportEnabled) {
@@ -150,6 +166,8 @@ async function processAdmittedSyncJob(input) {
       reportRequest,
     });
   } catch (error) {
+    if (error?.code === 'TIKTOK_CONTINUATION_QUEUE_UNAVAILABLE'
+      || error?.code === 'TIKTOK_CONTINUATION_QUEUE_SEND_FAILED') throw error;
     await admissionStore.markFailed({
       admissionKey,
       retryable: error?.retryable === true,
@@ -183,8 +201,9 @@ async function processPostLarkD1FirstSync(input) {
   ]);
   const reliability = infrastructure.getReliability(tableIds);
   const resumableWorkStore = infrastructure.getResumableWorkStore();
-  const requestedAt = input.operation.originalRequestedAt;
-  const generation = input.operation.generation;
+  const invocation = resolveTikTokSyncInvocation(input);
+  const requestedAt = invocation.requestedAt;
+  const generation = invocation.generation;
   const metricDate = readMetricDate(input.job.body?.metricDate, input.env);
   const sourceWatermark = requireJobText(input.job.body?.sourceWatermark, 'sourceWatermark');
   const workKey = requireJobText(input.operation.workKey, 'operation.workKey');
@@ -248,6 +267,7 @@ async function processPostLarkD1FirstSync(input) {
         workKey,
         requestedAt,
         generation,
+        continuationSequence: invocation.continuationSequence,
         resumableWorkStore,
         expectedSourceWatermark: sourceWatermark,
         sourcePageSize: readPositiveInteger(
@@ -258,6 +278,8 @@ async function processPostLarkD1FirstSync(input) {
           input.env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? input.env?.LARK_MAX_PAGES,
           DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
         ),
+        maxSourcePagesPerInvocation: invocation.maxSourcePagesPerInvocation,
+        maxBusinessUnitsPerInvocation: invocation.maxBusinessUnitsPerInvocation,
         syncMode: input.job.body?.syncMode,
         incrementalEnabled,
         incrementalStateStore: incrementalEnabled

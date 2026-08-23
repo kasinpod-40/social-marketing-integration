@@ -12,9 +12,11 @@ import { syncTikTokStagedBusinessToLark } from './sync-tiktok-staged-business-to
 import {
   isPartialSyncError,
   partialSyncError,
+  permanentError,
 } from '../../../shared/src/errors/runtime-error.js';
 
 const BUSINESS_WRITE_PHASE = 'tiktok_native_business_write_v1';
+const INVOCATION_PHASE = 'tiktok_native_invocation_v1';
 
 /**
  * Entry point กลางของ TikTok Creator sync
@@ -53,14 +55,36 @@ export async function syncTikTokCreatorNativeToLark(input = {}) {
     return replayTikTokCompletedWork(context, syncRunId);
   }
 
+  const continuationSequence = readContinuationSequence(input.continuationSequence);
+  const invocationAdmission = await admitInvocation(context, continuationSequence, syncRunId);
+  if (!invocationAdmission.accepted) return invocationAdmission.result;
+
   const sourceLoad = await stageTikTokResumableSource({
     context,
     repository: input.repository,
     tableId: input.tables?.rawTikTokCreatorVideos,
     pageSize: input.sourcePageSize,
     maxPages: input.sourceMaxPages,
+    maxPagesPerInvocation: input.maxSourcePagesPerInvocation,
     onProgress: input.onProgress,
   });
+  const boundedSource = input.maxSourcePagesPerInvocation !== null
+    && input.maxSourcePagesPerInvocation !== undefined;
+  if (!sourceLoad.summary.complete
+    || (boundedSource && sourceLoad.summary.invocationPages > 0)) {
+    return persistContinuation(context, continuationSequence, {
+      syncRunId,
+      platform: 'tiktok',
+      source: 'lark_native_tiktok_for_creator',
+      mode: 'continuation',
+      status: 'continuation_required',
+      continuationRequired: true,
+      continuationPhase: sourceLoad.summary.complete ? 'source_complete' : 'source_staging',
+      continuationNextSequence: sourceLoad.summary.pagesProcessed,
+      sourceSummary: sourceLoad.summary,
+      warnings: Object.freeze([]),
+    });
+  }
   const writeStateBefore = await loadBusinessWriteState(context);
 
   let stagedResult;
@@ -70,10 +94,15 @@ export async function syncTikTokCreatorNativeToLark(input = {}) {
       context,
       syncRunId,
       sourceSummary: sourceLoad.summary,
+      maxUnitsPerInvocation: input.maxBusinessUnitsPerInvocation,
     });
   } catch (error) {
     if (!isPartialSyncError(error)) throw error;
     throw normalizeAttemptPartialError(error, writeStateBefore);
+  }
+
+  if (stagedResult?.continuationRequired === true) {
+    return persistContinuation(context, continuationSequence, stagedResult);
   }
 
   const durableReplay = stagedResult?.stagedBusiness?.completionPhaseReplay === true
@@ -87,6 +116,75 @@ export async function syncTikTokCreatorNativeToLark(input = {}) {
   const completedResult = attachResumableSummary(result, context, sourceLoad.summary);
   await completeTikTokResumableSource(context, completedResult);
   return completedResult;
+}
+
+async function admitInvocation(context, requestedSequence, syncRunId) {
+  await context.assertCurrent();
+  const phase = await context.store.loadPhase({
+    workKey: context.workKey,
+    phase: INVOCATION_PHASE,
+  });
+  const expectedSequence = nonNegativeInteger(phase?.state?.nextSequence ?? 0);
+  if (requestedSequence === expectedSequence) {
+    return Object.freeze({ accepted: true });
+  }
+  if (requestedSequence === expectedSequence - 1
+    && phase?.state?.pendingContinuation?.continuationRequired === true) {
+    return Object.freeze({
+      accepted: false,
+      result: Object.freeze({
+        ...phase.state.pendingContinuation,
+        syncRunId,
+        continuationReplay: true,
+      }),
+    });
+  }
+  if (requestedSequence < expectedSequence) {
+    return Object.freeze({
+      accepted: false,
+      result: Object.freeze({
+        syncRunId,
+        platform: 'tiktok',
+        source: 'lark_native_tiktok_for_creator',
+        mode: 'skipped',
+        status: 'stale_continuation',
+        continuationRequired: false,
+        continuationSequence: requestedSequence,
+        expectedContinuationSequence: expectedSequence,
+        warnings: Object.freeze([]),
+      }),
+    });
+  }
+  throw permanentError('TikTok continuation arrived ahead of durable state', {
+    code: 'TIKTOK_CONTINUATION_SEQUENCE_AHEAD',
+    details: { requestedSequence, expectedSequence },
+  });
+}
+
+async function persistContinuation(context, currentSequence, result) {
+  const nextSequence = currentSequence + 1;
+  const pendingContinuation = Object.freeze({
+    ...result,
+    continuationRequired: true,
+    continuationSequence: nextSequence,
+  });
+  await context.assertCurrent();
+  await context.store.savePhase({
+    workKey: context.workKey,
+    phase: INVOCATION_PHASE,
+    state: { nextSequence, pendingContinuation },
+    expectedItems: nextSequence + 1,
+    processedItems: nextSequence,
+    pagesProcessed: nextSequence,
+    chunksProcessed: nextSequence,
+    complete: false,
+  });
+  return pendingContinuation;
+}
+
+function readContinuationSequence(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  return nonNegativeInteger(value);
 }
 
 /**

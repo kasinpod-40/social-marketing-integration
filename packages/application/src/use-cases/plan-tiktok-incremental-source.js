@@ -35,10 +35,37 @@ export async function planTikTokIncrementalSourceIterable(input = {}) {
     : createStableFingerprint;
   const expectedSourceHandle = optionalHandle(input.expectedSourceHandle);
 
-  const dictionaryHash = await fingerprint(sortRecordCollection(dictionaryRecords));
   const previousById = new Map(
     checkpoint.recordStates.map((record) => [record.sourceRecordId, record]),
   );
+  const scan = await scanTikTokIncrementalSourceRecords({
+    rawRecords,
+    previousById,
+    fingerprint,
+  });
+  return finalizeTikTokIncrementalSourceScan({
+    scans: [scan],
+    dictionaryRecords,
+    checkpoint,
+    metricDate,
+    syncMode,
+    now,
+    fullSyncIntervalMs,
+    expectedSourceHandle,
+    fingerprint,
+  });
+}
+
+/** Hash และ normalize RAW หนึ่ง durable unit โดยยังไม่ตัดสิน Full/Incremental ทั้ง generation. */
+export async function scanTikTokIncrementalSourceRecords(input = {}) {
+  const rawRecords = requireIterable(input.rawRecords, 'rawRecords');
+  const previousById = input.previousById instanceof Map
+    ? input.previousById
+    : new Map(normalizeCheckpoint(input.checkpoint).recordStates
+      .map((record) => [record.sourceRecordId, record]));
+  const fingerprint = typeof input.fingerprint === 'function'
+    ? input.fingerprint
+    : createStableFingerprint;
   const currentStates = [];
   const changedStates = [];
   const currentIds = new Set();
@@ -96,7 +123,68 @@ export async function planTikTokIncrementalSourceIterable(input = {}) {
     if (!previous || previous.sourceHash !== sourceHash) changedStates.push(state);
   }
 
-  const detectedHandles = [...sourceHandles].sort();
+  return Object.freeze({
+    sourceRecords,
+    currentStates: Object.freeze(currentStates),
+    changedStates: Object.freeze(changedStates),
+    sourceHandles: Object.freeze([...sourceHandles].sort()),
+  });
+}
+
+/** รวม compact scans ทุก unit แล้วตัดสิน immutable plan หนึ่งครั้งก่อน Business preflight. */
+export async function finalizeTikTokIncrementalSourceScan(input = {}) {
+  const scans = requireArray(input.scans, 'scans');
+  const dictionaryRecords = requireArray(input.dictionaryRecords, 'dictionaryRecords');
+  const checkpoint = normalizeCheckpoint(input.checkpoint);
+  const metricDate = requireText(input.metricDate, 'metricDate');
+  const syncMode = readSyncMode(input.syncMode);
+  const now = safeInteger(input.now ?? Date.now(), 'now');
+  const fullSyncIntervalMs = positiveInteger(input.fullSyncIntervalMs, 'fullSyncIntervalMs');
+  const fingerprint = typeof input.fingerprint === 'function'
+    ? input.fingerprint
+    : createStableFingerprint;
+  const expectedSourceHandle = optionalHandle(input.expectedSourceHandle);
+  const dictionaryHash = await createTikTokDictionaryHash(dictionaryRecords, fingerprint);
+  const currentStates = [];
+  const changedStates = [];
+  const currentIds = new Set();
+  const externalContentIds = new Set();
+  const sourceHandles = new Set();
+  let sourceRecords = 0;
+
+  for (const scan of scans) {
+    const states = requireArray(scan?.currentStates, 'scan.currentStates');
+    sourceRecords += states.length;
+    for (const state of states) {
+      if (currentIds.has(state.sourceRecordId)) {
+        throw permanentError('TikTok RAW source contains duplicate record identities', {
+          code: 'TIKTOK_SYNC_NOT_READY',
+          details: { duplicateSourceRecordCount: 1 },
+        });
+      }
+      if (externalContentIds.has(state.externalContentId)) {
+        throw permanentError('TikTok RAW source contains duplicate content identities', {
+          code: 'TIKTOK_SYNC_NOT_READY',
+          details: { duplicateContentIdentityCount: 1 },
+        });
+      }
+      currentIds.add(state.sourceRecordId);
+      externalContentIds.add(state.externalContentId);
+      currentStates.push(state);
+    }
+    for (const handle of requireArray(scan?.sourceHandles, 'scan.sourceHandles')) {
+      sourceHandles.add(optionalHandle(handle));
+    }
+  }
+  const previousById = new Map(
+    checkpoint.recordStates.map((record) => [record.sourceRecordId, record]),
+  );
+  for (const state of currentStates) {
+    const previous = previousById.get(state.sourceRecordId);
+    if (!previous || previous.sourceHash !== state.sourceHash) changedStates.push(state);
+  }
+
+  const detectedHandles = [...sourceHandles].filter(Boolean).sort();
   const sourceIdentity = Object.freeze({
     ok: expectedSourceHandle
       ? detectedHandles.length === 1 && detectedHandles[0] === expectedSourceHandle
@@ -166,6 +254,11 @@ export async function planTikTokIncrementalSourceIterable(input = {}) {
     evaluatedAt: now,
     sourceIdentity,
   });
+}
+
+/** Stable hash กลางสำหรับตรวจว่า Dictionary ไม่เปลี่ยนระหว่าง durable continuations */
+export async function createTikTokDictionaryHash(records, fingerprint = createStableFingerprint) {
+  return fingerprint(sortRecordCollection(requireArray(records, 'dictionaryRecords')));
 }
 
 /** สร้าง Cursor ใหม่หลัง Lark business writes สำเร็จแล้วเท่านั้น */
