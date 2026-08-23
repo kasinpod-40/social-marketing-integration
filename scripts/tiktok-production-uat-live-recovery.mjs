@@ -21,7 +21,7 @@ import {
 } from './lib/tiktok-production-uat-resume-contract.js';
 
 const CONFIRM_NAME = 'TIKTOK_PRODUCTION_RECOVERY_CONFIRM';
-const CONFIRM_VALUE = 'RESUME_TERMINAL_B86_AFTER_DARK_RESTORE';
+const CONFIRM_VALUE = 'RECOVER_DLQ_FEF9919E_AFTER_EXECUTION_BUDGET_REVIEW';
 const POLL_MS = positiveIntegerEnv('TIKTOK_PRODUCTION_RECOVERY_POLL_MS', 2_000);
 const POLL_ATTEMPTS = positiveIntegerEnv('TIKTOK_PRODUCTION_RECOVERY_POLL_ATTEMPTS', 1_800);
 const EVIDENCE_FILE = resolve(
@@ -40,7 +40,13 @@ try {
       mode: 'live-resume-plan',
       reviewedMain: TIKTOK_PRODUCTION_RECOVERY.reviewedMain,
       rootDlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId,
+      parentDlqId: TIKTOK_PRODUCTION_RESUME.parentDlqId,
       resumeDlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
+      recoveryExecutionBudget: {
+        cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
+        larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
+        larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
+      },
       requiredConfirmation: `${CONFIRM_NAME}=${CONFIRM_VALUE}`,
       note: 'No Production mutation was performed.',
     }, null, 2));
@@ -95,7 +101,7 @@ async function runLiveResume() {
     configPath: production.configPath,
   });
   if (openBefore.length !== 1 || openBefore[0]?.dlq_id !== TIKTOK_PRODUCTION_RESUME.resumeDlqId) {
-    throw operatorError('Expected b86 to be the only open TikTok DLQ before resume', 'TIKTOK_PRODUCTION_RESUME_OPEN_DLQ_CARDINALITY_MISMATCH', {
+    throw operatorError('Expected fef to be the only open TikTok DLQ before recovery', 'TIKTOK_PRODUCTION_RESUME_OPEN_DLQ_CARDINALITY_MISMATCH', {
       rows: openBefore.map(summarizeDlq),
     });
   }
@@ -119,6 +125,7 @@ async function runLiveResume() {
     reviewedMain: TIKTOK_PRODUCTION_RECOVERY.reviewedMain,
     lineage: {
       rootDlq: summarizeDlq(rootRow),
+      parentDlqId: TIKTOK_PRODUCTION_RESUME.parentDlqId,
       resumeDlqBefore: summarizeDlq(resume.row),
       rootRedriveReference: TIKTOK_PRODUCTION_RESUME.rootRedriveReference,
       verified: true,
@@ -129,6 +136,11 @@ async function runLiveResume() {
       environment: readJsoncScalar(production.configText, 'MKT_ENV'),
       customerProfile: readJsoncScalar(production.configText, 'MKT_CUSTOMER_PROFILE'),
       initialState: 'dark',
+    },
+    recoveryExecutionBudget: {
+      cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
+      larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
+      larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
     },
     recovery: null,
     idempotency: null,
@@ -168,17 +180,21 @@ async function runLiveResume() {
     mutationLog.push({
       type: 'worker_deploy',
       state: 'temporary_tiktok_uat_redrive',
+      sourceHead: baselineHead,
       tiktok: true,
       productionUat: true,
       dlqRedrive: true,
       tiktokSchedule: false,
       notificationRuntime: false,
+      cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
+      larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
+      larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
     });
 
     const redrivePush = await pushQueue({ cloudflare, envelope: buildResumeRedriveEnvelope() });
     mutationLog.push({
       type: 'queue_send',
-      purpose: 'canonical_continuation_dead_letter_redrive',
+      purpose: 'canonical_fef_dead_letter_redrive',
       dlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
       responseStatus: redrivePush.status,
     });
@@ -256,7 +272,7 @@ async function runLiveResume() {
       dlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
     });
     if (resumeAfter?.status !== 'redriven') {
-      throw operatorError('Continuation DLQ is not redriven after recovery', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_STATUS_INVALID', {
+      throw operatorError('Recovery DLQ is not redriven after recovery', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_STATUS_INVALID', {
         row: summarizeDlq(resumeAfter),
       });
     }
@@ -266,14 +282,14 @@ async function runLiveResume() {
       configPath: recoveryConfigPath,
     });
     if (openAfter.length !== 0) {
-      throw operatorError('Open TikTok DLQ remains after resume and idempotency proof', 'TIKTOK_PRODUCTION_RESUME_OPEN_DLQ_REMAINS', {
+      throw operatorError('Open TikTok DLQ remains after recovery and idempotency proof', 'TIKTOK_PRODUCTION_RESUME_OPEN_DLQ_REMAINS', {
         rows: openAfter.map(summarizeDlq),
       });
     }
 
     evidence.postChecks = {
       rootDlqStatus: rootAfter.status,
-      continuationDlqStatus: resumeAfter.status,
+      recoveryDlqStatus: resumeAfter.status,
       openTikTokDlqCount: 0,
       recoveryRunStatus: recoveredRun.status,
       idempotencyRunStatus: idempotentRun.status,
@@ -294,7 +310,7 @@ async function runLiveResume() {
         deployWorker({ wrangler, cwd: tempWorktree, configPath: darkConfigPath });
         restore.ok = true;
         restore.state = 'reviewed_dark';
-        mutationLog.push({ type: 'worker_deploy', state: 'restored_reviewed_dark' });
+        mutationLog.push({ type: 'worker_deploy', state: 'restored_reviewed_dark', sourceHead: TIKTOK_PRODUCTION_RECOVERY.reviewedMain });
       } catch (restoreError) {
         restore.ok = false;
         restore.code = restoreError?.code ?? 'TIKTOK_PRODUCTION_DARK_RESTORE_FAILED';
@@ -407,13 +423,13 @@ async function waitForDlqRedriven(input) {
     last = readDlqById(input);
     if (last?.status === 'redriven') return last;
     if (last && !['open', 'redrive_pending'].includes(last.status)) {
-      throw operatorError('Continuation DLQ entered an unexpected redrive state', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_STATUS_INVALID', {
+      throw operatorError('Recovery DLQ entered an unexpected redrive state', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_STATUS_INVALID', {
         row: summarizeDlq(last),
       });
     }
     await sleep(POLL_MS);
   }
-  throw operatorError('Continuation DLQ redrive did not reach redriven state', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_TIMEOUT', {
+  throw operatorError('Recovery DLQ redrive did not reach redriven state', 'TIKTOK_PRODUCTION_RESUME_REDRIVE_TIMEOUT', {
     row: summarizeDlq(last),
   });
 }
