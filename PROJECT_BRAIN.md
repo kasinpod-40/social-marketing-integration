@@ -2,6 +2,19 @@
 
 ## Customer Production Free-plan continuation cutover — 2026-08-23
 
+Reviewed main `400a17795f3a2fee0175504c20f3758f377675f8` is deployed in the exact customer account as Worker
+version `d93072cb-a179-4158-944c-0eb08cf0e759`, authored by `dev.datahub.2026@gmail.com` and receiving
+100% traffic. The shared primary Cron is active at `*/5 * * * *`; Workers.dev remains disabled and the main
+Queue remains Free-plan safe at batch size/timeout/concurrency `1/1/1`.
+
+The first normal Production activation enables only Instagram, Meta Ads and Chatwoot sources, D1/Lark writes
+and their schedules. Their Monday times are 07:35, 07:40 and 07:45 `Asia/Bangkok`. TikTok remains disabled
+until 06:55 Monday avoids a previous-day cursor rollback; Facebook, Google Ads, YouTube and WooCommerce remain
+disabled behind exact missing-secret gates. Reports, AI, notifications, retention, webhook and DLQ redrive
+also remain disabled. Pre-run D1 baseline is retained for first-run reconciliation and the existing TikTok
+forensic alerts/DLQ were not changed. Heartbeat `customer-production-cutover-monitor` continues the reviewed
+Monday enable/observe sequence from 06:50; no first-schedule or AI exactly-once success is claimed yet.
+
 คำสั่งผู้ใช้ยืนยันว่า Source accounts, data และ connector credentials/state ใน Integration Workspace
 เป็นทรัพย์สินลูกค้าอยู่แล้ว. Customer Production จึงเป็นการย้าย runtime ไป Customer Cloudflare/D1,
 เปลี่ยน mapping เป็น Customer Lark Base แล้วเปิด schedule แบบควบคุม ไม่ใช่ onboarding เจ้าของบัญชีใหม่.

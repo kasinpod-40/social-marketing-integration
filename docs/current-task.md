@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = IMPLEMENTED_READY_FOR_REVIEW
+TASK_STATUS                              = PRODUCTION_SCHEDULES_ACTIVE_AWAITING_FIRST_RUN
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = b0d78ec92acd05b0afdc54c5c24db3eb5060c66c
-CURRENT_BRANCH                           = codex/multichannel-production-runtime-20260823
+BASE_MAIN_SHA                            = 400a17795f3a2fee0175504c20f3758f377675f8
+CURRENT_BRANCH                           = codex/customer-production-schedule-activation-20260823
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -16,11 +16,11 @@ PRODUCTION_D1_MIGRATIONS                 = 21_OF_21
 PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
-PRODUCTION_WORKER_DEPLOYED               = TRUE_DARK
-PRODUCTION_WORKER_HEAD                   = 84c74a2f-2283-40be-967b-ba046adde78a_REVIEWED_DARK_VERSION
+PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
+PRODUCTION_WORKER_HEAD                   = d93072cb-a179-4158-944c-0eb08cf0e759
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
-PRODUCTION_SCHEDULE_ENABLED              = FALSE
-PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_AND_VERIFIED_TIKTOK_UAT_ONLY
+PRODUCTION_SCHEDULE_ENABLED              = INSTAGRAM_META_ADS_CHATWOOT
+PRODUCTION_BUSINESS_TRAFFIC              = THREE_SOURCE_SCHEDULES_ACTIVE_FIRST_RUN_PENDING
 PRODUCTION_QUEUE_LARK_BOOTSTRAP_SMOKE    = PASS_IDEMPOTENT
 PRODUCTION_CONNECTOR_UAT_ADMISSION       = MERGED_PR_677
 LARK_TRANSPORT_REPAIR                    = MERGED_PR_678
@@ -33,6 +33,9 @@ TIKTOK_PRODUCTION_UAT_DLQ                = terminal:eafd8e43f1ae5113d12905301496
 TIKTOK_DLQ_REDRIVE_SUPPORT               = DO_NOT_BLIND_REDRIVE
 PRODUCTION_DARK_STATE_RESTORED           = TRUE_VERSION_1dc1ae9c
 PRODUCTION_MAIN_QUEUE_BATCH_SIZE         = 1_FREE_PLAN_SAFE
+PRODUCTION_CRON                          = EVERY_5_MINUTES_PRIMARY_SCHEDULER
+PRODUCTION_FIRST_RUN_WINDOW              = 2026-08-24_0735_TO_0745_ASIA_BANGKOK
+PRODUCTION_MONITOR_AUTOMATION            = customer-production-cutover-monitor_ACTIVE_0650_DAILY
 CURRENT_REPAIR_BRANCH                    = MERGED_PR_695
 REVIEWED_SOURCE_UAT_READY                = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_GOOGLE_ADS_CHATWOOT
 PRODUCTION_SECRET_BLOCKED                = YOUTUBE_WOOCOMMERCE_GOOGLE_ADS_CONNECTION_ENCRYPTION
@@ -247,6 +250,40 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   intended period and exact customer group mapping is read back.
 
 ## Implementation result
+
+Customer Production schedule activation on 2026-08-23:
+
+- PR #702 merged the reviewed multichannel Production runtime at exact main
+  `400a17795f3a2fee0175504c20f3758f377675f8`; the customer Worker was first deployed dark, then the exact
+  merged source was deployed as version `d93072cb-a179-4158-944c-0eb08cf0e759` with deployment message
+  `main@400a1779 activate instagram meta-ads chatwoot schedules`;
+- Cloudflare readback shows `dev.datahub.2026@gmail.com` as author and the new version receiving 100% traffic;
+- the primary Cron is exactly `*/5 * * * *`, `workers_dev=false`, and the main Queue remains Free-plan safe
+  at batch size/timeout/concurrency `1/1/1` with the existing DLQ; no route or DLQ redrive was added;
+- enabled only Instagram, Meta Ads and Chatwoot source/D1/Lark/schedule paths. TikTok, Facebook, Google Ads,
+  YouTube, WooCommerce, Daily/Weekly reports, AI, notification, retention, webhook and redrive paths remain
+  disabled. `CHATWOOT_INCLUDE_UPDATED_OLDER_CONVERSATIONS=true` is the retained reviewed Daily behavior;
+- first automatic source windows remain time-gated to Monday 2026-08-24 at 07:35 Instagram, 07:40 Meta Ads
+  and 07:45 Chatwoot in `Asia/Bangkok`; no scheduled success is claimed before those runs occur;
+- pre-run D1 baseline records Instagram 50 current-content keys / 50 observation keys / 14 account-day keys,
+  Meta Ads 9,503 daily-fact keys through 2026-08-21, and Chatwoot cursor `2026-08-22` with 665 conversation
+  state rows. Distinct stable-key counts equal row counts in the measured tables and active locks are zero;
+- the retained TikTok forensic baseline remains five open alerts and one open DLQ row; neither was changed,
+  replayed or redriven;
+- Codex heartbeat `customer-production-cutover-monitor` is active for 06:50 `Asia/Bangkok` to continue the
+  reviewed TikTok enablement and first-run reconciliation sequence. It must stop after completion or when an
+  unrecoverable secret blocker requires user action.
+
+Remaining live gates:
+
+- enable TikTok at/after 06:55 Monday, when the reviewed scheduler targets 2026-08-23 and cannot move the
+  migrated cursor backward, then verify its exact scheduled operation;
+- verify Instagram, Meta Ads and Chatwoot first automatic runs one connector at a time against the retained
+  baseline, including D1/Lark parity, expected interval, stable keys, checkpoint, and exact new alert/DLQ/lock;
+- keep Facebook disabled until `META_FACEBOOK_PAGE_ACCESS_TOKEN` is set; keep Google Ads, YouTube and
+  WooCommerce disabled until their documented missing encryption/Provider secrets are available;
+- keep Report/AI/Notification disabled until all intended source and materialization gates pass. Automatic
+  Lark group exactly-once delivery remains pending and must not be inferred from deployment alone.
 
 Multichannel Production runtime update on `codex/multichannel-production-runtime-20260823`:
 
