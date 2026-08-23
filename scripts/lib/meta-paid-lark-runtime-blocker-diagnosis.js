@@ -26,6 +26,11 @@ export function classifyMetaPaidLarkRuntimeDiagnosis(beforeInput = {}, afterInpu
   const afterWork = new Map(after.work.map((row) => [row.work_key, stableJson(row)]));
   const queueByWork = groupBy(after.queue, 'work_key');
   const phasesByWork = groupBy(after.phases, 'work_key');
+  const blockerStateStable = enoughStabilityWindow
+    && stableJson(before.work) === stableJson(after.work)
+    && stableJson(before.queue) === stableJson(after.queue)
+    && stableJson(before.locks) === stableJson(after.locks)
+    && stableJson(before.phases) === stableJson(after.phases);
 
   const work = after.work.map((row) => {
     const latestActivityAt = Math.max(
@@ -36,7 +41,8 @@ export function classifyMetaPaidLarkRuntimeDiagnosis(beforeInput = {}, afterInpu
     const ageMs = latestActivityAt > 0 ? after.observedAt - latestActivityAt : null;
     const stableAcrossWindow = enoughStabilityWindow
       && beforeWork.get(row.work_key) === afterWork.get(row.work_key);
-    const staleByExistingMetaRule = stableAcrossWindow
+    const staleByExistingMetaRule = blockerStateStable
+      && stableAcrossWindow
       && ageMs !== null
       && ageMs >= META_PAID_LARK_RUNTIME_STALE_AGE_MS;
     return Object.freeze({
@@ -61,7 +67,8 @@ export function classifyMetaPaidLarkRuntimeDiagnosis(beforeInput = {}, afterInpu
   const idle = after.work.length === 0 && after.queue.length === 0 && after.locks.length === 0;
   const everyCurrentWorkStable = after.work.length > 0
     && work.every((item) => item.stableAcrossWindow);
-  const everyCurrentWorkStale = everyCurrentWorkStable
+  const everyCurrentWorkStale = blockerStateStable
+    && everyCurrentWorkStable
     && work.every((item) => item.staleByExistingMetaRule);
 
   return deepFreeze({
@@ -69,6 +76,7 @@ export function classifyMetaPaidLarkRuntimeDiagnosis(beforeInput = {}, afterInpu
     observedAt: after.observedAt,
     elapsedMs,
     enoughStabilityWindow,
+    blockerStateStable,
     idle,
     counts: {
       activeWork: after.work.length,
