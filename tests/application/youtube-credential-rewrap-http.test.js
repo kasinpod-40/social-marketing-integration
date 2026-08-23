@@ -118,6 +118,6 @@ function context(env, requestInit) {
 function enabledEnv() {
   return {
     MKT_YOUTUBE_CREDENTIAL_REWRAP_ENABLED: 'true',
-    MKT_CONNECTION_OPERATOR_TOKEN: OPERATOR_TOKEN,
+    MKT_YOUTUBE_CREDENTIAL_REWRAP_TOKEN: OPERATOR_TOKEN,
   };
 }

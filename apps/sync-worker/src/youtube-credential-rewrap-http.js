@@ -37,7 +37,7 @@ export function createYouTubeCredentialRewrapHttpHandler(dependencies = {}) {
         headers: { 'cache-control': 'no-store' },
       });
     }
-    await requireOperatorAuthorization(request, env?.MKT_CONNECTION_OPERATOR_TOKEN);
+    await requireOperatorAuthorization(request, env?.MKT_YOUTUBE_CREDENTIAL_REWRAP_TOKEN);
     const config = configLoader(env);
     if (config.environment !== 'development' || config.customerProfile !== 'integration_workspace') {
       throw rewrapError(
