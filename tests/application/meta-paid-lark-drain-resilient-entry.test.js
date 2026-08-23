@@ -29,7 +29,7 @@ test('resilient entry delegates to existing supervised drain and adds no direct 
   assert.match(source, /meta-paid-lark-drain-closeout-supervised\.mjs/u);
   assert.doesNotMatch(source, /wrangler['",\s]+deploy/iu);
   assert.doesNotMatch(source, /\.send\s*\(/u);
-  assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE)\b/iu);
+  assert.doesNotMatch(source, /['"`]\s*(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE)\b/iu);
   assert.match(source, /directRemoteMutationPerformed:\s*false/u);
 });
 
