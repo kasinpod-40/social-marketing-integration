@@ -82,7 +82,7 @@ test('registry rejects runtime profiles that omit an active connector state', ()
   );
 });
 
-test('Production admits verified TikTok while keeping dev-ready YouTube gated', () => {
+test('Production admits verified TikTok and YouTube after exact live UAT evidence', () => {
   const tiktokProduction = loadCustomerRuntimeConfig({
     MKT_ENV: 'production',
     MKT_CUSTOMER_PROFILE: 'chemistry_k',
@@ -99,11 +99,11 @@ test('Production admits verified TikTok while keeping dev-ready YouTube gated', 
     MKT_CUSTOMER_PROFILE: 'chemistry_k',
     MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
-  assert.throws(
-    () => assertConnectorRunnable(youtubeProduction, 'youtube'),
-    (error) => error?.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING'
-      && error?.details?.missingGates?.includes('liveAccountUat'),
-  );
+  assert.equal(assertConnectorRunnable(youtubeProduction, 'youtube').enabled, true);
+  const youtubeReadiness = listConnectorReadiness(youtubeProduction)
+    .find((item) => item.key === 'youtube');
+  assert.equal(youtubeReadiness.runnable, true);
+  assert.equal(youtubeReadiness.productionRunnable, true);
 });
 
 test('readiness summary exposes volume targets and missing gates without secrets', () => {
@@ -117,9 +117,10 @@ test('readiness summary exposes volume targets and missing gates without secrets
   const instagram = readiness.find((item) => item.key === 'instagram');
 
   assert.equal(youtube.runnable, true);
-  assert.equal(youtube.productionRunnable, false);
+  assert.equal(youtube.productionRunnable, true);
   assert.equal(youtube.minimumFixtureItems, 1000);
-  assert.deepEqual(youtube.missingLargeAccountGates, ['liveAccountUat']);
+  assert.equal(youtube.largeAccountStatus, 'verified');
+  assert.deepEqual(youtube.missingLargeAccountGates, []);
   assert.equal(instagram.minimumFixtureItems, 2000);
   assert.equal(instagram.productionRunnable, false);
   assert.equal(instagram.largeAccountStatus, 'verified');

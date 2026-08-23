@@ -40,7 +40,7 @@ test('every connector declares a frozen large-account activation contract', () =
   }
 });
 
-test('customer-source live evidence promotes reviewed connectors while missing-secret UAT lanes stay gated', () => {
+test('customer-source live evidence promotes reviewed connectors after exact Production UAT', () => {
   const youtube = getConnectorCatalogEntry('youtube');
   const tiktok = getConnectorCatalogEntry('tiktok');
   const instagram = getConnectorCatalogEntry('instagram');
@@ -49,10 +49,10 @@ test('customer-source live evidence promotes reviewed connectors while missing-s
   const googleAds = getConnectorCatalogEntry('google_ads');
   const chatwoot = getConnectorCatalogEntry('chatwoot');
 
-  assert.equal(youtube.largeAccount.status, 'dev_ready');
+  assert.equal(youtube.largeAccount.status, 'verified');
   assert.equal(youtube.largeAccount.minimumFixtureItems, 1000);
-  assert.deepEqual(youtube.largeAccount.missingGates, ['liveAccountUat']);
-  assert.equal(youtube.largeAccount.productionReady, false);
+  assert.deepEqual(youtube.largeAccount.missingGates, []);
+  assert.equal(youtube.largeAccount.productionReady, true);
 
   assert.equal(tiktok.largeAccount.status, 'verified');
   assert.deepEqual(tiktok.largeAccount.missingGates, []);

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-23 — YouTube Customer Production UAT and readiness promotion
+
+- migrated the exact Chemistry K YouTube operational cursor and 837 source-record fingerprints from the
+  Integration D1 into the customer-owned D1 after proving the business/history tables were already present;
+- superseded the retained full-inventory recovery after the Customer Workers Free CPU ceiling was confirmed,
+  preserving its complete 17/17 source phases and closing only its exact stale runs, lock, DLQ and alert;
+- completed one fresh customer Production incremental UAT without a Workers Paid upgrade: 100 recent videos,
+  837/837 Owner Analytics scope, 17/17 Analytics chunks, 64 Content updates, 100 Content Daily creates and
+  one Account update in the customer Lark Base;
+- verified durable completion, checkpoint advancement, zero exact-scope lock/DLQ/alert and promoted YouTube
+  large-account readiness from `dev_ready` to `verified`; schedule activation remains a separate deployment.
+
 ## 2026-08-23 — YouTube Production-UAT stable recovery delivery
 
 - made controlled YouTube Production UAT use a stable reviewed Queue operation identity so a new Cloudflare

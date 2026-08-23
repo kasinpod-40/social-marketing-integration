@@ -85,7 +85,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_YOUTUBE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: devReadyLargeAccount('videos', 1000),
+    largeAccount: verifiedLargeAccount('videos', 1000),
   }),
   [CONNECTOR_KEYS.WOOCOMMERCE]: freezeDefinition({
     key: CONNECTOR_KEYS.WOOCOMMERCE,

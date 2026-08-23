@@ -453,3 +453,27 @@ Verification on 2026-08-23:
 
 Remaining external work is the reviewed merge and the controlled customer cutover/first-schedule/AI-group
 proof sequence above. These are execution gates, not missing customer ownership or Base-sharing blockers.
+
+### 2026-08-23 — YouTube Customer Production UAT PASS and readiness promotion
+
+- confirmed the customer-owned Worker/D1/Lark/credential path under `dev.datahub.2026@gmail.com` without a
+  new YouTube OAuth login and without upgrading the Customer Workers Free account;
+- Cloudflare rejected a 300,000 ms configured CPU ceiling on the Free plan with error `100328`, so the
+  retained full-inventory UAT was superseded after preserving its complete 17/17 source phases;
+- found and repaired the actual D1 cutover gap: customer business/history data existed, while the exact
+  Chemistry K YouTube operational cursor and all 837 `source_record_states` were missing;
+- migrated those 837 operational states with exact-count/pre/post guards, then ran a new stable incremental
+  Production UAT for 100 recent videos with Owner Analytics enabled;
+- live result: sync run `success`, work `completed`, checkpoint saved, 837/837 Analytics videos queried,
+  17/17 Analytics chunks complete, 1,541 Analytics rows, 64 Content updates, 100 Content Daily creates,
+  one Account update, zero warnings and zero reconciliation gaps;
+- post-validation: active lock 0, new-operation DLQ 0, new-operation open alerts 0; the superseded incident's
+  exact DLQ/alert was resolved and its partial coverage was closed with an explicit superseded reason;
+- promote only YouTube large-account readiness from `dev_ready` to `verified`; normal schedule activation
+  remains pending reviewed merge and a production-config deployment with the controlled-UAT gate disabled.
+- focused readiness/admission/Queue tests — PASS, 41/41;
+- `npm run check` — PASS, 800 source files / 2,393 local dependencies / 0 cycles; hygiene PASS;
+- `npm test` — PASS, 3,188 unit tests and 18 Workers-runtime tests;
+- `npm run test:report-reliability` — PASS, 105/105;
+- `npm audit --audit-level=high` — PASS, 0 vulnerabilities;
+- `WRANGLER_LOG_PATH=/tmp/youtube-production-readiness-dry-run.log npm run deploy:dry-run` — PASS.
