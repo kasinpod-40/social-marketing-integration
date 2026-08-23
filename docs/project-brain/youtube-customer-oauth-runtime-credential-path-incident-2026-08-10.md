@@ -177,7 +177,8 @@ The reviewed cutover contract therefore rewraps the same plaintext only inside t
 4. Customer Production performs Owner identity/refresh proof before schedule activation;
 5. legacy `YOUTUBE_OAUTH_*` credentials remain prohibited as Analytics fallback.
 
-The operator boundary is disabled by default, authenticated, restricted to the canonical Integration profile,
+The operator boundary is disabled by default, authenticated with a dedicated one-purpose Worker Secret,
+restricted to the canonical Integration profile,
 requires exact connection/reference/source/target/confirmation values, and returns no plaintext, ciphertext or
 key material. Customer Production runtime admission reuses the canonical reviewed ownership predicate and
 rejects historical aliases and mixed tuples. Live rewrap/deploy/schedule completion remains pending reviewed

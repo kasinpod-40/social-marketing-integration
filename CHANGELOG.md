@@ -6,8 +6,9 @@
   tuple and rejecting aliases, mixed environments/profiles and foreign ownership;
 - added bounded previous encryption-key reads and current-key writes so the existing validated YouTube Refresh
   Token can be rewrapped to a Customer-owned key without another customer OAuth login;
-- added a disabled-by-default, operator-authenticated, Integration-only rewrap route that keeps plaintext in
-  Worker memory and returns only credential references/key-version metadata;
+- added a disabled-by-default, dedicated-token-authenticated, Integration-only rewrap route that keeps plaintext
+  in Worker memory, returns only credential references/key-version metadata and does not rotate the general
+  Connection operator token;
 - preserved the unrelated legacy `YOUTUBE_OAUTH_*` path as ineligible for Analytics runtime and kept all
   schedules/Report/AI/Notification flags unchanged pending reviewed merge and Live validation.
 

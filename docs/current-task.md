@@ -289,7 +289,8 @@ YouTube no-reconnect credential cutover implementation on
 - added repository-level rewrap that decrypts the exact active source envelope and atomically replaces it with
   a new encrypted envelope/reference without returning plaintext;
 - added disabled-by-default `POST /operator/youtube/credential-rewrap`, exact confirmation/reference/version
-  checks, constant-work bearer authorization and an Integration-only environment guard;
+  checks, a dedicated `MKT_YOUTUBE_CREDENTIAL_REWRAP_TOKEN` constant-work bearer boundary and an
+  Integration-only environment guard; the existing general Connection operator token is not rotated;
 - preserved YouTube public API-key reads and the rule that Analytics never falls back to legacy
   `YOUTUBE_OAUTH_*` credentials; no schedule, Report, AI, Notification, Lark or DLQ state changed;
 - focused credential/runtime/HTTP tests — PASS 26/26;
