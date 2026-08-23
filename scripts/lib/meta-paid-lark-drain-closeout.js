@@ -17,18 +17,10 @@ export function classifyMetaPaidLarkDrainStep(input = {}) {
     && previous.activeQueueOperations === 0
     && previous.activeLocks === 0;
 
-  if (appearedWorkKeys.length > 0) {
-    return deepFreeze({
-      action: 'stop_new_work_appeared',
-      appearedWorkKeys,
-      idle,
-      previousIdle,
-    });
-  }
   if (input.staleReviewRequired === true) {
     return deepFreeze({
       action: 'stop_exact_recovery_review_required',
-      appearedWorkKeys: [],
+      appearedWorkKeys,
       idle,
       previousIdle,
     });
@@ -36,14 +28,14 @@ export function classifyMetaPaidLarkDrainStep(input = {}) {
   if (idle && previousIdle) {
     return deepFreeze({
       action: 'launch_existing_closeout',
-      appearedWorkKeys: [],
+      appearedWorkKeys,
       idle: true,
       previousIdle: true,
     });
   }
   return deepFreeze({
     action: 'continue_read_only_drain',
-    appearedWorkKeys: [],
+    appearedWorkKeys,
     idle,
     previousIdle,
   });
