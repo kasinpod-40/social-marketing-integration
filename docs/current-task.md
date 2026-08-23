@@ -4,11 +4,11 @@
 
 ```text
 TASK_STATUS                              = IMPLEMENTED_READY_FOR_REVIEW
-CURRENT_PROGRAM                          = TIKTOK_PRODUCTION_READINESS_PROMOTION_V1
-BASE_MAIN_SHA                            = b3a44f46ee6fa01e81ebb96e9e84ab983ef3d4e6
-CURRENT_BRANCH                           = codex/tiktok-production-readiness-20260823
+CURRENT_PROGRAM                          = TIKTOK_PRODUCTION_SCHEDULE_RUNTIME_V1
+BASE_MAIN_SHA                            = e76a95bd26b8b150c383fe4a163e98c2f8b8287d
+CURRENT_BRANCH                           = codex/tiktok-production-schedule-runtime-20260823
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
-PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = READINESS_PROMOTION_ONLY_AFTER_REVIEW
+PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = SCHEDULE_ENABLE_ONLY_AFTER_REVIEW
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
 PRODUCTION_D1_PROVISIONED                = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_DARK
-PRODUCTION_WORKER_HEAD                   = 1dc1ae9c-7c98-4e23-974b-3e43050c9aa1_DARK_VERSION
+PRODUCTION_WORKER_HEAD                   = fb19e6a4-1031-4703-99dc-98c700977e68_REVIEWED_DARK_VERSION
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = FALSE
 PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_AND_VERIFIED_TIKTOK_UAT_ONLY
@@ -40,10 +40,10 @@ TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 
 ## Objective
 
-Promote TikTok from `dev_ready` to `verified` only after the fresh customer-owned Production UAT and
-same-identity replay proved bounded Free-plan execution, Lark reconciliation, checkpoint completion,
-stable-key idempotency, and zero exact-scope alert/DLQ/lock. After reviewed merge, enable the TikTok
-schedule separately and verify its first scheduled checkpoint before any other connector is enabled.
+Allow the reviewed TikTok post-Lark watermark probe/admitted-sync schedule path in the exact customer
+Production ownership tuple after TikTok readiness is verified. Preserve the Integration Workspace path,
+reject foreign Production profiles/ownership, and keep the schedule disabled until this focused repair is
+reviewed, merged and deployed.
 
 Latest user authority on 2026-08-23 confirms that the source accounts, source data, and connector
 credentials used in the Integration Workspace are already customer assets. Customer Production is
@@ -258,6 +258,20 @@ Readiness promotion update on `codex/tiktok-production-readiness-20260823`:
 - `npm audit --audit-level=high` — PASS, 0 vulnerabilities;
 - `WRANGLER_LOG_PATH=/tmp/tiktok-production-readiness-dry-run.log npm run deploy:dry-run` — PASS;
 - the normal TikTok schedule stays disabled until the reviewed promotion is merged and deployed.
+
+Production schedule runtime update on `codex/tiktok-production-schedule-runtime-20260823`:
+
+- pre-enable inspection found that the primary Cron correctly builds `tiktok.creator.native.probe`, but
+  the post-Lark router still rejected every Production profile through a historical Integration-only guard;
+- replaced that guard with an exact allowlist for either developer-owned `integration_workspace` or
+  customer-owned Production `chemistry_k`; all foreign profile/customer/ownership tuples fail closed;
+- focused source-watermark, schedule and runtime-admission tests pass 33/33;
+- `npm run check` — PASS, 796 source files / 2,363 local dependencies / 0 cycles; hygiene PASS;
+- `npm test` — PASS, 3,163 unit tests and 18 Workers-runtime tests;
+- `npm run test:report-reliability` — PASS, 105/105;
+- `npm audit --audit-level=high` — PASS, 0 vulnerabilities;
+- `WRANGLER_LOG_PATH=/tmp/tiktok-production-schedule-runtime-dry-run.log npm run deploy:dry-run` — PASS;
+- no customer Cron or TikTok schedule flag is enabled before reviewed merge.
 
 Implemented on `codex/tiktok-free-plan-continuations-20260823` without Production mutation:
 

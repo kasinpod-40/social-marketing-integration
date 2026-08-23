@@ -82,6 +82,10 @@ alert/DLQ/lock และ same-identity replay ที่ไม่เปลี่�
 `verified` ผ่าน reviewed change แยก; UAT flags ถูกปิดก่อน promotion และกฎ lane ข้างต้นยังใช้กับ
 Connector อื่นโดยไม่เปลี่ยนแปลง.
 
+TikTok Scheduled producer ใช้ post-Lark watermark probe ไม่ใช่ direct blind sync. Router ของ probe และ
+admitted sync ยอมรับเฉพาะ developer-owned Integration Workspace หรือ exact customer-owned Production
+`chemistry_k`; profile/customer/ownership อื่นต้อง fail closed ก่อน Lark/Queue business mutation.
+
 Release example ต้องคงค่า Default ดังนี้เสมอ:
 
 ```env

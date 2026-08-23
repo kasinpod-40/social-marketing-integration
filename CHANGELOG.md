@@ -13,6 +13,8 @@
 - restore all connector-UAT, schedule, report, AI and notification flags to dark after validation;
 - promote only TikTok large-account readiness from `dev_ready` to `verified`; other connectors retain
   their existing fail-closed readiness and secret gates.
+- admit the post-Lark watermark probe/admitted-sync path only for the exact customer Production ownership
+  tuple after verification, while preserving Integration Workspace and rejecting foreign Production targets.
 
 ## 2026-08-23 — TikTok Workers Free durable continuations
 

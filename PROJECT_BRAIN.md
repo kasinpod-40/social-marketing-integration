@@ -19,6 +19,9 @@ cursor, checkpoint count หรือ Lark totals. Main Queue ใช้ `max_bat
 evidence. Retained TikTok DLQ เดิมยังเป็น forensic evidenceและไม่ถูก redrive. UAT flags/schedules/
 reports/AI/notifications กลับสู่ dark ที่ Worker version `1dc1ae9c-7c98-4e23-974b-3e43050c9aa1`.
 TikTok จึงมีหลักฐานครบสำหรับ reviewed `verified` promotion; connector อื่นไม่ถูก promote ตามไปด้วย.
+ก่อนเปิด Cron ตรวจพบ post-Lark router ยังล็อกเฉพาะ Integration Workspace; reviewed follow-up จึงต้อง
+allow exact customer Production tuple (`production` / `chemistry_k` / customer-owned) และปฏิเสธ target
+อื่นทั้งหมด. ห้ามเปิด TikTok schedule ก่อน follow-up นี้ merge/deploy.
 
 หลัง controlled connector proofs ต้องเปิด schedule ทีละ connector และพิสูจน์ continuation จาก migrated
 checkpoint, expected time coverage, zero duplicate/zero gap และ D1/Lark parity. วันจันทร์ 2026-08-24
