@@ -5,7 +5,7 @@
 ```text
 TASK_STATUS                              = IN_PROGRESS
 CURRENT_PROGRAM                          = CUSTOMER_OWNED_PRODUCTION_PROVISIONING_V1
-BASE_MAIN_SHA                            = 62bf0aa388ffc27c91242fd29f623fdf2fca518f
+BASE_MAIN_SHA                            = a2835f40eac88301f980a59868a3362a2627151b
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
 PRODUCTION_D1_PROVISIONED                = TRUE
@@ -14,25 +14,72 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_DARK
-PRODUCTION_WORKER_HEAD                   = b85649fb0f4e5da69624fbc35b8b39a9cb149880
+PRODUCTION_WORKER_HEAD                   = 673431ad618a077f039a3844355ef36ff9a231ba
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = FALSE
-PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_AND_FAILED_TIKTOK_UAT_ONLY
+PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_AND_FAILED_TIKTOK_RECOVERY_ONLY
 PRODUCTION_QUEUE_LARK_BOOTSTRAP_SMOKE    = PASS_IDEMPOTENT
 PRODUCTION_CONNECTOR_UAT_ADMISSION       = MERGED_PR_677
 LARK_TRANSPORT_REPAIR                    = MERGED_PR_678
 LARK_TRANSPORT_REPAIR_MAIN_SHA           = 62bf0aa388ffc27c91242fd29f623fdf2fca518f
 TIKTOK_PRODUCTION_UAT                    = FAILED_BEFORE_BUSINESS_WRITE
-TIKTOK_PRODUCTION_UAT_FAILURE            = LARK_CLIENT_PROGRAMMING_ERROR_ON_MKT_CONTENT_DAILY_SEARCH
+TIKTOK_PRODUCTION_UAT_FAILURE            = LARK_NETWORK_ERROR_AND_INTERRUPTED_PREFLIGHT
 TIKTOK_PRODUCTION_UAT_SOURCE_WRITE       = ZERO
 TIKTOK_PRODUCTION_UAT_TARGET_WRITE       = ZERO
-TIKTOK_PRODUCTION_UAT_DLQ                = ONE_OPEN_RETAIN_FOR_REPLAY
-TIKTOK_DLQ_REDRIVE_SUPPORT               = UNDER_REVIEW
+TIKTOK_PRODUCTION_UAT_DLQ                = ONE_NEW_OPEN_FORENSIC_DO_NOT_BLIND_REDRIVE
+TIKTOK_DLQ_REDRIVE_SUPPORT               = MERGED_PR_679
 PRODUCTION_DARK_STATE_RESTORED           = TRUE
-CURRENT_REPAIR_BRANCH                    = work/tiktok-dlq-redrive-admission-v1
+RECOVERY_PRS_681_689_692                  = CLOSED_WITHOUT_MERGE
+CUSTOMER_CLOUDFLARE_PLAN                 = FREE_CPU_OVERRIDE_UNSUPPORTED
+PRODUCTION_BUSINESS_TABLES               = ZERO_ROWS_ALL_CHANNELS
+PRODUCTION_CONNECTION_OAUTH_ROWS         = ZERO
+PRODUCTION_NOTIFICATION_DELIVERIES       = ZERO
+CUSTOMER_LARK_USER_READBACK              = BLOCKED_91403_PERMISSION
+CURRENT_REPAIR_BRANCH                    = NONE_EXTERNAL_AUTHORITY_BLOCKED
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 ```
+
+## Customer Production live handoff — 2026-08-23
+
+Exact Customer Cloudflare authority was revalidated against account `154f6bf72740d29d7453cec7fb800d32`
+with OAuth identity `dev.datahub.2026@gmail.com`. No default/fallback account is authorized.
+
+The reviewed 300-second CPU recovery config was rejected before Queue send because the Customer
+account is on the Cloudflare Free plan (`100328`, configurable CPU limit unsupported). A second
+reviewed hypothesis bounded only Lark transport (`15000 ms`, one attempt) and passed both Branch
+Verification runs, but failed live:
+
+- the exact retained fef DLQ was redriven once and only once;
+- no idempotency job was sent;
+- two attempts ended `LARK_NETWORK_ERROR`, one invocation remained interrupted in `running`, and a
+  concurrent delivery recorded `SYNC_LOCK_BUSY`;
+- all business-write counters remained zero;
+- after early reviewed-dark restore, the generation terminalized into one new open forensic TikTok
+  DLQ with `MKT_PRODUCTION_CONNECTOR_UAT_DISABLED`;
+- the new DLQ must not be replayed/redriven blindly;
+- PRs #681, #689 and #692 were closed without merge as required.
+
+Remote Worker readback after restore proves exact merged source `673431ad...`, 100% traffic,
+`workers_dev=false`, no CPU override, empty UAT selector, and TikTok/UAT/redrive/daily/weekly/report/AI/
+notification gates false.
+
+Production D1 readiness remains empty beyond reliability/bootstrap state: Organic, Ads, Commerce,
+Chatwoot, YouTube analytics, report materializations, connection/OAuth rows and notification deliveries
+all contain zero Customer Production business rows. Only the Lark report-settings bootstrap has passed.
+
+External authority required before execution can continue safely:
+
+1. either upgrade the exact Customer Cloudflare account to a plan supporting the reviewed CPU ceiling,
+   or explicitly authorize a separate checkpoint/sub-chunk implementation workstream for Free-plan proof;
+2. grant the current Lark user access to the Customer Base (current read-only table-list fails `91403`);
+3. complete fresh Customer source authorization/ownership proof: Facebook scope, YouTube Channel-owner
+   OAuth consent, Google Ads OAuth + Developer Token Live access, WooCommerce API access and Chatwoot access;
+4. provision reviewed connector secrets/connections into Customer Cloudflare only after each ownership
+   proof passes. Local Integration credentials must not be copied merely because they exist.
+
+Until those actions are complete, do not enable connectors, schedules, reports, AI or notifications and
+do not promote catalog readiness.
 
 ## Objective
 

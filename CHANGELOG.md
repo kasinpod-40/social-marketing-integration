@@ -1,5 +1,17 @@
 # Changelog
 
+## Customer Production fail-closed recovery handoff — 2026-08-23
+
+- Revalidated exact Customer Cloudflare authority and restored merged TikTok runtime `673431ad...` to
+  reviewed-dark with every connector/UAT/redrive/schedule/report/AI/notification gate false.
+- Closed recovery PRs #681, #689 and #692 without merge. The paid CPU override is unsupported on the
+  Customer Free plan; the transport-only experiment failed with zero business writes and retained one
+  new open forensic TikTok DLQ that must not be blindly redriven.
+- Confirmed Customer Production business/report/OAuth/notification tables remain empty beyond the
+  idempotent Lark report-settings bootstrap.
+- Recorded external blockers: Customer Cloudflare plan or separately reviewed Free-plan checkpoint
+  implementation, Lark user permission, and fresh Customer authorizations for the remaining sources.
+
 ## Facebook Organic observed aggregation + live rematerialization — 2026-08-21
 
 ### Shared Organic aggregation repair
