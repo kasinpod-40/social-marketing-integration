@@ -1,5 +1,23 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer-owned Production blocked on external authority — 2026-08-23
+
+Customer Cloudflare foundation, 21/21 migrations, Queue/DLQ and Lark report-settings bootstrap remain
+valid, but Production business data is still empty for every channel and the Worker is reviewed-dark.
+Exact Customer account readback proves all connector/UAT/redrive/schedule/report/AI/notification gates
+false and no CPU override.
+
+TikTok recovery PRs #681/#689/#692 were closed without merge. The paid-CPU configuration was rejected
+before Queue send on the Customer Free plan; the transport-only Free-plan experiment redrove the exact
+retained fef DLQ once, produced zero business writes, repeated `LARK_NETWORK_ERROR` plus an interrupted
+run/lock contention, then terminalized into a new open forensic DLQ after dark restore. ห้าม blind
+redrive DLQ ใหม่นี้.
+
+งานหยุดที่ external authority จริง: ต้องอัปเกรด Customer Cloudflare หรืออนุมัติ implementation แบบ
+checkpoint/sub-chunk แยก, ให้สิทธิ์ Lark user (ปัจจุบัน `91403`), และทำ fresh Customer authorization
+สำหรับ Facebook, YouTube, Google Ads, WooCommerce และ Chatwoot ก่อน provision secret/connection.
+ห้ามคัดลอก local Integration credentials เข้า Production เพียงเพราะมีค่าอยู่บนเครื่อง.
+
 ## Automatic Weekly negative-channel repair — 2026-08-17
 
 รอบ Scheduled จริงช่วง `2026-08-10..2026-08-16` fail closed ก่อนส่งด้วย
