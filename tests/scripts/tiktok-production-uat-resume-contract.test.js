@@ -24,17 +24,18 @@ const RESUME_PAYLOAD = {
   type: 'tiktok.creator.native.sync',
   trigger: 'production_connector_uat',
   metricDate: '2026-08-22',
-  requestedAt: '2026-08-22T18:43:30.138Z',
-  redriveOfDlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId,
-  redriveReference: TIKTOK_PRODUCTION_RESUME.rootRedriveReference,
+  requestedAt: '2026-08-23T02:22:00.000Z',
+  redriveOfDlqId: TIKTOK_PRODUCTION_RESUME.parentDlqId,
+  redriveReference: `redrive:${TIKTOK_PRODUCTION_RESUME.parentDlqId}:1787450940163`,
 };
 
 const RESUME = {
   dlq_id: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
+  message_id: TIKTOK_PRODUCTION_RESUME.resumeMessageId,
   job_type: 'tiktok.creator.native.sync',
   status: 'open',
-  error_code: 'MKT_PRODUCTION_CONNECTOR_UAT_DISABLED',
-  created_at: 1787424941551,
+  error_code: 'QUEUE_RETRY_EXHAUSTED',
+  created_at: TIKTOK_PRODUCTION_RESUME.resumeCreatedAt,
   payload_json: JSON.stringify(RESUME_PAYLOAD),
 };
 
@@ -46,10 +47,10 @@ test('validates the immutable root redrive evidence', () => {
   );
 });
 
-test('accepts only the exact continuation DLQ linked to the root generation', () => {
+test('accepts only exact fef queue-exhaustion DLQ linked to b86 parent generation', () => {
   const validated = validateResumeDlqRow(RESUME);
   assert.equal(validated.dlqId, TIKTOK_PRODUCTION_RESUME.resumeDlqId);
-  assert.equal(validated.payload.redriveOfDlqId, TIKTOK_PRODUCTION_RESUME.rootDlqId);
+  assert.equal(validated.payload.redriveOfDlqId, TIKTOK_PRODUCTION_RESUME.parentDlqId);
 
   assert.throws(
     () => validateResumeDlqRow({
@@ -59,12 +60,23 @@ test('accepts only the exact continuation DLQ linked to the root generation', ()
     /redriveOfDlqId mismatch/u,
   );
   assert.throws(
+    () => validateResumeDlqRow({
+      ...RESUME,
+      payload_json: JSON.stringify({ ...RESUME_PAYLOAD, redriveReference: 'redrive:terminal:other:1' }),
+    }),
+    /does not preserve the b86 parent lineage/u,
+  );
+  assert.throws(
     () => validateResumeDlqRow({ ...RESUME, error_code: 'OTHER' }),
     /resume error_code mismatch/u,
   );
+  assert.throws(
+    () => validateResumeDlqRow({ ...RESUME, message_id: 'other' }),
+    /resume message_id mismatch/u,
+  );
 });
 
-test('builds a canonical redrive for b86 only', () => {
+test('builds a canonical redrive for fef only', () => {
   assert.deepEqual(buildResumeRedriveEnvelope(), {
     body: {
       schemaVersion: 1,
@@ -75,7 +87,7 @@ test('builds a canonical redrive for b86 only', () => {
 });
 
 test('idempotency rerun strips redrive lineage and uses a fresh requestedAt', () => {
-  const requestedAt = 1787426000000;
+  const requestedAt = 1787453000000;
   const envelope = buildResumeIdempotencyEnvelope(RESUME_PAYLOAD, requestedAt);
   assert.equal(envelope.body.type, 'tiktok.creator.native.sync');
   assert.equal(envelope.body.trigger, 'production_connector_uat');
@@ -85,7 +97,7 @@ test('idempotency rerun strips redrive lineage and uses a fresh requestedAt', ()
   assert.equal('redriveReference' in envelope.body, false);
 });
 
-test('success validation rejects stale row and idempotency business writes', () => {
+test('success validation rejects latest stale row and idempotency business writes', () => {
   const success = {
     sync_run_id: 'fresh-success',
     customer_profile: 'chemistry_k',
