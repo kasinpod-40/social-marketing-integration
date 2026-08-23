@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  isReviewedConnectorRuntime,
   loadCustomerRuntimeConfig,
   listCustomerProfileAliases,
   listCustomerProfiles,
@@ -74,6 +75,21 @@ test('loads customer-owned Production with every connector disabled until cutove
   assert.equal(config.connectors.tiktok.accountKey, 'chemistry_k');
   assert.equal(config.connectors.tiktok.sourceHandle, 'chemistry_k');
   assert.ok(Object.values(config.connectors).every((connector) => connector.enabled === false));
+  assert.equal(isReviewedConnectorRuntime(config), true);
+});
+
+test('reviewed connector runtime predicate rejects foreign profile, ownership and customer tuples', () => {
+  const production = loadCustomerRuntimeConfig({
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+  });
+  for (const candidate of [
+    { ...production, profileKey: 'other' },
+    { ...production, infrastructureOwner: 'developer' },
+    { ...production, customerKey: 'other' },
+  ]) {
+    assert.equal(isReviewedConnectorRuntime(candidate), false);
+  }
 });
 
 test('rejects obsolete UAT environment and development/production profile mismatches', () => {

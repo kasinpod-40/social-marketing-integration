@@ -39,6 +39,27 @@ test('allows only source-gated reviewed Meta Organic in the Integration Workspac
   );
 });
 
+test('admits only the exact customer Production ownership tuple for verified Meta connectors', () => {
+  const env = {
+    ...baseEnv(),
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+  };
+  const runtime = loadCustomerRuntimeConfig(env);
+  assert.equal(assertMetaManualUatRuntime(runtime, 'facebook', env).accountKey, 'chemistry_k');
+
+  for (const candidate of [
+    { ...runtime, profileKey: 'other' },
+    { ...runtime, infrastructureOwner: 'developer' },
+    { ...runtime, customerKey: 'other' },
+  ]) {
+    assert.throws(
+      () => assertMetaManualUatRuntime(candidate, 'facebook', env),
+      (error) => error.code === 'META_MANUAL_UAT_TARGET_INVALID',
+    );
+  }
+});
+
 test('Meta runtime gates and bounded staging limits default fail-closed', () => {
   const config = loadMetaEndToEndRuntimeConfig({});
   assert.deepEqual(config.flags, {

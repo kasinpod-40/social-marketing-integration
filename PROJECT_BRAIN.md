@@ -18,10 +18,16 @@ Fresh stable TikTok Production UAT `tiktok-prod-cutover-20260823-r1` ผ่า�
 cursor, checkpoint count หรือ Lark totals. Main Queue ใช้ `max_batch_size=1` ตาม live Free-plan CPU
 evidence. Retained TikTok DLQ เดิมยังเป็น forensic evidenceและไม่ถูก redrive. UAT flags/schedules/
 reports/AI/notifications กลับสู่ dark ที่ Worker version `1dc1ae9c-7c98-4e23-974b-3e43050c9aa1`.
-TikTok จึงมีหลักฐานครบสำหรับ reviewed `verified` promotion; connector อื่นไม่ถูก promote ตามไปด้วย.
+TikTok จึงมีหลักฐานครบสำหรับ reviewed `verified` promotion. คำสั่งต่อมาของผู้ใช้ขยาย Cutover ให้ครบ
+ทุกช่องทางและยืนยันว่า Integration source/runtime เดิมใช้ทรัพย์สินลูกค้าอยู่แล้ว. Retained customer-source
+Live UAT จึงรองรับ `verified` สำหรับ Facebook, Instagram, Meta Ads, Google Ads และ Chatwoot พร้อม exact
+Production ownership tuple; YouTube/WooCommerce ยังคง `dev_ready` จนตั้ง Secret ที่อ่านคืนไม่ได้และผ่าน
+Customer Production UAT.
 ก่อนเปิด Cron ตรวจพบ post-Lark router ยังล็อกเฉพาะ Integration Workspace; reviewed follow-up จึงต้อง
 allow exact customer Production tuple (`production` / `chemistry_k` / customer-owned) และปฏิเสธ target
-อื่นทั้งหมด. ห้ามเปิด TikTok schedule ก่อน follow-up นี้ merge/deploy.
+อื่นทั้งหมด. Shared reviewed ownership predicate ใช้กับ Meta, Google Ads, WooCommerce, Chatwoot และ TikTok
+โดยทุก router ยังผ่าน Central Connector readiness; ไม่มี generic Production bypass. ห้ามเปิด schedule ใด
+ก่อน follow-up นี้ merge/deploy แบบมืดและ exact connector preflight ผ่าน.
 
 หลัง controlled connector proofs ต้องเปิด schedule ทีละ connector และพิสูจน์ continuation จาก migrated
 checkpoint, expected time coverage, zero duplicate/zero gap และ D1/Lark parity. วันจันทร์ 2026-08-24

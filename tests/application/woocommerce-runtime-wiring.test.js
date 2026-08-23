@@ -149,7 +149,7 @@ test('disabled WooCommerce job fails before Infrastructure, Provider, D1 or Lark
       }),
       getInfrastructure: () => { infrastructureRead = true; return {}; },
     }),
-    (error) => error?.code === 'WOOCOMMERCE_CONNECTOR_INVALID',
+    (error) => error?.code === 'MKT_CONNECTOR_DISABLED',
   );
   assert.equal(infrastructureRead, false);
 });

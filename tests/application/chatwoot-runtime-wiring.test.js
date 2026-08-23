@@ -153,7 +153,7 @@ test('disabled Chatwoot job fails before Infrastructure or Provider construction
       }),
       getInfrastructure: () => { infrastructureRead = true; return {}; },
     }),
-    (error) => error?.code === 'CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID',
+    (error) => error?.code === 'MKT_CONNECTOR_DISABLED',
   );
   assert.equal(infrastructureRead, false);
 });

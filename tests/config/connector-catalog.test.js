@@ -40,7 +40,7 @@ test('every connector declares a frozen large-account activation contract', () =
   }
 });
 
-test('every retained-UAT connector is active while production readiness stays separately gated', () => {
+test('customer-source live evidence promotes reviewed connectors while missing-secret UAT lanes stay gated', () => {
   const youtube = getConnectorCatalogEntry('youtube');
   const tiktok = getConnectorCatalogEntry('tiktok');
   const instagram = getConnectorCatalogEntry('instagram');
@@ -58,7 +58,7 @@ test('every retained-UAT connector is active while production readiness stays se
   assert.deepEqual(tiktok.largeAccount.missingGates, []);
   assert.equal(tiktok.largeAccount.productionReady, true);
 
-  assert.equal(instagram.largeAccount.status, 'planned');
+  assert.equal(instagram.largeAccount.status, 'verified');
   assert.equal(instagram.implementationStatus, 'active');
   assert.equal(facebook.implementationStatus, 'active');
   assert.equal(metaAds.implementationStatus, 'active');
@@ -66,6 +66,9 @@ test('every retained-UAT connector is active while production readiness stays se
   assert.equal(chatwoot.implementationStatus, 'active');
   assert.equal(metaAds.capability, 'paid_ads');
   assert.equal(instagram.largeAccount.minimumFixtureItems, 2000);
-  assert.equal(instagram.largeAccount.productionReady, false);
-  assert.equal(facebook.largeAccount.productionReady, false);
+  for (const connector of [facebook, instagram, metaAds, googleAds, chatwoot]) {
+    assert.equal(connector.largeAccount.status, 'verified');
+    assert.deepEqual(connector.largeAccount.missingGates, []);
+    assert.equal(connector.largeAccount.productionReady, true);
+  }
 });

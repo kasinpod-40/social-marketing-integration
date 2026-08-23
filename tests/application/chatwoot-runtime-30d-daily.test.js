@@ -26,6 +26,7 @@ import {
 import { syncChatwootDurableRuntime } from '../../packages/application/src/use-cases/sync-chatwoot-durable-runtime.js';
 import { readChatwootRuntimeConfig } from '../../packages/config/src/chatwoot-runtime-config.js';
 import { ChatwootDurableApiClient } from '../../packages/connectors/src/chatwoot/chatwoot-durable-api.client.js';
+import { assertChatwootManualRuntime } from '../../apps/sync-worker/src/chatwoot-job-router.js';
 
 const REQUESTED_AT = Date.parse('2026-07-31T01:00:00Z');
 const DAY_MS = 86_400_000;
@@ -75,6 +76,38 @@ test('Chatwoot catalog centralizes triggers and schema version', () => {
   assert.equal(
     resolveChatwootRuntimeMode(JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY),
     CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+  );
+});
+
+test('Chatwoot runtime admits only the exact reviewed customer Production tuple', () => {
+  const runtime = {
+    environment: 'production',
+    profileKey: 'chemistry_k',
+    infrastructureOwner: 'customer',
+    customerKey: 'chemistry_k',
+    connectors: { chatwoot: { enabled: true, accountKey: 'chemistry_k' } },
+  };
+  const config = {
+    flags: {
+      connector: true,
+      d1Write: true,
+      larkWrite: true,
+      reportWrite: true,
+      schedule: false,
+      webhook: false,
+    },
+  };
+  assert.equal(
+    assertChatwootManualRuntime(runtime, config, JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL).accountKey,
+    'chemistry_k',
+  );
+  assert.throws(
+    () => assertChatwootManualRuntime(
+      { ...runtime, infrastructureOwner: 'developer' },
+      config,
+      JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
+    ),
+    (error) => error.code === 'CHATWOOT_MANUAL_UAT_TARGET_INVALID',
   );
 });
 

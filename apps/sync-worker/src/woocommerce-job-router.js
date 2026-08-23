@@ -4,8 +4,10 @@ import {
   JOB_TYPES,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
+import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
 import { withQueueOperation } from '../../../packages/application/src/jobs/queue-operation.js';
 import { syncWooCommerceCommerce } from '../../../packages/application/src/use-cases/sync-woocommerce-commerce.js';
+import { isReviewedConnectorRuntime } from '../../../packages/config/src/customer-profiles.js';
 import {
   WOOCOMMERCE_LARK_TABLE_KEYS,
   readWooCommerceRuntimeConfig,
@@ -131,15 +133,12 @@ export async function processWooCommerceCommerceJob(input = {}) {
 }
 
 export function assertWooCommerceRuntime(runtimeConfig, wooConfig, trigger) {
-  if (runtimeConfig?.environment !== 'development'
-    || runtimeConfig?.profileKey !== 'integration_workspace'
-    || runtimeConfig?.infrastructureOwner !== 'developer'
-    || runtimeConfig?.customerKey !== 'chemistry_k') {
-    throw permanentError('WooCommerce execution requires the developer-owned Integration Workspace', {
+  if (!isReviewedConnectorRuntime(runtimeConfig)) {
+    throw permanentError('WooCommerce execution requires the reviewed Integration or customer Production ownership tuple', {
       code: 'WOOCOMMERCE_RUNTIME_TARGET_INVALID',
     });
   }
-  const connector = runtimeConfig?.connectors?.woocommerce;
+  const connector = assertConnectorRunnable(runtimeConfig, 'woocommerce');
   if (!connector
     || connector.accountKey !== 'chemistry_k'
     || connector.enabled !== true

@@ -65,13 +65,13 @@ test('controlled Production UAT admits a dev_ready connector missing only liveAc
   assert.equal(connector.accountKey, 'chemistry_k');
 });
 
-test('controlled Production UAT does not admit a planned connector', () => {
+test('controlled Production UAT does not replace normal admission for an already verified connector', () => {
   assert.throws(
     () => assertConnectorRunnable(productionRuntime(), 'instagram', {
       runMode: CONNECTOR_RUN_MODES.CONTROLLED_PRODUCTION_UAT,
     }),
     (error) => error.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING'
-      && error.details?.largeAccountStatus === 'planned'
+      && error.details?.largeAccountStatus === 'verified'
       && error.details?.controlledProductionUatEligible === false,
   );
 });

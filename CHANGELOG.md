@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-23 — Customer multichannel Production runtime admission
+
+- centralized the reviewed runtime ownership tuple for the existing Integration Workspace and exact
+  customer-owned `chemistry_k` Production profile; foreign profile/customer/ownership remains blocked;
+- routed Meta, Google Ads, WooCommerce and Chatwoot through the central connector readiness gate before
+  their provider or business execution paths;
+- promoted Facebook, Instagram, Meta Ads, Google Ads and Chatwoot from retained customer-source Live UAT,
+  bounded execution and D1/Lark reconciliation evidence;
+- kept YouTube and WooCommerce `dev_ready` until Customer Production can exercise their missing/unreadable
+  encryption and Provider secrets;
+- kept Production dark pending reviewed merge/deploy and one-connector-at-a-time live reconciliation.
+
 ## 2026-08-23 — TikTok customer Production UAT and readiness promotion
 
 - completed one fresh stable TikTok Production UAT in the customer Cloudflare/D1/Lark runtime with

@@ -51,8 +51,14 @@ test('signed-delivery runtime accepts manual or external scheduled LIVE with eve
   const connector = assertGoogleAdsManualUatRuntime(runtime(), enabledEnv());
   assert.equal(connector.accountKey, 'chemistry_k');
 
+  const production = runtime({
+    environment: 'production',
+    profileKey: 'chemistry_k',
+    infrastructureOwner: 'customer',
+  });
+  assert.equal(assertGoogleAdsManualUatRuntime(production, enabledEnv()).accountKey, 'chemistry_k');
   assert.throws(
-    () => assertGoogleAdsManualUatRuntime(runtime({ environment: 'production' }), enabledEnv()),
+    () => assertGoogleAdsManualUatRuntime({ ...production, infrastructureOwner: 'developer' }, enabledEnv()),
     (error) => error.code === 'GOOGLE_ADS_MANUAL_UAT_TARGET_INVALID',
   );
   assert.throws(

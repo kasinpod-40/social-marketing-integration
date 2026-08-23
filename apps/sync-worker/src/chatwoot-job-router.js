@@ -5,6 +5,7 @@ import {
   JOB_TYPES,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
+import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
 import { withQueueOperation } from '../../../packages/application/src/jobs/queue-operation.js';
 import {
   CHATWOOT_RUNTIME_CONTRACT_VERSION,
@@ -18,6 +19,7 @@ import {
   CHATWOOT_LARK_TABLE_KEYS,
   readChatwootRuntimeConfig,
 } from '../../../packages/config/src/chatwoot-runtime-config.js';
+import { isReviewedConnectorRuntime } from '../../../packages/config/src/customer-profiles.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { ChatwootDurableApiClient } from '../../../packages/connectors/src/chatwoot/chatwoot-durable-api.client.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
@@ -214,15 +216,12 @@ export async function processChatwootAnalyticsJob(input = {}) {
 }
 
 export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig, trigger = null) {
-  if (runtimeConfig?.environment !== 'development'
-    || runtimeConfig?.profileKey !== 'integration_workspace'
-    || runtimeConfig?.infrastructureOwner !== 'developer'
-    || runtimeConfig?.customerKey !== 'chemistry_k') {
-    throw permanentError('Chatwoot manual UAT requires the developer-owned Integration Workspace', {
+  if (!isReviewedConnectorRuntime(runtimeConfig)) {
+    throw permanentError('Chatwoot runtime requires the reviewed Integration or customer Production ownership tuple', {
       code: 'CHATWOOT_MANUAL_UAT_TARGET_INVALID',
     });
   }
-  const connector = runtimeConfig?.connectors?.chatwoot;
+  const connector = assertConnectorRunnable(runtimeConfig, 'chatwoot');
   if (!connector
     || connector.accountKey !== 'chemistry_k'
     || connector.enabled !== true) {

@@ -212,6 +212,22 @@ export function listCustomerProfileAliases() {
 }
 
 /**
+ * Runtime ownership tuple ที่ผ่านการทบทวนสำหรับ Connector จริง.
+ * รับเฉพาะ Integration Workspace เดิม หรือ Customer Production ของ Chemistry K เท่านั้น.
+ */
+export function isReviewedConnectorRuntime(runtimeConfig = {}) {
+  const integrationWorkspace = runtimeConfig.environment === 'development'
+    && runtimeConfig.profileKey === 'integration_workspace'
+    && runtimeConfig.infrastructureOwner === 'developer'
+    && runtimeConfig.customerKey === 'chemistry_k';
+  const customerProduction = runtimeConfig.environment === 'production'
+    && runtimeConfig.profileKey === 'chemistry_k'
+    && runtimeConfig.infrastructureOwner === 'customer'
+    && runtimeConfig.customerKey === 'chemistry_k';
+  return integrationWorkspace || customerProduction;
+}
+
+/**
  * TikTok ของ Integration Workspace เป็น Chemistry K ที่ผูกกับ Canonical accountKey แล้ว
  * จึงห้าม Environment เปลี่ยน Handle ไปเป็น Source อื่นใต้ Stable key เดิม.
  */

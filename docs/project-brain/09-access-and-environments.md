@@ -4,10 +4,10 @@
 
 ### DEV
 
-- Lark Base, Lark App, Cloud/runtime และบัญชี TikTok ทดสอบเป็นทรัพยากรของผู้พัฒนา
-- Runtime profile: `dev_ft_pumkin`
-- TikTok source: `@ft.pumkin`
-- ใช้เพื่อพัฒนา, Dry run, Regression และ UAT ก่อนติดตั้งลูกค้า
+- ใช้ Integration Workspace เดียวสำหรับประกอบระบบก่อน Customer Production
+- Runtime profile: `integration_workspace` (`dev_ft_pumkin` เป็น Historical alias เท่านั้น)
+- Source accounts/data/credentials ที่ใช้งานจริงเป็นทรัพย์สิน Chemistry K ตามคำยืนยันล่าสุดของผู้ใช้
+- Cloudflare/Lark runtime เดิมยังเป็น Integration boundary; ห้ามใช้ Historical label ตัดสินเจ้าของข้อมูล
 
 ### Production — Chemistry K
 
@@ -21,7 +21,7 @@
 ```env
 # DEV
 MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+MKT_CUSTOMER_PROFILE=integration_workspace
 
 # Production
 MKT_ENV=production
@@ -36,17 +36,21 @@ MKT_CUSTOMER_PROFILE=chemistry_k
 MKT_CONNECTOR_TIKTOK_ENABLED=true
 MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
+MKT_CONNECTOR_META_ADS_ENABLED=false
+MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
 ```
 
-Connector ที่ยังเป็น `planned` ห้ามเปิดเป็น `true` ระบบจะ Fail ตอนโหลด Runtime config
+สถานะปัจจุบัน: TikTok, Facebook, Instagram, Meta Ads, Google Ads และ Chatwoot เป็น `verified` จาก
+retained customer-source Live UAT; YouTube และ WooCommerce เป็น `dev_ready` และยังต้องใช้ controlled
+Customer Production UAT หลังตั้ง Secret ที่ขาด. Connector ที่เป็น `planned` ในอนาคตห้ามเปิดเป็น `true`.
 
 Identity ที่ขึ้นกับบัญชีจริงเปลี่ยนผ่าน Environment ได้ เช่น:
 
 ```env
-TIKTOK_SOURCE_HANDLE=ft.pumkin
+TIKTOK_SOURCE_HANDLE=chemistry_k
 ```
 
 `accountKey` สำหรับ Stable key ยังอยู่ใน Customer profile และห้ามเปลี่ยนหลังเริ่มใช้งานจริง
@@ -60,9 +64,9 @@ Normal Production runtime ต้องใช้ Connector ที่ผ่าน 
 ```env
 MKT_ENV=production
 MKT_CUSTOMER_PROFILE=chemistry_k
-MKT_CONNECTOR_TIKTOK_ENABLED=true
+MKT_CONNECTOR_YOUTUBE_ENABLED=true
 MKT_PRODUCTION_CONNECTOR_UAT_ENABLED=true
-MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR=tiktok
+MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR=youtube
 ```
 
 Queue job ต้องใช้ Trigger กลาง `production_connector_uat` ด้วย การเปิด Environment gate อย่างเดียวไม่ทำให้ Scheduled หรือ Legacy manual job ข้าม Production readiness gate ได้
@@ -81,6 +85,11 @@ source/preflight/write 82/82 units, final reconciliation, checkpoint `2026-08-23
 alert/DLQ/lock และ same-identity replay ที่ไม่เปลี่ยน Business state. ดังนั้น TikTok ถูก promote เป็น
 `verified` ผ่าน reviewed change แยก; UAT flags ถูกปิดก่อน promotion และกฎ lane ข้างต้นยังใช้กับ
 Connector อื่นโดยไม่เปลี่ยนแปลง.
+
+Retained Integration Workspace evidence ของ Facebook, Instagram, Meta Ads, Google Ads และ Chatwoot
+เป็น customer-source Live UAT จริง ไม่ใช่ developer dummy data. Reviewed multichannel promotion จึงทำให้
+Normal Production admission ผ่านได้ แต่การเปิด runtime ยังต้องมี exact customer tuple, connector/write
+flags, Secret, checkpoint safety และ first-run D1/Lark reconciliation ของ Customer Production.
 
 TikTok Scheduled producer ใช้ post-Lark watermark probe ไม่ใช่ direct blind sync. Router ของ probe และ
 admitted sync ยอมรับเฉพาะ developer-owned Integration Workspace หรือ exact customer-owned Production
