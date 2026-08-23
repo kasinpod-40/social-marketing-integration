@@ -122,4 +122,6 @@ test('readiness summary exposes volume targets and missing gates without secrets
   assert.deepEqual(youtube.missingLargeAccountGates, ['liveAccountUat']);
   assert.equal(instagram.minimumFixtureItems, 2000);
   assert.equal(instagram.productionRunnable, false);
+  assert.equal(instagram.largeAccountStatus, 'verified');
+  assert.deepEqual(instagram.missingLargeAccountGates, []);
 });

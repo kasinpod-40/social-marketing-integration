@@ -1,14 +1,14 @@
-# Current Task — TikTok Production Readiness Promotion v1
+# Current Task — Customer Multichannel Production Cutover v1
 
 ## Status
 
 ```text
 TASK_STATUS                              = IMPLEMENTED_READY_FOR_REVIEW
-CURRENT_PROGRAM                          = TIKTOK_PRODUCTION_SCHEDULE_RUNTIME_V1
-BASE_MAIN_SHA                            = e76a95bd26b8b150c383fe4a163e98c2f8b8287d
-CURRENT_BRANCH                           = codex/tiktok-production-schedule-runtime-20260823
+CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
+BASE_MAIN_SHA                            = b0d78ec92acd05b0afdc54c5c24db3eb5060c66c
+CURRENT_BRANCH                           = codex/multichannel-production-runtime-20260823
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
-PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = SCHEDULE_ENABLE_ONLY_AFTER_REVIEW
+PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
 PRODUCTION_D1_PROVISIONED                = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_DARK
-PRODUCTION_WORKER_HEAD                   = fb19e6a4-1031-4703-99dc-98c700977e68_REVIEWED_DARK_VERSION
+PRODUCTION_WORKER_HEAD                   = 84c74a2f-2283-40be-967b-ba046adde78a_REVIEWED_DARK_VERSION
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = FALSE
 PRODUCTION_BUSINESS_TRAFFIC              = CONTROLLED_BOOTSTRAP_AND_VERIFIED_TIKTOK_UAT_ONLY
@@ -34,16 +34,18 @@ TIKTOK_DLQ_REDRIVE_SUPPORT               = DO_NOT_BLIND_REDRIVE
 PRODUCTION_DARK_STATE_RESTORED           = TRUE_VERSION_1dc1ae9c
 PRODUCTION_MAIN_QUEUE_BATCH_SIZE         = 1_FREE_PLAN_SAFE
 CURRENT_REPAIR_BRANCH                    = MERGED_PR_695
+REVIEWED_SOURCE_UAT_READY                = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_GOOGLE_ADS_CHATWOOT
+PRODUCTION_SECRET_BLOCKED                = YOUTUBE_WOOCOMMERCE_GOOGLE_ADS_CONNECTION_ENCRYPTION
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 ```
 
 ## Objective
 
-Allow the reviewed TikTok post-Lark watermark probe/admitted-sync schedule path in the exact customer
-Production ownership tuple after TikTok readiness is verified. Preserve the Integration Workspace path,
-reject foreign Production profiles/ownership, and keep the schedule disabled until this focused repair is
-reviewed, merged and deployed.
+Cut over every reviewed customer-owned connector from the Integration Workspace runtime to the exact
+customer Production ownership tuple. Reuse the migrated D1 state and customer Base mappings, preserve the
+Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
+enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
 Latest user authority on 2026-08-23 confirms that the source accounts, source data, and connector
 credentials used in the Integration Workspace are already customer assets. Customer Production is
@@ -62,19 +64,21 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 7. Complete work, checkpoint incremental state, and publish final reconciliation only after every source/preflight/write unit passes.
 8. Keep the protected `RAW_TikTok_Creator_Videos` table read-only and D1-before-Lark write order unchanged.
 
-## Out of scope — readiness promotion branch
+## Out of scope — multichannel runtime branch
 
-- readiness promotion for any connector except TikTok;
 - blind replay of `terminal:eafd8e43f1ae5113d12905301496fd4e` or mutation of retained forensic evidence;
 - bypassing missing customer secrets for YouTube, Google Ads, WooCommerce, or connection encryption;
-- enabling Meta/Chatwoot while their catalog readiness remains `planned`;
 - report/AI/notification enablement or Production COMPLETE declaration before their own live proofs.
 
-## Acceptance criteria — readiness promotion branch
+## Acceptance criteria — multichannel runtime branch
 
-- TikTok catalog status is `verified`, every readiness gate is true, and normal Production admission passes;
+- retained customer-source UAT promotes Facebook, Instagram, Meta Ads, Google Ads and Chatwoot to
+  `verified`; YouTube and WooCommerce remain `dev_ready` until their missing Customer Production secret
+  paths can be exercised;
+- each active connector router admits only the reviewed Integration Workspace or exact customer Production
+  ownership tuple and rejects foreign profile/customer/ownership;
+- normal Production admission continues to pass through `assertConnectorRunnable()` without a generic bypass;
 - the controlled UAT lane remains restricted to a `dev_ready` connector missing only `liveAccountUat`;
-- scheduled TikTok no longer consumes or depends on the temporary Production-UAT exception;
 - focused application/worker-runtime tests, `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit`, and `npm run deploy:dry-run` pass;
 - `Implementation result` is updated with files, commands, evidence, and remaining Production blockers before handoff.
 
@@ -243,6 +247,29 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   intended period and exact customer group mapping is read back.
 
 ## Implementation result
+
+Multichannel Production runtime update on `codex/multichannel-production-runtime-20260823`:
+
+- centralized the exact reviewed runtime ownership predicate so connector routers accept only
+  developer-owned `development/integration_workspace/chemistry_k` or customer-owned
+  `production/chemistry_k/chemistry_k`;
+- routed Meta, Google Ads, WooCommerce and Chatwoot through the central connector readiness gate before
+  Provider/Infrastructure execution; disabled connectors still fail before any business activity;
+- promoted Facebook, Instagram, Meta Ads, Google Ads and Chatwoot to `verified` from retained customer-source
+  Live UAT, bounded/durable execution and D1/Lark reconciliation evidence already recorded in Project Brain;
+- retained YouTube and WooCommerce as `dev_ready` because Customer Production cannot yet exercise their
+  unreadable/missing encryption and Provider secrets;
+- focused runtime/catalog/admission suites pass, including exact customer Production allow and foreign
+  ownership/profile/customer rejection;
+- `npm run check` — PASS, 796 source files / 2,372 local dependencies / 0 cycles; hygiene PASS;
+- first full `npm test` correctly exposed two stale disabled-connector error-code expectations; both were
+  updated to the stricter central `MKT_CONNECTOR_DISABLED` boundary and focused regression passes 31/31;
+- final `npm test` — PASS, 3,166 unit tests and 18 Workers-runtime tests;
+- `npm run test:report-reliability` — PASS, 105/105;
+- `npm audit --audit-level=high` — PASS, 0 vulnerabilities;
+- `WRANGLER_LOG_PATH=/tmp/multichannel-production-runtime-dry-run-r3.log npm run deploy:dry-run` — PASS;
+- no Production deploy, Queue send, schedule enable, Lark/D1 business write, Secret change or DLQ mutation
+  occurred before reviewed merge.
 
 Readiness promotion update on `codex/tiktok-production-readiness-20260823`:
 

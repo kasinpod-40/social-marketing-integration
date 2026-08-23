@@ -4,6 +4,8 @@ import {
 import {
   processGoogleAdsManagerSignedDelivery,
 } from '../../../packages/application/src/use-cases/process-google-ads-manager-signed-delivery.js';
+import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
+import { isReviewedConnectorRuntime } from '../../../packages/config/src/customer-profiles.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import {
   drainPendingSyncWarnings,
@@ -150,15 +152,12 @@ export async function confirmGoogleAdsQueueReceipt(input = {}) {
 }
 
 export function assertGoogleAdsManualUatRuntime(runtimeConfig, env = {}) {
-  if (runtimeConfig?.environment !== 'development'
-    || runtimeConfig?.profileKey !== 'integration_workspace'
-    || runtimeConfig?.infrastructureOwner !== 'developer'
-    || runtimeConfig?.customerKey !== 'chemistry_k') {
-    throw permanentError('Google Ads manual UAT requires the developer-owned Integration Workspace', {
+  if (!isReviewedConnectorRuntime(runtimeConfig)) {
+    throw permanentError('Google Ads runtime requires the reviewed Integration or customer Production ownership tuple', {
       code: 'GOOGLE_ADS_MANUAL_UAT_TARGET_INVALID',
     });
   }
-  const connector = runtimeConfig?.connectors?.google_ads;
+  const connector = assertConnectorRunnable(runtimeConfig, 'google_ads');
   if (!connector || connector.accountKey !== 'chemistry_k' || connector.enabled !== true) {
     throw permanentError('Google Ads connector is disabled or has an invalid account identity', {
       code: 'GOOGLE_ADS_MANUAL_UAT_CONNECTOR_INVALID',

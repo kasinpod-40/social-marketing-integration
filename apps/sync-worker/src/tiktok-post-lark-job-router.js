@@ -13,6 +13,7 @@ import {
 } from '../../../packages/application/src/use-cases/probe-tiktok-native-source-watermark.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
+import { isReviewedConnectorRuntime } from '../../../packages/config/src/customer-profiles.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import { readTikTokPostLarkRuntimeConfig } from '../../../packages/config/src/tiktok-post-lark-runtime-config.js';
 import { D1TikTokPostLarkStore } from '../../../packages/connectors/src/tiktok/d1-tiktok-post-lark-store.js';
@@ -389,15 +390,7 @@ function assertAdmissionMatches(admission, body, operation) {
 }
 
 export function assertTikTokPostLarkRuntime(runtimeConfig = {}) {
-  const integrationWorkspace = runtimeConfig.environment === 'development'
-    && runtimeConfig.profileKey === 'integration_workspace'
-    && runtimeConfig.infrastructureOwner === 'developer'
-    && runtimeConfig.customerKey === 'chemistry_k';
-  const customerProduction = runtimeConfig.environment === 'production'
-    && runtimeConfig.profileKey === 'chemistry_k'
-    && runtimeConfig.infrastructureOwner === 'customer'
-    && runtimeConfig.customerKey === 'chemistry_k';
-  if (!integrationWorkspace && !customerProduction) {
+  if (!isReviewedConnectorRuntime(runtimeConfig)) {
     throw permanentError('TikTok post-Lark pipeline requires the reviewed Integration or customer Production runtime', {
       code: 'TIKTOK_POST_LARK_ENVIRONMENT_BLOCKED',
       details: {

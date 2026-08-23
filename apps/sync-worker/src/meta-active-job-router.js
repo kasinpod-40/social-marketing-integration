@@ -4,12 +4,14 @@ import {
   JOB_TYPES,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
+import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
 import { withQueueOperation } from '../../../packages/application/src/jobs/queue-operation.js';
 import { processMetaEndToEndSync } from '../../../packages/application/src/use-cases/process-meta-end-to-end-sync.js';
 import {
   META_END_TO_END_LARK_TABLES,
   loadMetaEndToEndRuntimeConfig,
 } from '../../../packages/config/src/meta-end-to-end-runtime-config.js';
+import { isReviewedConnectorRuntime } from '../../../packages/config/src/customer-profiles.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { createMetaTokenConnectionRuntime } from '../../../packages/connectors/src/meta/meta-token-connection-runtime.js';
 import { normalizeMetaAdAccountId } from '../../../packages/connectors/src/meta/meta-business-source.helpers.js';
@@ -167,15 +169,12 @@ async function processMetaJob(input, connectorKey, metaConfig) {
  * ชื่อ export เดิมคงไว้เพื่อไม่ทำลาย Operator เก่า แต่ทั้งสาม Connectorใช้ Active contract เดียวกัน.
  */
 export function assertMetaManualUatRuntime(runtimeConfig, connectorKey, env = {}) {
-  if (runtimeConfig?.environment !== 'development'
-    || runtimeConfig?.profileKey !== 'integration_workspace'
-    || runtimeConfig?.infrastructureOwner !== 'developer'
-    || runtimeConfig?.customerKey !== 'chemistry_k') {
-    throw permanentError('Meta runtime requires the developer-owned Integration Workspace', {
+  if (!isReviewedConnectorRuntime(runtimeConfig)) {
+    throw permanentError('Meta runtime requires the reviewed Integration or customer Production ownership tuple', {
       code: 'META_MANUAL_UAT_TARGET_INVALID',
     });
   }
-  const connector = runtimeConfig?.connectors?.[connectorKey];
+  const connector = assertConnectorRunnable(runtimeConfig, connectorKey);
   if (!connector
     || connector.accountKey !== 'chemistry_k'
     || connector.enabled !== true) {

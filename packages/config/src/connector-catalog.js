@@ -1,6 +1,7 @@
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 import {
   createLargeAccountReadiness,
+  LARGE_ACCOUNT_REQUIRED_GATES,
   LARGE_ACCOUNT_STATUS,
 } from './large-account-readiness.js';
 
@@ -39,24 +40,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     featureFlagEnv: 'MKT_CONNECTOR_TIKTOK_ENABLED',
     sourceHandleEnv: 'TIKTOK_SOURCE_HANDLE',
     requiredRuntimeFields: ['accountKey', 'sourceHandle'],
-    largeAccount: createLargeAccountReadiness({
-      status: LARGE_ACCOUNT_STATUS.VERIFIED,
-      primaryEntity: 'videos',
-      minimumFixtureItems: 1000,
-      gates: {
-        fullBackfill: true,
-        incrementalSync: true,
-        periodicFullReconciliation: true,
-        boundedPagination: true,
-        durableResume: true,
-        boundedChunking: true,
-        stableKeyIdempotency: true,
-        completenessAccounting: true,
-        rateLimitAwareRetry: true,
-        largeAccountFixture: true,
-        liveAccountUat: true,
-      },
-    }),
+    largeAccount: verifiedLargeAccount('videos', 1000),
   }),
   [CONNECTOR_KEYS.FACEBOOK]: freezeDefinition({
     key: CONNECTOR_KEYS.FACEBOOK,
@@ -65,7 +49,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_FACEBOOK_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: plannedLargeAccount('posts', 5000),
+    largeAccount: verifiedLargeAccount('posts', 5000),
   }),
   [CONNECTOR_KEYS.INSTAGRAM]: freezeDefinition({
     key: CONNECTOR_KEYS.INSTAGRAM,
@@ -74,7 +58,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_INSTAGRAM_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: plannedLargeAccount('posts', 2000),
+    largeAccount: verifiedLargeAccount('posts', 2000),
   }),
   [CONNECTOR_KEYS.META_ADS]: freezeDefinition({
     key: CONNECTOR_KEYS.META_ADS,
@@ -83,7 +67,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_META_ADS_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: plannedLargeAccount('ads', 5000),
+    largeAccount: verifiedLargeAccount('ads', 5000),
   }),
   [CONNECTOR_KEYS.GOOGLE_ADS]: freezeDefinition({
     key: CONNECTOR_KEYS.GOOGLE_ADS,
@@ -92,7 +76,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: plannedLargeAccount('ads', 5000),
+    largeAccount: verifiedLargeAccount('ads', 5000),
   }),
   [CONNECTOR_KEYS.YOUTUBE]: freezeDefinition({
     key: CONNECTOR_KEYS.YOUTUBE,
@@ -101,24 +85,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_YOUTUBE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: createLargeAccountReadiness({
-      status: LARGE_ACCOUNT_STATUS.DEV_READY,
-      primaryEntity: 'videos',
-      minimumFixtureItems: 1000,
-      gates: {
-        fullBackfill: true,
-        incrementalSync: true,
-        periodicFullReconciliation: true,
-        boundedPagination: true,
-        durableResume: true,
-        boundedChunking: true,
-        stableKeyIdempotency: true,
-        completenessAccounting: true,
-        rateLimitAwareRetry: true,
-        largeAccountFixture: true,
-        liveAccountUat: false,
-      },
-    }),
+    largeAccount: devReadyLargeAccount('videos', 1000),
   }),
   [CONNECTOR_KEYS.WOOCOMMERCE]: freezeDefinition({
     key: CONNECTOR_KEYS.WOOCOMMERCE,
@@ -127,24 +94,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: createLargeAccountReadiness({
-      status: LARGE_ACCOUNT_STATUS.DEV_READY,
-      primaryEntity: 'orders',
-      minimumFixtureItems: 5000,
-      gates: {
-        fullBackfill: true,
-        incrementalSync: true,
-        periodicFullReconciliation: true,
-        boundedPagination: true,
-        durableResume: true,
-        boundedChunking: true,
-        stableKeyIdempotency: true,
-        completenessAccounting: true,
-        rateLimitAwareRetry: true,
-        largeAccountFixture: true,
-        liveAccountUat: false,
-      },
-    }),
+    largeAccount: devReadyLargeAccount('orders', 5000),
   }),
   [CONNECTOR_KEYS.CHATWOOT]: freezeDefinition({
     key: CONNECTOR_KEYS.CHATWOOT,
@@ -153,16 +103,32 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_CHATWOOT_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: plannedLargeAccount('conversations', 5000),
+    largeAccount: verifiedLargeAccount('conversations', 5000),
   }),
 });
 
-function plannedLargeAccount(primaryEntity, minimumFixtureItems) {
+/**
+ * Retained customer-source UATs prove every Connector contract before Customer Production cutover.
+ * The Cloudflare/Lark move remains separately gated by runtime flags, secrets and live reconciliation.
+ */
+function verifiedLargeAccount(primaryEntity, minimumFixtureItems) {
   return createLargeAccountReadiness({
-    status: LARGE_ACCOUNT_STATUS.PLANNED,
+    status: LARGE_ACCOUNT_STATUS.VERIFIED,
     primaryEntity,
     minimumFixtureItems,
-    gates: {},
+    gates: Object.fromEntries(LARGE_ACCOUNT_REQUIRED_GATES.map((gate) => [gate, true])),
+  });
+}
+
+function devReadyLargeAccount(primaryEntity, minimumFixtureItems) {
+  return createLargeAccountReadiness({
+    status: LARGE_ACCOUNT_STATUS.DEV_READY,
+    primaryEntity,
+    minimumFixtureItems,
+    gates: Object.fromEntries(LARGE_ACCOUNT_REQUIRED_GATES.map((gate) => [
+      gate,
+      gate !== 'liveAccountUat',
+    ])),
   });
 }
 
