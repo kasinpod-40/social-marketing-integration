@@ -58,8 +58,8 @@ test('two consecutive idle samples launch only the existing guarded closeout', (
   assert.equal(result.action, 'launch_existing_closeout');
 });
 
-test('new work appearing during drain fails closed', () => {
-  const newKey = 'meta_ads:chemistry_k3:meta-ads-chemistry_k3-scheduled-20260823';
+test('new scheduled work appearing during drain is observed and drain continues', () => {
+  const newKey = 'youtube:c580e84e38c73ce76fdb6e656c765299';
   const result = classifyMetaPaidLarkDrainStep({
     initialWorkKeys,
     previous: active,
@@ -67,8 +67,24 @@ test('new work appearing during drain fails closed', () => {
     currentWorkKeys: [...initialWorkKeys, newKey],
     staleReviewRequired: false,
   });
-  assert.equal(result.action, 'stop_new_work_appeared');
+  assert.equal(result.action, 'continue_read_only_drain');
   assert.deepEqual(result.appearedWorkKeys, [newKey]);
+  assert.equal(result.idle, false);
+});
+
+test('new scheduled work can never bypass the two-snapshot global-idle gate', () => {
+  const newKey = 'youtube:c580e84e38c73ce76fdb6e656c765299';
+  const result = classifyMetaPaidLarkDrainStep({
+    initialWorkKeys,
+    previous: idle,
+    current: { activeWork: 1, activeQueueOperations: 1, activeLocks: 1 },
+    currentWorkKeys: [newKey],
+    staleReviewRequired: false,
+  });
+  assert.equal(result.action, 'continue_read_only_drain');
+  assert.deepEqual(result.appearedWorkKeys, [newKey]);
+  assert.equal(result.idle, false);
+  assert.equal(result.previousIdle, true);
 });
 
 test('stable stale blocker requires exact recovery review and never automatic cleanup', () => {
