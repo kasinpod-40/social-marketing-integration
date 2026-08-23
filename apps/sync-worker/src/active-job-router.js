@@ -193,8 +193,9 @@ export async function processJob(input) {
         customerProfile: runtimeConfig.profileKey,
         customerKey: runtimeConfig.customerKey,
         cursorKey: lockKey,
-        // Queue retry คง message.id เดิม จึง Resume page/chunk ได้แม้ syncRunId ของแต่ละ attempt เปลี่ยน
-        workKey: `youtube:${requireJobText(input.message?.id, 'message.id')}`,
+        // Production UAT ต้อง Resume ข้าม delivery/message ใหม่ได้ ส่วน Scheduled ปกติยังคง
+        // message-scoped identity เพื่อไม่เปลี่ยนพฤติกรรม Production ที่ผ่านการตรวจแล้ว.
+        workKey: resolveYouTubeActiveWorkKey(input),
         requestedAt,
         generation: requestedAt,
         syncType: 'organic_sync',
@@ -507,6 +508,22 @@ export function resolveConnectorRunMode(input = {}) {
   }
 
   return CONNECTOR_RUN_MODES.CONTROLLED_PRODUCTION_UAT;
+}
+
+export function resolveYouTubeActiveWorkKey(input = {}) {
+  if (input.job?.body?.trigger !== JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT) {
+    return `youtube:${requireJobText(input.message?.id, 'message.id')}`;
+  }
+
+  const operationId = requireJobText(input.operation?.operationId, 'operation.operationId');
+  const expectedWorkKey = `youtube:${operationId}`;
+  if (input.operation?.stable !== true || input.operation?.workKey !== expectedWorkKey) {
+    throw permanentError('Controlled YouTube Production UAT requires stable Queue identity', {
+      code: 'YOUTUBE_PRODUCTION_UAT_OPERATION_INVALID',
+      details: { operationId },
+    });
+  }
+  return expectedWorkKey;
 }
 
 function normalizeConnectorSelector(value) {
