@@ -4,11 +4,18 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-const EXPECTED_MAIN = '673431ad618a077f039a3844355ef36ff9a231ba';
-const EXPECTED_JOB_TYPE = 'tiktok.creator.native.sync';
-const EXPECTED_TRIGGER = 'production_connector_uat';
-const EXPECTED_METRIC_DATE = '2026-08-22';
-const EXPECTED_DLQ_HINT = 'f7081';
+import {
+  TIKTOK_PRODUCTION_RECOVERY,
+  assertDarkProductionConfig,
+  extractD1Rows,
+  readJsoncScalar,
+} from './lib/tiktok-production-uat-recovery-contract.js';
+import {
+  TIKTOK_PRODUCTION_RESUME,
+  validateResumeDlqRow,
+  validateRootRedrivenRow,
+} from './lib/tiktok-production-uat-resume-contract.js';
+
 const EVIDENCE_FILE = resolve(
   process.env.TIKTOK_PROD_RECOVERY_EVIDENCE
     ?? 'outputs/customer-production/tiktok-uat-recovery-readonly.json',
@@ -21,7 +28,7 @@ try {
     ok: false,
     code: error?.code ?? 'TIKTOK_PRODUCTION_UAT_RECOVERY_DIAGNOSIS_FAILED',
     message: error?.message ?? String(error),
-    details: error?.details ?? {},
+    details: sanitize(error?.details ?? {}),
   }, null, 2));
   process.exitCode = 1;
 }
@@ -33,7 +40,10 @@ async function main() {
       ok: true,
       executed: false,
       mode: 'read-only-diagnosis',
-      expectedMain: EXPECTED_MAIN,
+      reviewedRuntime: TIKTOK_PRODUCTION_RECOVERY.reviewedMain,
+      rootDlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId,
+      parentDlqId: TIKTOK_PRODUCTION_RESUME.parentDlqId,
+      recoveryDlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId,
       note: 'No Cloudflare, D1, Queue, Worker, Lark, or Git mutation was performed.',
     }, null, 2));
     return;
@@ -45,56 +55,28 @@ async function main() {
   const wrangler = resolve(process.cwd(), 'node_modules/.bin/wrangler');
   await requireReadable(wrangler);
 
-  const sql = [
-    'SELECT dlq_id, message_id, queue_name, job_type, schema_version,',
-    '       payload_json, error_code, retry_count, status, created_at, updated_at,',
-    '       redrive_requested_at, redrive_reference, redriven_at',
-    'FROM dead_letter_jobs',
-    `WHERE status='open' AND job_type='${EXPECTED_JOB_TYPE}'`,
-    'ORDER BY created_at DESC;',
-  ].join(' ');
+  const rootRow = readDlqById({ wrangler, production, dlqId: TIKTOK_PRODUCTION_RESUME.rootDlqId });
+  validateRootRedrivenRow(rootRow);
 
-  const query = run(wrangler, [
-    'd1', 'execute', 'MKT_STATE_DB',
-    '--remote',
-    '--config', production.configPath,
-    '--cwd', production.worktree,
-    '--command', sql,
-    '--json',
-  ], { cwd: production.worktree });
+  const recoveryRow = readDlqById({ wrangler, production, dlqId: TIKTOK_PRODUCTION_RESUME.resumeDlqId });
+  const recovery = validateResumeDlqRow(recoveryRow);
 
-  const rows = extractD1Rows(query.stdout);
-  if (rows.length !== 1) {
-    throw operatorError('Expected exactly one open TikTok Production UAT dead-letter row', 'TIKTOK_PRODUCTION_UAT_DLQ_CARDINALITY_MISMATCH', {
-      count: rows.length,
-      candidates: rows.map((row) => ({
-        dlqId: row.dlq_id ?? null,
-        messageId: row.message_id ?? null,
-        status: row.status ?? null,
-        jobType: row.job_type ?? null,
-      })),
-    });
-  }
-
-  const row = rows[0];
-  const payloadContainer = parseJson(row.payload_json, 'dead_letter_jobs.payload_json');
-  const payload = payloadContainer?.body && typeof payloadContainer.body === 'object'
-    ? payloadContainer.body
-    : payloadContainer;
-
-  assertEqual(row.job_type, EXPECTED_JOB_TYPE, 'dead-letter job type');
-  assertEqual(row.status, 'open', 'dead-letter status');
-  assertEqual(payload?.type, EXPECTED_JOB_TYPE, 'payload type');
-  assertEqual(payload?.trigger, EXPECTED_TRIGGER, 'payload trigger');
-  assertEqual(payload?.metricDate, EXPECTED_METRIC_DATE, 'payload metricDate');
-
-  const dlqId = requireText(row.dlq_id, 'dlq_id');
-  const messageId = String(row.message_id ?? '');
-  if (!dlqId.includes(EXPECTED_DLQ_HINT) && !messageId.includes(EXPECTED_DLQ_HINT)) {
-    throw operatorError('The only open TikTok DLQ row does not match the retained terminal:f7081... evidence', 'TIKTOK_PRODUCTION_UAT_DLQ_HINT_MISMATCH', {
-      dlqId,
-      messageId,
-      expectedHint: EXPECTED_DLQ_HINT,
+  const openRows = queryD1({
+    wrangler,
+    production,
+    sql: [
+      'SELECT dlq_id, message_id, queue_name, job_type, schema_version, payload_json,',
+      'error_code, retry_count, status, created_at, updated_at,',
+      'redrive_requested_at, redrive_reference, redriven_at',
+      'FROM dead_letter_jobs',
+      `WHERE status='open' AND job_type='${TIKTOK_PRODUCTION_RECOVERY.jobType}'`,
+      'ORDER BY created_at DESC;',
+    ].join(' '),
+  });
+  if (openRows.length !== 1 || openRows[0]?.dlq_id !== TIKTOK_PRODUCTION_RESUME.resumeDlqId) {
+    throw operatorError('Expected fef to be the only open TikTok Production UAT DLQ', 'TIKTOK_PRODUCTION_UAT_DLQ_CARDINALITY_MISMATCH', {
+      count: openRows.length,
+      rows: openRows.map(summarizeDlq),
     });
   }
 
@@ -102,26 +84,24 @@ async function main() {
     ok: true,
     mode: 'read-only-diagnosis',
     capturedAt: new Date().toISOString(),
-    expectedMain: EXPECTED_MAIN,
+    reviewedRuntime: TIKTOK_PRODUCTION_RECOVERY.reviewedMain,
     productionWorktree: production.worktree,
     productionConfigPath: production.configPath,
     productionConfig: production.summary,
-    retainedDlq: {
-      dlqId,
-      messageId: row.message_id ?? null,
-      queueName: row.queue_name ?? null,
-      jobType: row.job_type,
-      schemaVersion: row.schema_version ?? null,
-      trigger: payload.trigger,
-      metricDate: payload.metricDate,
-      requestedAt: payload.requestedAt ?? null,
-      status: row.status,
-      retryCount: row.retry_count ?? null,
-      errorCode: row.error_code ?? null,
-      redriveRequestedAt: row.redrive_requested_at ?? null,
-      redriveReference: row.redrive_reference ?? null,
-      redrivenAt: row.redriven_at ?? null,
+    lineage: {
+      rootDlq: summarizeDlq(rootRow),
+      parentDlqId: TIKTOK_PRODUCTION_RESUME.parentDlqId,
+      recoveryDlq: summarizeDlq(recovery.row),
+      recoveryPayloadRedriveOfDlqId: recovery.payload.redriveOfDlqId,
+      recoveryPayloadRedriveReference: recovery.payload.redriveReference,
+      verified: true,
     },
+    executionBudget: {
+      cpuMs: TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs,
+      larkRequestTimeoutMs: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs,
+      larkMaxAttempts: TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts,
+    },
+    openTikTokDlqCount: 1,
     mutationCount: 0,
     workerDeployCount: 0,
     queueSendCount: 0,
@@ -130,8 +110,35 @@ async function main() {
   });
 
   await mkdir(dirname(EVIDENCE_FILE), { recursive: true });
-  await writeFile(EVIDENCE_FILE, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
-  console.log(JSON.stringify(evidence, null, 2));
+  await writeFile(EVIDENCE_FILE, `${JSON.stringify(sanitize(evidence), null, 2)}\n`, 'utf8');
+  console.log(JSON.stringify(sanitize(evidence), null, 2));
+}
+
+function readDlqById({ wrangler, production, dlqId }) {
+  const rows = queryD1({
+    wrangler,
+    production,
+    sql: [
+      'SELECT dlq_id, message_id, queue_name, job_type, schema_version, payload_json, replay_payload_json,',
+      'error_code, retry_count, status, created_at, updated_at,',
+      'redrive_requested_at, redrive_reference, redriven_at',
+      'FROM dead_letter_jobs',
+      `WHERE dlq_id='${sqlText(dlqId)}' LIMIT 1;`,
+    ].join(' '),
+  });
+  return rows[0] ?? null;
+}
+
+function queryD1({ wrangler, production, sql }) {
+  const result = run(wrangler, [
+    'd1', 'execute', 'MKT_STATE_DB',
+    '--remote',
+    '--config', production.configPath,
+    '--cwd', production.worktree,
+    '--command', sql,
+    '--json',
+  ], { cwd: production.worktree });
+  return extractD1Rows(result.stdout);
 }
 
 async function discoverProductionWorktree() {
@@ -151,17 +158,15 @@ async function discoverProductionWorktree() {
   const candidates = [];
   for (const worktree of worktrees) {
     const configPath = join(worktree, 'wrangler.sync.jsonc');
-    let configText;
     try {
-      configText = await readFile(configPath, 'utf8');
+      const configText = await readFile(configPath, 'utf8');
+      if (readJsoncScalar(configText, 'name') === TIKTOK_PRODUCTION_RECOVERY.workerName
+        && readJsoncScalar(configText, 'MKT_ENV') === 'production'
+        && readJsoncScalar(configText, 'MKT_CUSTOMER_PROFILE') === TIKTOK_PRODUCTION_RECOVERY.customerProfile) {
+        candidates.push({ worktree, configPath, configText });
+      }
     } catch {
-      continue;
-    }
-    const env = readJsoncScalar(configText, 'MKT_ENV');
-    const profile = readJsoncScalar(configText, 'MKT_CUSTOMER_PROFILE');
-    const workerName = readJsoncScalar(configText, 'name');
-    if (env === 'production' && profile === 'chemistry_k' && workerName === 'social-mkt-sync-worker') {
-      candidates.push({ worktree, configPath, configText });
+      // Ignore non-Production worktrees and worktrees without the local config.
     }
   }
 
@@ -176,6 +181,7 @@ async function discoverProductionWorktree() {
 
   const candidate = candidates[0];
   return Object.freeze({
+    repositoryRoot,
     ...candidate,
     summary: Object.freeze({
       workerName: readJsoncScalar(candidate.configText, 'name'),
@@ -184,7 +190,6 @@ async function discoverProductionWorktree() {
       workersDev: readJsoncScalar(candidate.configText, 'workers_dev'),
       tiktokEnabled: readJsoncScalar(candidate.configText, 'MKT_CONNECTOR_TIKTOK_ENABLED'),
       productionUatEnabled: readJsoncScalar(candidate.configText, 'MKT_PRODUCTION_CONNECTOR_UAT_ENABLED'),
-      productionUatConnector: readJsoncScalar(candidate.configText, 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR'),
       dlqRedriveEnabled: readJsoncScalar(candidate.configText, 'MKT_DLQ_REDRIVE_ENABLED'),
       tiktokScheduleEnabled: readJsoncScalar(candidate.configText, 'MKT_SCHEDULE_TIKTOK_ENABLED'),
       notificationRuntimeEnabled: readJsoncScalar(candidate.configText, 'MKT_NOTIFICATION_RUNTIME_ENABLED'),
@@ -192,62 +197,23 @@ async function discoverProductionWorktree() {
   });
 }
 
-function assertDarkProductionConfig(text) {
-  assertEqual(readJsoncScalar(text, 'name'), 'social-mkt-sync-worker', 'Worker name');
-  assertEqual(readJsoncScalar(text, 'MKT_ENV'), 'production', 'MKT_ENV');
-  assertEqual(readJsoncScalar(text, 'MKT_CUSTOMER_PROFILE'), 'chemistry_k', 'MKT_CUSTOMER_PROFILE');
-  assertBooleanFalse(text, 'MKT_CONNECTOR_TIKTOK_ENABLED');
-  assertBooleanFalse(text, 'MKT_PRODUCTION_CONNECTOR_UAT_ENABLED');
-  assertBooleanFalse(text, 'MKT_DLQ_REDRIVE_ENABLED');
-  assertBooleanFalse(text, 'MKT_SCHEDULE_TIKTOK_ENABLED');
-  assertBooleanFalse(text, 'MKT_NOTIFICATION_RUNTIME_ENABLED');
-  return true;
-}
-
-function assertBooleanFalse(text, name) {
-  const value = readJsoncScalar(text, name);
-  if (!(value === false || value === 'false')) {
-    throw operatorError(`${name} must be false before Production recovery`, 'TIKTOK_PRODUCTION_NOT_DARK', { name, value });
-  }
-}
-
-function readJsoncScalar(text, name) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  const expression = new RegExp(`(?:"${escaped}"|\\b${escaped}\\b)\\s*:\\s*("(?:[^"\\\\]|\\\\.)*"|true|false|null|-?\\d+(?:\\.\\d+)?)`, 'u');
-  const match = String(text ?? '').match(expression);
-  if (!match) return null;
-  const token = match[1];
-  if (token.startsWith('"')) return JSON.parse(token);
-  if (token === 'true') return true;
-  if (token === 'false') return false;
-  if (token === 'null') return null;
-  return Number(token);
-}
-
-function extractD1Rows(output) {
-  const value = parseJson(output, 'wrangler d1 --json output');
-  const blocks = Array.isArray(value) ? value : [value];
-  const rows = [];
-  for (const block of blocks) {
-    if (Array.isArray(block?.results)) rows.push(...block.results);
-    if (Array.isArray(block?.result)) {
-      for (const nested of block.result) {
-        if (Array.isArray(nested?.results)) rows.push(...nested.results);
-      }
-    }
-  }
-  return rows;
-}
-
-function parseJson(value, fieldName) {
-  try {
-    return JSON.parse(String(value ?? ''));
-  } catch (cause) {
-    throw operatorError(`${fieldName} is not valid JSON`, 'TIKTOK_PRODUCTION_RECOVERY_JSON_INVALID', {
-      fieldName,
-      cause: cause instanceof Error ? cause.message : String(cause),
-    });
-  }
+function summarizeDlq(row) {
+  if (!row) return null;
+  return {
+    dlqId: row.dlq_id ?? null,
+    messageId: row.message_id ?? null,
+    queueName: row.queue_name ?? null,
+    jobType: row.job_type ?? null,
+    schemaVersion: row.schema_version ?? null,
+    errorCode: row.error_code ?? null,
+    retryCount: row.retry_count ?? null,
+    status: row.status ?? null,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null,
+    redriveRequestedAt: row.redrive_requested_at ?? null,
+    redriveReference: row.redrive_reference ?? null,
+    redrivenAt: row.redriven_at ?? null,
+  };
 }
 
 function run(command, args, options = {}) {
@@ -280,22 +246,25 @@ async function requireReadable(path) {
   }
 }
 
-function assertEqual(actual, expected, label) {
-  if (actual !== expected) {
-    throw operatorError(`${label} mismatch`, 'TIKTOK_PRODUCTION_RECOVERY_CONTRACT_MISMATCH', { label, expected, actual });
-  }
+function sqlText(value) {
+  return String(value).replaceAll("'", "''");
 }
 
-function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw operatorError(`${fieldName} is required`, 'TIKTOK_PRODUCTION_RECOVERY_CONTRACT_MISMATCH', { fieldName, value });
+function sanitize(value) {
+  if (Array.isArray(value)) return value.map(sanitize);
+  if (!value || typeof value !== 'object') return value;
+  const output = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/token|secret|authorization|credential/iu.test(key)) output[key] = '[REDACTED]';
+    else output[key] = sanitize(item);
   }
-  return value.trim();
+  return output;
 }
 
 function operatorError(message, code, details = {}) {
   const error = new Error(message);
+  error.name = 'TikTokProductionUatRecoveryDiagnosisError';
   error.code = code;
-  error.details = details;
+  error.details = Object.freeze({ ...details });
   return error;
 }
