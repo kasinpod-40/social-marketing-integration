@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-23 — TikTok Workers Free durable continuations
+
+- split TikTok Native source staging, business-plan scan/finalization, preflight, write, and completion into
+  bounded durable Queue invocations for the customer Workers Free runtime;
+- preserve exact Queue operation identity across continuations and make duplicate, stale, ahead, and Queue-send
+  outcomes explicit and fail-closed;
+- persist the immutable business plan and verify Classification Dictionary stability before resumed writes;
+- add configurable one-page/one-business-unit invocation defaults and focused routing/idempotency regression;
+- record customer Production as a cutover of customer-owned source state/credentials to customer Cloudflare/D1
+  and customer Lark Base, with connector schedules and exact-group AI notification enabled only after live proof;
+- no Production deploy, flag enable, Queue send, Lark/D1 business mutation, or retained-DLQ redrive occurred.
+
 ## Facebook Organic observed aggregation + live rematerialization — 2026-08-21
 
 ### Shared Organic aggregation repair

@@ -11,6 +11,8 @@ export const DEFAULT_RETRY_DELAY_SECONDS = 30;
 export const DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_TIKTOK_SOURCE_PAGE_SIZE = 500;
 export const DEFAULT_TIKTOK_SOURCE_MAX_PAGES = 1_000;
+export const DEFAULT_TIKTOK_SOURCE_PAGES_PER_INVOCATION = 1;
+export const DEFAULT_TIKTOK_BUSINESS_UNITS_PER_INVOCATION = 1;
 
 export function requireJobText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {

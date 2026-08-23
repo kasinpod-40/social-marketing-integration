@@ -64,6 +64,13 @@ export async function stageTikTokResumableSource(input = {}) {
   const tableId = requireText(input.tableId, 'tableId');
   const pageSize = boundedPositiveInteger(input.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize', DEFAULT_PAGE_SIZE);
   const maxPages = boundedPositiveInteger(input.maxPages ?? DEFAULT_MAX_PAGES, 'maxPages', DEFAULT_MAX_PAGES);
+  const maxPagesPerInvocation = boundedPositiveInteger(
+    input.maxPagesPerInvocation ?? maxPages,
+    'maxPagesPerInvocation',
+    DEFAULT_MAX_PAGES,
+  );
+  const boundedInvocation = input.maxPagesPerInvocation !== null
+    && input.maxPagesPerInvocation !== undefined;
   const onProgress = typeof input.onProgress === 'function' ? input.onProgress : () => undefined;
 
   let progress = await context.store.loadPhase({
@@ -71,8 +78,9 @@ export async function stageTikTokResumableSource(input = {}) {
     phase: SOURCE_PHASE,
   });
   const resumedPages = progress?.pagesProcessed ?? 0;
+  let invocationPages = 0;
 
-  while (!progress?.complete) {
+  while (!progress?.complete && invocationPages < maxPagesPerInvocation) {
     const pagesProcessed = nonNegativeInteger(progress?.pagesProcessed ?? 0, 'pagesProcessed');
     if (pagesProcessed >= maxPages) {
       throw permanentError('TikTok RAW source pagination exceeded the configured maximum', {
@@ -132,6 +140,7 @@ export async function stageTikTokResumableSource(input = {}) {
         payload: { records },
       },
     });
+    invocationPages += 1;
     onProgress({
       stage: 'tiktok_source_page_staged',
       page: nextPagesProcessed,
@@ -141,21 +150,16 @@ export async function stageTikTokResumableSource(input = {}) {
     });
   }
 
-  if (!progress?.complete) {
-    throw permanentError('TikTok staged source phase did not reach completion', {
-      code: 'TIKTOK_SOURCE_STAGING_INCOMPLETE',
-    });
-  }
-
   return Object.freeze({
     summary: Object.freeze({
       durable: true,
-      complete: true,
+      complete: progress?.complete === true,
       records: progress.processedItems,
       pagesProcessed: progress.pagesProcessed,
       resumedPages,
       pageSize,
       maxPages,
+      ...(boundedInvocation ? { invocationPages, maxPagesPerInvocation } : {}),
     }),
   });
 }
@@ -167,6 +171,11 @@ export async function stageTikTokResumableSource(input = {}) {
 export async function loadTikTokResumableSource(input = {}) {
   const context = requireContext(input.context);
   const staged = await stageTikTokResumableSource(input);
+  if (!staged.summary.complete) {
+    throw permanentError('TikTok staged source phase did not reach completion', {
+      code: 'TIKTOK_SOURCE_STAGING_INCOMPLETE',
+    });
+  }
   const records = [];
   let afterSequence = 0;
   let unitPages = 0;

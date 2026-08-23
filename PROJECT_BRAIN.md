@@ -1,5 +1,25 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Production Free-plan continuation cutover — 2026-08-23
+
+คำสั่งผู้ใช้ยืนยันว่า Source accounts, data และ connector credentials/state ใน Integration Workspace
+เป็นทรัพย์สินลูกค้าอยู่แล้ว. Customer Production จึงเป็นการย้าย runtime ไป Customer Cloudflare/D1,
+เปลี่ยน mapping เป็น Customer Lark Base แล้วเปิด schedule แบบควบคุม ไม่ใช่ onboarding เจ้าของบัญชีใหม่.
+ภาพหลักฐานยืนยันว่า `dev.datahub.2026@gmail.com` เปิด Customer Base ได้แล้ว; Live preflight ที่เหลือเป็น
+Worker App/OAuth API binding กับ exact Table IDs เท่านั้น.
+
+Customer Workers ยังเป็น Free และอัปเกรดไม่ได้ในขณะนี้. TikTok จึงถูก refactor ให้ Source staging,
+Business plan scan/finalization, preflight, write และ completion ทำงานเป็น durable Queue continuations
+แบบ bounded. ทุก continuation รักษา stable operation/work/generation, checkpoint ก่อน Queue send,
+รองรับ ambiguous duplicate แบบ idempotent และ fail closed เมื่อ sequence นำ durable state.
+Production ยัง dark และ retained TikTok DLQ เป็น forensic evidence ห้าม blind redrive; recovery ต้องใช้
+fresh stable UAT หลัง reviewed merge.
+
+หลัง controlled connector proofs ต้องเปิด schedule ทีละ connector และพิสูจน์ continuation จาก migrated
+checkpoint, expected time coverage, zero duplicate/zero gap และ D1/Lark parity. วันจันทร์ 2026-08-24
+ต้องตรวจ Automatic AI/Notification ว่าส่ง exact customer profile/period ไป exact Lark group เพียงครั้งเดียว
+พร้อม AI run, delivery claim, Notification Log/message hash และ zero exact-scope alert/DLQ/lock.
+
 ## Automatic Weekly negative-channel repair — 2026-08-17
 
 รอบ Scheduled จริงช่วง `2026-08-10..2026-08-16` fail closed ก่อนส่งด้วย

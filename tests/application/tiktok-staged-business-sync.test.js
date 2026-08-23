@@ -234,6 +234,128 @@ test('TikTok staged planner blocks duplicate content identities across different
   assert.equal(repository.count('tbl_mkt_content_daily'), 0);
 });
 
+test('TikTok bounded continuation completes source, plan, preflight and write one durable unit at a time', async () => {
+  const repository = createIndexedRepository({
+    rawRecords: Array.from({ length: 3 }, (_, index) => (
+      rawVideo('tt_account_1', `bounded_${index + 1}`)
+    )),
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const stateStore = createIncrementalStateStore();
+  const workStore = new InMemoryResumableWorkStore({ now: () => 50_000 });
+  const common = {
+    ...stagedSyncInput({
+      repository,
+      stateStore,
+      workStore,
+      workKey: 'tiktok:bounded-continuation',
+      requestedAt: 5_000,
+    }),
+    sourcePageSize: 1,
+    maxSourcePagesPerInvocation: 1,
+    maxBusinessUnitsPerInvocation: 1,
+  };
+  const phases = [];
+  let sequence = 0;
+  let result = null;
+
+  for (let invocation = 0; invocation < 20; invocation += 1) {
+    result = await syncTikTokCreatorNativeToLark({
+      ...common,
+      syncRunId: `run-bounded-${invocation}`,
+      continuationSequence: sequence,
+      now: () => 6_000 + invocation,
+    });
+    if (result.continuationRequired !== true) break;
+    phases.push(result.continuationPhase);
+    assert.equal(result.continuationSequence, sequence + 1);
+    sequence = result.continuationSequence;
+  }
+
+  assert.deepEqual(phases, [
+    'source_staging',
+    'source_staging',
+    'source_complete',
+    'business_plan_scan',
+    'business_plan_scan',
+    'business_plan_scan',
+    'business_plan',
+    'business_preflight',
+    'business_preflight',
+    'business_preflight',
+    'business_write',
+    'business_write',
+    'business_finalize',
+  ]);
+  assert.equal(result.mode, 'write');
+  // Final continuation logs only writes from that delivery; cumulative proof lives in workTotals.
+  assert.equal(result.content.created, 0);
+  assert.equal(result.dailySnapshots.created, 0);
+  assert.equal(result.stagedBusiness.workTotals.content.created, 3);
+  assert.equal(result.stagedBusiness.workTotals.dailySnapshots.created, 3);
+  assert.equal(repository.pageCalls.length, 3);
+  assert.equal(repository.count('tbl_mkt_content'), 3);
+  assert.equal(repository.count('tbl_mkt_content_daily'), 3);
+  assert.equal(stateStore.saveCalls.length, 1);
+  assert.equal(workStore.works.get(common.workKey).lifecycleStatus, 'completed');
+});
+
+test('TikTok retries an ambiguous pending continuation without advancing durable work twice', async () => {
+  const repository = createIndexedRepository({
+    rawRecords: [rawVideo('tt_account_1', 'pending_1'), rawVideo('tt_account_1', 'pending_2')],
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const workStore = new InMemoryResumableWorkStore({ now: () => 60_000 });
+  const common = {
+    ...stagedSyncInput({
+      repository,
+      stateStore: createIncrementalStateStore(),
+      workStore,
+      workKey: 'tiktok:pending-continuation',
+      requestedAt: 6_000,
+    }),
+    sourcePageSize: 1,
+    maxSourcePagesPerInvocation: 1,
+    maxBusinessUnitsPerInvocation: 1,
+    continuationSequence: 0,
+  };
+
+  const first = await syncTikTokCreatorNativeToLark({ ...common, syncRunId: 'pending-first' });
+  const replay = await syncTikTokCreatorNativeToLark({ ...common, syncRunId: 'pending-replay' });
+
+  assert.equal(first.continuationSequence, 1);
+  assert.equal(replay.continuationSequence, 1);
+  assert.equal(replay.continuationReplay, true);
+  assert.equal(repository.pageCalls.length, 1);
+  assert.equal(repository.writeCalls.length, 0);
+});
+
+test('TikTok rejects a continuation sequence ahead of its durable checkpoint', async () => {
+  const repository = createIndexedRepository({
+    rawRecords: [rawVideo('tt_account_1', 'ahead_1')],
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const common = {
+    ...stagedSyncInput({
+      repository,
+      stateStore: createIncrementalStateStore(),
+      workStore: new InMemoryResumableWorkStore({ now: () => 70_000 }),
+      workKey: 'tiktok:ahead-continuation',
+      requestedAt: 7_000,
+    }),
+    maxSourcePagesPerInvocation: 1,
+    maxBusinessUnitsPerInvocation: 1,
+    continuationSequence: 2,
+  };
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({ ...common, syncRunId: 'ahead-run' }),
+    (error) => error?.code === 'TIKTOK_CONTINUATION_SEQUENCE_AHEAD',
+  );
+  assert.equal(repository.pageCalls.length, 0);
+  assert.equal(repository.writeCalls.length, 0);
+});
+
 
 function stagedSyncInput(input) {
   return {

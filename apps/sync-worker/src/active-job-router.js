@@ -53,6 +53,10 @@ import {
   requireJobText,
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
+import {
+  enqueueTikTokSyncContinuation,
+  resolveTikTokSyncInvocation,
+} from './tiktok-sync-continuation.js';
 
 /** Route Job type ไปยัง Use case จริง โดยตรวจ Implementation/Profile/Feature flag ตามลำดับ */
 export async function processJob(input) {
@@ -236,7 +240,8 @@ export async function processJob(input) {
     ]);
     const reliability = infrastructure.getReliability(tableIds);
     const resumableWorkStore = infrastructure.getResumableWorkStore();
-    const requestedAt = readSyncJobGeneration(input.job, 'TikTok', input.message?.timestamp);
+    const invocation = resolveTikTokSyncInvocation(input);
+    const requestedAt = invocation.requestedAt;
     const incrementalEnabled = readBoolean(input.env?.MKT_TIKTOK_INCREMENTAL_ENABLED, false);
 
     const result = await runReliableSync({
@@ -269,9 +274,10 @@ export async function processJob(input) {
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
         customerProfile: runtimeConfig.profileKey,
         cursorKey: lockKey,
-        workKey: `tiktok:${requireJobText(input.message?.id, 'message.id')}`,
+        workKey: invocation.workKey,
         requestedAt,
-        generation: requestedAt,
+        generation: invocation.generation,
+        continuationSequence: invocation.continuationSequence,
         resumableWorkStore,
         sourcePageSize: readPositiveInteger(
           input.env?.MKT_TIKTOK_SOURCE_PAGE_SIZE,
@@ -281,6 +287,10 @@ export async function processJob(input) {
           input.env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? input.env?.LARK_MAX_PAGES,
           DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
         ),
+        ...(invocation.operation ? {
+          maxSourcePagesPerInvocation: invocation.maxSourcePagesPerInvocation,
+          maxBusinessUnitsPerInvocation: invocation.maxBusinessUnitsPerInvocation,
+        } : {}),
         syncMode: input.job.body?.syncMode,
         incrementalEnabled,
         incrementalStateStore: incrementalEnabled
@@ -299,6 +309,14 @@ export async function processJob(input) {
         },
       }),
     });
+    if (result.continuationRequired === true) {
+      await enqueueTikTokSyncContinuation({
+        env: input.env,
+        originalBody: input.job.body,
+        operation: invocation.operation,
+        result,
+      });
+    }
     await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
     return result;
   }

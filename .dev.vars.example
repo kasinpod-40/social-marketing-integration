@@ -124,6 +124,9 @@ MKT_NOTIFICATION_RUNTIME_ENABLED=false
 
 # TikTok Creator — Lark Native เชื่อม Chemistry K แล้ว; Connector ยังปิดจนถึง Manual write gate
 TIKTOK_SOURCE_HANDLE=chemistry_k
+# จำกัด TikTok durable continuation ต่อ Queue delivery เพื่อทดสอบเพดาน CPU แบบเดียวกับ Production
+MKT_TIKTOK_SOURCE_PAGES_PER_INVOCATION=1
+MKT_TIKTOK_BUSINESS_UNITS_PER_INVOCATION=1
 
 # YouTube temporary developer source — Connector/Schedule ยังปิดจนกว่างานถัดไปอนุมัติ
 YOUTUBE_CHANNEL_ID=replace-with-youtube-channel-id
