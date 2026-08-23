@@ -4,6 +4,29 @@ import { readFile } from 'node:fs/promises';
 
 const sourcePath = 'scripts/meta-paid-lark-drain-resilient-entry.mjs';
 
+test('resilient entry resolves active deployed D1 before any drain child is launched', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+  assert.match(source, /'deployments', 'status', '--json', '--config'/u);
+  assert.match(source, /'versions', 'view', versionId, '--json', '--config'/u);
+  assert.match(source, /parseActiveDeploymentVersionIds/u);
+  assert.match(source, /resolveSharedActiveD1BindingId/u);
+  assert.match(source, /materializeActiveD1Config/u);
+  assert.match(source, /MKT_META_D1_ONLY_WRANGLER_CONFIG:\s*temporaryConfigPath/u);
+  assert.match(source, /await runSupervisedDrain\(runtime\.env\)/u);
+  assert.match(source, /await diagnoseReadOnlyD1\(runtime\.env\)/u);
+  assert.match(source, /await rm\(runtime\.temporaryRoot, \{ recursive: true, force: true \}\)/u);
+});
+
+test('resilient entry materializes authority in a private temp config and never writes the source config', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+  assert.match(source, /mkdtemp\(join\(tmpdir\(\), 'meta-paid-lark-active-d1-'\)\)/u);
+  assert.match(source, /writeFile\(temporaryConfigPath, materialized\.text, \{ mode: 0o600 \}\)/u);
+  assert.match(source, /chmod\(temporaryConfigPath, 0o600\)/u);
+  assert.doesNotMatch(source, /writeFile\(sourceConfigPath/u);
+  assert.match(source, /sourceConfigModified:\s*false/u);
+  assert.match(source, /activeD1MutationAllowed:\s*false/u);
+});
+
 test('resilient entry retries only bounded pre-closeout read failures', async () => {
   const source = await readFile(sourcePath, 'utf8');
   assert.match(source, /const MAX_ATTEMPTS = 3/u);
