@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   META_PAID_PROVIDER_DIRECT_LARK_MAX_PAGES,
   META_PAID_PROVIDER_DIRECT_LARK_TABLE_KEYS,
+  buildMetaPaidProviderLarkWriteSet,
   collectMetaPaidProviderPages,
   validateMetaPaidProviderLarkResults,
 } from '../../scripts/lib/meta-paid-provider-direct-lark-materializer.js';
@@ -65,6 +66,58 @@ test('provider direct Meta recovery rejects repeated cursors before Lark', async
     }),
     (error) => error?.code === 'META_PAID_PROVIDER_DIRECT_LARK_CURSOR_REPEATED',
   );
+});
+
+test('provider direct Meta source builds only the required canonical Creative and July Daily payloads without entity inventory reads', async () => {
+  const requestedAt = Date.parse('2026-08-24T01:00:00+07:00');
+  const writeSet = await buildMetaPaidProviderLarkWriteSet({
+    target: 'chemistry_k2',
+    sourceAccountId: '505898710119851',
+    operationId: 'meta-chemistry_k2-provider-direct-20260701-20260731-123456789abc',
+    requestedAt,
+    accountResource: {
+      id: 'act_505898710119851',
+      account_id: '505898710119851',
+      name: 'Chemistry K2',
+      account_status: 1,
+      currency: 'THB',
+      timezone_name: 'Asia/Bangkok',
+    },
+    creatives: [{
+      id: 'creative_fixture_001',
+      name: 'Fixture Creative',
+      object_type: 'VIDEO',
+      updated_time: '2026-07-31T12:00:00+0000',
+    }],
+    dailyInsights: [{
+      account_id: '505898710119851',
+      account_currency: 'THB',
+      campaign_id: 'campaign_fixture_001',
+      campaign_name: 'Fixture Campaign',
+      adset_id: 'adset_fixture_001',
+      adset_name: 'Fixture Ad Set',
+      ad_id: 'ad_fixture_001',
+      ad_name: 'Fixture Ad',
+      date_start: '2026-07-31',
+      date_stop: '2026-07-31',
+      publisher_platform: 'facebook',
+      spend: '10.000000',
+      impressions: '100',
+      reach: '80',
+      clicks: '5',
+    }],
+  });
+
+  assert.equal(writeSet.canonical.adsAccounts.length, 1);
+  assert.equal(writeSet.canonical.adsCampaigns.length, 0);
+  assert.equal(writeSet.canonical.adsAdGroups.length, 0);
+  assert.equal(writeSet.canonical.adsAds.length, 0);
+  assert.equal(writeSet.canonical.adsCreatives.length, 1);
+  assert.equal(writeSet.canonical.adsCreatives[0].external_creative_id, 'creative_fixture_001');
+  assert.equal(writeSet.canonical.adsDaily.length, 1);
+  assert.equal(writeSet.canonical.adsDaily[0].external_ad_id, 'ad_fixture_001');
+  assert.equal(writeSet.canonical.adsDaily[0].spend_micros, 10_000_000);
+  assert.equal(writeSet.reconciliation.larkProjectionMode, 'curated_reports');
 });
 
 test('provider direct Meta Lark reconciliation is locked to Creatives and Daily', () => {
