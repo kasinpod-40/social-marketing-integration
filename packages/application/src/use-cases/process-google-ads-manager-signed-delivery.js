@@ -19,6 +19,7 @@ const PREFLIGHT_PHASE = 'google_ads_destination_preflight_v1';
 const D1_PHASE = 'google_ads_d1_business_write_v1';
 const LARK_PHASE = 'google_ads_lark_write_v1';
 const DEFAULT_D1_ROWS_PER_INVOCATION = 250;
+const DEFAULT_LARK_ROWS_PER_INVOCATION = 50;
 
 const LARK_TABLES = Object.freeze([
   { path: 'canonical.accounts', tableKey: 'mktAdsAccounts', keyField: 'ads_account_key' },
@@ -56,6 +57,11 @@ export async function processGoogleAdsManagerSignedDelivery(input = {}) {
     input.maxD1RowsPerInvocation ?? DEFAULT_D1_ROWS_PER_INVOCATION,
     'maxD1RowsPerInvocation',
     1_000,
+  );
+  const maxLarkRows = boundedPositiveInteger(
+    input.maxLarkRowsPerInvocation ?? DEFAULT_LARK_ROWS_PER_INVOCATION,
+    'maxLarkRowsPerInvocation',
+    500,
   );
 
   if (input.businessWriteEnabled !== true || input.larkWriteEnabled !== true) {
@@ -155,6 +161,7 @@ export async function processGoogleAdsManagerSignedDelivery(input = {}) {
       syncEngine,
       tables,
       writeSet: writeSets.lark,
+      maxRows: maxLarkRows,
       assertLockActive,
     });
     if (!lark.complete) {
@@ -343,52 +350,100 @@ async function executeLarkPhase(input) {
     phase: LARK_PHASE,
   });
   let nextTableIndex = integer(existing?.state?.nextTableIndex ?? 0, 'nextTableIndex', 0, LARK_TABLES.length);
+  let nextRowIndex = integer(existing?.state?.nextRowIndex ?? 0, 'nextRowIndex', 0, Number.MAX_SAFE_INTEGER);
+  let chunkIndex = integer(
+    existing?.state?.chunkIndex ?? existing?.chunksProcessed ?? nextTableIndex,
+    'chunkIndex',
+    0,
+    Number.MAX_SAFE_INTEGER,
+  );
   const results = Array.isArray(existing?.state?.results) ? [...existing.state.results] : [];
   if (existing?.complete || nextTableIndex >= LARK_TABLES.length) {
-    return Object.freeze({ complete: true, state: { nextTableIndex: LARK_TABLES.length, results } });
+    return Object.freeze({
+      complete: true,
+      state: { nextTableIndex: LARK_TABLES.length, nextRowIndex: 0, chunkIndex, results },
+    });
   }
 
   const contract = LARK_TABLES[nextTableIndex];
   const rows = readPath(input.writeSet, contract.path);
+  nextRowIndex = integer(nextRowIndex, 'nextRowIndex', 0, rows.length);
+  const startRowIndex = nextRowIndex;
+  const stopRowIndex = Math.min(rows.length, startRowIndex + input.maxRows);
+  const chunkRows = rows.slice(startRowIndex, stopRowIndex);
   const tableId = requireText(input.tables[contract.tableKey], contract.tableKey);
   await input.assertLockActive();
   const plan = await input.syncEngine.planByKey({
     repository: input.repository,
     tableId,
     keyField: contract.keyField,
-    rows,
+    rows: chunkRows,
   });
   const result = await input.syncEngine.executePlan(plan, { beforeWriteChunk: input.assertLockActive });
   const accounted = result.created + result.updated + result.skipped;
-  if (accounted !== rows.length || result.duplicateInputRows !== 0) {
+  if (accounted !== chunkRows.length || result.duplicateInputRows !== 0) {
     throw permanentError('Google Ads Lark table reconciliation failed', {
       code: 'GOOGLE_ADS_LARK_RECONCILIATION_FAILED',
-      details: { tableKey: contract.tableKey, expected: rows.length, accounted },
+      details: { tableKey: contract.tableKey, expected: chunkRows.length, accounted },
     });
   }
-  results[nextTableIndex] = Object.freeze({
+  const prior = normalizeLarkResult(results[nextTableIndex], contract.tableKey, rows.length);
+  const cumulative = Object.freeze({
     tableKey: contract.tableKey,
     expected: rows.length,
-    created: result.created,
-    updated: result.updated,
-    skipped: result.skipped,
+    created: prior.created + result.created,
+    updated: prior.updated + result.updated,
+    skipped: prior.skipped + result.skipped,
   });
-  nextTableIndex += 1;
+  results[nextTableIndex] = cumulative;
+  nextRowIndex = stopRowIndex;
+  chunkIndex += 1;
+  const tableComplete = nextRowIndex >= rows.length;
+  if (tableComplete) {
+    const totalAccounted = cumulative.created + cumulative.updated + cumulative.skipped;
+    if (totalAccounted !== rows.length) {
+      throw permanentError('Google Ads Lark table reconciliation failed', {
+        code: 'GOOGLE_ADS_LARK_RECONCILIATION_FAILED',
+        details: { tableKey: contract.tableKey, expected: rows.length, accounted: totalAccounted },
+      });
+    }
+    nextTableIndex += 1;
+    nextRowIndex = 0;
+  }
   const complete = nextTableIndex >= LARK_TABLES.length;
   return input.resumableWorkStore.savePhase({
     workKey: input.reference.workKey,
     phase: LARK_PHASE,
-    state: { nextTableIndex, results },
+    state: { nextTableIndex, nextRowIndex, chunkIndex, results },
     expectedItems: LARK_TABLES.length,
     processedItems: nextTableIndex,
     pagesProcessed: 0,
-    chunksProcessed: nextTableIndex,
+    chunksProcessed: chunkIndex,
     complete,
     unit: {
-      unitKey: contract.tableKey,
-      sequence: nextTableIndex - 1,
-      payload: results[nextTableIndex - 1],
+      unitKey: `${contract.tableKey}:rows:${startRowIndex}-${stopRowIndex}`,
+      sequence: chunkIndex - 1,
+      payload: cumulative,
     },
+  });
+}
+
+function normalizeLarkResult(value, tableKey, expected) {
+  if (!value) {
+    return Object.freeze({ tableKey, expected, created: 0, updated: 0, skipped: 0 });
+  }
+  if (value.tableKey !== tableKey || Number(value.expected) !== expected) {
+    throw permanentError('Google Ads Lark continuation state is inconsistent', {
+      code: 'GOOGLE_ADS_LARK_CONTINUATION_STATE_INVALID',
+      details: { tableKey },
+    });
+  }
+  return Object.freeze({
+    tableKey,
+    expected,
+    created: integer(value.created ?? 0, 'created', 0, expected),
+    updated: integer(value.updated ?? 0, 'updated', 0, expected),
+    skipped: integer(value.skipped ?? 0, 'skipped', 0, expected),
   });
 }
 

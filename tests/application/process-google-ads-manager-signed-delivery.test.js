@@ -21,21 +21,38 @@ const EXPECTED_LARK_KEY_CONTRACT = Object.freeze([
   Object.freeze({ tableId: 'daily', keyField: 'ads_daily_key' }),
 ]);
 
-function liveEnvelopes() {
+function liveEnvelopes(input = {}) {
+  const dailyRows = Array.from(
+    { length: input.dailyRowCount ?? 1 },
+    (_, index) => ({
+      ...googleAdsDatasetRows('campaignDailyMetrics')[0],
+      metricDate: new Date(Date.UTC(
+        2026,
+        6,
+        24 - ((input.dailyRowCount ?? 1) - 1 - index),
+      )).toISOString().slice(0, 10),
+    }),
+  );
   const manifest = createGoogleAdsDeliveryManifest(Object.fromEntries([
     'campaigns', 'assetGroups', 'adGroups', 'ads', 'youtubeAssets', 'campaignDailyMetrics',
-  ].map((key) => [key, { totalRows: 1, chunkCount: 1 }])));
+  ].map((key) => [key, {
+    totalRows: key === 'campaignDailyMetrics' ? dailyRows.length : 1,
+    chunkCount: 1,
+  }])));
   return ['account', 'campaigns', 'assetGroups', 'adGroups', 'ads', 'youtubeAssets', 'campaignDailyMetrics']
     .map((datasetKey) => createGoogleAdsDeliveryEnvelope({
       mode: 'LIVE',
       datasetKey,
-      rows: googleAdsDatasetRows(datasetKey),
+      rows: datasetKey === 'campaignDailyMetrics'
+        ? dailyRows
+        : googleAdsDatasetRows(datasetKey),
       manifest,
     }));
 }
 
-function createFixture() {
-  const envelopes = liveEnvelopes();
+function createFixture(input = {}) {
+  const envelopes = liveEnvelopes(input);
+  const totalRows = envelopes.reduce((sum, envelope) => sum + envelope.dataset.rows.length, 0);
   const phases = new Map();
   const continuations = [];
   const historyCalls = [];
@@ -63,8 +80,8 @@ function createFixture() {
         runStartedAt: RUN_STARTED_AT,
         receivedChunkCount: envelopes.length,
         expectedChunkCount: envelopes.length,
-        receivedRowCount: envelopes.length,
-        expectedRowCount: envelopes.length,
+        receivedRowCount: totalRows,
+        expectedRowCount: totalRows,
         payloadRedactedAt: null,
         manifestDigest: 'a'.repeat(64),
       };
@@ -137,6 +154,7 @@ function createFixture() {
     admission,
     continuations,
     historyCalls,
+    phases,
     planCalls,
     input: {
       queueReference: buildGoogleAdsQueueReference({ runId: RUN_ID, runStartedAt: RUN_STARTED_AT }),
@@ -163,6 +181,7 @@ function createFixture() {
       businessWriteEnabled: true,
       larkWriteEnabled: true,
       maxD1RowsPerInvocation: 100,
+      maxLarkRowsPerInvocation: input.maxLarkRowsPerInvocation ?? 50,
       now: () => Date.parse('2026-07-25T04:05:00.000Z'),
     },
   };
@@ -206,6 +225,51 @@ test('completed admission returns idempotently without another business write', 
   assert.equal(fixture.historyCalls.length, 0);
   assert.equal(fixture.continuations.length, 0);
   assert.equal(fixture.planCalls.length, 0);
+});
+
+test('Workers Free continuation bounds rows within one large Lark table', async () => {
+  const fixture = createFixture({ dailyRowCount: 120, maxLarkRowsPerInvocation: 50 });
+  let result;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    result = await processGoogleAdsManagerSignedDelivery(fixture.input);
+    if (result.status === 'completed') break;
+  }
+
+  assert.equal(result.status, 'completed');
+  assert.equal(fixture.admission.status, 'completed');
+  const dailyPlans = fixture.planCalls
+    .filter(({ tableId }) => tableId === 'daily')
+    .map(({ rowCount }) => rowCount);
+  assert.deepEqual(dailyPlans, [120, 50, 50, 20]);
+  assert.deepEqual(result.reconciliation.lark.at(-1), {
+    tableKey: 'mktAdsDaily',
+    expected: 120,
+    created: 120,
+    updated: 0,
+    skipped: 0,
+  });
+});
+
+test('Workers Free continuation resumes the deployed one-table phase state monotonically', async () => {
+  const fixture = createFixture({ dailyRowCount: 120, maxLarkRowsPerInvocation: 50 });
+  let larkPhase;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await processGoogleAdsManagerSignedDelivery(fixture.input);
+    larkPhase = fixture.phases.get('google_ads_lark_write_v1');
+    if (larkPhase?.state?.nextTableIndex === 6) break;
+  }
+  assert.equal(larkPhase.state.nextTableIndex, 6);
+  delete larkPhase.state.nextRowIndex;
+  delete larkPhase.state.chunkIndex;
+  larkPhase.chunksProcessed = 6;
+
+  const result = await processGoogleAdsManagerSignedDelivery(fixture.input);
+  assert.equal(result.status, 'lark_continuation');
+  const resumed = fixture.phases.get('google_ads_lark_write_v1');
+  assert.equal(resumed.state.nextTableIndex, 6);
+  assert.equal(resumed.state.nextRowIndex, 50);
+  assert.equal(resumed.state.chunkIndex, 7);
+  assert.equal(resumed.chunksProcessed, 7);
 });
 
 test('processor fails closed before reading admission when either write gate is false', async () => {
