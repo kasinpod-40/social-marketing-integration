@@ -497,3 +497,21 @@ proof sequence above. These are execution gates, not missing customer ownership 
   Report Settings/workflow/destination readback pass;
 - the existing `customer-production-cutover-monitor` heartbeat was updated to retain this verified baseline, avoid
   repeating YouTube migration/UAT, and continue the 06:55–08:30 source → Report → AI → exactly-once group proof.
+
+### 2026-08-24 — Customer Report/AI/Notification runtime profile correction
+
+- pre-activation review found the automatic Weekly AI source collector and snapshotless Notification authority
+  still fixed to the historical `integration_workspace` profile and the Integration executive group identity;
+- made the collector, automatic AI seed, direct delivery loader and source-authority reconstruction consume the
+  exact runtime `MKT_CUSTOMER_PROFILE`, while preserving the Integration Workspace default;
+- Customer Production now requires a configured SHA-256 destination identity and exact visible chat name before
+  Notification runtime can enable; missing or malformed authority fails closed;
+- the customer-local deployment config retains only the SHA-256 of the reviewed chat ID and the exact group name;
+  the raw chat ID is not committed or returned by an admin response;
+- focused Lark Notification/Weekly regression — PASS, 170/170;
+- `npm run check` — PASS, 800 source files / 2,393 local dependencies / 0 cycles; hygiene PASS;
+- `npm test` — PASS, 3,191 Node tests and 18 Workers-runtime tests;
+- `npm run test:report-reliability` — PASS, 105/105;
+- `npm audit --audit-level=high` — PASS, zero vulnerabilities;
+- `npm run deploy:dry-run` and `git diff --check` — PASS;
+- no Production Report, AI or Notification gate was enabled and no Lark message was sent by this code change.

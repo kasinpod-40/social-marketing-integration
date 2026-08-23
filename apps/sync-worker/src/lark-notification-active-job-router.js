@@ -64,7 +64,9 @@ export function createLarkNotificationActiveJobRouter(input = {}) {
       repository: infrastructure.repository,
       tables: config.tables,
       aiRunKey,
+      expectedCustomerProfile: config.customerProfile,
       expectedDestinationKeyHash: config.destinationKeyHash,
+      expectedDestinationName: config.destinationChatName,
     });
     const mirrorDelivery = config.flags.mirrorEnabled
       ? createLarkNotificationStateMirror({

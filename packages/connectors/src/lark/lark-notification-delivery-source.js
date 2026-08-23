@@ -39,6 +39,8 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
     input.expectedDestinationKeyHash,
     'expectedDestinationKeyHash',
   );
+  const expectedCustomerProfile = optionalText(input.expectedCustomerProfile);
+  const expectedDestinationName = optionalText(input.expectedDestinationName);
 
   const aiRecord = await findExact(repository, tables.aiRuns, 'ai_run_key', aiRunKey, [
     'ai_run_key', 'report_id', 'template_version', 'scope_type', 'generation_status',
@@ -51,8 +53,14 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
   const sourceReportIds = parseSourceReportIds(ai.source_report_ids_json, reportId);
   const weekly7d = isSnapshotlessWeekly7d(ai);
   const source = weekly7d
-    ? normalizeWeekly7dSourceAuthority(ai, sourceReportIds)
+    ? normalizeWeekly7dSourceAuthority(ai, sourceReportIds, expectedCustomerProfile)
     : await loadSnapshotSourceAuthority(repository, tables, sourceReportIds, ai.window_days);
+  if (expectedCustomerProfile !== null && source.customerProfile !== expectedCustomerProfile) {
+    throw permanentError('Notification source belongs to a different Customer profile', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_MISMATCH',
+      details: { expectedCustomerProfile, actualCustomerProfile: source.customerProfile },
+    });
+  }
 
   const settingCandidates = await repository.listByFieldValues(
     tables.reportSettings,
@@ -92,6 +100,7 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
     const resolved = await resolveLarkNotificationReviewedDestination({
       repository,
       expectedDestinationKeyHash,
+      expectedName: expectedDestinationName ?? undefined,
     });
     groupId = resolved.chatId;
     observedDestinationKeyHash = resolved.destinationKeyHash;
@@ -214,7 +223,7 @@ function isSnapshotlessWeekly7d(ai) {
     && Number(readScalar(ai.window_days)) === 7;
 }
 
-function normalizeWeekly7dSourceAuthority(ai, sourceReportIds) {
+function normalizeWeekly7dSourceAuthority(ai, sourceReportIds, expectedCustomerProfile) {
   const periodStart = normalizeDateOnly(ai.period_start, 'period_start');
   const periodEnd = normalizeDateOnly(ai.period_end, 'period_end');
   if (inclusiveDays(periodStart, periodEnd) !== 7) {
@@ -224,10 +233,11 @@ function normalizeWeekly7dSourceAuthority(ai, sourceReportIds) {
   }
   let authority;
   try {
+    const profileKey = expectedCustomerProfile ?? 'integration_workspace';
     authority = resolveDashboardReportSourceAuthority({
       sourceReportIds,
       platformScopes: WEEKLY_7D_PLATFORM_SCOPES,
-      profileKey: 'integration_workspace',
+      profileKey,
       accountKey: 'chemistry_k',
       periodKind: 'rolling_days',
       periodStart,
