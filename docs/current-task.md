@@ -212,4 +212,9 @@ Current Free-plan-compatible recovery carrier:
 - temporary recovery changes only `LARK_REQUEST_TIMEOUT_MS=15000` and `LARK_MAX_ATTEMPTS=1`;
 - no unsupported `limits.cpu_ms` field is added or changed;
 - focused recovery/resume/auth regression passes 12/12;
-- Production remains reviewed-dark pending review of this new carrier; the retained DLQ has not been redriven.
+- PR #692 passed both Branch Verification runs but the live transport-bound hypothesis did not pass;
+- fef was redriven exactly once, with no idempotency job and zero business writes;
+- the recovery produced retryable `LARK_NETWORK_ERROR`, one interrupted `running` row and `SYNC_LOCK_BUSY`, then terminalized after the reviewed-dark restore into `terminal:eafd8e43f1ae5113d12905301496fd4e` with `MKT_PRODUCTION_CONNECTOR_UAT_DISABLED`;
+- the new terminal DLQ remains open forensic evidence and must not be redriven blindly;
+- exact Customer OAuth restored reviewed runtime `673431ad618a077f039a3844355ef36ff9a231ba`; remote bindings confirm TikTok/UAT/redrive/schedules/report/AI/notification gates false and no CPU override;
+- Customer Production remains blocked on either a customer Cloudflare plan that supports the reviewed CPU ceiling or a separate reviewed checkpoint/sub-chunk implementation that is proven to finish within the Free-plan execution budget.
