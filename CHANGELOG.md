@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-24 — Customer Report/AI/Notification runtime authority
+
+- removed historical Integration-only profile assumptions from the automatic Weekly AI source, seed and
+  snapshotless notification delivery path;
+- required Customer Production to supply an exact destination chat-name and SHA-256 identity while retaining the
+  reviewed Integration Workspace defaults;
+- kept Report, AI and Notification gates fail-closed pending live Customer source/report/group validation.
+
 ## 2026-08-23 — YouTube Customer Production UAT and readiness promotion
 
 - migrated the exact Chemistry K YouTube operational cursor and 837 source-record fingerprints from the

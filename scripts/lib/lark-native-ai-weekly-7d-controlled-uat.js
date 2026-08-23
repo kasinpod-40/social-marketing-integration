@@ -19,6 +19,10 @@ const REPORT_TYPE = 'dashboard_performance_report';
 
 export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {}) {
   const client = requireClient(input.client);
+  const customerProfile = requireText(
+    input.customerProfile ?? 'integration_workspace',
+    'customerProfile',
+  );
   const tables = await resolveTables(client);
   const settingsPage = await client.listRecordsPage({
     tableId: tables.settings,
@@ -29,9 +33,9 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     'Report Settings exceeded the bounded weekly UAT inventory',
     'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_SETTINGS_LIMIT_EXCEEDED',
   );
-  const settings = selectWeeklySettings(settingsPage.records);
+  const settings = selectWeeklySettings(settingsPage.records, customerProfile);
   if (settings.length === 0) throw sourceError(
-    'No enabled Integration Workspace 7D Dashboard Report setting is available',
+    'No enabled Customer 7D Dashboard Report setting is available',
     'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_SETTINGS_MISSING',
   );
   assertUniqueChannelSettings(settings);
@@ -48,7 +52,7 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
       { count: snapshots.length },
     );
   }
-  const selected = selectTargetSnapshotSet(snapshots, settings);
+  const selected = selectTargetSnapshotSet(snapshots, settings, customerProfile);
   const reportIds = selected.map(({ snapshot }) => snapshot.report_id);
   if (reportIds.length === 0) throw sourceError(
     'No validated 7D Report snapshot is available for weekly AI UAT',
@@ -94,6 +98,7 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     selectedChannelCount: selected.length,
     selectedChannels: selected.map(({ setting }) => setting.channelKey).sort(),
     sourceReportIds: [...reportIds].sort(),
+    customerProfile,
     tableNames: Object.keys(tables).sort(),
     selectionPolicy: 'newest_7d_period_with_maximum_channel_coverage',
   });
@@ -187,7 +192,7 @@ function resolveTables(client) {
   });
 }
 
-function selectWeeklySettings(records) {
+function selectWeeklySettings(records, customerProfile) {
   const output = [];
   for (const record of records) {
     const fields = requireObject(record.fields, 'settings.fields');
@@ -195,7 +200,7 @@ function selectWeeklySettings(records) {
     const profile = larkText(fields.customer_profile);
     const reportType = larkText(fields.report_type) ?? REPORT_TYPE;
     const windowDays = Number(larkNumber(fields.window_days));
-    if (enabled !== true || profile !== 'integration_workspace' || reportType !== REPORT_TYPE || windowDays !== 7) continue;
+    if (enabled !== true || profile !== customerProfile || reportType !== REPORT_TYPE || windowDays !== 7) continue;
     const platforms = larkMultiText(fields.platforms ?? fields.platform).map((item) => item.toLowerCase());
     const capability = larkText(fields.capability)?.toLowerCase() ?? null;
     const channel = LARK_NATIVE_AI_CHANNELS.find((item) => (
@@ -232,12 +237,12 @@ function assertUniqueChannelSettings(settings) {
   );
 }
 
-function selectTargetSnapshotSet(records, settings) {
+function selectTargetSnapshotSet(records, settings, customerProfile) {
   const settingsByKey = new Map(settings.map((setting) => [setting.reportSettingKey, setting]));
   const normalized = records.map((record) => normalizeSnapshotFields(record.fields))
     .filter((snapshot) => (
       settingsByKey.has(snapshot.report_setting_key)
-      && snapshot.customer_profile === 'integration_workspace'
+      && snapshot.customer_profile === customerProfile
       && snapshot.report_type === REPORT_TYPE
       && snapshot.window_days === 7
       && snapshot.period_start !== null

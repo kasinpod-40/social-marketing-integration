@@ -93,7 +93,10 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
 
     await verifyAutomationState(client);
 
-    const collected = await collectSource({ client });
+    const collected = await collectSource({
+      client,
+      customerProfile: jobInput.config.customerProfile,
+    });
     const observedPeriodEnd = requireDateOnly(
       collected?.targetPeriod?.periodEnd,
       'source.targetPeriod.periodEnd',
@@ -136,8 +139,8 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
     const generatedAt = resolveAuthorityGeneratedAt(collected.reportBundles);
     const seed = await buildSeed({
       generatedAt,
-      customerKey: 'integration_workspace',
-      customerProfile: 'integration_workspace',
+      customerKey: jobInput.config.customerProfile,
+      customerProfile: jobInput.config.customerProfile,
       utcOffset: '+07:00',
       targetPeriod: collected.targetPeriod,
       settings: collected.settings,

@@ -31,6 +31,9 @@ const SETTING_KEYS = Object.freeze(PLATFORM_SCOPES.map(([scope]) => (
 
 function repositoryFixture(options = {}) {
   const calls = [];
+  const profile = options.profile ?? 'integration_workspace';
+  const sourceReportIds = options.sourceReportIds ?? SOURCE_REPORT_IDS;
+  const settingKeys = options.settingKeys ?? SETTING_KEYS;
   const aiRun = {
     recordId: 'weekly-ai',
     fields: {
@@ -50,18 +53,18 @@ function repositoryFixture(options = {}) {
       strengths: 'strengths',
       weaknesses: 'weaknesses',
       recommendations: 'recommendations',
-      source_report_ids_json: JSON.stringify(SOURCE_REPORT_IDS),
+      source_report_ids_json: JSON.stringify(sourceReportIds),
       period_start: '2026-08-03',
       period_end: '2026-08-09',
     },
   };
   const configuredKeys = new Set(options.configuredDestinationSettingKeys ?? []);
   const wrongKeys = new Set(options.wrongDestinationSettingKeys ?? []);
-  const settings = SETTING_KEYS.map((key) => ({
+  const settings = settingKeys.map((key) => ({
     recordId: `rec-${key}`,
     fields: {
       report_setting_key: key,
-      customer_profile: 'integration_workspace',
+      customer_profile: profile,
       enabled: true,
       ai_enabled: true,
       notification_enabled: true,
@@ -116,6 +119,28 @@ test('weekly 7D dedicated delivery regenerates exact source Settings without Rep
   assert.equal(request.settings.destinationKeyHash, DESTINATION_HASH);
   assert.equal(repository.calls.some((call) => call.tableId === TABLES.reportSnapshots), false);
   assert.equal(repository.calls.some((call) => call.tableId === TABLES.reportSettings), true);
+});
+
+test('weekly 7D dedicated delivery regenerates Customer Production source authority', async () => {
+  const profile = 'chemistry_k';
+  const sourceReportIds = PLATFORM_SCOPES.map(([scope, formula]) => (
+    `${profile}:${scope}:rolling:7d:chemistry_k:rolling_days:2026-08-03:2026-08-09:${formula}`
+  )).sort();
+  const settingKeys = PLATFORM_SCOPES.map(([scope]) => `${profile}:${scope}:rolling:7d`).sort();
+  const repository = repositoryFixture({ profile, sourceReportIds, settingKeys });
+  const request = await loadLarkNotificationDeliveryRequest({
+    repository,
+    tables: TABLES,
+    aiRunKey: 'notification-weekly-7d:test',
+    expectedCustomerProfile: profile,
+    expectedDestinationKeyHash: DESTINATION_HASH,
+    expectedDestinationName: LARK_REVIEWED_EXECUTIVE_CHAT_NAME,
+  });
+
+  assert.deepEqual(request.snapshot.sourceReportIds, sourceReportIds);
+  assert.deepEqual(request.snapshot.sourceReportSettingKeys, settingKeys);
+  assert.equal(request.snapshot.customerProfile, profile);
+  assert.equal(request.settings.groupId, CHAT_ID);
 });
 
 test('weekly 7D delivery accepts reviewed configured subset plus unset rows without writing destination', async () => {

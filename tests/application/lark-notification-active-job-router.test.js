@@ -63,11 +63,15 @@ test('controlled-UAT mode admits only the retained UAT trigger and identity clas
       flags: { runtimeEnabled: true, sendEnabled: true, mirrorEnabled: false },
       mode: LARK_NOTIFICATION_RUNTIME_MODES.CONTROLLED_UAT,
       tables: { aiRuns: 'ai', reportSnapshots: 'snap', reportSettings: 'settings', notificationLog: null },
+      customerProfile: 'chemistry_k',
       destinationKeyHash: 'a'.repeat(64),
+      destinationChatName: 'Chemistry K — Marketing Alerts',
       claimLeaseMs: 60_000,
     }),
     loadRequest: async (input) => {
       assert.equal(input.aiRunKey, 'notification-uat:run-1');
+      assert.equal(input.expectedCustomerProfile, 'chemistry_k');
+      assert.equal(input.expectedDestinationName, 'Chemistry K — Marketing Alerts');
       return request;
     },
     deliver: async (input) => { observed = input; return { ok: true }; },
