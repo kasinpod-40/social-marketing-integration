@@ -477,3 +477,23 @@ proof sequence above. These are execution gates, not missing customer ownership 
 - `npm run test:report-reliability` — PASS, 105/105;
 - `npm audit --audit-level=high` — PASS, 0 vulnerabilities;
 - `WRANGLER_LOG_PATH=/tmp/youtube-production-readiness-dry-run.log npm run deploy:dry-run` — PASS.
+
+### 2026-08-24 — Customer YouTube schedule activation and Report preflight
+
+- PR #712 merged the verified YouTube readiness promotion at exact `main@13b70e9d04cb5a5369e1efd367c4acb1c60a76f0`;
+- deployed that exact main to the customer Worker as version `40cfffd2-11ad-4254-8571-1b540c266014`, authored by
+  the customer operator account and serving 100% traffic;
+- enabled only the reviewed YouTube schedule and dedicated cron `50 0,6,12,18 * * *`, disabled the controlled
+  Production-UAT override, and restored main Queue retries from the temporary UAT ceiling to the normal value 5;
+- preserved the primary cron, existing source schedules, Free-plan batch size/concurrency, current D1/Lark bindings,
+  and all disabled TikTok/Google Ads/WooCommerce/Report/AI/Notification gates;
+- customer D1 readback proves `report_materializations` contains all eight reviewed Report platforms at
+  `1D/3D/7D/30D`, with latest period end `2026-08-22` and zero missing payload/checksum rows;
+- Safari readback confirms the logged-in customer Base URL/title. The local Integration Lark App identity differs
+  from the customer App identity, so the local secret was correctly rejected and no cross-App Lark read or write
+  was attempted; the customer Worker remains the only permitted App-secret execution boundary;
+- no Lark Base record, schema, permission, workflow or resource outside `Setup Phase | Social MKT Data Hub` was
+  changed; Report/AI/Notification remains disabled until Monday source schedule proof and exact customer
+  Report Settings/workflow/destination readback pass;
+- the existing `customer-production-cutover-monitor` heartbeat was updated to retain this verified baseline, avoid
+  repeating YouTube migration/UAT, and continue the 06:55–08:30 source → Report → AI → exactly-once group proof.
