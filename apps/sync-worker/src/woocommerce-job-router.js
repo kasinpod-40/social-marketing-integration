@@ -25,6 +25,7 @@ import {
   requireJobText,
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
+import { resolveConnectorRunMode } from './connector-run-mode.js';
 
 const WOOCOMMERCE_INVALID_JSON_RETRY_DELAYS_MS = Object.freeze([250, 1_000]);
 
@@ -43,7 +44,19 @@ export async function processWooCommerceCommerceJob(input = {}) {
   assertWooCommerceJobDefinition(definition, input.job.body);
   const wooConfig = readWooCommerceRuntimeConfig(input.env);
   const runtimeConfig = input.getRuntimeConfig();
-  const connector = assertWooCommerceRuntime(runtimeConfig, wooConfig, input.job.body.trigger);
+  const connector = assertWooCommerceRuntime(
+    runtimeConfig,
+    wooConfig,
+    input.job.body.trigger,
+    {
+      runMode: resolveConnectorRunMode({
+        runtimeConfig,
+        connectorKey: 'woocommerce',
+        trigger: input.job.body.trigger,
+        env: input.env,
+      }),
+    },
+  );
   const operation = requireStableOperation(input.operation);
   const fullReconciliation = input.job.body.trigger === JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED
     ? false
@@ -132,13 +145,15 @@ export async function processWooCommerceCommerceJob(input = {}) {
   return result;
 }
 
-export function assertWooCommerceRuntime(runtimeConfig, wooConfig, trigger) {
+export function assertWooCommerceRuntime(runtimeConfig, wooConfig, trigger, options = {}) {
   if (!isReviewedConnectorRuntime(runtimeConfig)) {
     throw permanentError('WooCommerce execution requires the reviewed Integration or customer Production ownership tuple', {
       code: 'WOOCOMMERCE_RUNTIME_TARGET_INVALID',
     });
   }
-  const connector = assertConnectorRunnable(runtimeConfig, 'woocommerce');
+  const connector = assertConnectorRunnable(runtimeConfig, 'woocommerce', {
+    runMode: options.runMode,
+  });
   if (!connector
     || connector.accountKey !== 'chemistry_k'
     || connector.enabled !== true

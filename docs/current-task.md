@@ -534,3 +534,22 @@ proof sequence above. These are execution gates, not missing customer ownership 
 - `npm run deploy:dry-run` and `git diff --check` — PASS;
 - Customer deploy and live D1/Lark completion proof remain the release step for this repair; the API Worker and its
   signed-ingress secret are intentionally outside this deploy scope.
+
+Live completion and WooCommerce Production-UAT admission follow-up:
+
+- PR #716 merged and Customer Sync Worker deployed the 50-row Lark continuation without redeploying the API Worker;
+- exact DLQ redrive resumed the retained Google Ads operation after 6/7 completed Lark tables; final admission and
+  durable Work are `completed`, with 1,297/1,297 source rows, D1 2,600/2,600, Lark Daily 16 creates + 176 updates,
+  and reconciliation `failed=0`;
+- the temporary DLQ redrive gate was restored to `false` after completion;
+- the first Customer WooCommerce scheduled admission proved credentials were not the blocker and failed closed on
+  the expected `MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING` gate;
+- wired WooCommerce to the existing exact-selector `production_connector_uat` lane while leaving ordinary scheduled
+  execution subject to normal Production readiness;
+- focused Production-UAT, WooCommerce routing and schedule tests — PASS, 47/47;
+- `npm run check` — PASS, 803 source files / 2,411 local dependencies / 0 cycles; hygiene PASS;
+- `npm test` — PASS, 3,203 Node tests and 18 Workers-runtime tests;
+- `npm run test:report-reliability` — PASS, 105/105; `npm audit` — PASS, zero vulnerabilities;
+- `npm run deploy:dry-run` and `git diff --check` — PASS;
+- next live gate is one controlled Customer WooCommerce Production UAT, followed by reviewed readiness promotion and
+  restoration of the UAT selector to disabled.
