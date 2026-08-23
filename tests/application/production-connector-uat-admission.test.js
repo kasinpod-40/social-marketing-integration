@@ -29,6 +29,10 @@ function productionRuntime(overrides = {}) {
         enabled: true,
         accountKey: 'chemistry_k',
       },
+      woocommerce: {
+        enabled: true,
+        accountKey: 'chemistry_k',
+      },
       instagram: {
         enabled: true,
         accountKey: 'instagram-account',
@@ -58,7 +62,7 @@ test('standard Production execution admits a verified connector', () => {
 });
 
 test('controlled Production UAT admits a dev_ready connector missing only liveAccountUat', () => {
-  const connector = assertConnectorRunnable(productionRuntime(), 'youtube', {
+  const connector = assertConnectorRunnable(productionRuntime(), 'woocommerce', {
     runMode: CONNECTOR_RUN_MODES.CONTROLLED_PRODUCTION_UAT,
   });
 
@@ -160,9 +164,9 @@ test('Production UAT trigger is invalid for Development runtime', () => {
   );
 });
 
-test('worker integration passes exact controlled UAT through readiness before infrastructure starts', async () => {
+test('worker integration admits verified YouTube through normal Production readiness', async () => {
   let infrastructureCalls = 0;
-  const sentinel = new Error('CONTROLLED_UAT_PASSED_READINESS');
+  const sentinel = new Error('VERIFIED_YOUTUBE_PASSED_READINESS');
 
   await assert.rejects(
     processJob({
@@ -170,10 +174,10 @@ test('worker integration passes exact controlled UAT through readiness before in
         schemaVersion: 1,
         body: {
           type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
-          trigger: JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT,
+          trigger: 'scheduled',
         },
       },
-      env: controlledUatEnv({ MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR: 'youtube' }),
+      env: controlledUatEnv({ MKT_PRODUCTION_CONNECTOR_UAT_ENABLED: 'false' }),
       getRuntimeConfig: () => productionRuntime(),
       getInfrastructure() {
         infrastructureCalls += 1;
