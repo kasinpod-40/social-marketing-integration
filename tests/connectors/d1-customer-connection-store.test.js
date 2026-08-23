@@ -390,6 +390,71 @@ test('credential replacement conflict rolls back and keeps the prior active cred
   }
 });
 
+test('credential repository rewraps the same plaintext under a new key without returning it', async () => {
+  const fixture = await createFixture();
+  try {
+    await fixture.store.createConnection({
+      connectionId: 'connection-rewrap',
+      connectorKey: 'youtube',
+      customerKey: 'customer',
+      createdAt: 1_000,
+    });
+    const source = new EncryptedCustomerCredentialRepository({
+      store: fixture.store,
+      keyVersion: 'v1',
+      keys: { v1: ENCRYPTION_KEY },
+      now: () => 2_000,
+      createId: () => 'credential-source',
+    });
+    await source.replace({
+      connectionId: 'connection-rewrap',
+      connectorKey: 'youtube',
+      credentialKind: 'refresh_token',
+      plaintext: 'customer-refresh-token-never-returned',
+    });
+    const targetKey = 'ERERERERERERERERERERERERERERERERERERERERERE';
+    const target = new EncryptedCustomerCredentialRepository({
+      store: fixture.store,
+      keyVersion: 'v2',
+      keys: { v1: ENCRYPTION_KEY, v2: targetKey },
+      now: () => 3_000,
+      createId: () => 'credential-target',
+    });
+    const result = await target.rewrap({
+      connectionId: 'connection-rewrap',
+      connectorKey: 'youtube',
+      credentialKind: 'refresh_token',
+      credentialReference: 'credential-source',
+      sourceKeyVersion: 'v1',
+    });
+    assert.deepEqual(result, {
+      previousReference: 'credential-source',
+      credentialReference: 'credential-target',
+      sourceKeyVersion: 'v1',
+      keyVersion: 'v2',
+    });
+    assert.equal(JSON.stringify(result).includes('customer-refresh-token'), false);
+    assert.equal(await target.read({
+      credentialReference: 'credential-target',
+      connectionId: 'connection-rewrap',
+      connectorKey: 'youtube',
+      credentialKind: 'refresh_token',
+    }), 'customer-refresh-token-never-returned');
+    await assert.rejects(
+      () => target.rewrap({
+        connectionId: 'connection-rewrap',
+        connectorKey: 'youtube',
+        credentialKind: 'refresh_token',
+        credentialReference: 'credential-source',
+        sourceKeyVersion: 'v1',
+      }),
+      (error) => error.code === 'CONNECTION_CREDENTIAL_UNAVAILABLE',
+    );
+  } finally {
+    fixture.close();
+  }
+});
+
 test('connection lookup supports reconnect without violating the legacy account uniqueness constraint', async () => {
   const fixture = await createFixture();
   try {

@@ -48,7 +48,7 @@ export async function createYouTubeRuntimeClients(env = {}, options = {}) {
     ?? new EncryptedCustomerCredentialRepository({
       store: credentialStore,
       keyVersion: config.encryptionKeyVersion,
-      keys: { [config.encryptionKeyVersion]: config.encryptionKey },
+      keys: config.encryptionKeys,
     });
   const credentialAdapter = new EncryptedCustomerRefreshTokenCredentialAdapter({
     repository: credentialRepository,

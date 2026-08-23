@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-23 — YouTube customer credential no-reconnect cutover path
+
+- added an exact reviewed Customer Production credential runtime while preserving the Integration Workspace
+  tuple and rejecting aliases, mixed environments/profiles and foreign ownership;
+- added bounded previous encryption-key reads and current-key writes so the existing validated YouTube Refresh
+  Token can be rewrapped to a Customer-owned key without another customer OAuth login;
+- added a disabled-by-default, operator-authenticated, Integration-only rewrap route that keeps plaintext in
+  Worker memory and returns only credential references/key-version metadata;
+- preserved the unrelated legacy `YOUTUBE_OAUTH_*` path as ineligible for Analytics runtime and kept all
+  schedules/Report/AI/Notification flags unchanged pending reviewed merge and Live validation.
+
 ## 2026-08-23 — Customer Production first source schedules activated
 
 - deployed reviewed main `400a17795f3a2fee0175504c20f3758f377675f8` to the customer Worker as version

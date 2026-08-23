@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = PRODUCTION_SCHEDULES_ACTIVE_AWAITING_FIRST_RUN
+TASK_STATUS                              = YOUTUBE_EXISTING_CREDENTIAL_REWRAP_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
 BASE_MAIN_SHA                            = 400a17795f3a2fee0175504c20f3758f377675f8
-CURRENT_BRANCH                           = codex/customer-production-schedule-activation-20260823
+CURRENT_BRANCH                           = codex/youtube-customer-credential-rewrap-20260823
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -38,7 +38,9 @@ PRODUCTION_FIRST_RUN_WINDOW              = 2026-08-24_0735_TO_0745_ASIA_BANGKOK
 PRODUCTION_MONITOR_AUTOMATION            = customer-production-cutover-monitor_ACTIVE_0650_DAILY
 CURRENT_REPAIR_BRANCH                    = MERGED_PR_695
 REVIEWED_SOURCE_UAT_READY                = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_GOOGLE_ADS_CHATWOOT
-PRODUCTION_SECRET_BLOCKED                = YOUTUBE_WOOCOMMERCE_GOOGLE_ADS_CONNECTION_ENCRYPTION
+PRODUCTION_SECRET_BLOCKED                = WOOCOMMERCE_GOOGLE_ADS_SIGNED_INGRESS
+YOUTUBE_CUSTOMER_RECONNECT               = NOT_REQUIRED_EXISTING_VALIDATED_GRANT
+YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 ```
@@ -55,6 +57,31 @@ credentials used in the Integration Workspace are already customer assets. Custo
 therefore a runtime cutover to the customer-owned Cloudflare resources and customer Lark Base, not
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
+
+## Current authorized scope — YouTube credential cutover without reconnect
+
+The customer Channel owner already completed the required YouTube consent. Integration Live evidence proves
+that the exact encrypted Customer Connection credential passed Owner authorization and a completed Analytics
+catch-up. The migrated Customer D1 therefore retains the correct grant; the cutover must not ask the customer
+to sign in again and must not use the unrelated legacy `YOUTUBE_OAUTH_*` token.
+
+This branch must:
+
+1. admit the exact reviewed `production/chemistry_k/customer` credential runtime while preserving the existing
+   `development/integration_workspace/developer` tuple and rejecting every mixed/foreign tuple;
+2. support an explicit current key plus bounded previous read-key versions, with all key material remaining in
+   Worker Secrets;
+3. add a disabled-by-default, operator-authenticated Integration-only rewrap boundary for the exact active
+   YouTube Refresh Token; plaintext may exist only in Worker memory and must never enter response, log, D1
+   evidence, Git or a local artifact;
+4. create a new Customer-owned AES-256-GCM key, rewrap the same grant, migrate only the resulting encrypted
+   envelope/reference into Customer D1, and validate Customer Owner refresh before enabling its schedule;
+5. keep Google Ads, WooCommerce, Report, AI, Notification and DLQ-redrive state unchanged.
+
+Acceptance requires focused repository/Worker tests, the standard gates, reviewed merge, exact Customer secret
+readback by name, read-only Owner identity/refresh proof, one controlled YouTube run with D1/Lark reconciliation,
+and only then normal YouTube schedule activation. A new OAuth consent is explicitly out of scope unless Google
+independently rejects the already proven grant after rewrap.
 
 ## Historical completed scope — Workers Free continuation repair
 
@@ -250,6 +277,33 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   intended period and exact customer group mapping is read back.
 
 ## Implementation result
+
+YouTube no-reconnect credential cutover implementation on
+`codex/youtube-customer-credential-rewrap-20260823`:
+
+- reused the canonical reviewed runtime ownership predicate and admitted only exact
+  `development/integration_workspace/developer/chemistry_k` or
+  `production/chemistry_k/customer/chemistry_k`; historical aliases and mixed tuples fail closed;
+- extended the Customer credential runtime with one current write key and at most four explicit previous read
+  key versions, all loaded only from Worker Secrets;
+- added repository-level rewrap that decrypts the exact active source envelope and atomically replaces it with
+  a new encrypted envelope/reference without returning plaintext;
+- added disabled-by-default `POST /operator/youtube/credential-rewrap`, exact confirmation/reference/version
+  checks, constant-work bearer authorization and an Integration-only environment guard;
+- preserved YouTube public API-key reads and the rule that Analytics never falls back to legacy
+  `YOUTUBE_OAUTH_*` credentials; no schedule, Report, AI, Notification, Lark or DLQ state changed;
+- focused credential/runtime/HTTP tests — PASS 26/26;
+- `npm run check` — PASS, 797 source files / 2,381 local dependencies / 0 cycles; hygiene PASS;
+- `npm test` — PASS, 3,172 unit tests and 18 Workers-runtime tests after the final canonical ownership reuse;
+- `npm run test:report-reliability` — PASS, 105/105;
+- `npm audit --audit-level=high` — PASS, 0 vulnerabilities;
+- `WRANGLER_LOG_PATH=/tmp/youtube-customer-credential-rewrap-dry-run.log npm run deploy:dry-run` — PASS;
+- `git diff --check` — PASS;
+- no secret was read, printed, persisted or committed and no Remote mutation occurred on this branch.
+
+Remaining execution gate: reviewed merge, temporary Integration-only rewrap window, encrypted envelope migration,
+Customer Owner refresh/identity proof, controlled D1/Lark run/reconciliation, route/previous-key removal and only
+then YouTube schedule activation. Customer reconnect is not required.
 
 Customer Production schedule activation on 2026-08-23:
 

@@ -27,7 +27,7 @@ test('connection runtime rejects historical profiles and placeholder secrets', (
       ...validEnv(),
       MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
     }),
-    /MKT_CUSTOMER_PROFILE must be integration_workspace/u,
+    /reviewed environment\/profile tuple/u,
   );
   assert.throws(
     () => loadCustomerConnectionRuntimeConfig({
@@ -62,6 +62,39 @@ test('Queue credential runtime does not require HTTP invitation or redirect secr
   const config = loadCustomerCredentialRuntimeConfig(env);
   assert.equal(config.customerProfile, 'integration_workspace');
   assert.equal(config.encryptionKeyVersion, 'v1');
+});
+
+test('Queue credential runtime admits only exact Customer Production and loads bounded previous keys', () => {
+  const config = loadCustomerCredentialRuntimeConfig({
+    ...validEnv(),
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_CONNECTION_ENCRYPTION_KEY_VERSION: 'v2',
+    MKT_CONNECTION_ENCRYPTION_KEY_PREVIOUS_VERSIONS: 'v1',
+    MKT_CONNECTION_ENCRYPTION_KEY_V2: 'customer-encryption-key',
+  });
+  assert.equal(config.environment, 'production');
+  assert.equal(config.customerProfile, 'chemistry_k');
+  assert.deepEqual(config.encryptionKeyVersions, ['v2', 'v1']);
+  assert.deepEqual(config.encryptionKeys, {
+    v2: 'customer-encryption-key',
+    v1: 'encryption-key',
+  });
+
+  for (const [environment, profile] of [
+    ['production', 'integration_workspace'],
+    ['development', 'chemistry_k'],
+    ['production', 'other'],
+  ]) {
+    assert.throws(
+      () => loadCustomerCredentialRuntimeConfig({
+        ...validEnv(),
+        MKT_ENV: environment,
+        MKT_CUSTOMER_PROFILE: profile,
+      }),
+      /(?:reviewed environment\/profile tuple|Invalid runtime pairing|Unknown MKT_CUSTOMER_PROFILE)/u,
+    );
+  }
 });
 
 function validEnv() {
