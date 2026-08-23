@@ -1,15 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile, spawnSync } from 'node:child_process';
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -41,6 +33,7 @@ import {
 } from './lib/meta-paid-direct-lark-materializer.js';
 import { materializeNameResolvedD1Config } from './lib/meta-paid-lark-queryable-d1-config.js';
 import { sanitizeCliOutput } from './lib/sanitize-cli-output.js';
+import { readWranglerScalarVars } from './lib/wrangler-jsonc-vars.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
@@ -111,20 +104,10 @@ async function executeDirectMaterialization() {
   stage = 'load-private-runtime';
   const devVarsPath = resolve(process.env.DEV_VARS_FILE ?? '.dev.vars');
   const fileEnv = await readDevVars(devVarsPath);
-  const baseEnv = Object.freeze({ ...fileEnv, ...process.env, DEV_VARS_FILE: devVarsPath });
-  requireExact(baseEnv.MKT_ENV, 'development', 'MKT_ENV');
-  requireExact(baseEnv.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
-  requireExact(baseEnv.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
-  const tableIds = readLarkTableIdsFromEnv(baseEnv, META_PAID_DIRECT_LARK_TABLE_KEYS);
-  const tables = Object.freeze({
-    ...tableIds,
-    __metaLarkTableKeys: [...META_PAID_DIRECT_LARK_TABLE_KEYS],
-  });
-
-  stage = 'prepare-name-resolved-d1-config';
+  const bootstrapEnv = Object.freeze({ ...fileEnv, ...process.env, DEV_VARS_FILE: devVarsPath });
   const sourceConfigPath = resolve(
-    baseEnv.MKT_META_D1_ONLY_WRANGLER_CONFIG
-      ?? baseEnv.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG
+    bootstrapEnv.MKT_META_D1_ONLY_WRANGLER_CONFIG
+      ?? bootstrapEnv.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG
       ?? 'wrangler.sync.jsonc',
   );
   const info = await stat(sourceConfigPath).catch(() => null);
@@ -136,6 +119,23 @@ async function executeDirectMaterialization() {
     );
   }
   const sourceText = await readFile(sourceConfigPath, 'utf8');
+  const wranglerVars = readWranglerScalarVars(sourceText);
+  const baseEnv = Object.freeze({
+    ...wranglerVars,
+    ...fileEnv,
+    ...process.env,
+    DEV_VARS_FILE: devVarsPath,
+  });
+  requireExact(baseEnv.MKT_ENV, 'development', 'MKT_ENV');
+  requireExact(baseEnv.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
+  requireExact(baseEnv.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
+  const tableIds = readLarkTableIdsFromEnv(baseEnv, META_PAID_DIRECT_LARK_TABLE_KEYS);
+  const tables = Object.freeze({
+    ...tableIds,
+    __metaLarkTableKeys: [...META_PAID_DIRECT_LARK_TABLE_KEYS],
+  });
+
+  stage = 'prepare-name-resolved-d1-config';
   const materialized = materializeNameResolvedD1Config(sourceText, 'MKT_STATE_DB');
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'meta-paid-direct-lark-'));
   const temporaryConfigPath = join(temporaryRoot, 'wrangler.meta-paid-direct-lark.queryable.jsonc');
@@ -169,8 +169,8 @@ async function executeDirectMaterialization() {
       providerRequestCount: 0,
     });
 
-    // No remote D1 read is allowed after this boundary. Cloudflare transients can therefore
-    // never trigger a rediscovery/retry after a Lark mutation has started.
+    // All remote reads end before this boundary, so a transient D1 retry can never happen
+    // after a Lark mutation has started.
     stage = 'materialize-live-lark';
     const infrastructure = createInfrastructure(baseEnv);
     const completed = [];
@@ -236,7 +236,6 @@ async function discoverTargetSnapshot(env, configPath, target) {
       continue;
     }
     if (eligibleGeneration !== null && candidate.generation < eligibleGeneration) break;
-
     const unitRows = await runD1Select(
       env,
       configPath,
@@ -274,12 +273,7 @@ async function materializeTarget({ snapshot, infrastructure, tables }) {
   stage = `lark-${snapshot.target}-first-pass`;
   const firstStore = await createSeededMetaPaidDirectWorkStore(snapshot);
   larkWriteStarted = true;
-  const first = await runExistingMetaPipeline({
-    snapshot,
-    store: firstStore,
-    infrastructure,
-    tables,
-  });
+  const first = await runExistingMetaPipeline({ snapshot, store: firstStore, infrastructure, tables });
   const firstReconciliation = validateMetaPaidDirectLarkResult(first);
   await writePrivateJson(join(evidenceRoot, `${snapshot.target}-first-pass.json`), {
     target: snapshot.target,
@@ -294,12 +288,7 @@ async function materializeTarget({ snapshot, infrastructure, tables }) {
 
   stage = `lark-${snapshot.target}-idempotent-replay`;
   const secondStore = await createSeededMetaPaidDirectWorkStore(snapshot);
-  const second = await runExistingMetaPipeline({
-    snapshot,
-    store: secondStore,
-    infrastructure,
-    tables,
-  });
+  const second = await runExistingMetaPipeline({ snapshot, store: secondStore, infrastructure, tables });
   const replay = validateMetaPaidDirectLarkResult(second, { idempotent: true });
   const evidence = {
     accepted: true,
@@ -359,7 +348,8 @@ async function runExistingMetaPipeline({ snapshot, store, infrastructure, tables
 }
 
 async function runD1Select(env, configPath, sql, operation) {
-  if (!/^\s*SELECT\b/iu.test(sql) || /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|PRAGMA)\b/iu.test(sql)) {
+  if (!/^\s*SELECT\b/iu.test(sql)
+    || /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|PRAGMA)\b/iu.test(sql)) {
     throw directError(
       'Direct materializer D1 command is not SELECT-only',
       'META_PAID_DIRECT_LARK_D1_QUERY_NOT_READ_ONLY',
@@ -375,8 +365,7 @@ async function runD1Select(env, configPath, sql, operation) {
       ], env, operation);
       return parseWranglerD1Rows(stdout);
     } catch (error) {
-      const transient = isTransientReadError(error);
-      if (!transient || attempt === MAX_READ_ATTEMPTS) throw error;
+      if (!isTransientReadError(error) || attempt === MAX_READ_ATTEMPTS) throw error;
       const retryDelayMs = READ_RETRY_DELAYS_MS[attempt - 1];
       process.stdout.write(`${JSON.stringify({
         ok: true,
