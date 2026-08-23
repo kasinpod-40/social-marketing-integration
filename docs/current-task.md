@@ -515,3 +515,22 @@ proof sequence above. These are execution gates, not missing customer ownership 
 - `npm audit --audit-level=high` — PASS, zero vulnerabilities;
 - `npm run deploy:dry-run` and `git diff --check` — PASS;
 - no Production Report, AI or Notification gate was enabled and no Lark message was sent by this code change.
+
+### 2026-08-24 — Google Ads Workers Free Lark continuation repair
+
+- Customer Google Ads signed delivery completed 7/7 chunks and admitted 1,297/1,297 rows without changing the
+  Customer Workers Free plan;
+- customer D1 completed the 2,600/2,600 business-write phase, while the former one-table Lark phase repeatedly
+  exceeded the Free CPU budget on the final 192-row `MKT_ADS_DAILY` table after completing the first six tables;
+- split each Lark table into durable row-bounded continuations (default 50 rows, maximum 500) and retained exact
+  cumulative reconciliation across create/update/skip results;
+- preserved backward compatibility with the already-deployed phase state so the customer run resumes from table 7
+  instead of replaying the six completed tables;
+- focused Google Ads delivery tests — PASS, 5/5, including 50/50/20 row continuation and deployed-state resume;
+- `npm run check` — PASS, 800 source files / 2,393 local dependencies / 0 cycles; hygiene PASS;
+- `npm test` — PASS, 3,196 Node tests and 18 Workers-runtime tests;
+- `npm run test:report-reliability` — PASS, 105/105;
+- `npm audit` — PASS, zero vulnerabilities;
+- `npm run deploy:dry-run` and `git diff --check` — PASS;
+- Customer deploy and live D1/Lark completion proof remain the release step for this repair; the API Worker and its
+  signed-ingress secret are intentionally outside this deploy scope.

@@ -107,6 +107,10 @@ export async function processGoogleAdsManualUatJob(input = {}) {
         input.env?.MKT_GOOGLE_ADS_D1_ROWS_PER_INVOCATION,
         250,
       ),
+      maxLarkRowsPerInvocation: readPositiveInteger(
+        input.env?.MKT_GOOGLE_ADS_LARK_ROWS_PER_INVOCATION,
+        50,
+      ),
       tables: {
         mktAdsAccounts: tableIds.mktAdsAccounts,
         mktAdsCampaigns: tableIds.mktAdsCampaigns,
