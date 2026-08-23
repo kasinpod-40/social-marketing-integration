@@ -13,13 +13,15 @@ test('resilient entry retries only bounded pre-closeout read failures', async ()
   assert.match(source, /META_PAID_LARK_DRAIN_RESILIENT_RETRY_EXHAUSTED/u);
 });
 
-test('resilient entry diagnoses exact read-only queries and surfaces sanitized stderr', async () => {
+test('resilient entry diagnoses exact read-only queries and surfaces sanitized command output', async () => {
   const source = await readFile(sourcePath, 'utf8');
   assert.match(source, /buildMetaPaidLarkRuntimeDiagnosisQueries/u);
   assert.match(source, /'wrangler', 'd1', 'execute', 'MKT_STATE_DB'/u);
   assert.match(source, /'--remote', '--json'/u);
-  assert.match(source, /sanitizeStderr/u);
-  assert.match(source, /\[REDACTED\]/u);
+  assert.match(source, /sanitizeCliOutput/u);
+  assert.match(source, /errorMessage/u);
+  assert.match(source, /stdout/u);
+  assert.match(source, /stderr/u);
   assert.match(source, /failedQuery/u);
   assert.match(source, /timedOut/u);
 });
