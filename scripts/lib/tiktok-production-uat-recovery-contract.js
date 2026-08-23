@@ -1,5 +1,5 @@
 export const TIKTOK_PRODUCTION_RECOVERY = Object.freeze({
-  reviewedMain: '673431ad618a077f039a3844355ef36ff9a231ba',
+  reviewedMain: '6d10b4f8153d6b1fc0121a61d541ba1f1cd79fb4',
   workerName: 'social-mkt-sync-worker',
   customerProfile: 'chemistry_k',
   jobType: 'tiktok.creator.native.sync',
@@ -7,6 +7,9 @@ export const TIKTOK_PRODUCTION_RECOVERY = Object.freeze({
   trigger: 'production_connector_uat',
   metricDate: '2026-08-22',
   retainedDlqHint: 'f7081',
+  recoveryCpuMs: 300000,
+  recoveryLarkRequestTimeoutMs: 15000,
+  recoveryLarkMaxAttempts: 1,
 });
 
 const REQUIRED_DARK_FLAGS = Object.freeze([
@@ -45,11 +48,33 @@ export function buildRecoveryConfigText(darkConfigText) {
   next = replaceJsoncScalar(next, 'MKT_PRODUCTION_CONNECTOR_UAT_ENABLED', 'true');
   next = replaceJsoncScalar(next, 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR', 'tiktok');
   next = replaceJsoncScalar(next, 'MKT_DLQ_REDRIVE_ENABLED', 'true');
+  next = replaceJsoncScalar(
+    next,
+    'LARK_REQUEST_TIMEOUT_MS',
+    String(TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs),
+  );
+  next = replaceJsoncScalar(
+    next,
+    'LARK_MAX_ATTEMPTS',
+    String(TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts),
+  );
+  next = upsertCpuLimit(next, TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs);
 
   assertEqual(readJsoncScalar(next, 'MKT_CONNECTOR_TIKTOK_ENABLED'), 'true', 'MKT_CONNECTOR_TIKTOK_ENABLED');
   assertEqual(readJsoncScalar(next, 'MKT_PRODUCTION_CONNECTOR_UAT_ENABLED'), 'true', 'MKT_PRODUCTION_CONNECTOR_UAT_ENABLED');
   assertEqual(readJsoncScalar(next, 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR'), 'tiktok', 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR');
   assertEqual(readJsoncScalar(next, 'MKT_DLQ_REDRIVE_ENABLED'), 'true', 'MKT_DLQ_REDRIVE_ENABLED');
+  assertEqual(
+    readJsoncScalar(next, 'LARK_REQUEST_TIMEOUT_MS'),
+    String(TIKTOK_PRODUCTION_RECOVERY.recoveryLarkRequestTimeoutMs),
+    'LARK_REQUEST_TIMEOUT_MS',
+  );
+  assertEqual(
+    readJsoncScalar(next, 'LARK_MAX_ATTEMPTS'),
+    String(TIKTOK_PRODUCTION_RECOVERY.recoveryLarkMaxAttempts),
+    'LARK_MAX_ATTEMPTS',
+  );
+  assertEqual(readJsoncScalar(next, 'cpu_ms'), TIKTOK_PRODUCTION_RECOVERY.recoveryCpuMs, 'limits.cpu_ms');
   assertFalse(readJsoncScalar(next, 'MKT_SCHEDULE_TIKTOK_ENABLED'), 'MKT_SCHEDULE_TIKTOK_ENABLED');
   assertFalse(readJsoncScalar(next, 'MKT_NOTIFICATION_RUNTIME_ENABLED'), 'MKT_NOTIFICATION_RUNTIME_ENABLED');
   return next;
@@ -138,6 +163,57 @@ export function extractD1Rows(output) {
     }
   }
   return rows;
+}
+
+function upsertCpuLimit(text, cpuMs) {
+  const source = String(text);
+  const safeCpuMs = Number(cpuMs);
+  if (!Number.isSafeInteger(safeCpuMs) || safeCpuMs <= 0 || safeCpuMs > 300000) {
+    throw contractError('Recovery CPU limit must be from 1 to 300000 milliseconds', 'TIKTOK_PRODUCTION_RECOVERY_CPU_LIMIT_INVALID', {
+      cpuMs,
+    });
+  }
+
+  const cpuExpression = /((?:"cpu_ms"|\bcpu_ms\b)\s*:\s*)-?\d+(?:\.\d+)?/gu;
+  const cpuMatches = [...source.matchAll(cpuExpression)];
+  if (cpuMatches.length > 1) {
+    throw contractError('Expected at most one cpu_ms assignment', 'TIKTOK_PRODUCTION_RECOVERY_CONFIG_CARDINALITY_MISMATCH', {
+      name: 'cpu_ms',
+      count: cpuMatches.length,
+    });
+  }
+  if (cpuMatches.length === 1) {
+    return source.replace(cpuExpression, `$1${safeCpuMs}`);
+  }
+
+  const limitsExpression = /((?:"limits"|\blimits\b)\s*:\s*\{)([^{}]*)(\})/gu;
+  const limitsMatches = [...source.matchAll(limitsExpression)];
+  if (limitsMatches.length > 1) {
+    throw contractError('Expected at most one simple limits object', 'TIKTOK_PRODUCTION_RECOVERY_CONFIG_CARDINALITY_MISMATCH', {
+      name: 'limits',
+      count: limitsMatches.length,
+    });
+  }
+  if (limitsMatches.length === 1) {
+    return source.replace(limitsExpression, (_match, open, body, close) => {
+      const trimmed = String(body).trim();
+      const prefix = trimmed ? `${trimmed.replace(/,?\s*$/u, ',')}\n    ` : '\n    ';
+      return `${open}${prefix}"cpu_ms": ${safeCpuMs}\n  ${close}`;
+    });
+  }
+
+  const workersDevExpression = /((?:"workers_dev"|\bworkers_dev\b)\s*:\s*(?:true|false)\s*,)/gu;
+  const workersDevMatches = [...source.matchAll(workersDevExpression)];
+  if (workersDevMatches.length !== 1) {
+    throw contractError('Expected exactly one workers_dev assignment before adding limits', 'TIKTOK_PRODUCTION_RECOVERY_CONFIG_CARDINALITY_MISMATCH', {
+      name: 'workers_dev',
+      count: workersDevMatches.length,
+    });
+  }
+  return source.replace(
+    workersDevExpression,
+    `$1\n\n  "limits": {\n    "cpu_ms": ${safeCpuMs}\n  },`,
+  );
 }
 
 function replaceJsoncScalar(text, name, value) {
