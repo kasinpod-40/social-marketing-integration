@@ -11,6 +11,7 @@ import {
 } from '../storage/marketing-history-contract.js';
 
 const CONNECTORS = Object.freeze({ facebook: 'facebook', instagram: 'instagram' });
+const CONTENT_SCOPE_MODES = new Set(['full_inventory', 'report_range']);
 
 /**
  * Build Shared RAW, Canonical Lark rows and D1-ready account/history inputs from one
@@ -29,6 +30,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
   const fetchedAt = requireTimestamp(input.fetchedAt, 'fetchedAt');
   const completedAt = requireTimestamp(input.completedAt ?? fetchedAt, 'completedAt');
   const sourceRevision = optionalText(input.sourceRevision) ?? operationId;
+  const contentScopeMode = requireContentScopeMode(input.contentScopeMode ?? 'full_inventory');
   const sourceTimezone = requireText(input.sourceTimezone ?? 'Asia/Bangkok', 'sourceTimezone');
   if (sourceTimezone !== 'Asia/Bangkok') {
     throw new TypeError('Meta Organic canonical reporting timezone must be Asia/Bangkok');
@@ -179,7 +181,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
       historySyncRunId: syncRunId,
       coverageRunId: `${operationId}:${connectorKey}:content`,
       sourceRevision,
-      scopeMode: 'full_inventory',
+      scopeMode: contentScopeMode,
       datasetKey: `${connectorKey}.content.cumulative`,
     },
     raw: {
@@ -222,6 +224,14 @@ export function buildMetaOrganicWriteSet(input = {}) {
       sourceStatus: contentResources.length === 0 ? 'no_data_confirmed' : 'complete',
     },
   });
+}
+
+function requireContentScopeMode(value) {
+  const mode = requireText(value, 'contentScopeMode');
+  if (!CONTENT_SCOPE_MODES.has(mode)) {
+    throw new TypeError('contentScopeMode must be full_inventory or report_range');
+  }
+  return mode;
 }
 
 function buildAccountDailyRows(input) {

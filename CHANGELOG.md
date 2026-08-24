@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-24 — Customer Organic Dashboard copied-Base compatibility replay
+
+- extended the reviewed Dashboard compatibility projection to Customer Production so copied Dashboard blocks
+  receive both the preserved Display V2 label and legacy Period selector alongside canonical metric dimensions;
+- replayed the exact 16 D1-backed Organic materializations for Facebook, Instagram, TikTok and YouTube at
+  1D/3D/7D/30D without changing source facts or Dashboard configuration;
+- completed 16/16 operations with no new alert, DLQ or lock delta; follow-up export comparison then proved the
+  copied Dashboard still needs exact `customer_profile=chemistry_k` isolation because both retained Integration
+  rows and Customer rows now satisfy its legacy display selectors.
+- corrected bounded Meta Organic coverage semantics from `full_inventory` to `report_range`, preventing an empty
+  daily Instagram content result from authoritatively excluding prior observed content across rolling windows.
+
 ## 2026-08-24 — Customer Social MKT Data Hub Production COMPLETE
 
 - completed and idempotently replayed Customer Chatwoot `3,707` rows and WooCommerce `18,911` rows in canonical

@@ -72,6 +72,7 @@ test('builds Facebook Raw, Canonical, account daily and Organic history inputs w
   );
   assert.equal(writeSet.d1.accountDailyFacts[0].followers, 1250);
   assert.equal(writeSet.reconciliation.missingContentInsightRows, 0);
+  assert.equal(writeSet.context.scopeMode, 'full_inventory');
   assert.deepEqual(writeSet.canonical.accounts[0], {
     account_key: 'facebook:page_fixture_001',
     platform: 'facebook',
@@ -80,6 +81,41 @@ test('builds Facebook Raw, Canonical, account daily and Organic history inputs w
     account_type: 'page',
     last_sync_at: FETCHED_AT,
   });
+});
+
+test('marks a bounded Meta Organic content read as report_range instead of full inventory', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'instagram_fixture_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_instagram_bounded',
+    operationId: 'operation_instagram_bounded',
+    fetchedAt: FETCHED_AT,
+    contentScopeMode: 'report_range',
+    accountResource: { id: 'instagram_fixture_001', username: 'fixture.instagram' },
+    contentResources: [],
+    contentInsights: [],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.context.scopeMode, 'report_range');
+  assert.throws(
+    () => buildMetaOrganicWriteSet({
+      connectorKey: 'instagram',
+      accountId: 'instagram_fixture_001',
+      accountKey: 'chemistry_k_instagram',
+      customerProfile: 'chemistry_k',
+      customerKey: 'chemistry_k',
+      syncRunId: 'sync_instagram_invalid',
+      operationId: 'operation_instagram_invalid',
+      fetchedAt: FETCHED_AT,
+      contentScopeMode: 'recent_window',
+      accountResource: { id: 'instagram_fixture_001', username: 'fixture.instagram' },
+    }),
+    /contentScopeMode must be full_inventory or report_range/u,
+  );
 });
 
 test('keeps Meta reach in Raw metrics without mislabeling it as unique viewers', () => {

@@ -1,5 +1,40 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Organic Dashboard copied-Base compatibility — 2026-08-24
+
+Exact Dev/Customer Base export comparison proved Customer already held all 272 canonical Organic Dashboard rows
+(four platforms x 17 metrics x four windows), while the copied Dashboard blocks still depended on two preserved
+compatibility fields that were blank on those canonical Customer rows: Display V2 and the legacy Period selector.
+Customer D1 materializations and business values were correct; this was a Lark projection compatibility gap, not
+a source-data or aggregation defect.
+
+The shared materialization writer now projects both compatibility fields for the reviewed `chemistry_k` Customer
+profile while retaining canonical `window_days`, stable `lark_slot_key` identities and the existing Integration
+behavior. PRs #738 and #739 deployed Worker version `46acfee0-49f2-4169-9dad-837f4798df08` at 100% traffic. A
+controlled D1-backed replay completed all 16 Facebook/Instagram/TikTok/YouTube x 1D/3D/7D/30D operations. Fifteen
+completed on the first Queue attempt and one completed on retry; the post-run baseline remained open DLQ 137,
+open Alerts 146 and locks 2, with zero newly created DLQ or Alerts. The user visually confirmed Facebook values;
+TikTok then completed its remaining Period operations without any manual Dashboard mutation.
+
+Post-replay Dev/Customer D1 comparison also explains why some Customer values are higher: Customer Facebook uses
+source watermark `2026-08-23T12:16:25+0000`, while Dev remains at `2026-08-22T12:20:57+0000`; Customer YouTube
+also uses a newer source snapshot. TikTok shares the exact source watermark and metric values across both runtimes,
+and Instagram values match across all four windows. Customer values must therefore not be overwritten from the
+older Dev materializations.
+
+The fresh post-replay Customer export exposed a separate presentation collision: the Report Metric table retains
+336 Integration Organic rows at the older period end and 336 Customer Organic rows at the current period end;
+272 rows in each profile satisfy the copied Dashboard's legacy Display/Period selectors. Stable keys remain unique,
+so this is not storage duplication, but the Dashboard can aggregate both profiles until it is isolated with exact
+`customer_profile=chemistry_k`. Do not replay or delete source/report rows to address this UI filter defect.
+
+After profile isolation exposed blank Instagram cards, D1 proved the Customer source was present: 50 content
+states/observations through 2026-08-22 and account daily facts through 2026-08-23. The latest bounded daily source
+run had zero new content but was incorrectly labelled `full_inventory`; the generic reader therefore treated the
+empty coverage entity set as the complete account inventory and excluded all prior observations. Bounded Meta
+Organic writes now persist `report_range`, while unbounded snapshots retain `full_inventory`. Existing affected
+coverage requires exact correction and 1D/3D/7D/30D rematerialization before Instagram visual closeout.
+
 ## Customer Chatwoot/WooCommerce exact D1-to-Lark closeout — 2026-08-24
 
 Customer Chatwoot business state is already complete in Customer D1 at 3,707 canonical Lark-bound rows. Dev and

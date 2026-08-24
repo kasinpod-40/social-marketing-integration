@@ -736,3 +736,36 @@ child identity after reviewed merge/deploy.
 - final Customer Worker version `8f151a18-f07a-4cab-ad08-4cd4ba84433e` runs reviewed `main@3fd9b482` with the
   primary and YouTube crons, Workers Free Queue batch/concurrency 1, normal retries 5, source schedules,
   Report/AI/Notification runtime and Weekly Monday 08:30 notification schedule active.
+
+### 2026-08-24 — Customer Organic Dashboard copied-Base compatibility replay
+
+- exact Dev/Customer `.base` comparison proved the Customer Base already contained all 272 canonical Organic
+  metric rows, but its copied Dashboard blocks still read the preserved Display V2 and legacy Period fields;
+  both compatibility fields were blank on all 272 canonical Customer rows even though D1 values were correct;
+- PR #738 enabled the reviewed Display V2 projection for `chemistry_k`; PR #739 extended the same reviewed
+  compatibility boundary to canonical Number `window_days` and the preserved legacy Period selector;
+- focused tests passed 9/9, `npm run check` passed, both PR CI gates passed, and final Customer Worker version
+  `46acfee0-49f2-4169-9dad-837f4798df08` serves reviewed `main@3aca1104` at 100% traffic;
+- the final controlled replay completed 16/16 D1-backed Organic Dashboard writes: Facebook, Instagram, TikTok
+  and YouTube each completed 1D/3D/7D/30D. Fifteen completed on the first attempt and one succeeded on retry;
+- the user visually confirmed Facebook values after the repair. TikTok subsequently reached 4/4 Period jobs;
+  no Dashboard block, customer-created area, source fact or canonical business value was manually changed;
+- post-run readback remained `open_dlq=137`, `open_alerts=146`, `locks=2`, exactly matching the pre-run baseline;
+  zero DLQ and zero Alerts were created during the final replay, and the protected TikTok forensic DLQ was not
+  read, redriven or changed.
+- direct Dev/Customer D1 comparison confirmed that higher Customer values are newer rather than duplicated:
+  Facebook Customer watermark is `2026-08-23T12:16:25+0000` versus Dev `2026-08-22T12:20:57+0000`, and Customer
+  YouTube uses a newer snapshot; TikTok source watermark/values and all Instagram window values match exactly.
+  Older Dev materializations must not overwrite these authoritative Customer results.
+- a fresh Customer Base export after the replay proved a separate Dashboard filter defect: the table retains
+  336 Integration Organic rows at the older period and 336 Customer Organic rows at the current period; 272 rows
+  in each profile now satisfy the copied legacy Display/Period selectors. Stable keys are unique, but Dashboard
+  aggregation can be nearly doubled until the exact `customer_profile=chemistry_k` filter is applied. No further
+  replay or row deletion is authorized as a substitute for that profile isolation proof.
+- after applying the profile filter, Instagram became blank because its current Customer materializations were
+  `no_data_confirmed`. Read-only D1 proof found 50 content states/observations through `2026-08-22` and account
+  daily facts through `2026-08-23`; the bounded `instagram-scheduled-20260823` content run had zero new posts but
+  was incorrectly persisted as `full_inventory`, causing the reader to exclude prior observations;
+- bounded Meta Organic source writes now use `report_range`; unbounded snapshots retain `full_inventory`.
+  Focused Meta tests pass 21/21 and `npm run check` passes. Reviewed merge/deploy, exact existing-coverage
+  correction and Instagram 1D/3D/7D/30D rematerialization remain live gates.
