@@ -2,6 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { readLarkTableIdsFromEnv } from '../packages/config/src/lark-table-config.js';
 import { createMetaTokenConnectionRuntime } from '../packages/connectors/src/meta/meta-token-connection-runtime.js';
@@ -17,12 +18,16 @@ import {
   META_PAID_PROVIDER_DIRECT_LARK_TABLE_KEYS,
   META_PAID_PROVIDER_DIRECT_LARK_TARGETS,
   buildMetaPaidProviderLarkWriteSet,
-  collectMetaPaidProviderSource,
   executeMetaPaidProviderLarkPlan,
   planMetaPaidProviderLarkTarget,
   summarizeMetaPaidProviderSource,
   validateMetaPaidProviderLarkResults,
 } from './lib/meta-paid-provider-direct-lark-materializer.js';
+import {
+  META_PAID_PROVIDER_RECOVERY_PAGE_SIZE,
+  META_PAID_PROVIDER_RESUMABLE_SOURCE_CONTRACT_VERSION,
+  collectMetaPaidProviderResumableSource,
+} from './lib/meta-paid-provider-resumable-source.js';
 import { sanitizeCliOutput } from './lib/sanitize-cli-output.js';
 import { readWranglerScalarVars } from './lib/wrangler-jsonc-vars.js';
 
@@ -32,6 +37,7 @@ let larkWriteStarted = false;
 let providerReadStarted = false;
 let providerRequestCount = 0;
 let evidenceRoot = null;
+let checkpointRoot = null;
 
 try {
   const execute = parseArgs(process.argv.slice(2));
@@ -56,6 +62,7 @@ try {
     instagramSyncExecutionCount: 0,
     production: false,
     ...(evidenceRoot ? { evidenceRoot } : {}),
+    ...(checkpointRoot ? { checkpointRoot } : {}),
   }, null, 2)}\n`);
   process.exitCode = 1;
 }
@@ -65,15 +72,19 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: META_PAID_PROVIDER_DIRECT_LARK_CONTRACT_VERSION,
+    resumableSourceContractVersion: META_PAID_PROVIDER_RESUMABLE_SOURCE_CONTRACT_VERSION,
     targets: META_PAID_PROVIDER_DIRECT_LARK_TARGETS,
     period: META_PAID_PROVIDER_DIRECT_LARK_PERIOD,
     larkTableKeys: META_PAID_PROVIDER_DIRECT_LARK_TABLE_KEYS,
     excludedLarkTableKeys: META_PAID_PROVIDER_DIRECT_LARK_EXCLUDED_TABLE_KEYS,
-    source: 'meta_provider_get_only_local_snapshot_before_lark',
+    source: 'meta_provider_get_only_private_resumable_snapshot_before_lark',
     providerReadAllowed: true,
     providerMutationAllowed: false,
     providerRecoveryMaxPagesPerDataset: META_PAID_PROVIDER_DIRECT_LARK_MAX_PAGES,
     providerRecoveryMaxRowsPerDataset: META_PAID_PROVIDER_DIRECT_LARK_MAX_ROWS_PER_DATASET,
+    providerRecoveryPageSize: META_PAID_PROVIDER_RECOVERY_PAGE_SIZE,
+    providerCheckpoint: 'private_local_atomic_page_checkpoint_outside_git',
+    providerRateLimitHandling: 'stop_on_80004_2446079_and_resume_without_replaying_completed_pages',
     remoteD1ReadAllowed: false,
     remoteD1MutationAllowed: false,
     queueSendAllowed: false,
@@ -127,6 +138,18 @@ async function executeProviderDirectMaterialization() {
   requireExact(baseEnv.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
   const tableIds = readLarkTableIdsFromEnv(baseEnv, META_PAID_PROVIDER_DIRECT_LARK_TABLE_KEYS);
   const tables = Object.freeze({ ...tableIds });
+  const recoveryPageSize = readRecoveryPageSize(
+    process.env.META_PAID_PROVIDER_RECOVERY_PAGE_SIZE
+      ?? fileEnv.META_PAID_PROVIDER_RECOVERY_PAGE_SIZE,
+  );
+  checkpointRoot = resolve(
+    process.env.META_PAID_PROVIDER_CHECKPOINT_ROOT
+      ?? join(homedir(), '.cache', 'social-mkt', 'meta-paid-provider-closeout-v1', repositoryHead),
+  );
+  const providerEnv = Object.freeze({
+    ...baseEnv,
+    META_PAGE_SIZE: String(recoveryPageSize),
+  });
 
   const stamp = new Date().toISOString().replace(/[:.]/gu, '-');
   evidenceRoot = join(
@@ -139,7 +162,7 @@ async function executeProviderDirectMaterialization() {
   await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
 
   stage = 'create-get-only-provider-runtime';
-  const runtime = createMetaTokenConnectionRuntime(baseEnv, {
+  const runtime = createMetaTokenConnectionRuntime(providerEnv, {
     onRequest(event) {
       if (event?.stage === 'meta_request_start') providerRequestCount += 1;
     },
@@ -155,8 +178,8 @@ async function executeProviderDirectMaterialization() {
     ? runtime.mappings.metaAdAccounts
     : [];
 
-  // Complete every Provider GET before creating a Lark write plan. This guarantees that
-  // a Provider retry/failure can never occur after a Lark mutation has started.
+  // Complete every Provider GET before creating a Lark write plan. Provider pages are
+  // checkpointed outside Git so a Business Use Case rate limit can resume without replay.
   stage = 'snapshot-all-provider-targets-before-lark';
   providerReadStarted = true;
   const requestedAt = Date.now();
@@ -171,18 +194,20 @@ async function executeProviderDirectMaterialization() {
       );
     }
     stage = `provider-${target}`;
-    sources.push(await collectMetaPaidProviderSource({
+    sources.push(await collectMetaPaidProviderResumableSource({
       target,
       sourceAccountId: matches[0].accountId,
       repositoryHead,
       requestedAt,
       adapter,
+      checkpointRoot,
       onProgress: printProviderProgress,
     }));
   }
 
   await writePrivateJson(join(evidenceRoot, 'source-summaries.json'), {
     contractVersion: META_PAID_PROVIDER_DIRECT_LARK_CONTRACT_VERSION,
+    resumableSourceContractVersion: META_PAID_PROVIDER_RESUMABLE_SOURCE_CONTRACT_VERSION,
     repositoryHead,
     period: META_PAID_PROVIDER_DIRECT_LARK_PERIOD,
     snapshots: sources.map(summarizeMetaPaidProviderSource),
@@ -283,12 +308,15 @@ async function executeProviderDirectMaterialization() {
     accepted: targets.length === META_PAID_PROVIDER_DIRECT_LARK_TARGETS.length
       && targets.every((entry) => entry.accepted && entry.idempotentRerunVerified),
     contractVersion: META_PAID_PROVIDER_DIRECT_LARK_CONTRACT_VERSION,
+    resumableSourceContractVersion: META_PAID_PROVIDER_RESUMABLE_SOURCE_CONTRACT_VERSION,
     repositoryHead,
     targets,
     period: META_PAID_PROVIDER_DIRECT_LARK_PERIOD,
     larkTableKeys: [...META_PAID_PROVIDER_DIRECT_LARK_TABLE_KEYS],
     excludedLarkTableKeys: [...META_PAID_PROVIDER_DIRECT_LARK_EXCLUDED_TABLE_KEYS],
-    sourceMode: 'meta_provider_get_only_snapshot_before_lark',
+    sourceMode: 'meta_provider_get_only_private_resumable_snapshot_before_lark',
+    providerRecoveryPageSize: recoveryPageSize,
+    providerCheckpointResumeEnabled: true,
     allProviderReadsCompletedBeforeLarkWrite: true,
     allTargetsPreflightedBeforeLarkWrite: true,
     providerRequestCount,
@@ -310,23 +338,32 @@ async function executeProviderDirectMaterialization() {
     );
   }
   await writePrivateJson(join(evidenceRoot, 'summary.json'), summary);
-  process.stdout.write(`${JSON.stringify({ ...summary, evidenceRoot }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ ...summary, evidenceRoot, checkpointRoot }, null, 2)}\n`);
   process.stdout.write('META_PAID_PROVIDER_DIRECT_LARK_COMPLETED_SAFE\n');
 }
 
 function printProviderProgress(event = {}) {
-  if (event.stage !== 'provider-read-page' && event.stage !== 'provider-read-complete') return;
-  const finalPage = event.stage === 'provider-read-complete' || event.hasMore === false;
+  if (![
+    'provider-read-page',
+    'provider-read-complete',
+    'provider-checkpoint-complete',
+  ].includes(event.stage)) return;
+  const finalPage = event.stage === 'provider-read-complete'
+    || event.stage === 'provider-checkpoint-complete'
+    || event.hasMore === false;
   if (!finalPage && event.page !== 1 && event.page % 10 !== 0) return;
   process.stdout.write(`${JSON.stringify({
     ok: true,
-    stage: 'provider-source-progress',
+    stage: event.stage === 'provider-checkpoint-complete'
+      ? 'provider-source-checkpoint-resume'
+      : 'provider-source-progress',
     target: event.target,
     datasetKey: event.datasetKey,
     page: event.page,
     pageRows: event.pageRows ?? null,
     rows: event.rows ?? null,
     hasMore: event.hasMore ?? false,
+    resumedFromPages: event.resumedFromPages ?? 0,
     providerRequestCount,
     larkWriteStarted: false,
     remoteD1MutationCount: 0,
@@ -406,6 +443,21 @@ function parseArgs(args) {
     );
   }
   return args.includes('--execute');
+}
+
+function readRecoveryPageSize(value) {
+  if (value === null || value === undefined || value === '') {
+    return META_PAID_PROVIDER_RECOVERY_PAGE_SIZE;
+  }
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 100 || number > 500) {
+    throw operatorError(
+      'Paid Meta provider recovery page size must be an integer from 100 to 500',
+      'META_PAID_PROVIDER_DIRECT_LARK_PAGE_SIZE_INVALID',
+      { minimum: 100, maximum: 500 },
+    );
+  }
+  return number;
 }
 
 function requireExact(value, expected, fieldName) {
