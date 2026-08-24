@@ -671,3 +671,15 @@ Live completion and WooCommerce Production-UAT admission follow-up:
 - `npm run deploy:dry-run` and `git diff --check` — PASS;
 - next live gate is one controlled Customer WooCommerce Production UAT, followed by reviewed readiness promotion and
   restoration of the UAT selector to disabled.
+
+### 2026-08-24 — Customer Meta K2 exact Lark completion
+
+- PR #730 merged the exact, temporary Customer-only Queue importer for the reviewed Chemistry K2 snapshot; PR #731
+  corrected Daily validation to require the exact `Asia/Bangkok` midnight epoch represented by each stable-key date;
+- Customer `MKT_Ads_Creatives` received 99/99 creates and `MKT_Ads_Daily` received 1,809/1,809 creates for account
+  `505898710119851`, period `2026-07-24..2026-08-23`, with all 39 reviewed batch fingerprints preserved;
+- the complete 37-batch Daily replay produced 0 creates, 0 updates and 1,809 skips; D1 readback proves every operation
+  has exactly two main-Queue attempts, with zero matching v2 DLQ rows, zero matching Alerts and zero active locks;
+- the temporary import mode was removed after proof. Customer Worker version
+  `4962ff7e-4799-493d-b93a-fe226f2b9064` serves 100% traffic at `main@2e3455e3` with normal schedules preserved;
+- no Customer Base resource outside `Setup Phase | Social MKT Data Hub` was read or changed.
