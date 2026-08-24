@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-24 — Customer Lark Base empty-field View hygiene
+
+- added a disabled-by-default, exact Customer Production Queue job that hides only Live-proven empty fields in
+  reviewed Data Hub Grid views;
+- bound each allowed table/view/field set to a SHA-256 scope, protected the primary field, preserved existing
+  hidden fields, and verified every View by readback;
+- kept customer-created Base areas, records, schema, filters and View names outside the mutation contract.
+
 ## 2026-08-24 — Customer Weekly Notification Settings activation boundary
 
 - added an exact customer-Production-only Queue path that enables AI/Notification on the eight active 7D Report

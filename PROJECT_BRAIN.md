@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Lark Base empty-field View hygiene — 2026-08-24
+
+The customer authorized a one-time cleanup of empty columns in Views, limited to `Setup Phase | Social MKT Data
+Hub`. The supplied Base export proves 33 in-scope `MKT_*`/`RAW_TikTok_*` tables and explicitly excludes three
+customer-created Content Creator/Sale-Support tables. A disabled-by-default manual Queue path now binds every
+table operation to a reviewed SHA-256 scope, validates exact Customer Production ownership, re-proves each
+candidate field is still empty against Live Lark, preserves current hidden fields and the primary field, PATCHes
+only `hidden_fields`, and reads back the result. It cannot write records/schema/filters/names. Snapshot candidates
+are 100 empty fields across 81 Grid views; Live apply remains pending reviewed merge and source-Queue closeout.
+
 ## Customer Weekly Notification Settings controlled activation — 2026-08-24
 
 Customer Production has 74 canonical `chemistry_k` Report Settings, but the eight active-channel 7D Settings

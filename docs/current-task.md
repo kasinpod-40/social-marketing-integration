@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 400a17795f3a2fee0175504c20f3758f377675f8
-CURRENT_BRANCH                           = codex/customer-notification-settings-activation
+BASE_MAIN_SHA                            = dd365d6136582d330af98a1de36c71b0b8eeb35a
+CURRENT_BRANCH                           = codex/customer-lark-view-hygiene-20260824
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = d93072cb-a179-4158-944c-0eb08cf0e759
+PRODUCTION_WORKER_HEAD                   = c7b84a15-090c-4772-90c5-ea3043608d3d
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = INSTAGRAM_META_ADS_CHATWOOT
 PRODUCTION_BUSINESS_TRAFFIC              = THREE_SOURCE_SCHEDULES_ACTIVE_FIRST_RUN_PENDING
@@ -43,6 +43,7 @@ YOUTUBE_CUSTOMER_RECONNECT               = NOT_REQUIRED_EXISTING_VALIDATED_GRANT
 YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
+CUSTOMER_LARK_VIEW_HYGIENE               = REVIEWED_RUNTIME_IMPLEMENTED_LIVE_APPLY_PENDING
 ```
 
 ## Objective
@@ -57,6 +58,42 @@ credentials used in the Integration Workspace are already customer assets. Custo
 therefore a runtime cutover to the customer-owned Cloudflare resources and customer Lark Base, not
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
+
+## Current authorized adjacent scope — Customer Lark View hygiene
+
+The user authorized hiding fields that have no data in Customer Base views. Scope is restricted to the exact
+`Setup Phase | Social MKT Data Hub` folder in the customer Base. Customer-created tables outside that folder are
+forbidden, including the retained Content Creator and Sale/Support tables visible in the supplied `.base` export.
+
+The reviewed runtime must:
+
+1. accept only exact `production/chemistry_k/customer/chemistry_k` execution with a disabled-by-default feature
+   flag and a per-table SHA-256 scope allowlist;
+2. target only tables whose reviewed identity contains `MKT_` or `RAW_TikTok_`, and validate exact table, primary
+   field, candidate field and Grid-view identities before any mutation;
+3. prove every candidate remains empty against the Live Customer Base with an `isNotEmpty` search before hiding it;
+4. preserve all existing hidden fields, never hide the primary field, PATCH only `hidden_fields`, and read back
+   exact equality after each changed View;
+5. write zero records, zero fields, zero filters, zero view names and zero schema objects;
+6. restore the runtime feature flag to false after the one-time reviewed operation.
+
+### Implementation result — Customer Lark View hygiene (pre-live)
+
+- supplied Customer Base snapshot revision 146 contains 33 in-scope Data Hub tables and 39,080 records; three
+  customer-created tables were explicitly excluded;
+- conservative snapshot candidates total 100 empty fields across 81 Grid views; Live runtime rechecks each
+  candidate and skips any field that has since received data;
+- added the manual-only `lark.base.view.hygiene` Queue job and exact Customer Production admission boundary;
+- added per-table canonical SHA-256 scope binding so a Queue payload cannot substitute another table/view/field;
+- added idempotent hidden-field union and Live readback without record/schema/filter/name writes;
+- focused tests — PASS 5/5;
+- `npm run check` — PASS, 804 source files / 2,415 local dependencies / zero cycles; hygiene PASS;
+- `npm test` — PASS, 3,211 Node tests and Workers-runtime suite exit 0;
+- `npm run test:report-reliability` — PASS 105/105;
+- `npm audit --audit-level=high` — PASS, zero vulnerabilities;
+- `WRANGLER_LOG_PATH=/tmp/customer-lark-view-hygiene-dry-run.log npm run deploy:dry-run` — PASS;
+- Live deploy/Queue apply/readback is pending reviewed PR merge and completion of the active source closeout so
+  the view-only jobs do not compete with source continuations on the Free-plan main Queue.
 
 ## Current authorized scope — YouTube credential cutover without reconnect
 
