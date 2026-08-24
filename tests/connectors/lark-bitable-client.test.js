@@ -1393,6 +1393,44 @@ test('searches bounded report records with request-only filter/sort fields and e
   assert.match(requests[0].url, /page_size=50/);
 });
 
+test('serializes valueless record search operators with the required empty value array', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      requests.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { items: [], has_more: false },
+      }), { status: 200 });
+    },
+  });
+
+  const records = await client.searchRecords({
+    tableId: 'tbl_empty_metric',
+    fieldNames: ['empty_metric'],
+    filter: {
+      conjunction: 'and',
+      conditions: [{ fieldName: 'empty_metric', operator: 'isNotEmpty' }],
+    },
+  });
+
+  assert.deepEqual(records, []);
+  assert.deepEqual(requests, [{
+    field_names: ['empty_metric'],
+    filter: {
+      conjunction: 'and',
+      conditions: [{ field_name: 'empty_metric', operator: 'isNotEmpty', value: [] }],
+    },
+  }]);
+});
+
 test('fails closed when bounded record search exceeds its item cap', async () => {
   const client = new LarkBitableClient({
     appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,

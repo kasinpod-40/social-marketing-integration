@@ -1053,9 +1053,11 @@ function serializeRecordSearchRequest(input) {
         ),
         operator,
       };
-      if (!VALUELESS_VIEW_FILTER_OPERATORS.has(operator)) {
-        serialized.value = normalizeRecordFilterValues(normalized.value);
-      }
+      // Record Search API กำหนดให้ valueless operators มี value เป็น empty array
+      // ต่างจาก View filter PATCH ซึ่งต้องละ value ออกจาก request body.
+      serialized.value = VALUELESS_VIEW_FILTER_OPERATORS.has(operator)
+        ? []
+        : normalizeRecordFilterValues(normalized.value);
       return serialized;
     });
     result.filter = { conjunction, conditions };
