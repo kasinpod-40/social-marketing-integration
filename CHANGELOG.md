@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-24 — Customer Social MKT Data Hub Production COMPLETE
+
+- completed and idempotently replayed Customer Chatwoot `3,707` rows and WooCommerce `18,911` rows in canonical
+  Lark tables while preserving Customer-only commerce history;
+- activated and proved 32 Report materializations across eight active platforms and four preset windows;
+- added portable Customer workflow identity hashes and explicit Lark client wiring for reviewed destination lookup;
+- completed Customer Weekly Native AI, sent exactly one group message, mirrored Notification Log/AI Run state,
+  proved claim count one and zero duplicate send, then resolved only the exact cutover incidents.
+
 ## 2026-08-24 — Customer Chatwoot/WooCommerce exact D1-to-Lark closeout path
 
 - added a disabled-by-default, Customer-Production-only Queue importer that reads only ten reviewed Chatwoot and

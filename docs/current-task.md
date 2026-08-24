@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
+TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_COMPLETE_100_PERCENT
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = e7ac1503b00cf4a460f81289c3c3c377e0fb886d
-CURRENT_BRANCH                           = codex/customer-fast-closeout-meta-20260824
+BASE_MAIN_SHA                            = 3fd9b482446b6ab34fb18edd7e577d8ad71992c6
+CURRENT_BRANCH                           = main
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,10 +17,10 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = 30223f20-a91d-42b4-8d49-65c6cc95c80f
+PRODUCTION_WORKER_HEAD                   = 8f151a18-f07a-4cab-ad08-4cd4ba84433e
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
-PRODUCTION_BUSINESS_TRAFFIC              = SOURCE_CLOSEOUT_IN_PROGRESS_REPORTS_STILL_CLOSED
+PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
 PRODUCTION_QUEUE_LARK_BOOTSTRAP_SMOKE    = PASS_IDEMPOTENT
 PRODUCTION_CONNECTOR_UAT_ADMISSION       = MERGED_PR_677
 LARK_TRANSPORT_REPAIR                    = MERGED_PR_678
@@ -35,7 +35,7 @@ PRODUCTION_DARK_STATE_RESTORED           = TRUE_VERSION_1dc1ae9c
 PRODUCTION_MAIN_QUEUE_BATCH_SIZE         = 1_FREE_PLAN_SAFE
 PRODUCTION_CRON                          = EVERY_5_MINUTES_PRIMARY_SCHEDULER
 PRODUCTION_FIRST_RUN_WINDOW              = 2026-08-24_0735_TO_0745_ASIA_BANGKOK
-PRODUCTION_MONITOR_AUTOMATION            = customer-production-cutover-monitor_ACTIVE_0650_DAILY
+PRODUCTION_MONITOR_AUTOMATION            = customer-production-cutover-monitor_READY_TO_STOP
 CURRENT_REPAIR_BRANCH                    = MERGED_PR_695
 REVIEWED_SOURCE_UAT_READY                = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_GOOGLE_ADS_CHATWOOT
 PRODUCTION_SECRET_BLOCKED                = NONE_CONFIRMED
@@ -714,3 +714,25 @@ Live follow-up found and repaired the direct-delivery wiring boundary: the Worke
 not expose its private Lark client, so destination resolution now receives the explicit Infrastructure Bitable
 client. The first real child delivery stopped before claim/send, preserving zero messages and allowing one fresh
 child identity after reviewed merge/deploy.
+
+### 2026-08-24 — Customer Production COMPLETE 100%
+
+- Chatwoot Customer Lark projection completed `3,707/3,707`; exact replay covered 75 operations with zero creates,
+  updates, duplicates, Alerts or DLQ;
+- Customer WooCommerce retained its larger history while receiving the exact 37-row Dev delta through
+  `2026-08-23`; all five canonical Lark tables completed `18,911/18,911`, and the full 381-operation replay was
+  `created=0`, `updated=0`, `skipped=18,911`, `duplicate=0`;
+- Report runtime materialized all eight active platforms at `1D/3D/7D/30D`: 32/32 D1 materializations for period
+  end `2026-08-23`, with zero invalid payload/checksum, and Daily 08:10 / Weekly Monday 08:15 schedules active;
+- Customer workflow identities are now bound by Customer-specific SHA-256 values: AI Materialization is enabled,
+  Base Notification Automation is disabled, and raw workflow/chat IDs remain outside source, logs and docs;
+- the Customer Weekly AI run completed, then one fresh child delivery sent exactly one Lark group message and
+  mirrored both `MKT_Notification_Log` and `MKT_AI_Report_Runs`; D1 proves `status=sent`, `claim_count=1`, non-empty
+  message hash, `mirror_status=mirrored`, one delivery row and zero active locks;
+- replaying the exact delivery identity was rejected as `LARK_NOTIFICATION_ALREADY_MARKED_SENT`; claim count and
+  message hash remained unchanged, proving zero duplicate send;
+- closed only the seven exact configuration/probe/replay DLQs and six paired Alerts after successful delivery;
+  exact readback is `open_dlq=0`, `open_alerts=0`; the protected TikTok forensic DLQ was not read, redriven or changed;
+- final Customer Worker version `8f151a18-f07a-4cab-ad08-4cd4ba84433e` runs reviewed `main@3fd9b482` with the
+  primary and YouTube crons, Workers Free Queue batch/concurrency 1, normal retries 5, source schedules,
+  Report/AI/Notification runtime and Weekly Monday 08:30 notification schedule active.
