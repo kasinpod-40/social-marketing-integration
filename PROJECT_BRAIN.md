@@ -8,10 +8,13 @@ customer-created Content Creator/Sale-Support tables. A disabled-by-default manu
 table operation to a reviewed SHA-256 scope, validates exact Customer Production ownership, re-proves each
 candidate field is still empty against Live Lark, preserves current hidden fields and the primary field, PATCHes
 only `hidden_fields`, and reads back the result. It cannot write records/schema/filters/names. Snapshot candidates
-are 100 empty fields across 81 Grid views. PR #720 merged and the Customer Queue accepted 19 table jobs, but Live
-Record Search proved that `isNotEmpty` requires `value: []`. The jobs failed closed during their read-before-write
-phase, so no Base mutation occurred. A focused serializer hotfix must merge before exact hygiene-only DLQ recovery;
-the unrelated TikTok forensic DLQ remains prohibited.
+are 100 empty fields across 81 Grid views. The first reviewed run failed closed during read-before-write and proved
+that Record Search `isNotEmpty` requires `value: []`; no Base mutation occurred in that run. PR #721 added the exact
+serializer contract and passed both CI gates. The corrected Customer run accepted all 19 table jobs, retained exact
+post-PATCH readback, and created zero new hygiene DLQ/alerts. The 19 pre-hotfix DLQs and their paired alerts are now
+resolved, open hygiene DLQ is zero, and the one-time flag is false in final Customer Worker version
+`b19c5a97-b7a5-4965-9d17-85ace9219654` at 100% traffic. The unrelated TikTok forensic DLQ was not redriven or
+changed.
 
 ## Customer Weekly Notification Settings controlled activation — 2026-08-24
 
