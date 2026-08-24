@@ -1151,3 +1151,14 @@ deletion remains outside this workstream and waits for its scheduled-soak author
 - Connector flags and schedules disabled by default;
 - Secrets stay in Environment/Secret Manager;
 - Production resources must be customer-owned.
+
+## Customer Production cutover completion — 2026-08-24
+
+Customer Social MKT Data Hub Production is complete for the reviewed scope. Chatwoot and WooCommerce canonical
+Lark projections are complete and idempotent; D1 retains the authoritative larger Customer commerce history.
+All eight active Report platforms have 1D/3D/7D/30D materializations for `2026-08-23`. Customer workflow IDs are
+bound by SHA-256 runtime authority because cloned Base workflows do not retain Integration workflow identities.
+The exact Customer Weekly AI run completed and one group notification was sent/mirrored with D1 claim count one,
+a stable message hash, zero duplicate send and zero remaining exact Alert/DLQ/lock. Final Worker version is
+`8f151a18-f07a-4cab-ad08-4cd4ba84433e` at reviewed `main@3fd9b482`; normal source, Report and notification schedules
+remain active. The protected TikTok forensic terminal is unchanged.
