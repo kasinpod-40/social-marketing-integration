@@ -66,6 +66,16 @@ test('Lark notification job admits controlled UAT and reviewed runtime without s
   assert.equal(assertJobImplemented(definition), definition);
 });
 
+test('Customer Meta K2 snapshot import is exact-trigger manual-only', () => {
+  const definition = getJobDefinition(JOB_TYPES.CUSTOMER_META_K2_LARK_SNAPSHOT_IMPORT);
+  assert.equal(definition.connectorKey, null);
+  assert.equal(definition.implementationStatus, 'active');
+  assert.equal(definition.manualOnly, true);
+  assert.deepEqual(definition.allowedTriggers, [
+    JOB_TRIGGERS.CUSTOMER_META_K2_SNAPSHOT_IMPORT,
+  ]);
+});
+
 test('Dashboard materialization job is one shared manual/scheduled report type', () => {
   const definition = getJobDefinition(JOB_TYPES.REPORT_MATERIALIZATION_GENERATE);
   assert.equal(definition.implementationStatus, 'active');
