@@ -8,6 +8,8 @@
   while preserving each View's existing hidden-field set;
 - bound the complete 33-table / 723-field / 113-Grid-view plan to per-table SHA-256 scopes, fail closed on Live
   field/View drift, and require exact Base v3 post-write readback without record/schema/filter/name writes.
+- accept Base v3 visible-field code `800070003` only as a presentation no-op so the application can continue to
+  its mandatory exact GET readback; every other API error remains fail closed.
 
 ## 2026-08-24 — Customer Lark Base empty-field View hygiene
 

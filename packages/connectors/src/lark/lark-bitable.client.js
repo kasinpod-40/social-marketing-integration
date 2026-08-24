@@ -347,13 +347,21 @@ export class LarkBitableClient {
     const viewId = requireText(input?.viewId, 'viewId');
     const visibleFields = normalizeUniqueTextArray(input?.visibleFields);
     if (visibleFields.length === 0) throw new TypeError('Lark View visibleFields must not be empty');
-    await this.requestBitableJson(
-      `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}/visible_fields`,
-      {
-        method: 'PUT',
-        body: { visible_fields: visibleFields },
-      },
-    );
+    try {
+      await this.requestBitableJson(
+        `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}/visible_fields`,
+        {
+          method: 'PUT',
+          body: { visible_fields: visibleFields },
+        },
+      );
+    } catch (error) {
+      // Base v3 may report an idempotent presentation update as "no operation produced".
+      // Caller still performs an exact GET readback, so accepting this code cannot hide order drift.
+      if (error?.code !== 'LARK_PERMANENT_API_ERROR' || error?.details?.larkCode !== 800070003) {
+        throw error;
+      }
+    }
     return Object.freeze(visibleFields);
   }
 

@@ -11,6 +11,10 @@ all hidden fields from the completed empty-field hygiene operation. The determin
 primary/display/context/time/status/metrics/links/details/external identifiers/technical audit. Every changed View
 requires exact Base v3 readback; records, field schema, filters and View names cannot be written. Live apply and
 idempotent replay remain pending reviewed merge/deploy, after which the one-time flag must return to false.
+PR #723 merged and the exact 33 jobs were accepted by Customer Queue. One `MKT_Ads_Campaigns` job stopped on Base
+v3 code `800070003` (`no operation produced`) before application-level readback; the other 32 created no permanent
+incident. The retained incident stays open until a reviewed narrow transport rule accepts this exact idempotent
+code only for visible-field replacement and then requires the existing exact GET readback.
 
 ## Customer Lark Base empty-field View hygiene — 2026-08-24
 
