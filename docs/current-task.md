@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 94b671b3fae5041c6d1aee7d736c94bd169acfda
-CURRENT_BRANCH                           = codex/customer-lark-field-order-rebuild-20260824
+BASE_MAIN_SHA                            = e7ac1503b00cf4a460f81289c3c3c377e0fb886d
+CURRENT_BRANCH                           = codex/customer-fast-closeout-meta-20260824
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,10 +17,10 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = b19c5a97-b7a5-4965-9d17-85ace9219654
+PRODUCTION_WORKER_HEAD                   = 30223f20-a91d-42b4-8d49-65c6cc95c80f
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
-PRODUCTION_SCHEDULE_ENABLED              = INSTAGRAM_META_ADS_CHATWOOT
-PRODUCTION_BUSINESS_TRAFFIC              = THREE_SOURCE_SCHEDULES_ACTIVE_FIRST_RUN_PENDING
+PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
+PRODUCTION_BUSINESS_TRAFFIC              = SOURCE_CLOSEOUT_IN_PROGRESS_REPORTS_STILL_CLOSED
 PRODUCTION_QUEUE_LARK_BOOTSTRAP_SMOKE    = PASS_IDEMPOTENT
 PRODUCTION_CONNECTOR_UAT_ADMISSION       = MERGED_PR_677
 LARK_TRANSPORT_REPAIR                    = MERGED_PR_678
@@ -38,13 +38,13 @@ PRODUCTION_FIRST_RUN_WINDOW              = 2026-08-24_0735_TO_0745_ASIA_BANGKOK
 PRODUCTION_MONITOR_AUTOMATION            = customer-production-cutover-monitor_ACTIVE_0650_DAILY
 CURRENT_REPAIR_BRANCH                    = MERGED_PR_695
 REVIEWED_SOURCE_UAT_READY                = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_GOOGLE_ADS_CHATWOOT
-PRODUCTION_SECRET_BLOCKED                = WOOCOMMERCE_GOOGLE_ADS_SIGNED_INGRESS
+PRODUCTION_SECRET_BLOCKED                = NONE_CONFIRMED
 YOUTUBE_CUSTOMER_RECONNECT               = NOT_REQUIRED_EXISTING_VALIDATED_GRANT
-YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
+YOUTUBE_CREDENTIAL_CUTOVER               = COMPLETE_UAT_SCHEDULE_ACTIVE
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 CUSTOMER_LARK_VIEW_HYGIENE               = COMPLETE_LIVE_PROVEN_FLAG_CLOSED
-CUSTOMER_LARK_VIEW_FIELD_ORDER           = LIVE_PARTIAL_STAGED_REBUILD_REVIEW
+CUSTOMER_LARK_VIEW_FIELD_ORDER           = CANCELED_RUNTIME_REMOVED_CPU_SAFE
 ```
 
 ## Objective
@@ -111,52 +111,34 @@ The reviewed runtime must:
   deployment at 100% traffic with the original schedules preserved. The prohibited TikTok forensic DLQ was not
   redriven or changed.
 
-## Current authorized adjacent scope — Customer Lark View field order
+## Canceled adjacent scope — Customer Lark View field order
 
-The user authorized arranging visible fields so Customer Base views are easier to read. Scope is restricted to
-the exact `Setup Phase | Social MKT Data Hub` folder and the supplied Customer Base snapshot revision 146. The
-three customer-created Content Creator/Sale-Support tables remain forbidden.
+The user canceled field ordering and returned priority to Production source/report closeout. Live Queue evidence
+also showed the field-order release increased cold-start work enough for unrelated one-message Queue deliveries to
+reach the Workers Free CPU ceiling. Production was restored to exact reviewed pre-field-order runtime `e0430022`
+as Worker version `30223f20-a91d-42b4-8d49-65c6cc95c80f`; an error-only tail then showed no new `exceededCpu`.
+This closeout branch removes the canceled field-order job, transport and tests from `main` before any further
+Customer deployment. Completed empty-field hygiene remains intact and its flag remains false.
 
-The reviewed runtime must:
+## Current fast closeout — Meta Ads K3 Select normalization
 
-1. accept only exact `production/chemistry_k/customer/chemistry_k` execution through a disabled-by-default,
-   manual-only Queue job and per-table SHA-256 scope allowlist;
-2. validate the exact Live field schema, primary field and complete Grid-view set before any View mutation;
-3. order the primary/display/context/time/status/metric/link/detail/identifier/technical groups for customer
-   readability, with platform/account/date and business metrics ahead of external IDs and audit fields;
-4. reorder only the currently visible field set, thereby preserving every field already hidden by the completed
-   hygiene operation, and read back exact visible-field order after every changed View;
-5. write zero records, zero field schema, zero filters, zero View names and zero views outside the approved folder;
-6. prove a second identical run is idempotent, then restore the feature flag to false.
+K3 source staging is complete at 20/20 units. Its Lark preflight failed before writes because 1,681 non-null Meta
+`object_type` values used provider literals (`PHOTO`, `VIDEO`, `SHARE`, `STATUS`, `POST_DELETED`) while Customer
+`MKT_Ads_Creatives.creative_type` allows only `image`, `video`, `carousel`, `other`. The release normalizes those
+provider values to the canonical options and maps every unknown/missing value to `other`; focused coverage proves
+all emitted values belong to the exact Customer Select contract. Exact same-generation K3 recovery and D1/Lark
+readback remain required after reviewed merge/deploy.
 
-### Implementation result — Customer Lark View field order
+### Implementation result — Workers Free restore and Meta K3 repair
 
-- supplied snapshot revision 146 resolves exactly 33 in-scope Data Hub tables, 723 fields and 113 Grid views;
-  the three customer-created tables are explicitly excluded;
-- added the manual-only `lark.base.view.field-order` job and the exact Base v3 visible-fields read/replace
-  transport, with disabled-by-default Customer Production admission and canonical scope hashes;
-- field ordering is deterministic and semantic; the primary field remains first, user-facing dimensions and
-  metrics precede external identifiers/audit fields, and only fields visible in each individual View are sent;
-- Live execution remains pending reviewed merge/deploy. Focused tests pass 60/60, including exact request shape,
-  hidden-field preservation, schema/view drift rejection, scope rejection and post-write readback;
-- `npm run check` passes (805 source files / 2,418 local dependencies / zero cycles / hygiene pass);
-- `npm test` passes (3,221 Node tests plus 18 Workers-runtime tests), Report reliability passes 105/105,
-  `npm audit --audit-level=high` reports zero vulnerabilities, and deploy dry-run passes with its log kept in `/tmp`;
-- reviewed PR, exact Customer live run, idempotent replay and safe flag-close deployment remain required before
-  this adjacent scope is complete.
-- PR #723 passed both CI gates and merged as `main@24a4a92d`; Customer Worker version
-  `0877925b-d040-405c-8596-f8b0e8219c45` opened the exact 33-scope field-order window and the main Queue accepted
-  all 33 jobs;
-- 32 jobs produced no permanent incident. `MKT_Ads_Campaigns` stopped on Live Base v3 code `800070003`
-  (`no operation produced`) while replacing visible fields. The error is an idempotent presentation no-op, but
-  the client classified it before application-level exact readback; its one DLQ/alert remains open pending a
-  reviewed narrow transport fix, replay proof and safe closure.
-- PR #724 passed both CI gates and merged as `main@94b671b3`; hotfix Worker version
-  `aca45a37-ce5c-4e76-a879-8fd5d55dc2ac` is active at 100%. Replay proved Base still returns the unchanged order
-  after the no-op response, so the mandatory readback correctly failed closed. The reviewed follow-up uses a
-  two-step presentation-only rebuild only after this exact no-op + mismatch: stage the primary field, restore the
-  same visible-field set in reviewed order, then read back exact equality. Any failure restores and rechecks the
-  prior visible-field set before surfacing the error.
+- focused runtime/Meta/Lark regression: PASS 63/63;
+- `npm run check`: PASS, 807 source files / 2,430 local dependencies / zero cycles / repository hygiene PASS;
+- `npm test`: PASS, 3,217 Node tests plus 18 Workers-runtime tests;
+- `npm run test:report-reliability`: PASS 105/105;
+- `npm audit --audit-level=high`: PASS, zero vulnerabilities;
+- `npm run deploy:dry-run`: PASS;
+- reviewed merge, Customer deploy, exact same-generation K3 resume and D1/Lark readback remain required before
+  this repair is complete.
 
 ## Current authorized scope — YouTube credential cutover without reconnect
 
