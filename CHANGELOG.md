@@ -11,6 +11,8 @@
   rows and Customer rows now satisfy its legacy display selectors.
 - corrected bounded Meta Organic coverage semantics from `full_inventory` to `report_range`, preventing an empty
   daily Instagram content result from authoritatively excluding prior observed content across rolling windows.
+- deployed the correction to Customer Production, repaired the exact affected Instagram coverage row and
+  rematerialized 1D/3D/7D/30D in four first-attempt Queue operations with no Alert/DLQ/active-lock delta.
 
 ## 2026-08-24 — Customer Social MKT Data Hub Production COMPLETE
 

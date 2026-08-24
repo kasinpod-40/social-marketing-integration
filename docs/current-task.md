@@ -769,3 +769,20 @@ child identity after reviewed merge/deploy.
 - bounded Meta Organic source writes now use `report_range`; unbounded snapshots retain `full_inventory`.
   Focused Meta tests pass 21/21 and `npm run check` passes. Reviewed merge/deploy, exact existing-coverage
   correction and Instagram 1D/3D/7D/30D rematerialization remain live gates.
+
+### 2026-08-25 — Instagram profile-isolated Dashboard live repair
+
+- PR #740 merged as `main@cda7f09f`; Customer Worker version
+  `cf59d7bf-260a-4527-9c15-7244808a8f48` retains the existing two schedules and Queue bindings;
+- corrected exactly one affected Coverage row, `instagram-scheduled-20260823:instagram:content`, from
+  `full_inventory` to `report_range` only after exact platform/dataset/date/status/0-entity invariants matched;
+- four fresh Instagram Report jobs completed 4/4 on their first Queue attempts: 1D complete with zero daily gain
+  and Total Views `4,059,734`; 3D complete with Views `263,287` / Likes `5,023`; 7D complete with Views `527,576`
+  / Likes `8,285`; 30D correctly remains partial at `56%` coverage instead of inventing zero values;
+- open DLQ/Alerts remained `137/146`; the transient Report lock cleared and total locks returned to baseline `2`;
+- fresh Customer export audit covered 33/33 in-scope Data Hub tables: schemas match Dev, duplicate primary keys
+  are zero, and Customer holds `55,926` rows versus Dev `43,060` because Customer retains more history. The three
+  customer-created Content Creator/Sale-Support tables were excluded and untouched;
+- one fully blank `MKT_Sync_Log` record (`recvt6mZnhkueH`) was found and left unchanged pending a separate explicit
+  hygiene decision. Final visual confirmation requires refreshing Organic Performance while retaining the exact
+  Dashboard filter `customer_profile=chemistry_k`.
