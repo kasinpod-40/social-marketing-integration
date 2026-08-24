@@ -1224,6 +1224,30 @@ test('reads and replaces visible field order through the Base v3 presentation AP
   });
 });
 
+test('permits the Base v3 no-operation code only so the caller can prove exact readback', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      if (options.method === 'PUT') {
+        return new Response(JSON.stringify({ code: 800070003, msg: 'api_error: no operation produced' }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ code: 0, data: { visible_fields: ['stable_key'] } }), { status: 200 });
+    },
+  });
+
+  await assert.doesNotReject(client.setViewVisibleFields({
+    tableId: 'tblViews',
+    viewId: 'vew1',
+    visibleFields: ['stable_key'],
+  }));
+  assert.deepEqual(await client.getViewVisibleFields({ tableId: 'tblViews', viewId: 'vew1' }), ['stable_key']);
+});
+
 test('creates a grid view with the official create payload', async () => {
   let request = null;
   const client = new LarkBitableClient({

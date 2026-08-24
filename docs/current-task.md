@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = e04300227a9aa09d5b00e8127811f63a33a95ab2
-CURRENT_BRANCH                           = codex/customer-lark-view-field-order-20260824
+BASE_MAIN_SHA                            = 24a4a92d47465df90ae0ca8a9b02ff5711702c52
+CURRENT_BRANCH                           = codex/customer-lark-field-order-noop-20260824
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -44,7 +44,7 @@ YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 CUSTOMER_LARK_VIEW_HYGIENE               = COMPLETE_LIVE_PROVEN_FLAG_CLOSED
-CUSTOMER_LARK_VIEW_FIELD_ORDER           = REVIEWED_IMPLEMENTATION_LIVE_PENDING
+CUSTOMER_LARK_VIEW_FIELD_ORDER           = LIVE_PARTIAL_NOOP_HOTFIX_REVIEW
 ```
 
 ## Objective
@@ -137,13 +137,20 @@ The reviewed runtime must:
   transport, with disabled-by-default Customer Production admission and canonical scope hashes;
 - field ordering is deterministic and semantic; the primary field remains first, user-facing dimensions and
   metrics precede external identifiers/audit fields, and only fields visible in each individual View are sent;
-- Live execution remains pending reviewed merge/deploy. Focused tests pass 59/59, including exact request shape,
+- Live execution remains pending reviewed merge/deploy. Focused tests pass 60/60, including exact request shape,
   hidden-field preservation, schema/view drift rejection, scope rejection and post-write readback;
 - `npm run check` passes (805 source files / 2,418 local dependencies / zero cycles / hygiene pass);
 - `npm test` passes (3,221 Node tests plus 18 Workers-runtime tests), Report reliability passes 105/105,
   `npm audit --audit-level=high` reports zero vulnerabilities, and deploy dry-run passes with its log kept in `/tmp`;
 - reviewed PR, exact Customer live run, idempotent replay and safe flag-close deployment remain required before
   this adjacent scope is complete.
+- PR #723 passed both CI gates and merged as `main@24a4a92d`; Customer Worker version
+  `0877925b-d040-405c-8596-f8b0e8219c45` opened the exact 33-scope field-order window and the main Queue accepted
+  all 33 jobs;
+- 32 jobs produced no permanent incident. `MKT_Ads_Campaigns` stopped on Live Base v3 code `800070003`
+  (`no operation produced`) while replacing visible fields. The error is an idempotent presentation no-op, but
+  the client classified it before application-level exact readback; its one DLQ/alert remains open pending a
+  reviewed narrow transport fix, replay proof and safe closure.
 
 ## Current authorized scope — YouTube credential cutover without reconnect
 
