@@ -10,6 +10,7 @@ const SELECT_OPTIONS = Object.freeze({
   campaignStatus: new Set(['active', 'paused', 'removed', 'deleted', 'ended', 'unknown']),
   adGroupStatus: new Set(['active', 'paused', 'removed', 'deleted', 'unknown']),
   adStatus: new Set(['active', 'paused', 'removed', 'unknown']),
+  creativeType: new Set(['image', 'video', 'carousel', 'other']),
 });
 
 const fetchedAt = Date.parse('2026-07-31T12:00:00Z');
@@ -53,7 +54,14 @@ test('Meta curated Lark projection uses only applied SingleSelect options', asyn
       name: 'Ad',
       effective_status: 'ACTIVE',
     }],
-    creatives: [],
+    creatives: [
+      { id: 'creative_photo', name: 'Photo', object_type: 'PHOTO' },
+      { id: 'creative_video', name: 'Video', object_type: 'VIDEO' },
+      { id: 'creative_carousel', name: 'Carousel', object_type: 'CAROUSEL' },
+      { id: 'creative_share', name: 'Share', object_type: 'SHARE' },
+      { id: 'creative_deleted', name: 'Deleted', object_type: 'POST_DELETED' },
+      { id: 'creative_unknown', name: 'Unknown' },
+    ],
     dailyInsights: [],
   });
 
@@ -73,4 +81,12 @@ test('Meta curated Lark projection uses only applied SingleSelect options', asyn
   assert.equal(SELECT_OPTIONS.adGroupStatus.has(adGroup.status), true);
   assert.equal(SELECT_OPTIONS.adStatus.has(ad.status), true);
   assert.equal(ad.last_sync_at, fetchedAt);
+  assert.deepEqual(
+    writeSet.canonical.adsCreatives.map((row) => row.creative_type),
+    ['image', 'video', 'carousel', 'other', 'other', 'other'],
+  );
+  assert.equal(
+    writeSet.canonical.adsCreatives.every((row) => SELECT_OPTIONS.creativeType.has(row.creative_type)),
+    true,
+  );
 });

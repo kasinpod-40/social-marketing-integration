@@ -385,12 +385,20 @@ function appendCanonicalEntity(canonical, input) {
       account_id: accountId,
       external_creative_id: candidate.externalEntityId,
       creative_name: candidate.entityName,
-      creative_type: optionalText(resource.object_type ?? resource.asset_type),
+      creative_type: normalizeMetaCreativeType(resource.object_type ?? resource.asset_type),
       status: candidate.status,
       source_content_id: optionalText(resource.effective_object_story_id),
       source_updated_at: candidate.sourceUpdatedAt,
     }));
   }
+}
+
+function normalizeMetaCreativeType(value) {
+  const type = optionalText(value)?.toUpperCase();
+  if (type === 'VIDEO') return 'video';
+  if (['IMAGE', 'PHOTO'].includes(type)) return 'image';
+  if (['CAROUSEL', 'CAROUSEL_CONTAINER'].includes(type)) return 'carousel';
+  return 'other';
 }
 
 function aggregateCanonicalDaily(input) {
