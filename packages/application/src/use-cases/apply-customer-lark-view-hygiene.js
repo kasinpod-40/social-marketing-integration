@@ -286,7 +286,7 @@ export async function applyCustomerLarkViewFieldOrder(input = {}) {
       unchangedViews += 1;
       continue;
     }
-    await client.setViewVisibleFields({
+    const mutation = await client.setViewVisibleFields({
       tableId: scope.tableId,
       viewId: expectedView.viewId,
       visibleFields: desired,
@@ -295,7 +295,16 @@ export async function applyCustomerLarkViewFieldOrder(input = {}) {
       await client.getViewVisibleFields({ tableId: scope.tableId, viewId: expectedView.viewId }),
       scope,
     );
-    if (!sameTextOrder(readback, desired)) {
+    if (!sameTextOrder(readback, desired) && mutation?.noOperation === true) {
+      await rebuildCustomerLarkVisibleFieldOrder({
+        client,
+        scope,
+        view: expectedView,
+        primaryFieldName: livePrimary.fieldName,
+        previous: current,
+        desired,
+      });
+    } else if (!sameTextOrder(readback, desired)) {
       throw permanentError('Customer Lark View field-order readback does not match', {
         code: 'CUSTOMER_LARK_VIEW_FIELD_ORDER_READBACK_MISMATCH',
         details: { tableId: scope.tableId, viewId: expectedView.viewId },
@@ -321,6 +330,62 @@ export async function applyCustomerLarkViewFieldOrder(input = {}) {
     recordWrites: 0,
     schemaWrites: 0,
   });
+}
+
+async function rebuildCustomerLarkVisibleFieldOrder(input) {
+  const coordinates = { tableId: input.scope.tableId, viewId: input.view.viewId };
+  await input.client.setViewVisibleFields({
+    ...coordinates,
+    visibleFields: [input.primaryFieldName],
+  });
+  const staged = normalizeUniqueFieldNames(
+    await input.client.getViewVisibleFields(coordinates),
+    input.scope,
+  );
+  if (!sameTextOrder(staged, [input.primaryFieldName])) {
+    await restoreCustomerLarkVisibleFields({ ...input, coordinates });
+    throw permanentError('Customer Lark View field-order staging readback does not match', {
+      code: 'CUSTOMER_LARK_VIEW_FIELD_ORDER_READBACK_MISMATCH',
+      details: coordinates,
+    });
+  }
+
+  try {
+    await input.client.setViewVisibleFields({ ...coordinates, visibleFields: input.desired });
+    const readback = normalizeUniqueFieldNames(
+      await input.client.getViewVisibleFields(coordinates),
+      input.scope,
+    );
+    if (!sameTextOrder(readback, input.desired)) {
+      throw permanentError('Customer Lark View rebuilt field-order readback does not match', {
+        code: 'CUSTOMER_LARK_VIEW_FIELD_ORDER_READBACK_MISMATCH',
+        details: coordinates,
+      });
+    }
+  } catch (error) {
+    await restoreCustomerLarkVisibleFields({ ...input, coordinates });
+    throw error;
+  }
+}
+
+async function restoreCustomerLarkVisibleFields(input) {
+  try {
+    await input.client.setViewVisibleFields({
+      ...input.coordinates,
+      visibleFields: input.previous,
+    });
+    const restored = normalizeUniqueFieldNames(
+      await input.client.getViewVisibleFields(input.coordinates),
+      input.scope,
+    );
+    if (!sameTextOrder(restored, input.previous)) throw new Error('restore readback mismatch');
+  } catch (cause) {
+    throw permanentError('Customer Lark View field-order rollback failed', {
+      code: 'CUSTOMER_LARK_VIEW_FIELD_ORDER_ROLLBACK_FAILED',
+      cause,
+      details: input.coordinates,
+    });
+  }
 }
 
 export function orderCustomerLarkFieldsForDisplay(input = {}) {

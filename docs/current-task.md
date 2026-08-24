@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 24a4a92d47465df90ae0ca8a9b02ff5711702c52
-CURRENT_BRANCH                           = codex/customer-lark-field-order-noop-20260824
+BASE_MAIN_SHA                            = 94b671b3fae5041c6d1aee7d736c94bd169acfda
+CURRENT_BRANCH                           = codex/customer-lark-field-order-rebuild-20260824
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -44,7 +44,7 @@ YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 CUSTOMER_LARK_VIEW_HYGIENE               = COMPLETE_LIVE_PROVEN_FLAG_CLOSED
-CUSTOMER_LARK_VIEW_FIELD_ORDER           = LIVE_PARTIAL_NOOP_HOTFIX_REVIEW
+CUSTOMER_LARK_VIEW_FIELD_ORDER           = LIVE_PARTIAL_STAGED_REBUILD_REVIEW
 ```
 
 ## Objective
@@ -151,6 +151,12 @@ The reviewed runtime must:
   (`no operation produced`) while replacing visible fields. The error is an idempotent presentation no-op, but
   the client classified it before application-level exact readback; its one DLQ/alert remains open pending a
   reviewed narrow transport fix, replay proof and safe closure.
+- PR #724 passed both CI gates and merged as `main@94b671b3`; hotfix Worker version
+  `aca45a37-ce5c-4e76-a879-8fd5d55dc2ac` is active at 100%. Replay proved Base still returns the unchanged order
+  after the no-op response, so the mandatory readback correctly failed closed. The reviewed follow-up uses a
+  two-step presentation-only rebuild only after this exact no-op + mismatch: stage the primary field, restore the
+  same visible-field set in reviewed order, then read back exact equality. Any failure restores and rechecks the
+  prior visible-field set before surfacing the error.
 
 ## Current authorized scope — YouTube credential cutover without reconnect
 

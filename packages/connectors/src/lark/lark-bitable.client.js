@@ -347,6 +347,7 @@ export class LarkBitableClient {
     const viewId = requireText(input?.viewId, 'viewId');
     const visibleFields = normalizeUniqueTextArray(input?.visibleFields);
     if (visibleFields.length === 0) throw new TypeError('Lark View visibleFields must not be empty');
+    let noOperation = false;
     try {
       await this.requestBitableJson(
         `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}/visible_fields`,
@@ -361,8 +362,9 @@ export class LarkBitableClient {
       if (error?.code !== 'LARK_PERMANENT_API_ERROR' || error?.details?.larkCode !== 800070003) {
         throw error;
       }
+      noOperation = true;
     }
-    return Object.freeze(visibleFields);
+    return Object.freeze({ visibleFields: Object.freeze(visibleFields), noOperation });
   }
 
   /** อ่าน Record หนึ่งหน้าเพื่อให้ Connector ที่รองรับ Durable resume เป็นผู้ถือ Cursor เอง */

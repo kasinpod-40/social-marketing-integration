@@ -1207,11 +1207,12 @@ test('reads and replaces visible field order through the Base v3 presentation AP
   assert.deepEqual(await client.getViewVisibleFields({ tableId: 'tblViews', viewId: 'vew1' }), [
     'stable_key', 'platform', 'metric_date',
   ]);
-  await client.setViewVisibleFields({
+  const mutation = await client.setViewVisibleFields({
     tableId: 'tblViews',
     viewId: 'vew1',
     visibleFields: ['stable_key', 'metric_date', 'platform', 'platform'],
   });
+  assert.equal(mutation.noOperation, false);
   assert.deepEqual(await client.getViewVisibleFields({ tableId: 'tblViews', viewId: 'vew1' }), [
     'stable_key', 'metric_date', 'platform',
   ]);
@@ -1240,11 +1241,12 @@ test('permits the Base v3 no-operation code only so the caller can prove exact r
     },
   });
 
-  await assert.doesNotReject(client.setViewVisibleFields({
+  const mutation = await client.setViewVisibleFields({
     tableId: 'tblViews',
     viewId: 'vew1',
     visibleFields: ['stable_key'],
-  }));
+  });
+  assert.equal(mutation.noOperation, true);
   assert.deepEqual(await client.getViewVisibleFields({ tableId: 'tblViews', viewId: 'vew1' }), ['stable_key']);
 });
 

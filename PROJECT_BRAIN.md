@@ -15,6 +15,10 @@ PR #723 merged and the exact 33 jobs were accepted by Customer Queue. One `MKT_A
 v3 code `800070003` (`no operation produced`) before application-level readback; the other 32 created no permanent
 incident. The retained incident stays open until a reviewed narrow transport rule accepts this exact idempotent
 code only for visible-field replacement and then requires the existing exact GET readback.
+PR #724 confirmed the readback still differs after the no-op. The next reviewed fallback is limited to this exact
+condition: temporarily stage only the primary field, restore the identical visible-field set in reviewed order,
+and require exact final readback. A failed staged rebuild must restore and verify the prior visible-field set;
+records, schema, filters, View names and already-hidden fields remain untouched.
 
 ## Customer Lark Base empty-field View hygiene — 2026-08-24
 
