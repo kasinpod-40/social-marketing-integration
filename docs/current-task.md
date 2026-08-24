@@ -753,3 +753,7 @@ child identity after reviewed merge/deploy.
 - post-run readback remained `open_dlq=137`, `open_alerts=146`, `locks=2`, exactly matching the pre-run baseline;
   zero DLQ and zero Alerts were created during the final replay, and the protected TikTok forensic DLQ was not
   read, redriven or changed.
+- direct Dev/Customer D1 comparison confirmed that higher Customer values are newer rather than duplicated:
+  Facebook Customer watermark is `2026-08-23T12:16:25+0000` versus Dev `2026-08-22T12:20:57+0000`, and Customer
+  YouTube uses a newer snapshot; TikTok source watermark/values and all Instagram window values match exactly.
+  Older Dev materializations must not overwrite these authoritative Customer results.

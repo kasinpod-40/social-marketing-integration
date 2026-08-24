@@ -16,6 +16,12 @@ completed on the first Queue attempt and one completed on retry; the post-run ba
 open Alerts 146 and locks 2, with zero newly created DLQ or Alerts. The user visually confirmed Facebook values;
 TikTok then completed its remaining Period operations without any manual Dashboard mutation.
 
+Post-replay Dev/Customer D1 comparison also explains why some Customer values are higher: Customer Facebook uses
+source watermark `2026-08-23T12:16:25+0000`, while Dev remains at `2026-08-22T12:20:57+0000`; Customer YouTube
+also uses a newer source snapshot. TikTok shares the exact source watermark and metric values across both runtimes,
+and Instagram values match across all four windows. Customer values must therefore not be overwritten from the
+older Dev materializations; stable-key comparison found no duplicate accumulation.
+
 ## Customer Chatwoot/WooCommerce exact D1-to-Lark closeout — 2026-08-24
 
 Customer Chatwoot business state is already complete in Customer D1 at 3,707 canonical Lark-bound rows. Dev and
