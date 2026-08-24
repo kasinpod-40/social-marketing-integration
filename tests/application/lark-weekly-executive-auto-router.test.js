@@ -75,3 +75,36 @@ test('ordinary runtime notification keeps the existing direct delivery route', (
     job: { body: { type: 'report.materialization.generate' } },
   }), 'fallback');
 });
+
+test('ordinary runtime notification passes the explicit Bitable client to destination loading', async () => {
+  const client = { requestBitableJson: async () => ({ data: { items: [] } }) };
+  let loadedInput = null;
+  const router = createLarkNotificationActiveJobRouter({
+    readConfig: () => activeConfig({
+      flags: { runtimeEnabled: true, sendEnabled: true, mirrorEnabled: false },
+    }),
+    loadRequest: async (input) => {
+      loadedInput = input;
+      return { aiRun: {}, settings: {}, snapshot: {} };
+    },
+    deliver: async () => ({ ok: true }),
+  });
+  await router({
+    env: {},
+    operation: { operationId: 'weekly-send-test' },
+    job: {
+      body: {
+        type: 'lark.notification.send',
+        trigger: 'lark_notification_runtime',
+        aiRunKey: 'weekly:test',
+      },
+    },
+    getInfrastructure: () => ({
+      repository: {},
+      getLarkBitableClient: () => client,
+      getLarkNotificationDeliveryStore: () => ({}),
+      getLarkMessageClient: () => ({}),
+    }),
+  });
+  assert.equal(loadedInput.client, client);
+});

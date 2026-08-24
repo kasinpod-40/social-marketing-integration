@@ -62,6 +62,7 @@ export function createLarkNotificationActiveJobRouter(input = {}) {
     const infrastructure = jobInput.getInfrastructure();
     const request = await loadRequest({
       repository: infrastructure.repository,
+      client: infrastructure.getLarkBitableClient(),
       tables: config.tables,
       aiRunKey,
       expectedCustomerProfile: config.customerProfile,
