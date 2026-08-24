@@ -736,3 +736,20 @@ child identity after reviewed merge/deploy.
 - final Customer Worker version `8f151a18-f07a-4cab-ad08-4cd4ba84433e` runs reviewed `main@3fd9b482` with the
   primary and YouTube crons, Workers Free Queue batch/concurrency 1, normal retries 5, source schedules,
   Report/AI/Notification runtime and Weekly Monday 08:30 notification schedule active.
+
+### 2026-08-24 — Customer Organic Dashboard copied-Base compatibility closeout
+
+- exact Dev/Customer `.base` comparison proved the Customer Base already contained all 272 canonical Organic
+  metric rows, but its copied Dashboard blocks still read the preserved Display V2 and legacy Period fields;
+  both compatibility fields were blank on all 272 canonical Customer rows even though D1 values were correct;
+- PR #738 enabled the reviewed Display V2 projection for `chemistry_k`; PR #739 extended the same reviewed
+  compatibility boundary to canonical Number `window_days` and the preserved legacy Period selector;
+- focused tests passed 9/9, `npm run check` passed, both PR CI gates passed, and final Customer Worker version
+  `46acfee0-49f2-4169-9dad-837f4798df08` serves reviewed `main@3aca1104` at 100% traffic;
+- the final controlled replay completed 16/16 D1-backed Organic Dashboard writes: Facebook, Instagram, TikTok
+  and YouTube each completed 1D/3D/7D/30D. Fifteen completed on the first attempt and one succeeded on retry;
+- the user visually confirmed Facebook values after the repair. TikTok subsequently reached 4/4 Period jobs;
+  no Dashboard block, customer-created area, source fact or canonical business value was manually changed;
+- post-run readback remained `open_dlq=137`, `open_alerts=146`, `locks=2`, exactly matching the pre-run baseline;
+  zero DLQ and zero Alerts were created during the final replay, and the protected TikTok forensic DLQ was not
+  read, redriven or changed.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-24 — Customer Organic Dashboard copied-Base compatibility repair
+
+- extended the reviewed Dashboard compatibility projection to Customer Production so copied Dashboard blocks
+  receive both the preserved Display V2 label and legacy Period selector alongside canonical metric dimensions;
+- replayed the exact 16 D1-backed Organic materializations for Facebook, Instagram, TikTok and YouTube at
+  1D/3D/7D/30D without changing source facts or Dashboard configuration;
+- completed 16/16 operations with no new alert, DLQ or lock delta; the user visually confirmed Facebook values
+  after the repair, and TikTok completed all four Period jobs in the same controlled replay.
+
 ## 2026-08-24 — Customer Social MKT Data Hub Production COMPLETE
 
 - completed and idempotently replayed Customer Chatwoot `3,707` rows and WooCommerce `18,911` rows in canonical

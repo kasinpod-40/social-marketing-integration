@@ -1,5 +1,21 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Organic Dashboard copied-Base compatibility — 2026-08-24
+
+Exact Dev/Customer Base export comparison proved Customer already held all 272 canonical Organic Dashboard rows
+(four platforms x 17 metrics x four windows), while the copied Dashboard blocks still depended on two preserved
+compatibility fields that were blank on those canonical Customer rows: Display V2 and the legacy Period selector.
+Customer D1 materializations and business values were correct; this was a Lark projection compatibility gap, not
+a source-data or aggregation defect.
+
+The shared materialization writer now projects both compatibility fields for the reviewed `chemistry_k` Customer
+profile while retaining canonical `window_days`, stable `lark_slot_key` identities and the existing Integration
+behavior. PRs #738 and #739 deployed Worker version `46acfee0-49f2-4169-9dad-837f4798df08` at 100% traffic. A
+controlled D1-backed replay completed all 16 Facebook/Instagram/TikTok/YouTube x 1D/3D/7D/30D operations. Fifteen
+completed on the first Queue attempt and one completed on retry; the post-run baseline remained open DLQ 137,
+open Alerts 146 and locks 2, with zero newly created DLQ or Alerts. The user visually confirmed Facebook values;
+TikTok then completed its remaining Period operations without any manual Dashboard mutation.
+
 ## Customer Chatwoot/WooCommerce exact D1-to-Lark closeout — 2026-08-24
 
 Customer Chatwoot business state is already complete in Customer D1 at 3,707 canonical Lark-bound rows. Dev and
