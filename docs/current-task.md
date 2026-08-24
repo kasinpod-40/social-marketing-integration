@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 951113ca650964a6375580649098b3b093dbf3cb
-CURRENT_BRANCH                           = codex/customer-lark-view-hygiene-live-closeout-20260824
+BASE_MAIN_SHA                            = e04300227a9aa09d5b00e8127811f63a33a95ab2
+CURRENT_BRANCH                           = codex/customer-lark-view-field-order-20260824
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -44,6 +44,7 @@ YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 CUSTOMER_LARK_VIEW_HYGIENE               = COMPLETE_LIVE_PROVEN_FLAG_CLOSED
+CUSTOMER_LARK_VIEW_FIELD_ORDER           = REVIEWED_IMPLEMENTATION_LIVE_PENDING
 ```
 
 ## Objective
@@ -109,6 +110,40 @@ The reviewed runtime must:
   `b19c5a97-b7a5-4965-9d17-85ace9219654` (version 57, authored by `dev.datahub.2026@gmail.com`) is the final safe
   deployment at 100% traffic with the original schedules preserved. The prohibited TikTok forensic DLQ was not
   redriven or changed.
+
+## Current authorized adjacent scope — Customer Lark View field order
+
+The user authorized arranging visible fields so Customer Base views are easier to read. Scope is restricted to
+the exact `Setup Phase | Social MKT Data Hub` folder and the supplied Customer Base snapshot revision 146. The
+three customer-created Content Creator/Sale-Support tables remain forbidden.
+
+The reviewed runtime must:
+
+1. accept only exact `production/chemistry_k/customer/chemistry_k` execution through a disabled-by-default,
+   manual-only Queue job and per-table SHA-256 scope allowlist;
+2. validate the exact Live field schema, primary field and complete Grid-view set before any View mutation;
+3. order the primary/display/context/time/status/metric/link/detail/identifier/technical groups for customer
+   readability, with platform/account/date and business metrics ahead of external IDs and audit fields;
+4. reorder only the currently visible field set, thereby preserving every field already hidden by the completed
+   hygiene operation, and read back exact visible-field order after every changed View;
+5. write zero records, zero field schema, zero filters, zero View names and zero views outside the approved folder;
+6. prove a second identical run is idempotent, then restore the feature flag to false.
+
+### Implementation result — Customer Lark View field order
+
+- supplied snapshot revision 146 resolves exactly 33 in-scope Data Hub tables, 723 fields and 113 Grid views;
+  the three customer-created tables are explicitly excluded;
+- added the manual-only `lark.base.view.field-order` job and the exact Base v3 visible-fields read/replace
+  transport, with disabled-by-default Customer Production admission and canonical scope hashes;
+- field ordering is deterministic and semantic; the primary field remains first, user-facing dimensions and
+  metrics precede external identifiers/audit fields, and only fields visible in each individual View are sent;
+- Live execution remains pending reviewed merge/deploy. Focused tests pass 59/59, including exact request shape,
+  hidden-field preservation, schema/view drift rejection, scope rejection and post-write readback;
+- `npm run check` passes (805 source files / 2,418 local dependencies / zero cycles / hygiene pass);
+- `npm test` passes (3,221 Node tests plus 18 Workers-runtime tests), Report reliability passes 105/105,
+  `npm audit --audit-level=high` reports zero vulnerabilities, and deploy dry-run passes with its log kept in `/tmp`;
+- reviewed PR, exact Customer live run, idempotent replay and safe flag-close deployment remain required before
+  this adjacent scope is complete.
 
 ## Current authorized scope — YouTube credential cutover without reconnect
 

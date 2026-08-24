@@ -1,5 +1,17 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Lark Base visible-field ordering — 2026-08-24
+
+The customer authorized a one-time readability pass limited to `Setup Phase | Social MKT Data Hub`. Snapshot
+revision 146 resolves exactly 33 in-scope `MKT_*`/`RAW_TikTok_*` tables, 723 fields and 113 Grid views while
+excluding the three customer-created Content Creator/Sale-Support tables. The reviewed design adds a
+disabled-by-default, manual-only Customer Production Queue job whose canonical SHA-256 scopes bind each exact
+table, complete field schema and Grid-view set. It reorders only fields currently visible in each View, preserving
+all hidden fields from the completed empty-field hygiene operation. The deterministic presentation order is
+primary/display/context/time/status/metrics/links/details/external identifiers/technical audit. Every changed View
+requires exact Base v3 readback; records, field schema, filters and View names cannot be written. Live apply and
+idempotent replay remain pending reviewed merge/deploy, after which the one-time flag must return to false.
+
 ## Customer Lark Base empty-field View hygiene — 2026-08-24
 
 The customer authorized a one-time cleanup of empty columns in Views, limited to `Setup Phase | Social MKT Data
