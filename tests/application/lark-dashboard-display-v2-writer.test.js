@@ -10,41 +10,43 @@ import {
 
 const GENERATED_AT = Date.parse('2026-07-31T17:00:00Z');
 
-test('Metric writer persists the exact 17 display v2 labels for every reviewed Organic platform', () => {
-  for (const platform of ORGANIC_DASHBOARD_PLATFORMS) {
-    const metrics = Object.fromEntries(
-      ORGANIC_DASHBOARD_METRIC_SUFFIXES.map((suffix, index) => {
-        const metricKey = `${platform}:${suffix}`;
-        return [metricKey, {
-          metricKey,
-          displayName: `Canonical ${metricKey}`,
-          current: index < 6 ? null : index,
-          compare: index < 6 ? null : index - 1,
-          change: index < 6 ? null : 1,
-          changePercent: index < 6 || index === 6 ? null : 1 / (index - 1),
-          unit: suffix.endsWith('_rate') ? 'ratio' : 'count',
-          metricScope: suffix.startsWith('period_') ? 'period_delta' : 'data_quality',
-          availabilityStatus: index < 6 ? 'baseline_incomplete' : 'available',
-          clientVisible: true,
-          sortOrder: index + 1,
-          formulaVersion: 'organic-test-v1',
-          expectedDisplayV2: ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX[suffix],
-        }];
-      }),
-    );
-    const rows = buildReportMetricValueRows(metricInput({ metrics, platform }));
-    assert.equal(rows.length, 17);
-
-    for (const row of rows) {
-      const source = metrics[row.metric_key];
-      assert.equal(
-        row[LARK_DASHBOARD_DISPLAY_V2_FIELD.fieldName],
-        source.expectedDisplayV2,
-        row.metric_key,
+test('Metric writer persists the exact 17 display v2 labels for every reviewed Organic platform and runtime', () => {
+  for (const customerProfile of ['integration_workspace', 'chemistry_k']) {
+    for (const platform of ORGANIC_DASHBOARD_PLATFORMS) {
+      const metrics = Object.fromEntries(
+        ORGANIC_DASHBOARD_METRIC_SUFFIXES.map((suffix, index) => {
+          const metricKey = `${platform}:${suffix}`;
+          return [metricKey, {
+            metricKey,
+            displayName: `Canonical ${metricKey}`,
+            current: index < 6 ? null : index,
+            compare: index < 6 ? null : index - 1,
+            change: index < 6 ? null : 1,
+            changePercent: index < 6 || index === 6 ? null : 1 / (index - 1),
+            unit: suffix.endsWith('_rate') ? 'ratio' : 'count',
+            metricScope: suffix.startsWith('period_') ? 'period_delta' : 'data_quality',
+            availabilityStatus: index < 6 ? 'baseline_incomplete' : 'available',
+            clientVisible: true,
+            sortOrder: index + 1,
+            formulaVersion: 'organic-test-v1',
+            expectedDisplayV2: ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX[suffix],
+          }];
+        }),
       );
-      assert.equal(row.current_value, source.current, `${row.metric_key}.current_value`);
-      assert.equal(row.compare_value, source.compare, `${row.metric_key}.compare_value`);
-      assert.equal(row.display_name, source.displayName, `${row.metric_key}.display_name`);
+      const rows = buildReportMetricValueRows(metricInput({ metrics, platform, customerProfile }));
+      assert.equal(rows.length, 17);
+
+      for (const row of rows) {
+        const source = metrics[row.metric_key];
+        assert.equal(
+          row[LARK_DASHBOARD_DISPLAY_V2_FIELD.fieldName],
+          source.expectedDisplayV2,
+          row.metric_key,
+        );
+        assert.equal(row.current_value, source.current, `${row.metric_key}.current_value`);
+        assert.equal(row.compare_value, source.compare, `${row.metric_key}.compare_value`);
+        assert.equal(row.display_name, source.displayName, `${row.metric_key}.display_name`);
+      }
     }
   }
 });
@@ -113,7 +115,7 @@ test('Metric writer omits compatibility output for non-dashboard Organic metrics
     },
   };
   for (const input of [
-    metricInput({ metrics: periodMetrics, customerProfile: 'chemistry_k' }),
+    metricInput({ metrics: periodMetrics, customerProfile: 'foreign_profile' }),
     metricInput({ metrics: periodMetrics, platform: 'meta_ads', capability: 'paid_ads' }),
     metricInput({ metrics: periodMetrics, reportType: 'daily_organic_report' }),
     metricInput({ metrics: periodMetrics, capability: 'paid_ads' }),
@@ -131,7 +133,7 @@ function metricInput(overrides = {}) {
   const capability = overrides.capability ?? 'organic';
   return {
     reportId: 'report-display-v2-test',
-    reportSettingKey: `integration_workspace:${platform}:rolling:7d`,
+    reportSettingKey: `${customerProfile}:${platform}:rolling:7d`,
     customerProfile,
     reportType,
     platform,
@@ -152,7 +154,7 @@ function metricInput(overrides = {}) {
       customer_profile: customerProfile,
       capability,
       account_id: accountId,
-      report_setting_key: `integration_workspace:${platform}:rolling:7d`,
+      report_setting_key: `${customerProfile}:${platform}:rolling:7d`,
       report_type: reportType,
       period_kind: 'rolling_days',
       window_days: '7',
