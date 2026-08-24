@@ -10,6 +10,7 @@ import {
   ORGANIC_DASHBOARD_METRIC_SUFFIXES,
   ORGANIC_DASHBOARD_PLATFORMS,
   ORGANIC_DASHBOARD_WINDOWS,
+  isReviewedOrganicDashboardCompatibilityProfile,
   isReviewedOrganicDashboardDisplayV2Alias,
   resolveOrganicDashboardDisplayV2,
   resolveOrganicDashboardDisplayV2ByMetricKey,
@@ -17,7 +18,7 @@ import {
 } from '../../packages/config/src/lark-dashboard-display-v2-compatibility.js';
 
 test('display v2 compatibility locks one 17 x 4 x 4 Organic Dashboard matrix', () => {
-  assert.equal(LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION, 'lark_dashboard_display_v2_compatibility_v4');
+  assert.equal(LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION, 'lark_dashboard_display_v2_compatibility_v5');
   assert.deepEqual(LARK_DASHBOARD_DISPLAY_V2_FIELD, {
     fieldId: 'fldHNUhCfl',
     fieldName: '__mkt_legacy_display_name_single_select_v2',
@@ -38,6 +39,9 @@ test('display v2 compatibility locks one 17 x 4 x 4 Organic Dashboard matrix', (
   assert.equal(new Set(ORGANIC_DASHBOARD_METRIC_SUFFIXES).size, 17);
   assert.equal(ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS.length, 17);
   assert.equal(Object.keys(ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY).length, 68);
+  assert.equal(isReviewedOrganicDashboardCompatibilityProfile('integration_workspace'), true);
+  assert.equal(isReviewedOrganicDashboardCompatibilityProfile('chemistry_k'), true);
+  assert.equal(isReviewedOrganicDashboardCompatibilityProfile('foreign_profile'), false);
 });
 
 test('all four Organic platforms resolve the same reviewed KPI labels from platform-local metric keys', () => {

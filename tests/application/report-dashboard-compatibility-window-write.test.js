@@ -56,32 +56,34 @@ function materialization(windowDays = 3) {
   };
 }
 
-test('Integration Workspace Metric rows write Number authority and preserved Select mirror', async () => {
-  const captured = [];
-  await writeDashboardMaterializationToLark({
-    reader: { async readById() { return materialization(3); } },
-    repository: {},
-    syncEngine: {
-      async planByKey(input) {
-        captured.push(input);
-        return { tableId: input.tableId, rows: input.rows };
+test('both reviewed Dashboard runtimes write Number authority and preserved Select mirror', async () => {
+  for (const customerProfile of ['integration_workspace', 'chemistry_k']) {
+    const captured = [];
+    await writeDashboardMaterializationToLark({
+      reader: { async readById() { return materialization(3); } },
+      repository: {},
+      syncEngine: {
+        async planByKey(input) {
+          captured.push(input);
+          return { tableId: input.tableId, rows: input.rows };
+        },
+        async executePlan(plan) { return { ok: true, rowCount: plan.rows.length }; },
       },
-      async executePlan(plan) { return { ok: true, rowCount: plan.rows.length }; },
-    },
-    reportId: 'report-1',
-    customerProfile: 'integration_workspace',
-    utcOffset: '+07:00',
-    tables: {
-      mktReportSnapshots: 'tblSnapshots',
-      mktReportMetricValues: 'tblMetrics',
-    },
-  });
+      reportId: 'report-1',
+      customerProfile,
+      utcOffset: '+07:00',
+      tables: {
+        mktReportSnapshots: 'tblSnapshots',
+        mktReportMetricValues: 'tblMetrics',
+      },
+    });
 
-  const metricPlan = captured.find((entry) => entry.tableId === 'tblMetrics');
-  assert.ok(metricPlan);
-  assert.equal(metricPlan.rows.length, 1);
-  assert.equal(metricPlan.rows[0].window_days, 3);
-  assert.equal(metricPlan.rows[0][LEGACY_WINDOW], '3');
+    const metricPlan = captured.find((entry) => entry.tableId === 'tblMetrics');
+    assert.ok(metricPlan);
+    assert.equal(metricPlan.rows.length, 1);
+    assert.equal(metricPlan.rows[0].window_days, 3);
+    assert.equal(metricPlan.rows[0][LEGACY_WINDOW], '3');
+  }
 });
 
 test('non-Integration Workspace Metric rows retain Select text and no private mirror', async () => {
