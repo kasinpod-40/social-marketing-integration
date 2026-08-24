@@ -1,5 +1,5 @@
 export const LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION =
-  'lark_dashboard_display_v2_compatibility_v3';
+  'lark_dashboard_display_v2_compatibility_v4';
 
 export const LARK_DASHBOARD_DISPLAY_V2_FIELD = Object.freeze({
   fieldId: 'fldHNUhCfl',
@@ -13,6 +13,10 @@ export const ORGANIC_DASHBOARD_PLATFORMS = Object.freeze([
   'instagram',
   'tiktok',
   'youtube',
+]);
+export const ORGANIC_DASHBOARD_CUSTOMER_PROFILES = Object.freeze([
+  'integration_workspace',
+  'chemistry_k',
 ]);
 
 export const ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX = deepFreeze({
@@ -57,15 +61,18 @@ const REVIEWED_DISPLAY_V2_ALIASES = deepFreeze({
 });
 
 /**
- * Display-v2 is a presentation compatibility field for the Integration Workspace Organic
- * Dashboard. Source account identity is intentionally not part of this presentation scope:
+ * Display-v2 is a presentation compatibility field for the reviewed Integration Workspace and
+ * Chemistry K Customer Production Organic dashboards. Source account identity is intentionally
+ * not part of this presentation scope:
  * Facebook/Instagram/YouTube may use provider-native account IDs while customer_profile remains
  * the stable workspace boundary. Using accountId here caused valid current-slot rows to lose the
  * legacy Dashboard selector when a connector exposed its real source account identity.
  */
 export function resolveOrganicDashboardDisplayV2(input = {}) {
   const platform = normalizeText(input.platform);
-  if (normalizeText(input.customerProfile) !== 'integration_workspace') return null;
+  if (!ORGANIC_DASHBOARD_CUSTOMER_PROFILES.includes(normalizeText(input.customerProfile))) {
+    return null;
+  }
   if (!ORGANIC_DASHBOARD_PLATFORMS.includes(platform)) return null;
   if (normalizeText(input.capability) !== 'organic') return null;
   if (normalizeText(input.reportType) !== 'dashboard_performance_report') return null;
