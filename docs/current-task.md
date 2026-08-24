@@ -683,3 +683,19 @@ Live completion and WooCommerce Production-UAT admission follow-up:
 - the temporary import mode was removed after proof. Customer Worker version
   `4962ff7e-4799-493d-b93a-fe226f2b9064` serves 100% traffic at `main@2e3455e3` with normal schedules preserved;
 - no Customer Base resource outside `Setup Phase | Social MKT Data Hub` was read or changed.
+
+### 2026-08-24 — Customer Chatwoot/WooCommerce D1-to-Lark closeout implementation
+
+- read-only Dev/Customer comparison proved Dev WooCommerce was one completed reporting day newer while Customer
+  retained substantially more history; an exact 37-row stable-key delta was therefore applied without replacing
+  Customer-only history;
+- Customer D1 now retains the larger history and reaches `2026-08-23` for both Commerce Daily datasets, with
+  Orders `8,377`, Products `273`, Customers `6,017`, Daily `622`, and Product Daily `3,622`;
+- added a disabled-by-default Customer-Production-only Queue importer for the exact five Chatwoot and five
+  WooCommerce canonical Lark tables, using 50-row D1 reads, fixed manifests and stable per-batch identities;
+- focused importer/catalog/Queue tests pass 31/31; `npm run check` passes at 809 source files / 2,436 local
+  dependencies / zero cycles with repository hygiene PASS; full tests pass 3,235 Node tests plus 18
+  Workers-runtime tests; Report reliability passes 106/106; audit reports zero vulnerabilities; deploy dry-run
+  and `git diff --check` pass;
+- reviewed merge/deploy, complete Lark run, idempotent replay and Report/AI/Notification activation remain
+  required before Production COMPLETE.

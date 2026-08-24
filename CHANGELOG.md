@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-24 — Customer Chatwoot/WooCommerce exact D1-to-Lark closeout path
+
+- added a disabled-by-default, Customer-Production-only Queue importer that reads only ten reviewed Chatwoot and
+  WooCommerce D1 tables in 50-row batches and writes their existing canonical Customer Lark tables;
+- bound every job to an exact table/snapshot manifest and stable Queue identity, with manifest drift and partial
+  reconciliation failing closed before completion;
+- kept Business rows out of Queue payloads and retained the existing Workers Free batch-size-one consumer topology.
+
 ## 2026-08-24 — Customer Workers Free runtime and Meta creative Select repair
 
 - removed the canceled Customer Lark visible-field ordering runtime so source continuations retain the proven

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JOB_TRIGGERS, JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
+  createStableQueueOperationBody,
   resolveQueueOperation,
   withQueueOperation,
 } from '../../packages/application/src/jobs/queue-operation.js';
@@ -204,6 +205,19 @@ test('Customer Meta K2 Lark import keeps a stable batch operation identity', () 
   });
   assert.equal(operation.stable, true);
   assert.equal(operation.workKey, 'lark_meta_k2:meta-k2-creatives-b00');
+});
+
+test('Customer D1 Lark import keeps a stable batch operation identity', () => {
+  const body = createStableQueueOperationBody({
+    type: JOB_TYPES.CUSTOMER_D1_LARK_SNAPSHOT_IMPORT,
+    trigger: JOB_TRIGGERS.CUSTOMER_D1_SNAPSHOT_IMPORT,
+    tableKey: 'mktConversations',
+  }, {
+    operationId: 'chatwoot-conversations-000',
+    originalRequestedAt: REQUESTED_AT,
+  });
+  assert.equal(body.workKey, 'lark_customer_d1:chatwoot-conversations-000');
+  assert.equal(body.generation, REQUESTED_AT);
 });
 
 test('scheduled Shared Report uses stable identity while manual presets keep their existing shape', () => {
