@@ -478,6 +478,7 @@ async function buildWriteSet(input) {
       contentInsights: input.sourceSnapshot.contentInsights,
       accountInsights: input.sourceSnapshot.accountInsights,
       observationDate: input.dateRange.until,
+      contentScopeMode: input.dateRange.since ? 'report_range' : 'full_inventory',
     });
   }
   const accountTimezone = requireText(

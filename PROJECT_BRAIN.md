@@ -28,6 +28,13 @@ The fresh post-replay Customer export exposed a separate presentation collision:
 so this is not storage duplication, but the Dashboard can aggregate both profiles until it is isolated with exact
 `customer_profile=chemistry_k`. Do not replay or delete source/report rows to address this UI filter defect.
 
+After profile isolation exposed blank Instagram cards, D1 proved the Customer source was present: 50 content
+states/observations through 2026-08-22 and account daily facts through 2026-08-23. The latest bounded daily source
+run had zero new content but was incorrectly labelled `full_inventory`; the generic reader therefore treated the
+empty coverage entity set as the complete account inventory and excluded all prior observations. Bounded Meta
+Organic writes now persist `report_range`, while unbounded snapshots retain `full_inventory`. Existing affected
+coverage requires exact correction and 1D/3D/7D/30D rematerialization before Instagram visual closeout.
+
 ## Customer Chatwoot/WooCommerce exact D1-to-Lark closeout — 2026-08-24
 
 Customer Chatwoot business state is already complete in Customer D1 at 3,707 canonical Lark-bound rows. Dev and

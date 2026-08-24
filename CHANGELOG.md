@@ -9,6 +9,8 @@
 - completed 16/16 operations with no new alert, DLQ or lock delta; follow-up export comparison then proved the
   copied Dashboard still needs exact `customer_profile=chemistry_k` isolation because both retained Integration
   rows and Customer rows now satisfy its legacy display selectors.
+- corrected bounded Meta Organic coverage semantics from `full_inventory` to `report_range`, preventing an empty
+  daily Instagram content result from authoritatively excluding prior observed content across rolling windows.
 
 ## 2026-08-24 — Customer Social MKT Data Hub Production COMPLETE
 

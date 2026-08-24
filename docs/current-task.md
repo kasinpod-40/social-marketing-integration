@@ -762,3 +762,10 @@ child identity after reviewed merge/deploy.
   in each profile now satisfy the copied legacy Display/Period selectors. Stable keys are unique, but Dashboard
   aggregation can be nearly doubled until the exact `customer_profile=chemistry_k` filter is applied. No further
   replay or row deletion is authorized as a substitute for that profile isolation proof.
+- after applying the profile filter, Instagram became blank because its current Customer materializations were
+  `no_data_confirmed`. Read-only D1 proof found 50 content states/observations through `2026-08-22` and account
+  daily facts through `2026-08-23`; the bounded `instagram-scheduled-20260823` content run had zero new posts but
+  was incorrectly persisted as `full_inventory`, causing the reader to exclude prior observations;
+- bounded Meta Organic source writes now use `report_range`; unbounded snapshots retain `full_inventory`.
+  Focused Meta tests pass 21/21 and `npm run check` passes. Reviewed merge/deploy, exact existing-coverage
+  correction and Instagram 1D/3D/7D/30D rematerialization remain live gates.
