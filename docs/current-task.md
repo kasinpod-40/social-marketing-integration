@@ -140,6 +140,25 @@ readback remain required after reviewed merge/deploy.
 - reviewed merge, Customer deploy, exact same-generation K3 resume and D1/Lark readback remain required before
   this repair is complete.
 
+## Current fast closeout — TikTok once-daily probe
+
+Normal TikTok sync UAT remains complete and the protected forensic DLQ remains untouched. The first scheduled
+runtime exposed a separate producer defect: enabling TikTok caused the primary five-minute Cron to enqueue a
+full two-pass RAW watermark probe every five minutes. That generated Queue retry-exhaustion incidents despite no
+new source day being due. The scheduler now emits exactly one probe at configurable Bangkok time, default 06:55,
+and emits no probe during the other 287 primary-Cron ticks. Customer deploy must prove no new probe DLQ after the
+change; the next 06:55 scheduled run remains the required positive proof.
+
+### Implementation result — TikTok once-daily producer
+
+- focused scheduler/Workers-runtime: PASS 35/35;
+- `npm run check`: PASS, 807 source files / 2,430 local dependencies / zero cycles / hygiene PASS;
+- `npm test`: PASS, 3,218 Node tests plus 18 Workers-runtime tests;
+- `npm run test:report-reliability`: PASS 106/106;
+- `npm audit --audit-level=high`: PASS, zero vulnerabilities;
+- `npm run deploy:dry-run`: PASS;
+- reviewed merge/deploy and zero-new-probe-DLQ soak remain required.
+
 ## Current authorized scope — YouTube credential cutover without reconnect
 
 The customer Channel owner already completed the required YouTube consent. Integration Live evidence proves

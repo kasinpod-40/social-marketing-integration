@@ -316,6 +316,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_SYNC_TIME: '08:00',
       MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SYNC_QUEUE: { send },
     });
@@ -372,6 +373,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_SYNC_TIME: '08:10',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'true',
       MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
@@ -396,6 +398,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_SYNC_TIME: '08:10',
       MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
