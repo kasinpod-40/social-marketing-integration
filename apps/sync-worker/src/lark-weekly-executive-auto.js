@@ -91,7 +91,7 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
     const syncEngine = infrastructure.syncEngine;
     const workStore = infrastructure.getResumableWorkStore();
 
-    await verifyAutomationState(client);
+    await verifyAutomationState(client, jobInput.env);
 
     const collected = await collectSource({
       client,
@@ -553,7 +553,7 @@ function assertAdmissionRow(observed, expected) {
   }
 }
 
-async function verifyAutomationState(client) {
+async function verifyAutomationState(client, env = {}) {
   const response = await client.requestBitableJson(
     `/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}/workflows`,
     { method: 'GET' },
@@ -570,20 +570,54 @@ async function verifyAutomationState(client) {
     notification.status ?? notification.state,
     'Notification Automation status',
   ).toLowerCase();
-  if (sha256(workflowId(ai)) !== expectedAi?.workflowIdSha256 || !ACTIVE.has(aiStatus)) {
+  const observedAiHash = sha256(workflowId(ai));
+  const observedNotificationHash = sha256(workflowId(notification));
+  const expectedAiHash = readWorkflowIdentityHash(
+    env.MKT_LARK_AI_MATERIALIZATION_WORKFLOW_ID_SHA256,
+    expectedAi?.workflowIdSha256,
+    'MKT_LARK_AI_MATERIALIZATION_WORKFLOW_ID_SHA256',
+  );
+  const expectedNotificationHash = readWorkflowIdentityHash(
+    env.MKT_LARK_NOTIFICATION_WORKFLOW_ID_SHA256,
+    expectedNotification?.workflowIdSha256,
+    'MKT_LARK_NOTIFICATION_WORKFLOW_ID_SHA256',
+  );
+  if (observedAiHash !== expectedAiHash || !ACTIVE.has(aiStatus)) {
     throw autoError(
       'Automatic Weekly Executive requires the exact active AI Materialization Automation',
       'LARK_WEEKLY_EXECUTIVE_AUTO_AI_AUTOMATION_INVALID',
+      {
+        observedWorkflowIdSha256: observedAiHash,
+        expectedWorkflowIdSha256: expectedAiHash,
+        status: aiStatus,
+      },
     );
   }
-  if (sha256(workflowId(notification)) !== expectedNotification?.workflowIdSha256
+  if (observedNotificationHash !== expectedNotificationHash
       || !INACTIVE.has(notificationStatus)) {
     throw autoError(
       'Base Notification Automation must remain inactive while D1 exact-once Runtime is automatic',
       'LARK_WEEKLY_EXECUTIVE_AUTO_BASE_NOTIFICATION_AUTOMATION_UNSAFE',
+      {
+        observedWorkflowIdSha256: observedNotificationHash,
+        expectedWorkflowIdSha256: expectedNotificationHash,
+        status: notificationStatus,
+      },
     );
   }
   return true;
+}
+
+function readWorkflowIdentityHash(value, fallback, fieldName) {
+  const candidate = optionalText(value) ?? fallback;
+  if (!/^[a-f0-9]{64}$/u.test(String(candidate ?? ''))) {
+    throw autoError(
+      `${fieldName} must be a lowercase SHA-256 hex digest`,
+      'LARK_WEEKLY_EXECUTIVE_AUTO_WORKFLOW_IDENTITY_CONFIG_INVALID',
+      { fieldName },
+    );
+  }
+  return candidate;
 }
 
 function assertAutomaticJob(body, config) {

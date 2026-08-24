@@ -699,3 +699,12 @@ Live completion and WooCommerce Production-UAT admission follow-up:
   and `git diff --check` pass;
 - reviewed merge/deploy, complete Lark run, idempotent replay and Report/AI/Notification activation remain
   required before Production COMPLETE.
+
+### 2026-08-24 — Customer Lark workflow identity portability repair
+
+- the first exact Customer Weekly run failed closed before any message send because the cloned Customer Base has
+  different workflow IDs from the Integration Base even though both reviewed Automation titles and states are exact;
+- made the two expected workflow identity hashes explicit Customer runtime inputs with the reviewed Integration
+  hashes retained as defaults, and added only SHA-256 diagnostics so raw workflow IDs remain undisclosed;
+- syntax validation and the full Node test suite pass; live Customer hash binding, retry under a fresh stable
+  operation identity, exactly-once delivery proof and original configuration-incident closure remain required.
