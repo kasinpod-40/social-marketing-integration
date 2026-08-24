@@ -188,6 +188,24 @@ test('Meta Ads operation identity is scoped by configured account alias', () => 
   assert.equal(continuation.workKey, account2.workKey);
 });
 
+test('Customer Meta K2 Lark import keeps a stable batch operation identity', () => {
+  const body = {
+    schemaVersion: 1,
+    type: JOB_TYPES.CUSTOMER_META_K2_LARK_SNAPSHOT_IMPORT,
+    trigger: JOB_TRIGGERS.CUSTOMER_META_K2_SNAPSHOT_IMPORT,
+    operationId: 'meta-k2-creatives-b00',
+    workKey: 'lark_meta_k2:meta-k2-creatives-b00',
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+  };
+  const operation = resolveQueueOperation({
+    job: normalizeQueueJobMessage({ id: 'delivery-a', body }),
+    message: { id: 'delivery-a' },
+  });
+  assert.equal(operation.stable, true);
+  assert.equal(operation.workKey, 'lark_meta_k2:meta-k2-creatives-b00');
+});
+
 test('scheduled Shared Report uses stable identity while manual presets keep their existing shape', () => {
   const scheduledBody = {
     schemaVersion: 1,

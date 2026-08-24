@@ -22,6 +22,10 @@ const STABLE_OPERATION_CONTRACTS = new Map([
     prefix: 'lark_notification',
     operationIdPattern: SAFE_OPERATION_ID,
   })],
+  [JOB_TYPES.CUSTOMER_META_K2_LARK_SNAPSHOT_IMPORT, Object.freeze({
+    prefix: 'lark_meta_k2',
+    operationIdPattern: SAFE_OPERATION_ID,
+  })],
   [JOB_TYPES.MKT_CONTENT_DAILY_RETENTION, Object.freeze({ prefix: 'mkt_content_daily' })],
 ]);
 

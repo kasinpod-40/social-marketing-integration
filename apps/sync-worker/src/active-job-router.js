@@ -23,6 +23,11 @@ import {
 } from '../../../packages/application/src/use-cases/seed-report-settings.js';
 import { runMktContentDailyRetention } from '../../../packages/application/src/use-cases/mkt-content-daily-retention.js';
 import { applyCustomerLarkViewHygiene } from '../../../packages/application/src/use-cases/apply-customer-lark-view-hygiene.js';
+import {
+  CUSTOMER_META_K2_LARK_IMPORT_MODE,
+  CUSTOMER_META_K2_LARK_IMPORT_MODE_ENV,
+  importCustomerMetaK2LarkSnapshot,
+} from '../../../packages/application/src/use-cases/import-customer-meta-k2-lark-snapshot.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { syncYouTubeOrganicEndToEnd } from '../../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
@@ -129,6 +134,34 @@ export async function processJob(input) {
       client: input.getInfrastructure().getLarkBitableClient(),
       scope: input.job.body?.scope,
       allowedScopeHashes: input.env?.MKT_CUSTOMER_LARK_VIEW_HYGIENE_SCOPE_SHA256S,
+    });
+  }
+
+  if (definition.type === JOB_TYPES.CUSTOMER_META_K2_LARK_SNAPSHOT_IMPORT) {
+    const runtimeConfig = input.getRuntimeConfig();
+    const exactCustomerRuntime = runtimeConfig.environment === 'production'
+      && runtimeConfig.profileKey === 'chemistry_k'
+      && runtimeConfig.customerKey === 'chemistry_k'
+      && runtimeConfig.infrastructureOwner === 'customer';
+    if (!exactCustomerRuntime) {
+      throw permanentError('Customer Meta K2 Lark import is Production-customer only', {
+        code: 'CUSTOMER_META_K2_LARK_IMPORT_FORBIDDEN',
+      });
+    }
+    if (input.env?.[CUSTOMER_META_K2_LARK_IMPORT_MODE_ENV]
+      !== CUSTOMER_META_K2_LARK_IMPORT_MODE
+      || input.job.body?.trigger !== JOB_TRIGGERS.CUSTOMER_META_K2_SNAPSHOT_IMPORT) {
+      throw permanentError('Customer Meta K2 Lark import is disabled', {
+        code: 'CUSTOMER_META_K2_LARK_IMPORT_DISABLED',
+      });
+    }
+    const tableIds = readLarkTableIdsFromEnv(input.env, [input.job.body?.tableKey]);
+    const infrastructure = input.getInfrastructure();
+    return importCustomerMetaK2LarkSnapshot({
+      body: input.job.body,
+      repository: infrastructure.repository,
+      syncEngine: infrastructure.syncEngine,
+      tables: tableIds,
     });
   }
 
