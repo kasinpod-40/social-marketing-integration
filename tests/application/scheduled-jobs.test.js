@@ -14,6 +14,7 @@ test('scheduler queues TikTok probe plus all active 1D/3D/7D/30D Shared material
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_SYNC_TIME: '08:10',
       MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
@@ -41,6 +42,7 @@ test('TikTok schedule fails closed without watermark admission', () => {
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_SYNC_TIME: '08:10',
     },
   }), (error) => error.code === 'MKT_SCHEDULE_CONFIG_INVALID'
     && error.details.fieldName === 'MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED');
@@ -104,17 +106,18 @@ test('enabled report schedules fail closed when time or setting key is invalid',
 
 test('scheduled date identity stays bound to the previous completed day even when consumption is later', () => {
   const jobs = buildPrimaryScheduledJobs({
-    scheduledAt: '2026-07-12T16:59:59.000Z',
+    scheduledAt: '2026-07-12T16:55:00.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_SYNC_TIME: '23:55',
       MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
     },
   });
 
-  assert.equal(jobs[0].requestedAt, '2026-07-12T16:59:59.000Z');
+  assert.equal(jobs[0].requestedAt, '2026-07-12T16:55:00.000Z');
   assert.equal(jobs[0].metricDate, '2026-07-11');
 });
 
@@ -309,6 +312,7 @@ test('primary cron never queues YouTube and YouTube cron never queues TikTok or 
   const env = {
     DEFAULT_TIMEZONE: 'Asia/Bangkok',
     MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+    MKT_TIKTOK_SYNC_TIME: '07:50',
     MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
     MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
     MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
@@ -329,6 +333,23 @@ test('primary cron never queues YouTube and YouTube cron never queues TikTok or 
   ]);
   assert.equal(primary[0].metricDate, '2026-07-18');
   assert.deepEqual(youtube.map((job) => job.type), ['youtube.channel.organic.sync']);
+});
+
+test('TikTok probe is queued only once at the configured local time', () => {
+  const env = {
+    DEFAULT_TIMEZONE: 'Asia/Bangkok',
+    MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+    MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
+    MKT_TIKTOK_SYNC_TIME: '06:55',
+  };
+  const due = buildPrimaryScheduledJobs({ scheduledAt: '2026-07-18T23:55:00.000Z', env });
+  const notDue = buildPrimaryScheduledJobs({ scheduledAt: '2026-07-19T00:00:00.000Z', env });
+
+  assert.deepEqual(due.map((job) => job.type), [
+    'tiktok.creator.native.probe',
+    'system.reliability-mirror.deliver',
+  ]);
+  assert.deepEqual(notDue.map((job) => job.type), ['system.reliability-mirror.deliver']);
 });
 
 

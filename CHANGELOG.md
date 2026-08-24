@@ -7,6 +7,8 @@
 - normalized Meta creative provider types to the exact Customer Base Select contract: `image`, `video`,
   `carousel`, or `other`;
 - added focused regression coverage for all K3-observed values, including unknown and missing types.
+- schedule the TikTok two-pass RAW watermark probe once daily at configurable local time (default 06:55) instead
+  of every five-minute primary Cron tick.
 
 ## 2026-08-24 — Customer Lark Base empty-field View hygiene
 

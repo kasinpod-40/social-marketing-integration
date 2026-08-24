@@ -17,6 +17,7 @@ import {
 } from './worker-runtime-support.js';
 
 const DEFAULT_FACEBOOK_SYNC_TIME = '07:30';
+const DEFAULT_TIKTOK_SYNC_TIME = '06:55';
 const DEFAULT_INSTAGRAM_SYNC_TIME = '07:35';
 const DEFAULT_DAILY_REPORT_TIME = '08:10';
 const DEFAULT_CONTENT_DAILY_RETENTION_TIME = '08:05';
@@ -164,14 +165,20 @@ export function buildScheduledJobs(input = {}) {
   }
 
   if (includePrimaryJobs && tiktokEnabled) {
-    jobs.push(Object.freeze({
-      schemaVersion: 1,
-      type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_PROBE,
-      trigger: 'scheduled',
-      requestedAt,
-      // Lark Native 07:00 เป็น Snapshot แรกหลังวันก่อนหน้าปิด จึงล็อกวันสมบูรณ์ล่าสุด.
-      metricDate: completedPeriodEnd,
-    }));
+    const syncTime = readScheduleTime(
+      env.MKT_TIKTOK_SYNC_TIME ?? DEFAULT_TIKTOK_SYNC_TIME,
+      'MKT_TIKTOK_SYNC_TIME',
+    );
+    if (local.time === syncTime) {
+      jobs.push(Object.freeze({
+        schemaVersion: 1,
+        type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_PROBE,
+        trigger: 'scheduled',
+        requestedAt,
+        // Lark Native 07:00 เป็น Snapshot แรกหลังวันก่อนหน้าปิด จึงล็อกวันสมบูรณ์ล่าสุด.
+        metricDate: completedPeriodEnd,
+      }));
+    }
   }
 
   if (includePrimaryJobs && facebookEnabled) {

@@ -14,6 +14,10 @@ K3 Meta source staging is already complete 20/20. Its sole Lark blocker is a can
 The permanent adapter maps video/image/photo/carousel variants to those exact values and all other/missing types
 to `other`, allowing exact same-generation recovery without rereading provider inventory.
 
+TikTok scheduled admission must not run on every five-minute primary Cron tick. The watermark probe reads the
+protected RAW source twice to establish a stable snapshot and is therefore due only once daily at 06:55
+`Asia/Bangkok`. The normal source sync remains durable/idempotent; the retained UAT forensic DLQ is never redriven.
+
 ## Customer Lark Base empty-field View hygiene — 2026-08-24
 
 The customer authorized a one-time cleanup of empty columns in Views, limited to `Setup Phase | Social MKT Data
