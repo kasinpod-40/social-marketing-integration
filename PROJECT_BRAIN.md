@@ -35,6 +35,18 @@ empty coverage entity set as the complete account inventory and excluded all pri
 Organic writes now persist `report_range`, while unbounded snapshots retain `full_inventory`. Existing affected
 coverage requires exact correction and 1D/3D/7D/30D rematerialization before Instagram visual closeout.
 
+PR #740 merged as `main@cda7f09f` and Customer Worker version
+`cf59d7bf-260a-4527-9c15-7244808a8f48` serves the existing schedules/Queue configuration. The exact affected
+`instagram-scheduled-20260823:instagram:content` row was corrected only when its reviewed 0/0 complete invariant
+matched, then four fresh Report operations completed on their first attempts. Readback is 1D complete with zero
+daily gain and Total Views 4,059,734; 3D complete with Views 263,287 / Likes 5,023; 7D complete with Views 527,576
+/ Likes 8,285; and 30D partial at 56% coverage. Open DLQ/Alerts remained 137/146 and locks returned to baseline 2.
+
+The fresh Customer Base export audit covered all 33 in-scope Data Hub tables and excluded the three
+customer-created Content Creator/Sale-Support tables. All 33 schemas match Dev, no primary-key duplicates exist,
+and Customer holds 55,926 rows versus Dev 43,060 due to additional Customer history. One completely blank record
+remains in `MKT_Sync_Log` (`recvt6mZnhkueH`); it is recorded for separate hygiene review and was not deleted.
+
 ## Customer Chatwoot/WooCommerce exact D1-to-Lark closeout — 2026-08-24
 
 Customer Chatwoot business state is already complete in Customer D1 at 3,707 canonical Lark-bound rows. Dev and
