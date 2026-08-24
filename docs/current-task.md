@@ -705,6 +705,7 @@ Live completion and WooCommerce Production-UAT admission follow-up:
 - the first exact Customer Weekly run failed closed before any message send because the cloned Customer Base has
   different workflow IDs from the Integration Base even though both reviewed Automation titles and states are exact;
 - made the two expected workflow identity hashes explicit Customer runtime inputs with the reviewed Integration
-  hashes retained as defaults, and added only SHA-256 diagnostics so raw workflow IDs remain undisclosed;
+  hashes retained as defaults, and added only SHA-256/status diagnostics to the exact validation error so raw
+  workflow IDs remain undisclosed even when the terminal failure is persisted;
 - syntax validation and the full Node test suite pass; live Customer hash binding, retry under a fresh stable
   operation identity, exactly-once delivery proof and original configuration-incident closure remain required.

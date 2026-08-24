@@ -584,7 +584,10 @@ async function verifyAutomationState(client, env = {}) {
   );
   if (observedAiHash !== expectedAiHash || !ACTIVE.has(aiStatus)) {
     throw autoError(
-      'Automatic Weekly Executive requires the exact active AI Materialization Automation',
+      [
+        'Automatic Weekly Executive requires the exact active AI Materialization Automation',
+        `(observed_sha256=${observedAiHash}, expected_sha256=${expectedAiHash}, status=${aiStatus})`,
+      ].join(' '),
       'LARK_WEEKLY_EXECUTIVE_AUTO_AI_AUTOMATION_INVALID',
       {
         observedWorkflowIdSha256: observedAiHash,
@@ -596,7 +599,11 @@ async function verifyAutomationState(client, env = {}) {
   if (observedNotificationHash !== expectedNotificationHash
       || !INACTIVE.has(notificationStatus)) {
     throw autoError(
-      'Base Notification Automation must remain inactive while D1 exact-once Runtime is automatic',
+      [
+        'Base Notification Automation must remain inactive while D1 exact-once Runtime is automatic',
+        `(observed_sha256=${observedNotificationHash},`,
+        `expected_sha256=${expectedNotificationHash}, status=${notificationStatus})`,
+      ].join(' '),
       'LARK_WEEKLY_EXECUTIVE_AUTO_BASE_NOTIFICATION_AUTOMATION_UNSAFE',
       {
         observedWorkflowIdSha256: observedNotificationHash,
