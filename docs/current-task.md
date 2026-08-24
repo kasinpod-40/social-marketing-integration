@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = dd365d6136582d330af98a1de36c71b0b8eeb35a
-CURRENT_BRANCH                           = codex/customer-lark-view-hygiene-20260824
+BASE_MAIN_SHA                            = d4901092f4aa825451255ec7df1c72f5e7e6a35f
+CURRENT_BRANCH                           = codex/lark-record-search-valueless-filter-20260824
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = c7b84a15-090c-4772-90c5-ea3043608d3d
+PRODUCTION_WORKER_HEAD                   = 344d9bfb-b701-4d67-b314-e1bd2a297fb9
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = INSTAGRAM_META_ADS_CHATWOOT
 PRODUCTION_BUSINESS_TRAFFIC              = THREE_SOURCE_SCHEDULES_ACTIVE_FIRST_RUN_PENDING
@@ -43,7 +43,7 @@ YOUTUBE_CUSTOMER_RECONNECT               = NOT_REQUIRED_EXISTING_VALIDATED_GRANT
 YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
-CUSTOMER_LARK_VIEW_HYGIENE               = REVIEWED_RUNTIME_IMPLEMENTED_LIVE_APPLY_PENDING
+CUSTOMER_LARK_VIEW_HYGIENE               = LIVE_FAIL_CLOSED_NO_MUTATION_RECORD_SEARCH_HOTFIX_IN_REVIEW
 ```
 
 ## Objective
@@ -77,7 +77,7 @@ The reviewed runtime must:
 5. write zero records, zero fields, zero filters, zero view names and zero schema objects;
 6. restore the runtime feature flag to false after the one-time reviewed operation.
 
-### Implementation result — Customer Lark View hygiene (pre-live)
+### Implementation result — Customer Lark View hygiene
 
 - supplied Customer Base snapshot revision 146 contains 33 in-scope Data Hub tables and 39,080 records; three
   customer-created tables were explicitly excluded;
@@ -92,8 +92,14 @@ The reviewed runtime must:
 - `npm run test:report-reliability` — PASS 105/105;
 - `npm audit --audit-level=high` — PASS, zero vulnerabilities;
 - `WRANGLER_LOG_PATH=/tmp/customer-lark-view-hygiene-dry-run.log npm run deploy:dry-run` — PASS;
-- Live deploy/Queue apply/readback is pending reviewed PR merge and completion of the active source closeout so
-  the view-only jobs do not compete with source continuations on the Free-plan main Queue.
+- PR #720 merged as `main@d4901092f4aa825451255ec7df1c72f5e7e6a35f` and was deployed as Customer Worker
+  version `344d9bfb-b701-4d67-b314-e1bd2a297fb9`; the reviewed Queue accepted 19 exact table jobs;
+- the first Live empty-field proof exposed a Record Search request-contract difference: `isNotEmpty` requires
+  `value: []`, whereas View-filter PATCH omits `value`. Every job failed closed during read-before-write, so no
+  View, record, schema, filter or name mutation occurred;
+- the hotfix changes only Record Search serialization, retains the separate View-filter contract, and adds a
+  focused regression proving the exact empty-array request body. Live apply/readback remains pending reviewed
+  hotfix merge, exact hygiene-DLQ recovery, and restoration of both temporary feature flags to false.
 
 ## Current authorized scope — YouTube credential cutover without reconnect
 

@@ -7,6 +7,8 @@
 - bound each allowed table/view/field set to a SHA-256 scope, protected the primary field, preserved existing
   hidden fields, and verified every View by readback;
 - kept customer-created Base areas, records, schema, filters and View names outside the mutation contract.
+- added the Live-proven Record Search contract for valueless operators (`value: []`) while preserving the separate
+  View-filter PATCH rule that omits `value`; regression coverage prevents the two request schemas from drifting.
 
 ## 2026-08-24 — Customer Weekly Notification Settings activation boundary
 

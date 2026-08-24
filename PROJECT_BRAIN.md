@@ -8,7 +8,10 @@ customer-created Content Creator/Sale-Support tables. A disabled-by-default manu
 table operation to a reviewed SHA-256 scope, validates exact Customer Production ownership, re-proves each
 candidate field is still empty against Live Lark, preserves current hidden fields and the primary field, PATCHes
 only `hidden_fields`, and reads back the result. It cannot write records/schema/filters/names. Snapshot candidates
-are 100 empty fields across 81 Grid views; Live apply remains pending reviewed merge and source-Queue closeout.
+are 100 empty fields across 81 Grid views. PR #720 merged and the Customer Queue accepted 19 table jobs, but Live
+Record Search proved that `isNotEmpty` requires `value: []`. The jobs failed closed during their read-before-write
+phase, so no Base mutation occurred. A focused serializer hotfix must merge before exact hygiene-only DLQ recovery;
+the unrelated TikTok forensic DLQ remains prohibited.
 
 ## Customer Weekly Notification Settings controlled activation — 2026-08-24
 
