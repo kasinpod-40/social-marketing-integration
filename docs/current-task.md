@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = YOUTUBE_EXISTING_CREDENTIAL_REWRAP_IN_PROGRESS
+TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
 BASE_MAIN_SHA                            = 400a17795f3a2fee0175504c20f3758f377675f8
-CURRENT_BRANCH                           = codex/youtube-customer-credential-rewrap-20260823
+CURRENT_BRANCH                           = codex/customer-notification-settings-activation
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -277,6 +277,23 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   intended period and exact customer group mapping is read back.
 
 ## Implementation result
+
+### 2026-08-24 — Customer Weekly Notification Settings controlled activation
+
+- added a fail-closed `report.settings.seed` activation mode that is admitted only for the exact
+  customer-owned `production/chemistry_k` runtime, the existing Notification runtime trigger and an immutable
+  activation version;
+- requires Weekly Report/Notification schedules, D1/preset plus Notification runtime/send/mirror gates and validates the reviewed
+  destination name/SHA-256 authority before any Lark write;
+- updates only the eight active-channel `chemistry_k:*:rolling:7d` stable Report Settings, setting
+  `ai_enabled=true` and `notification_enabled=true`; no raw group ID is carried in Queue payload or Source and
+  every other Customer/Integration setting remains untouched;
+- Customer `MKT_Notification_Log` exact table identity was recovered from the user-provided Base export inside
+  `Setup Phase | Social MKT Data Hub`; no object outside that folder was mutated;
+- focused Settings/routing tests pass `33/33`; `npm run check`, `git diff --check`, full tests (`3,206` Node plus
+  `18` Workers-runtime), Report reliability `105/105`, audit with zero vulnerabilities and deploy dry-run pass;
+- no Customer Settings activation, Report/AI/Notification enablement or message send occurs before reviewed merge
+  and the outstanding WooCommerce/Chatwoot source operations complete.
 
 ### 2026-08-23 — Stable YouTube Production-UAT recovery identity
 

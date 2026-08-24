@@ -4,7 +4,11 @@ import {
   DASHBOARD_REPORT_PLATFORM_SCOPES,
   createReportSettingRowsForProfile,
 } from '../../packages/config/src/report-settings.seed.js';
-import { seedReportSettings } from '../../packages/application/src/use-cases/seed-report-settings.js';
+import {
+  buildCustomerWeeklyNotificationReportSettingRows,
+  seedCustomerWeeklyNotificationReportSettings,
+  seedReportSettings,
+} from '../../packages/application/src/use-cases/seed-report-settings.js';
 
 const EXPECTED_SETTING_COUNT = 2 + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * 8);
 
@@ -73,4 +77,43 @@ test('seeds report settings idempotently by canonical report_setting_key', async
   assert.equal(call.rows.length, EXPECTED_SETTING_COUNT);
   assert.equal(call.rows[0].report_setting_key, 'integration_workspace:tiktok:daily');
   assert.equal(result.created, EXPECTED_SETTING_COUNT);
+});
+
+test('builds only eight active Customer 7D settings for Weekly Notification activation', () => {
+  const rows = buildCustomerWeeklyNotificationReportSettingRows('chemistry_k');
+  assert.equal(rows.length, 8);
+  assert.deepEqual(rows.map((row) => row.platforms[0]).sort(), [
+    'chatwoot', 'facebook', 'google_ads', 'instagram', 'meta_ads', 'tiktok', 'woocommerce', 'youtube',
+  ]);
+  assert.equal(rows.every((row) => row.customer_profile === 'chemistry_k'), true);
+  assert.equal(rows.every((row) => row.window_days === 7), true);
+  assert.equal(rows.every((row) => row.ai_enabled === true), true);
+  assert.equal(rows.every((row) => row.notification_enabled === true), true);
+  assert.equal(rows.every((row) => row.group_id === null), true);
+  assert.throws(
+    () => buildCustomerWeeklyNotificationReportSettingRows('integration_workspace'),
+    /chemistry_k profile/u,
+  );
+});
+
+test('seeds only Customer Weekly Notification settings by stable key', async () => {
+  let call;
+  const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
+    async listByFieldValues() { return []; },
+    async createMany() { return { created: 0 }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+  const syncEngine = {
+    async syncByKey(input) { call = input; return { created: 0, updated: 8, skipped: 0 }; },
+  };
+  const result = await seedCustomerWeeklyNotificationReportSettings({
+    repository,
+    syncEngine,
+    tableId: 'tbl_settings',
+    profileKey: 'chemistry_k',
+  });
+  assert.equal(call.keyField, 'report_setting_key');
+  assert.equal(call.rows.length, 8);
+  assert.equal(result.updated, 8);
 });
