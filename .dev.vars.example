@@ -126,6 +126,9 @@ MKT_NOTIFICATION_RUNTIME_ENABLED=false
 MKT_CUSTOMER_LARK_VIEW_HYGIENE_ENABLED=false
 # ใส่เฉพาะ SHA-256 scope ที่ review แล้ว คั่นด้วย comma; ปล่อยว่างเมื่อ flag ปิด
 MKT_CUSTOMER_LARK_VIEW_HYGIENE_SCOPE_SHA256S=
+MKT_CUSTOMER_LARK_VIEW_FIELD_ORDER_ENABLED=false
+# ใส่เฉพาะ SHA-256 ของลำดับ Field ต่อ Table/View ที่ review แล้ว; ปล่อยว่างเมื่อ flag ปิด
+MKT_CUSTOMER_LARK_VIEW_FIELD_ORDER_SCOPE_SHA256S=
 
 # TikTok Creator — Lark Native เชื่อม Chemistry K แล้ว; Connector ยังปิดจนถึง Manual write gate
 TIKTOK_SOURCE_HANDLE=chemistry_k

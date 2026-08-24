@@ -22,7 +22,10 @@ import {
   seedReportSettings,
 } from '../../../packages/application/src/use-cases/seed-report-settings.js';
 import { runMktContentDailyRetention } from '../../../packages/application/src/use-cases/mkt-content-daily-retention.js';
-import { applyCustomerLarkViewHygiene } from '../../../packages/application/src/use-cases/apply-customer-lark-view-hygiene.js';
+import {
+  applyCustomerLarkViewFieldOrder,
+  applyCustomerLarkViewHygiene,
+} from '../../../packages/application/src/use-cases/apply-customer-lark-view-hygiene.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { syncYouTubeOrganicEndToEnd } from '../../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
@@ -108,7 +111,7 @@ export async function processJob(input) {
     });
   }
 
-  if (definition.type === JOB_TYPES.LARK_BASE_VIEW_HYGIENE) {
+  if ([JOB_TYPES.LARK_BASE_VIEW_HYGIENE, JOB_TYPES.LARK_BASE_VIEW_FIELD_ORDER].includes(definition.type)) {
     const runtimeConfig = input.getRuntimeConfig();
     const exactCustomerRuntime = runtimeConfig.environment === 'production'
       && runtimeConfig.profileKey === 'chemistry_k'
@@ -117,6 +120,19 @@ export async function processJob(input) {
     if (!exactCustomerRuntime) {
       throw permanentError('Customer Lark View hygiene is Production-customer only', {
         code: 'CUSTOMER_LARK_VIEW_HYGIENE_FORBIDDEN',
+      });
+    }
+    if (definition.type === JOB_TYPES.LARK_BASE_VIEW_FIELD_ORDER) {
+      if (!readBoolean(input.env?.MKT_CUSTOMER_LARK_VIEW_FIELD_ORDER_ENABLED, false)
+        || input.job.body?.trigger !== JOB_TRIGGERS.CUSTOMER_LARK_FIELD_ORDER) {
+        throw permanentError('Customer Lark View field order is disabled', {
+          code: 'CUSTOMER_LARK_VIEW_FIELD_ORDER_DISABLED',
+        });
+      }
+      return applyCustomerLarkViewFieldOrder({
+        client: input.getInfrastructure().getLarkBitableClient(),
+        scope: input.job.body?.scope,
+        allowedScopeHashes: input.env?.MKT_CUSTOMER_LARK_VIEW_FIELD_ORDER_SCOPE_SHA256S,
       });
     }
     if (!readBoolean(input.env?.MKT_CUSTOMER_LARK_VIEW_HYGIENE_ENABLED, false)

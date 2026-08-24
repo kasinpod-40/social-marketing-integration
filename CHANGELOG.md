@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-24 — Customer Lark Base visible-field ordering
+
+- added a disabled-by-default, manual-only Customer Production job for deterministic visible-field ordering in
+  the exact reviewed Data Hub scope;
+- arranged user-facing identity/context/date/status/business metrics before links, external IDs and audit fields,
+  while preserving each View's existing hidden-field set;
+- bound the complete 33-table / 723-field / 113-Grid-view plan to per-table SHA-256 scopes, fail closed on Live
+  field/View drift, and require exact Base v3 post-write readback without record/schema/filter/name writes.
+
 ## 2026-08-24 — Customer Lark Base empty-field View hygiene
 
 - added a disabled-by-default, exact Customer Production Queue job that hides only Live-proven empty fields in

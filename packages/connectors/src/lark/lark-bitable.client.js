@@ -330,6 +330,33 @@ export class LarkBitableClient {
     }
   }
 
+  /** อ่านรายชื่อ Field ที่มองเห็นตามลำดับจริงของ View ผ่าน Base v3 presentation API */
+  async getViewVisibleFields(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    const response = await this.requestBitableJson(
+      `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}/visible_fields`,
+      { method: 'GET' },
+    );
+    return normalizeVisibleFieldNames(response?.data?.visible_fields ?? response?.data?.items ?? response?.data);
+  }
+
+  /** แทนที่เฉพาะ Visible Field order; Caller ต้องส่ง Field ที่มองเห็นอยู่ครบทุก Field */
+  async setViewVisibleFields(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    const visibleFields = normalizeUniqueTextArray(input?.visibleFields);
+    if (visibleFields.length === 0) throw new TypeError('Lark View visibleFields must not be empty');
+    await this.requestBitableJson(
+      `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}/visible_fields`,
+      {
+        method: 'PUT',
+        body: { visible_fields: visibleFields },
+      },
+    );
+    return Object.freeze(visibleFields);
+  }
+
   /** อ่าน Record หนึ่งหน้าเพื่อให้ Connector ที่รองรับ Durable resume เป็นผู้ถือ Cursor เอง */
   async listRecordsPage(input) {
     const tableId = requireText(input?.tableId, 'tableId');
@@ -1194,6 +1221,15 @@ function normalizeViewFilterOperator(value) {
 
 function normalizeUniqueTextArray(value) {
   return [...new Set(requireArray(value, 'text array').map((item) => requireText(item, 'text array item')))];
+}
+
+function normalizeVisibleFieldNames(value) {
+  const items = requireArray(value, 'visible_fields');
+  return Object.freeze(normalizeUniqueTextArray(items.map((item) => {
+    if (typeof item === 'string') return item;
+    const source = requireObject(item, 'visible field');
+    return source.field_name ?? source.fieldName ?? source.name;
+  })));
 }
 
 /** แปลง Field contract ภายในเป็น Request body ของ Lark OpenAPI */

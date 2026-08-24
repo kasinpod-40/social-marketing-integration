@@ -1188,6 +1188,42 @@ test('gets one Lark view with the full filter property', async () => {
   ]);
 });
 
+test('reads and replaces visible field order through the Base v3 presentation API', async () => {
+  const requests = [];
+  let visibleFields = ['stable_key', 'platform', 'metric_date'];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      const body = options.body ? JSON.parse(options.body) : null;
+      requests.push({ url: String(url), method: options.method, body });
+      if (options.method === 'PUT') visibleFields = [...body.visible_fields];
+      return new Response(JSON.stringify({ code: 0, data: { visible_fields: visibleFields } }), { status: 200 });
+    },
+  });
+
+  assert.deepEqual(await client.getViewVisibleFields({ tableId: 'tblViews', viewId: 'vew1' }), [
+    'stable_key', 'platform', 'metric_date',
+  ]);
+  await client.setViewVisibleFields({
+    tableId: 'tblViews',
+    viewId: 'vew1',
+    visibleFields: ['stable_key', 'metric_date', 'platform', 'platform'],
+  });
+  assert.deepEqual(await client.getViewVisibleFields({ tableId: 'tblViews', viewId: 'vew1' }), [
+    'stable_key', 'metric_date', 'platform',
+  ]);
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every((request) => /\/open-apis\/base\/v3\/bases\/app-token\/tables\/tblViews\/views\/vew1\/visible_fields$/u.test(request.url)));
+  assert.deepEqual(requests[1], {
+    url: requests[1].url,
+    method: 'PUT',
+    body: { visible_fields: ['stable_key', 'metric_date', 'platform'] },
+  });
+});
+
 test('creates a grid view with the official create payload', async () => {
   let request = null;
   const client = new LarkBitableClient({
