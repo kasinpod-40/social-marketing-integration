@@ -9,6 +9,8 @@
 - kept customer-created Base areas, records, schema, filters and View names outside the mutation contract.
 - added the Live-proven Record Search contract for valueless operators (`value: []`) while preserving the separate
   View-filter PATCH rule that omits `value`; regression coverage prevents the two request schemas from drifting.
+- completed the corrected one-time Customer run across 19 reviewed tables / 81 Grid views, resolved only its 19
+  pre-hotfix DLQ/alert pairs, and restored the production feature flag to false with zero new hygiene incidents.
 
 ## 2026-08-24 — Customer Weekly Notification Settings activation boundary
 

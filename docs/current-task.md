@@ -5,8 +5,8 @@
 ```text
 TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_LIVE_CLOSEOUT_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = d4901092f4aa825451255ec7df1c72f5e7e6a35f
-CURRENT_BRANCH                           = codex/lark-record-search-valueless-filter-20260824
+BASE_MAIN_SHA                            = 951113ca650964a6375580649098b3b093dbf3cb
+CURRENT_BRANCH                           = codex/customer-lark-view-hygiene-live-closeout-20260824
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = 344d9bfb-b701-4d67-b314-e1bd2a297fb9
+PRODUCTION_WORKER_HEAD                   = b19c5a97-b7a5-4965-9d17-85ace9219654
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = INSTAGRAM_META_ADS_CHATWOOT
 PRODUCTION_BUSINESS_TRAFFIC              = THREE_SOURCE_SCHEDULES_ACTIVE_FIRST_RUN_PENDING
@@ -43,7 +43,7 @@ YOUTUBE_CUSTOMER_RECONNECT               = NOT_REQUIRED_EXISTING_VALIDATED_GRANT
 YOUTUBE_CREDENTIAL_CUTOVER               = REWRAP_V1_TO_CUSTOMER_KEY_PENDING
 CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
-CUSTOMER_LARK_VIEW_HYGIENE               = LIVE_FAIL_CLOSED_NO_MUTATION_RECORD_SEARCH_HOTFIX_IN_REVIEW
+CUSTOMER_LARK_VIEW_HYGIENE               = COMPLETE_LIVE_PROVEN_FLAG_CLOSED
 ```
 
 ## Objective
@@ -98,8 +98,17 @@ The reviewed runtime must:
   `value: []`, whereas View-filter PATCH omits `value`. Every job failed closed during read-before-write, so no
   View, record, schema, filter or name mutation occurred;
 - the hotfix changes only Record Search serialization, retains the separate View-filter contract, and adds a
-  focused regression proving the exact empty-array request body. Live apply/readback remains pending reviewed
-  hotfix merge, exact hygiene-DLQ recovery, and restoration of both temporary feature flags to false.
+  focused regression proving the exact empty-array request body;
+- PR #721 passed both complete CI gates and merged as `main@951113ca`; Customer Worker version
+  `80e2e65c-e7f0-4d2e-aeb9-713f3fc00ffe` accepted all 19 reviewed table jobs, covering the 100 candidate fields
+  and 81 Grid views. Every successful job performs exact post-PATCH readback, and the post-hotfix interval produced
+  zero new hygiene DLQ and zero new hygiene alert;
+- the 19 exact pre-hotfix DLQs and their 19 paired `queue_permanent_failure` alerts were closed as `resolved` only
+  after the corrected Live run; exact readback is `resolved_dlq=19`, `resolved_alert=19`, `open_dlq=0`;
+- the one-time feature flag was restored to false without enabling generic DLQ redrive. Customer Worker version
+  `b19c5a97-b7a5-4965-9d17-85ace9219654` (version 57, authored by `dev.datahub.2026@gmail.com`) is the final safe
+  deployment at 100% traffic with the original schedules preserved. The prohibited TikTok forensic DLQ was not
+  redriven or changed.
 
 ## Current authorized scope — YouTube credential cutover without reconnect
 
