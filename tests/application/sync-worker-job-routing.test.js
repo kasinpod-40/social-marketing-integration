@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import syncWorker, { createSyncWorker, processJob } from '../../apps/sync-worker/src/index.js';
 import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
+  CUSTOMER_WEEKLY_NOTIFICATION_SETTINGS_ACTIVATION_VERSION,
+} from '../../packages/application/src/use-cases/seed-report-settings.js';
+import {
   markReliabilityHandled,
   permanentError,
 } from '../../packages/shared/src/errors/runtime-error.js';
@@ -46,6 +49,68 @@ test('all supported queue jobs require a valid runtime customer profile before i
 
   assert.equal(message.acked, true);
   assert.equal(message.retried, false);
+});
+
+test('controlled Customer Weekly Notification settings activation updates only eight 7D stable keys', async () => {
+  let rows;
+  const result = await processJob({
+    job: {
+      body: {
+        type: JOB_TYPES.REPORT_SETTINGS_SEED,
+        trigger: 'lark_notification_runtime',
+        notificationRuntimeActivation: true,
+        activationVersion: CUSTOMER_WEEKLY_NOTIFICATION_SETTINGS_ACTIVATION_VERSION,
+      },
+    },
+    env: {
+      MKT_ENV: 'production',
+      MKT_CUSTOMER_PROFILE: 'chemistry_k',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'true',
+      MKT_SCHEDULE_WEEKLY_NOTIFICATION_ENABLED: 'true',
+      MKT_REPORT_D1_READ_ENABLED: 'true',
+      MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: 'true',
+      MKT_NOTIFICATION_RUNTIME_ENABLED: 'true',
+      MKT_NOTIFICATION_LARK_SEND_ENABLED: 'true',
+      MKT_NOTIFICATION_LARK_MIRROR_ENABLED: 'true',
+      MKT_NOTIFICATION_RUNTIME_MODE: 'runtime',
+      MKT_NOTIFICATION_DESTINATION_KEY_HASH: 'a'.repeat(64),
+      MKT_NOTIFICATION_DESTINATION_CHAT_NAME: 'Chemistry K — Marketing Alerts',
+      LARK_TABLE_MKT_REPORT_SETTINGS: 'tbl-settings',
+      LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl-snapshots',
+      LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl-ai',
+      LARK_TABLE_MKT_NOTIFICATION_LOG: 'tbl-notification',
+    },
+    getRuntimeConfig() {
+      return {
+        environment: 'production',
+        profileKey: 'chemistry_k',
+        customerKey: 'chemistry_k',
+        infrastructureOwner: 'customer',
+      };
+    },
+    getInfrastructure() {
+      return {
+        repository: {
+          async prepareRows(_tableId, inputRows) { return inputRows; },
+          async listByFieldValues() { return []; },
+          async createMany() { return { created: 0 }; },
+          async updateMany() { return { updated: 0 }; },
+        },
+        syncEngine: {
+          async syncByKey(input) {
+            rows = input.rows;
+            return { created: 0, updated: input.rows.length, skipped: 0 };
+          },
+        },
+      };
+    },
+  });
+
+  assert.equal(result.updated, 8);
+  assert.equal(rows.length, 8);
+  assert.equal(rows.every((row) => row.window_days === 7), true);
+  assert.equal(rows.every((row) => row.ai_enabled && row.notification_enabled), true);
+  assert.equal(rows.every((row) => row.group_id === null), true);
 });
 
 test('sync worker parses JSON string bodies and still acknowledges unsupported jobs', async () => {

@@ -16,13 +16,18 @@ import {
 import { deliverReliabilityMirror } from '../../../packages/application/src/use-cases/deliver-reliability-mirror.js';
 import { redriveDeadLetterJob } from '../../../packages/application/src/use-cases/redrive-dead-letter-job.js';
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
-import { seedReportSettings } from '../../../packages/application/src/use-cases/seed-report-settings.js';
+import {
+  CUSTOMER_WEEKLY_NOTIFICATION_SETTINGS_ACTIVATION_VERSION,
+  seedCustomerWeeklyNotificationReportSettings,
+  seedReportSettings,
+} from '../../../packages/application/src/use-cases/seed-report-settings.js';
 import { runMktContentDailyRetention } from '../../../packages/application/src/use-cases/mkt-content-daily-retention.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { syncYouTubeOrganicEndToEnd } from '../../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
+import { readLarkNotificationRuntimeConfig } from '../../../packages/config/src/lark-notification-runtime-config.js';
 import {
   readYouTubeChannelIdFromEnv,
   readYouTubeLarkTableIdsFromEnv,
@@ -356,6 +361,15 @@ export async function processJob(input) {
 
   if (definition.type === JOB_TYPES.REPORT_SETTINGS_SEED) {
     const tableIds = readLarkTableIdsFromEnv(input.env, ['mktReportSettings']);
+    if (input.job.body?.notificationRuntimeActivation === true) {
+      assertCustomerWeeklyNotificationSettingsActivation(input, runtimeConfig);
+      return seedCustomerWeeklyNotificationReportSettings({
+        repository: infrastructure.repository,
+        syncEngine: infrastructure.syncEngine,
+        tableId: tableIds.mktReportSettings,
+        profileKey: runtimeConfig.profileKey,
+      });
+    }
     return seedReportSettings({
       repository: infrastructure.repository,
       syncEngine: infrastructure.syncEngine,
@@ -463,6 +477,47 @@ export async function processJob(input) {
     code: 'SYNC_JOB_HANDLER_MISSING',
     details: { type: definition.type },
   });
+}
+
+function assertCustomerWeeklyNotificationSettingsActivation(input, runtimeConfig) {
+  const body = input.job?.body ?? {};
+  const exactCustomerRuntime = runtimeConfig.environment === 'production'
+    && runtimeConfig.profileKey === 'chemistry_k'
+    && runtimeConfig.customerKey === 'chemistry_k'
+    && runtimeConfig.infrastructureOwner === 'customer';
+  if (!exactCustomerRuntime) {
+    throw permanentError('Customer Weekly Notification settings activation is Production-customer only', {
+      code: 'CUSTOMER_NOTIFICATION_SETTINGS_ACTIVATION_FORBIDDEN',
+    });
+  }
+  if (body.trigger !== JOB_TRIGGERS.LARK_NOTIFICATION_RUNTIME
+    || body.activationVersion !== CUSTOMER_WEEKLY_NOTIFICATION_SETTINGS_ACTIVATION_VERSION) {
+    throw permanentError('Customer Weekly Notification settings activation identity is invalid', {
+      code: 'CUSTOMER_NOTIFICATION_SETTINGS_ACTIVATION_INVALID',
+    });
+  }
+  for (const fieldName of [
+    'MKT_SCHEDULE_WEEKLY_REPORT_ENABLED',
+    'MKT_SCHEDULE_WEEKLY_NOTIFICATION_ENABLED',
+    'MKT_REPORT_D1_READ_ENABLED',
+    'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
+    'MKT_NOTIFICATION_RUNTIME_ENABLED',
+    'MKT_NOTIFICATION_LARK_SEND_ENABLED',
+    'MKT_NOTIFICATION_LARK_MIRROR_ENABLED',
+  ]) {
+    if (!readBoolean(input.env?.[fieldName], false)) {
+      throw permanentError('Customer Weekly Notification settings activation runtime is not ready', {
+        code: 'CUSTOMER_NOTIFICATION_SETTINGS_ACTIVATION_DISABLED',
+        details: { fieldName },
+      });
+    }
+  }
+  const notification = readLarkNotificationRuntimeConfig(input.env);
+  if (notification.mode !== 'runtime' || notification.customerProfile !== 'chemistry_k') {
+    throw permanentError('Customer Weekly Notification runtime authority is invalid', {
+      code: 'CUSTOMER_NOTIFICATION_SETTINGS_ACTIVATION_INVALID',
+    });
+  }
 }
 
 export { resolveConnectorRunMode } from './connector-run-mode.js';

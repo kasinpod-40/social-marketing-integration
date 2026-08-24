@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Weekly Notification Settings controlled activation — 2026-08-24
+
+Customer Production has 74 canonical `chemistry_k` Report Settings, but the eight active-channel 7D Settings
+remain AI/Notification-disabled while source closeout is in progress. A reviewed Queue activation mode now updates
+only those eight stable keys after the exact customer Production runtime, Weekly Report gates, Notification
+runtime/send/mirror gates and destination name/SHA-256 authority all pass. It carries no raw group ID and leaves
+all non-7D, TikTok Ads, Integration Workspace and customer-created Base areas untouched. The exact Customer
+`MKT_Notification_Log` table is present inside `Setup Phase | Social MKT Data Hub`; its mapping remains local and
+uncommitted. Live activation still waits for WooCommerce and Chatwoot completion plus reviewed merge/deploy.
+
 ## Customer Production Free-plan continuation cutover — 2026-08-23
 
 Reviewed main `400a17795f3a2fee0175504c20f3758f377675f8` is deployed in the exact customer account as Worker

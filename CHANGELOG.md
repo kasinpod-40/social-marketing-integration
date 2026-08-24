@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-24 — Customer Weekly Notification Settings activation boundary
+
+- added an exact customer-Production-only Queue path that enables AI/Notification on the eight active 7D Report
+  Settings after Weekly Report and Notification runtime authority is active;
+- preserved stable keys, excluded TikTok Ads and all non-7D/Integration settings, and kept raw Lark group identity
+  out of Queue payloads, logs and committed configuration;
+- kept live Settings mutation and message delivery closed until source completion and reviewed deployment.
+
 ## 2026-08-24 — Customer Report/AI/Notification runtime authority
 
 - removed historical Integration-only profile assumptions from the automatic Weekly AI source, seed and
