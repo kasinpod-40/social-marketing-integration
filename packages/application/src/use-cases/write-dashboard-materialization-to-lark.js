@@ -13,6 +13,7 @@ import {
   LARK_REPORT_SLOT_KEY_FIELD,
 } from '../reports/lark-report-slot-key.js';
 import { stableStringify } from './build-report-snapshot.js';
+import { isReviewedOrganicDashboardCompatibilityProfile } from '../../../config/src/lark-dashboard-display-v2-compatibility.js';
 
 const REPORT_METRIC_NULLABLE_FIELDS = Object.freeze([
   'current_value',
@@ -231,13 +232,16 @@ function buildSharedDimensions(input) {
 }
 
 /**
- * The frozen Integration Workspace keeps Number window_days as planning/write authority and mirrors the
- * same preset into the immutable physical SingleSelect used by existing Dashboard slicers and charts.
- * Other customer profiles retain the normal SingleSelect text contract.
+ * The reviewed Integration Workspace and Chemistry K Customer Production runtimes keep Number
+ * window_days as planning/write authority and mirror the same preset into the immutable physical
+ * SingleSelect used by their copied Dashboard slicers and charts. Other customer profiles retain the
+ * normal SingleSelect text contract.
  */
 function buildMetricSharedDimensions(sharedDimensions) {
   const periodKind = requireText(sharedDimensions.period_kind, 'sharedDimensions.period_kind');
-  const compatibility = sharedDimensions.customer_profile === 'integration_workspace';
+  const compatibility = isReviewedOrganicDashboardCompatibilityProfile(
+    sharedDimensions.customer_profile,
+  );
   if (periodKind === 'custom_range') {
     if (sharedDimensions.window_days !== null) {
       throw new TypeError('custom_range metric dimensions must keep window_days null');

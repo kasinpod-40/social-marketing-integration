@@ -1,5 +1,5 @@
 export const LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION =
-  'lark_dashboard_display_v2_compatibility_v4';
+  'lark_dashboard_display_v2_compatibility_v5';
 
 export const LARK_DASHBOARD_DISPLAY_V2_FIELD = Object.freeze({
   fieldId: 'fldHNUhCfl',
@@ -70,13 +70,15 @@ const REVIEWED_DISPLAY_V2_ALIASES = deepFreeze({
  */
 export function resolveOrganicDashboardDisplayV2(input = {}) {
   const platform = normalizeText(input.platform);
-  if (!ORGANIC_DASHBOARD_CUSTOMER_PROFILES.includes(normalizeText(input.customerProfile))) {
-    return null;
-  }
+  if (!isReviewedOrganicDashboardCompatibilityProfile(input.customerProfile)) return null;
   if (!ORGANIC_DASHBOARD_PLATFORMS.includes(platform)) return null;
   if (normalizeText(input.capability) !== 'organic') return null;
   if (normalizeText(input.reportType) !== 'dashboard_performance_report') return null;
   return resolveOrganicDashboardDisplayV2ByMetricKey(input.metricKey, platform);
+}
+
+export function isReviewedOrganicDashboardCompatibilityProfile(value) {
+  return ORGANIC_DASHBOARD_CUSTOMER_PROFILES.includes(normalizeText(value));
 }
 
 export function resolveOrganicDashboardDisplayV2ByMetricKey(metricKey, expectedPlatform = null) {
