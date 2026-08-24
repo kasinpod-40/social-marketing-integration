@@ -709,3 +709,8 @@ Live completion and WooCommerce Production-UAT admission follow-up:
   workflow IDs remain undisclosed even when the terminal failure is persisted;
 - syntax validation and the full Node test suite pass; live Customer hash binding, retry under a fresh stable
   operation identity, exactly-once delivery proof and original configuration-incident closure remain required.
+
+Live follow-up found and repaired the direct-delivery wiring boundary: the Worker repository intentionally does
+not expose its private Lark client, so destination resolution now receives the explicit Infrastructure Bitable
+client. The first real child delivery stopped before claim/send, preserving zero messages and allowing one fresh
+child identity after reviewed merge/deploy.

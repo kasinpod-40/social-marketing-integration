@@ -99,6 +99,7 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
   } else if (nonNullGroupIds.length === 0 && nullGroupCount === settings.length) {
     const resolved = await resolveLarkNotificationReviewedDestination({
       repository,
+      client: input.client,
       expectedDestinationKeyHash,
       expectedName: expectedDestinationName ?? undefined,
     });
