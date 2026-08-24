@@ -1,5 +1,6 @@
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
+import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 
 export const CUSTOMER_META_K2_LARK_IMPORT_MODE_ENV = 'MKT_CUSTOMER_META_K2_LARK_IMPORT_MODE';
 export const CUSTOMER_META_K2_LARK_IMPORT_MODE = 'IMPORT_EXACT_K2_RECENT_MONTH_SNAPSHOT';
@@ -9,6 +10,11 @@ export const CUSTOMER_META_K2_SOURCE_ACCOUNT_ID = '505898710119851';
 export const CUSTOMER_META_K2_BATCH_SIZE = 50;
 
 const PERIOD = Object.freeze({ since: '2026-07-24', until: '2026-08-23' });
+const SOURCE_TIME_ZONE = 'Asia/Bangkok';
+const DAILY_STABLE_KEY_PATTERN = new RegExp(
+  `^meta_ads:${CUSTOMER_META_K2_SOURCE_ACCOUNT_ID}:ad:([^:]+):(\\d{4}-\\d{2}-\\d{2})$`,
+  'u',
+);
 const COMMON_REQUIRED_FIELDS = Object.freeze(['account_id', 'platform']);
 const TABLE_CONTRACTS = Object.freeze({
   mktAdsCreatives: freezeTableContract({
@@ -207,17 +213,26 @@ function validateRows(rows, contract, tableKey) {
         contract.keyField,
       );
     } else {
-      const metricDate = requireText(row.metric_date, 'metric_date');
+      const stableKeyMatch = DAILY_STABLE_KEY_PATTERN.exec(stableKey);
+      if (!stableKeyMatch) {
+        throw invalid('Customer Meta K2 Daily row has an invalid stable key', { stableKey });
+      }
+      const [, stableExternalEntityId, metricDate] = stableKeyMatch;
       if (metricDate < PERIOD.since || metricDate > PERIOD.until) {
         throw invalid('Customer Meta K2 Daily row escapes the reviewed period', { metricDate });
       }
       requireExact(row.entity_type, 'ad', 'row.entity_type');
       const externalEntityId = requireText(row.external_entity_id, 'external_entity_id');
-      requireExact(
-        stableKey,
-        `meta_ads:${CUSTOMER_META_K2_SOURCE_ACCOUNT_ID}:ad:${externalEntityId}:${metricDate}`,
-        contract.keyField,
+      requireExact(externalEntityId, stableExternalEntityId, 'row.external_entity_id');
+      const expectedMetricDate = dateOnlyInTimeZoneToEpochMilliseconds(
+        metricDate,
+        SOURCE_TIME_ZONE,
+        { label: 'Customer Meta K2 metric date' },
       );
+      if (typeof row.metric_date !== 'number' || !Number.isSafeInteger(row.metric_date)) {
+        throw invalid('Customer Meta K2 Daily metric_date must be epoch milliseconds');
+      }
+      requireExact(row.metric_date, expectedMetricDate, 'row.metric_date');
     }
   }
 }

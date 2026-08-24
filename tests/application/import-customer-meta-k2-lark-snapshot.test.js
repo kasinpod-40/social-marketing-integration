@@ -9,6 +9,7 @@ import {
   listCustomerMetaK2LarkImportContracts,
   projectCustomerMetaK2RowsForLark,
 } from '../../packages/application/src/use-cases/import-customer-meta-k2-lark-snapshot.js';
+import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../packages/shared/src/date/date-time.js';
 
 function creativeRows() {
   return Array.from({ length: 50 }, (_, index) => {
@@ -37,6 +38,21 @@ function validBody(overrides = {}) {
     rows: creativeRows(),
     ...overrides,
   };
+}
+
+function dailyRows(metricDate = '2026-07-24') {
+  const metricDateEpoch = dateOnlyInTimeZoneToEpochMilliseconds(metricDate, 'Asia/Bangkok');
+  return Array.from({ length: 50 }, (_, index) => {
+    const externalEntityId = String(20_000 + index);
+    return {
+      account_id: CUSTOMER_META_K2_SOURCE_ACCOUNT_ID,
+      ads_daily_key: `meta_ads:${CUSTOMER_META_K2_SOURCE_ACCOUNT_ID}:ad:${externalEntityId}:${metricDate}`,
+      entity_type: 'ad',
+      external_entity_id: externalEntityId,
+      metric_date: metricDateEpoch,
+      platform: 'meta_ads',
+    };
+  });
 }
 
 function fakeSyncEngine(result) {
@@ -89,6 +105,55 @@ test('idempotent Customer K2 replay may skip the complete exact batch', async ()
     createFingerprint: async () => contract.batchFingerprints[0],
   });
   assert.equal(result.reconciliation[0].skipped, 50);
+});
+
+test('Customer K2 Daily accepts the canonical Bangkok epoch represented by its stable key date', async () => {
+  const contract = listCustomerMetaK2LarkImportContracts().mktAdsDaily;
+  const syncEngine = fakeSyncEngine({ created: 50, updated: 0, skipped: 0, duplicateInputRows: 0 });
+  await importCustomerMetaK2LarkSnapshot({
+    body: {
+      snapshotId: CUSTOMER_META_K2_SNAPSHOT_ID,
+      sourceAccountId: CUSTOMER_META_K2_SOURCE_ACCOUNT_ID,
+      tableKey: 'mktAdsDaily',
+      batchIndex: 0,
+      batchCount: contract.batchCount,
+      totalRows: contract.totalRows,
+      batchFingerprint: contract.batchFingerprints[0],
+      rows: dailyRows(),
+    },
+    repository: {},
+    syncEngine,
+    tables: { mktAdsDaily: 'tbl_customer_daily' },
+    createFingerprint: async () => contract.batchFingerprints[0],
+  });
+  assert.equal(syncEngine.calls[0].rows[0].metric_date, 1_784_826_000_000);
+});
+
+test('Customer K2 Daily rejects epoch drift before planning Lark writes', async () => {
+  const contract = listCustomerMetaK2LarkImportContracts().mktAdsDaily;
+  const syncEngine = fakeSyncEngine({ created: 50, updated: 0, skipped: 0 });
+  const rows = dailyRows();
+  rows[0] = { ...rows[0], metric_date: rows[0].metric_date + 86_400_000 };
+  await assert.rejects(
+    () => importCustomerMetaK2LarkSnapshot({
+      body: {
+        snapshotId: CUSTOMER_META_K2_SNAPSHOT_ID,
+        sourceAccountId: CUSTOMER_META_K2_SOURCE_ACCOUNT_ID,
+        tableKey: 'mktAdsDaily',
+        batchIndex: 0,
+        batchCount: contract.batchCount,
+        totalRows: contract.totalRows,
+        batchFingerprint: contract.batchFingerprints[0],
+        rows,
+      },
+      repository: {},
+      syncEngine,
+      tables: { mktAdsDaily: 'tbl_customer_daily' },
+      createFingerprint: async () => contract.batchFingerprints[0],
+    }),
+    (error) => error?.code === 'CUSTOMER_META_K2_LARK_IMPORT_INVALID',
+  );
+  assert.equal(syncEngine.calls.length, 0);
 });
 
 test('Customer K2 import rejects fingerprint drift before planning Lark writes', async () => {
