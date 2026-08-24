@@ -1,13 +1,14 @@
 # Changelog
 
-## 2026-08-24 — Customer Organic Dashboard copied-Base compatibility repair
+## 2026-08-24 — Customer Organic Dashboard copied-Base compatibility replay
 
 - extended the reviewed Dashboard compatibility projection to Customer Production so copied Dashboard blocks
   receive both the preserved Display V2 label and legacy Period selector alongside canonical metric dimensions;
 - replayed the exact 16 D1-backed Organic materializations for Facebook, Instagram, TikTok and YouTube at
   1D/3D/7D/30D without changing source facts or Dashboard configuration;
-- completed 16/16 operations with no new alert, DLQ or lock delta; the user visually confirmed Facebook values
-  after the repair, and TikTok completed all four Period jobs in the same controlled replay.
+- completed 16/16 operations with no new alert, DLQ or lock delta; follow-up export comparison then proved the
+  copied Dashboard still needs exact `customer_profile=chemistry_k` isolation because both retained Integration
+  rows and Customer rows now satisfy its legacy display selectors.
 
 ## 2026-08-24 — Customer Social MKT Data Hub Production COMPLETE
 

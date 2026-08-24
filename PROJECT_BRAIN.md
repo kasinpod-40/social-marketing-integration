@@ -20,7 +20,13 @@ Post-replay Dev/Customer D1 comparison also explains why some Customer values ar
 source watermark `2026-08-23T12:16:25+0000`, while Dev remains at `2026-08-22T12:20:57+0000`; Customer YouTube
 also uses a newer source snapshot. TikTok shares the exact source watermark and metric values across both runtimes,
 and Instagram values match across all four windows. Customer values must therefore not be overwritten from the
-older Dev materializations; stable-key comparison found no duplicate accumulation.
+older Dev materializations.
+
+The fresh post-replay Customer export exposed a separate presentation collision: the Report Metric table retains
+336 Integration Organic rows at the older period end and 336 Customer Organic rows at the current period end;
+272 rows in each profile satisfy the copied Dashboard's legacy Display/Period selectors. Stable keys remain unique,
+so this is not storage duplication, but the Dashboard can aggregate both profiles until it is isolated with exact
+`customer_profile=chemistry_k`. Do not replay or delete source/report rows to address this UI filter defect.
 
 ## Customer Chatwoot/WooCommerce exact D1-to-Lark closeout — 2026-08-24
 

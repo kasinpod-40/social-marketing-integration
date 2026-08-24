@@ -737,7 +737,7 @@ child identity after reviewed merge/deploy.
   primary and YouTube crons, Workers Free Queue batch/concurrency 1, normal retries 5, source schedules,
   Report/AI/Notification runtime and Weekly Monday 08:30 notification schedule active.
 
-### 2026-08-24 — Customer Organic Dashboard copied-Base compatibility closeout
+### 2026-08-24 — Customer Organic Dashboard copied-Base compatibility replay
 
 - exact Dev/Customer `.base` comparison proved the Customer Base already contained all 272 canonical Organic
   metric rows, but its copied Dashboard blocks still read the preserved Display V2 and legacy Period fields;
@@ -757,3 +757,8 @@ child identity after reviewed merge/deploy.
   Facebook Customer watermark is `2026-08-23T12:16:25+0000` versus Dev `2026-08-22T12:20:57+0000`, and Customer
   YouTube uses a newer snapshot; TikTok source watermark/values and all Instagram window values match exactly.
   Older Dev materializations must not overwrite these authoritative Customer results.
+- a fresh Customer Base export after the replay proved a separate Dashboard filter defect: the table retains
+  336 Integration Organic rows at the older period and 336 Customer Organic rows at the current period; 272 rows
+  in each profile now satisfy the copied legacy Display/Period selectors. Stable keys are unique, but Dashboard
+  aggregation can be nearly doubled until the exact `customer_profile=chemistry_k` filter is applied. No further
+  replay or row deletion is authorized as a substitute for that profile isolation proof.
