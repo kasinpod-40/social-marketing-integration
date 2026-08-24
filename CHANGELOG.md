@@ -10,6 +10,8 @@
   field/View drift, and require exact Base v3 post-write readback without record/schema/filter/name writes.
 - accept Base v3 visible-field code `800070003` only as a presentation no-op so the application can continue to
   its mandatory exact GET readback; every other API error remains fail closed.
+- add an exact no-op-mismatch fallback that stages the primary field, rebuilds the same visible-field set in
+  reviewed order, verifies exact readback, and restores the prior visible set if the rebuild cannot complete.
 
 ## 2026-08-24 — Customer Lark Base empty-field View hygiene
 

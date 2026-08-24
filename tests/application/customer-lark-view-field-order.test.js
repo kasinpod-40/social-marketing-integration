@@ -72,6 +72,7 @@ function fakeClient() {
     async setViewVisibleFields({ viewId, visibleFields, ...rest }) {
       calls.sets.push({ viewId, visibleFields, ...rest });
       visible.set(viewId, [...visibleFields]);
+      return { noOperation: false };
     },
   };
 }
@@ -89,6 +90,63 @@ test('plans a customer-friendly semantic field order with the primary field firs
     'external_campaign_id',
     'sync_run_id',
   ]);
+});
+
+test('rebuilds one View safely when Base v3 ignores an order-only mutation', async () => {
+  const scope = await reviewedScope();
+  const client = fakeClient();
+  const originalSet = client.setViewVisibleFields;
+  let ignored = false;
+  client.setViewVisibleFields = async (input) => {
+    const isInitialDesired = input.viewId === 'vewAll'
+      && input.visibleFields.length > 1
+      && ignored === false;
+    if (isInitialDesired) {
+      ignored = true;
+      client.calls.sets.push({ ...input });
+      return { noOperation: true };
+    }
+    return originalSet(input);
+  };
+
+  const result = await applyCustomerLarkViewFieldOrder({
+    client,
+    scope,
+    allowedScopeHashes: scope.scopeSha256,
+  });
+
+  assert.equal(result.updatedViews, 1);
+  assert.equal(result.unchangedViews, 1);
+  assert.deepEqual(client.calls.sets.slice(0, 3).map((call) => call.visibleFields), [
+    ['ads_daily_key', 'account_name', 'platform', 'metric_date', 'data_status', 'spend', 'landing_page_url'],
+    ['ads_daily_key'],
+    ['ads_daily_key', 'account_name', 'platform', 'metric_date', 'data_status', 'spend', 'landing_page_url'],
+  ]);
+});
+
+test('restores the prior visible-field set when a staged rebuild cannot finish', async () => {
+  const scope = await reviewedScope();
+  const client = fakeClient();
+  const original = ['ads_daily_key', 'spend', 'account_name', 'metric_date', 'platform', 'data_status', 'landing_page_url'];
+  const originalSet = client.setViewVisibleFields;
+  let fullDesiredAttempts = 0;
+  client.setViewVisibleFields = async (input) => {
+    if (input.viewId === 'vewAll' && input.visibleFields.length > 1) {
+      fullDesiredAttempts += 1;
+      if (fullDesiredAttempts <= 2) {
+        client.calls.sets.push({ ...input });
+        return { noOperation: true };
+      }
+    }
+    return originalSet(input);
+  };
+
+  await assert.rejects(
+    applyCustomerLarkViewFieldOrder({ client, scope, allowedScopeHashes: scope.scopeSha256 }),
+    (error) => error.code === 'CUSTOMER_LARK_VIEW_FIELD_ORDER_READBACK_MISMATCH',
+  );
+  assert.deepEqual(client.calls.sets.at(-1).visibleFields, original);
+  assert.deepEqual(await client.getViewVisibleFields({ viewId: 'vewAll' }), original);
 });
 
 test('reorders only currently visible fields and proves exact readback', async () => {
