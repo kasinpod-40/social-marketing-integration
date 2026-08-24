@@ -1,5 +1,18 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Chatwoot/WooCommerce exact D1-to-Lark closeout — 2026-08-24
+
+Customer Chatwoot business state is already complete in Customer D1 at 3,707 canonical Lark-bound rows. Dev and
+Customer WooCommerce comparison proved Dev was newer only for the latest completed day, while Customer retained
+more historical rows. The safe merge therefore added/replaced only 37 exact stable-key rows and preserved all
+Customer-only history; Customer Commerce Daily and Product Daily now reach 2026-08-23.
+
+A disabled-by-default Customer-Production-only Queue path reads the ten reviewed D1 tables in 50-row batches and
+writes only their existing Customer Lark mappings. Jobs carry no Business rows, accept only the fixed snapshot
+manifest/table/batch identity, and fail closed on manifest drift, duplicate input or incomplete reconciliation.
+The active Customer schedules and Workers Free queue topology are unchanged until reviewed merge/deploy. Full
+Lark execution, idempotent replay and Report/AI/Notification activation remain live gates.
+
 ## Customer Workers Free runtime restoration — 2026-08-24
 
 The user canceled the adjacent visible-field ordering work and prioritized Production source/report completion.

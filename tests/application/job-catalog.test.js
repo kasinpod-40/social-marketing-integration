@@ -76,6 +76,14 @@ test('Customer Meta K2 snapshot import is exact-trigger manual-only', () => {
   ]);
 });
 
+test('Customer D1 snapshot import is exact-trigger manual-only', () => {
+  const definition = getJobDefinition(JOB_TYPES.CUSTOMER_D1_LARK_SNAPSHOT_IMPORT);
+  assert.equal(definition.implementationStatus, 'active');
+  assert.equal(definition.manualOnly, true);
+  assert.deepEqual(definition.allowedTriggers, [JOB_TRIGGERS.CUSTOMER_D1_SNAPSHOT_IMPORT]);
+  assert.equal(definition.connectorKey, null);
+});
+
 test('Dashboard materialization job is one shared manual/scheduled report type', () => {
   const definition = getJobDefinition(JOB_TYPES.REPORT_MATERIALIZATION_GENERATE);
   assert.equal(definition.implementationStatus, 'active');
