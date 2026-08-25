@@ -63,7 +63,7 @@ export function createTikTokPostLarkAuditHttpHandler(dependencies = {}) {
         customerKey: runtimeConfig.customerKey,
         accountKey: requireText(connector?.accountKey, 'tiktok.accountKey'),
         sourceHandle: requireText(connector?.sourceHandle, 'tiktok.sourceHandle'),
-        pageSize: readPositiveInteger(env?.MKT_TIKTOK_SOURCE_PAGE_SIZE, 500),
+        pageSize: readPositiveInteger(env?.MKT_TIKTOK_PROBE_PAGE_SIZE, 500),
         maxPages: readPositiveInteger(env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? env?.LARK_MAX_PAGES, 1_000),
         tables: tableIds,
       });
