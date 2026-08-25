@@ -56,7 +56,7 @@ function sourceConfig() {
     compatibility_date: '2026-07-15',
     compatibility_flags: ['nodejs_compat'],
     workers_dev: false,
-    triggers: { crons: ['*/5 * * * *', '50 0,6,12,18 * * *'] },
+    triggers: { crons: ['*/5 * * * *', '50 0 * * *'] },
     d1_databases: [{
       binding: 'MKT_STATE_DB',
       database_name: 'social-mkt-state-dev',

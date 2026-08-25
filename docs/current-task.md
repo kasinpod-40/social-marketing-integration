@@ -379,6 +379,24 @@ reviewed repair makes the same logical read proceed successfully. The retained f
 
 ## Implementation result
 
+### 2026-08-25 — YouTube daily-only schedule and TikTok 06:55 diagnosis
+
+- changed the dedicated YouTube source Cron from `50 0,6,12,18 * * *` to `50 0 * * *`, which is exactly
+  `07:50` in `Asia/Bangkok`, while preserving the primary five-minute scheduler and all non-YouTube schedules;
+- updated the scheduler contract, current rollout/config guards and focused tests so the retired six-hour Cron is
+  ignored and cannot create overlapping YouTube jobs;
+- read-only Customer D1 evidence proved the TikTok cursor remained at `2026-08-23` and the `2026-08-24` scheduled
+  probe entered a new exact DLQ; a fresh non-redrive probe plus Live Worker tail reproduced retryable
+  `LARK_NETWORK_ERROR` on the protected Native table pagination path before any admission/business write;
+- the Customer config had `MKT_TIKTOK_SOURCE_PAGE_SIZE=25`, requiring more than 50 external Lark fetches during
+  the two-pass 2,046-record watermark scan. The reviewed example contract already uses `500`; the Customer
+  deployment config is restored to that bounded value so the scan stays below the Workers Free subrequest ceiling;
+- the retained protected TikTok forensic terminal was not read as a replay target, redriven, resolved or mutated.
+
+Remaining live gate: merge the reviewed change, deploy the exact merged head with YouTube `07:50` daily and
+TikTok page size `500`, then run one fresh TikTok `2026-08-24` probe and prove cursor/D1/Lark completion plus zero
+new exact-scope alert/DLQ/lock.
+
 ### 2026-08-24 — Customer Weekly Notification Settings controlled activation
 
 - added a fail-closed `report.settings.seed` activation mode that is admitted only for the exact

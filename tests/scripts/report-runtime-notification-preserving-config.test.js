@@ -24,7 +24,7 @@ function config() {
     name: 'social-mkt-sync-worker',
     main: './apps/sync-worker/src/index.js',
     workers_dev: false,
-    triggers: { crons: ['*/5 * * * *', '50 0,6,12,18 * * *'] },
+    triggers: { crons: ['*/5 * * * *', '50 0 * * *'] },
     d1_databases: [{
       binding: 'MKT_STATE_DB',
       database_name: 'social-mkt-state-dev',

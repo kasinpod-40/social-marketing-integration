@@ -83,7 +83,7 @@ test('builds active runtime and safe rollback configs without changing cron trig
       MKT_META_ENABLED: 'true',
       MKT_NOTIFICATION_RUNTIME_ENABLED: 'false',
     },
-    triggers: { crons: ['*/5 * * * *', '50 0,6,12,18 * * *'] },
+    triggers: { crons: ['*/5 * * * *', '50 0 * * *'] },
   });
   const tables = {
     aiRuns: 'table-ai',
