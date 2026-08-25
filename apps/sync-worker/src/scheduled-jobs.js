@@ -35,7 +35,7 @@ const SCHEDULED_REPORT_PLATFORM_SCOPES = Object.freeze(listReportPlatformContrac
 const YOUTUBE_ANALYTICS_TIMEZONE = 'America/Los_Angeles';
 const SCHEDULE_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
 const YOUTUBE_SCHEDULE_MINUTE_UTC = 50;
-const YOUTUBE_SCHEDULE_HOURS_UTC = Object.freeze([0, 6, 12, 18]);
+const YOUTUBE_SCHEDULE_HOURS_UTC = Object.freeze([0]);
 
 export const PRIMARY_SCHEDULE_CRON = '*/5 * * * *';
 export const YOUTUBE_SCHEDULE_CRON = `${YOUTUBE_SCHEDULE_MINUTE_UTC} ${YOUTUBE_SCHEDULE_HOURS_UTC.join(',')} * * *`;

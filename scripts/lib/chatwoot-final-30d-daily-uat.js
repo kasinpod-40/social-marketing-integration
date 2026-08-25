@@ -57,7 +57,7 @@ export const CHATWOOT_FINAL_UAT_TABLES = deepFreeze([
   table('mktConversationAccountDaily', 'LARK_TABLE_MKT_CONVERSATION_ACCOUNT_DAILY', 'account_daily_key', 'chatwoot_account_daily_facts'),
 ]);
 
-const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '50 0,6,12,18 * * *']);
+const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '50 0 * * *']);
 const SAFE_OPERATION_ID = /^[a-z0-9][a-z0-9_-]{0,95}$/u;
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;

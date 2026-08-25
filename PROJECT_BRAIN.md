@@ -1209,3 +1209,16 @@ The exact Customer Weekly AI run completed and one group notification was sent/m
 a stable message hash, zero duplicate send and zero remaining exact Alert/DLQ/lock. Final Worker version is
 `8f151a18-f07a-4cab-ad08-4cd4ba84433e` at reviewed `main@3fd9b482`; normal source, Report and notification schedules
 remain active. The protected TikTok forensic terminal is unchanged.
+
+## Customer daily schedule correction — 2026-08-25
+
+YouTube's dedicated trigger is intentionally reduced to one daily run at `07:50` Asia/Bangkok
+(`50 0 * * *` UTC); the retired six-hour trigger is rejected by the runtime contract. Google Ads remains on its
+external customer-owned Manager Script trigger and signed ingress, so the Cloudflare Google Ads producer stays
+disabled to avoid duplicate source scheduling.
+
+The first Customer TikTok 06:55 automatic probe for metric date `2026-08-24` failed before admission because the
+temporary production page size `25` required more external Lark fetches than Workers Free permits in one
+invocation during the two-pass 2,046-record watermark scan. Live tail reproduced `LARK_NETWORK_ERROR` on the same
+paginated Native-table read. Production must restore the reviewed `500`-row bounded page size and prove one fresh
+non-redrive recovery before this correction is closed. The protected forensic terminal remains immutable.

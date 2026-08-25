@@ -24,7 +24,7 @@
   "triggers": {
     // Existing Cron contracts remain; every Business schedule below is false.
     // Google Ads has no Cron producer in this implementation.
-    "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"]
+    "crons": ["*/5 * * * *", "50 0 * * *"]
   },
 
   "d1_databases": [

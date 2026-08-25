@@ -455,7 +455,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     const worker = createSyncWorker();
     const controller = createScheduledController({
       scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
-      cron: '50 0,6,12,18 * * *',
+      cron: '50 0 * * *',
     });
 
     await worker.scheduled(controller, {

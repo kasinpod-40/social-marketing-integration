@@ -259,10 +259,10 @@ test('Google Ads schedule remains at the external Manager Script provider bounda
   assert.deepEqual(jobs.map((job) => job.type), ['system.reliability-mirror.deliver']);
 });
 
-test('YouTube cron queues an auto sync every 6 hours without duplicating primary jobs', () => {
+test('legacy YouTube six-hour cron is ignored after the daily-only cutover', () => {
   const jobs = buildScheduledJobs({
     event: {
-      cron: YOUTUBE_SCHEDULE_CRON,
+      cron: '50 0,6,12,18 * * *',
       scheduledTime: Date.parse('2026-07-19T06:50:00.000Z'),
     },
     env: {
@@ -276,15 +276,7 @@ test('YouTube cron queues an auto sync every 6 hours without duplicating primary
     },
   });
 
-  assert.deepEqual(jobs, [{
-    schemaVersion: 1,
-    type: 'youtube.channel.organic.sync',
-    trigger: 'scheduled',
-    syncMode: 'auto',
-    requestedAt: '2026-07-19T06:50:00.000Z',
-    metricDate: '2026-07-19',
-    analyticsEnabled: false,
-  }]);
+  assert.deepEqual(jobs, []);
 });
 
 test('YouTube Analytics runs once daily and locks a 7-day completed Pacific range in the job', () => {
@@ -406,7 +398,7 @@ test('YouTube Analytics time fails closed when dedicated cron cannot reach it', 
     },
   }), (error) => {
     assert.equal(error?.code, 'MKT_SCHEDULE_CONFIG_INVALID');
-    assert.deepEqual(error?.details?.supportedTimes, ['01:50', '07:50', '13:50', '19:50']);
+    assert.deepEqual(error?.details?.supportedTimes, ['07:50']);
     return true;
   });
 });

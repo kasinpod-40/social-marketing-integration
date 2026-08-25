@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-25 — Customer YouTube daily-only schedule and TikTok Free-plan probe repair
+
+- reduced the dedicated YouTube trigger from four six-hourly runs to one daily run at `07:50` Asia/Bangkok;
+- made the scheduler reject the retired six-hour Cron so an overlapping stale trigger cannot enqueue duplicate
+  YouTube work;
+- diagnosed the Customer TikTok 06:55 failure as the two-pass Lark watermark scan exceeding the Workers Free
+  external-subrequest ceiling when the production page size was `25`; the reviewed production setting now uses
+  the existing `500`-row bounded contract before the fresh scheduled-date recovery run.
+
 ## 2026-08-24 — Customer Organic Dashboard copied-Base compatibility replay
 
 - extended the reviewed Dashboard compatibility projection to Customer Production so copied Dashboard blocks

@@ -50,7 +50,7 @@ import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/
 
 const ROOT = resolve(process.cwd());
 const REQUIRED_SECRETS = ['CHATWOOT_API_ACCESS_TOKEN', 'LARK_APP_ID', 'LARK_APP_SECRET'];
-const EXPECTED_CRONS = ['*/5 * * * *', '50 0,6,12,18 * * *'];
+const EXPECTED_CRONS = ['*/5 * * * *', '50 0 * * *'];
 let safeRestore = null;
 let primaryError = null;
 
