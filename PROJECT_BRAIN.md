@@ -23,6 +23,12 @@ and version `56b969fa-3860-4aaa-8a00-ec9899a7a815` is the current active deploym
 not final source parity: the long-running Works must still complete before TikTok incremental is restored and
 final Report/Lark reconciliation is declared complete.
 
+The extended soak stopped on the Customer Workers Free external daily Queue-write ceiling after operation 10,253,
+not on lost checkpoints. Retained progress is Chatwoot 4/5, Meta K3 2,425/3,874, TikTok 390/2,048 and YouTube
+Owner Analytics 837/837. Meta K2 is a separate permanent Lark preflight failure and must not be auto-retried.
+Do not burn further Queue writes before the provider reset; afterward resume only these exact Works and preserve
+the same operation/generation. No credential or customer login is missing.
+
 ## Customer Organic Dashboard copied-Base compatibility — 2026-08-24
 
 Exact Dev/Customer Base export comparison proved Customer already held all 272 canonical Organic Dashboard rows

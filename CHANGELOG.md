@@ -13,6 +13,8 @@
   and TikTok, while YouTube advanced to complete its 837-row Owner Analytics phase;
 - reduced only the Customer Meta D1 batch from 10 to 5 after Live Workers Free evidence; generic redrive remains
   disabled and the protected TikTok forensic terminal remains excluded.
+- recorded the external Workers Free Queue daily-write ceiling at operation 10,253 and retained exact checkpoints
+  for post-reset continuation; permanent Meta K2 Lark preflight remains fail-closed rather than blindly retried.
 
 ## 2026-08-25 — Customer Workers Free durable runtime recovery
 
