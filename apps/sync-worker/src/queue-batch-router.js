@@ -19,6 +19,7 @@ import {
   requireQueueName,
   summarizeJobResult,
 } from './worker-runtime-support.js';
+import { attemptQueueAutoRecovery } from './queue-auto-recovery.js';
 
 export const QUEUE_ROLES = Object.freeze({
   MAIN: 'main',
@@ -107,6 +108,12 @@ async function processMainQueueBatch(batch, env, dependencies) {
         getRuntimeConfig,
         getInfrastructure,
       });
+      if (operation?.stable && queueOperationStore) {
+        await queueOperationStore.completeSafeAutoRecoveriesForWork({
+          workKey: operation.workKey,
+          generation: operation.generation,
+        });
+      }
       logQueueResult({
         ok: true,
         messageId: message.id,
@@ -245,6 +252,13 @@ async function processDeadLetterBatch(batch, env, storeFactory) {
           },
         }));
       }
+      const autoRecovery = await attemptQueueAutoRecovery({
+        env,
+        job,
+        operation,
+        dlqId,
+        queueOperationStore,
+      });
       logQueueResult({
         ok: false,
         scope: 'dead_letter',
@@ -255,6 +269,7 @@ async function processDeadLetterBatch(batch, env, storeFactory) {
         operationId: operation?.operationId ?? null,
         workKey: operation?.workKey ?? null,
         persisted: true,
+        autoRecovery,
       });
       message.ack();
     } catch (error) {

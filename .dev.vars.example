@@ -112,6 +112,10 @@ MKT_WEEKLY_REPORT_SETTING_KEY=integration_workspace:tiktok:weekly
 MKT_MAIN_QUEUE_NAME=social-mkt-sync-jobs
 MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
 MKT_QUEUE_RETRY_DELAY_SECONDS=30
+# ปิดโดย Default: เปิดเฉพาะ Customer Production หลังผ่าน Live proof; ไม่ใช่ generic DLQ redrive
+MKT_QUEUE_AUTO_RECOVERY_ENABLED=false
+MKT_QUEUE_AUTO_RECOVERY_MAX_ATTEMPTS=5
+MKT_QUEUE_AUTO_RECOVERY_COOLDOWN_SECONDS=120
 
 # Storage Foundation flags — Phase 1B สร้าง Schema/Repository เท่านั้น ทุก Flag ต้องปิด
 MKT_TIME_SERIES_D1_WRITE_ENABLED=false

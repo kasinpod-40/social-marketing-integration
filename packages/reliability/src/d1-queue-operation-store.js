@@ -127,6 +127,317 @@ export class D1QueueOperationStore {
   }
 
   /**
+   * Claim one same-generation retry-exhausted Work for bounded automatic recovery. The claim is
+   * durable per DLQ row and the Work transition cannot revive completed, superseded or permanent
+   * failures. A repeated DLQ delivery may resend the same stable payload after a send/mark crash.
+   */
+  async authorizeSafeAutoRecovery(input = {}) {
+    const dlqId = requireText(input.dlqId, 'dlqId');
+    const operationId = requireText(input.operationId, 'operationId');
+    const workKey = requireText(input.workKey, 'workKey');
+    const generation = timestamp(input.generation, 'generation');
+    const originalRequestedAt = timestamp(input.originalRequestedAt, 'originalRequestedAt');
+    const jobType = requireText(input.jobType, 'jobType');
+    const recoveryReference = requireText(input.recoveryReference, 'recoveryReference');
+    const maxRecoveries = boundedPositiveInteger(input.maxRecoveries, 'maxRecoveries', 10);
+    const cooldownSeconds = boundedPositiveInteger(
+      input.cooldownSeconds,
+      'cooldownSeconds',
+      43_200,
+    );
+    const now = timestamp(input.now ?? this.now(), 'now');
+
+    try {
+      const current = await this.#readSafeAutoRecoveryState({ dlqId, now });
+      assertSafeAutoRecoveryIdentity(current, {
+        dlqId,
+        operationId,
+        workKey,
+        generation,
+        originalRequestedAt,
+        jobType,
+        recoveryReference,
+      });
+      if (current.workLifecycleStatus === 'completed') {
+        return freezeSafeAutoRecovery(current, 'completed', false, 0);
+      }
+      if (current.metadataRecoveryStatus === 'completed') {
+        return freezeSafeAutoRecovery(current, 'already_completed', false, 0);
+      }
+      const alreadyClaimed = current.metadataRecoveryStatus === 'in_progress'
+        && current.metadataRecoveryReference === recoveryReference;
+      if (!alreadyClaimed) {
+        const claim = await this.db.prepare(`
+          UPDATE dead_letter_operation_metadata
+          SET recovery_status = 'in_progress',
+              recovery_reference = ?,
+              recovery_started_at = COALESCE(recovery_started_at, ?),
+              updated_at = ?
+          WHERE dlq_id = ?
+            AND operation_id = ?
+            AND original_work_key = ?
+            AND generation = ?
+            AND original_requested_at = ?
+            AND recovery_status = 'not_started'
+            AND (
+              SELECT COUNT(*)
+              FROM dead_letter_operation_metadata AS prior
+              WHERE prior.original_work_key = dead_letter_operation_metadata.original_work_key
+                AND prior.dlq_id <> dead_letter_operation_metadata.dlq_id
+                AND prior.recovery_reference LIKE 'auto-recovery:%'
+            ) < ?
+        `).bind(
+          recoveryReference,
+          now,
+          now,
+          dlqId,
+          operationId,
+          workKey,
+          generation,
+          originalRequestedAt,
+          maxRecoveries,
+        ).run();
+        if (readChanges(claim) !== 1) {
+          const afterClaim = await this.#readSafeAutoRecoveryState({ dlqId, now });
+          if (afterClaim?.metadataRecoveryStatus !== 'in_progress'
+            || afterClaim.metadataRecoveryReference !== recoveryReference) {
+            return freezeSafeAutoRecovery(
+              afterClaim ?? current,
+              'recovery_budget_exhausted',
+              false,
+              0,
+            );
+          }
+        }
+      }
+
+      const revived = await this.db.prepare(`
+        UPDATE sync_work_runs
+        SET lifecycle_status = 'active',
+            terminal_reason = NULL,
+            abandoned_at = NULL,
+            expires_at = NULL,
+            audit_reference = ?,
+            updated_at = ?
+        WHERE work_key = ?
+          AND generation = ?
+          AND requested_at = ?
+          AND lifecycle_status = 'terminal'
+          AND terminal_reason = 'QUEUE_RETRY_EXHAUSTED'
+          AND completed_at IS NULL
+      `).bind(
+        recoveryReference,
+        now,
+        workKey,
+        generation,
+        originalRequestedAt,
+      ).run();
+      const after = await this.#readSafeAutoRecoveryState({ dlqId, now });
+      if (after?.workLifecycleStatus === 'completed') {
+        return freezeSafeAutoRecovery(after, 'completed', false, 0);
+      }
+      if (after?.workLifecycleStatus !== 'active'
+        || ![0, 1].includes(readChanges(revived))) {
+        throw permanentError('Queue Work is not eligible for same-generation auto-recovery', {
+          code: 'QUEUE_AUTO_RECOVERY_WORK_STATE_INVALID',
+          details: { dlqId, workKey, generation },
+        });
+      }
+      const lockDelay = Number.isSafeInteger(after.activeLockExpiresAt)
+        && after.activeLockExpiresAt > now
+        ? Math.ceil((after.activeLockExpiresAt - now) / 1000) + 5
+        : 0;
+      const priorCooldown = Number.isSafeInteger(after.priorRecoveryStartedAt)
+        ? Math.max(0, Math.ceil(
+          (after.priorRecoveryStartedAt + (cooldownSeconds * 1000) - now) / 1000,
+        ))
+        : 0;
+      const delaySeconds = Math.min(
+        43_200,
+        Math.max(cooldownSeconds, lockDelay, priorCooldown),
+      );
+      return freezeSafeAutoRecovery(after, 'authorized', true, delaySeconds);
+    } catch (cause) {
+      if (cause?.code?.startsWith?.('QUEUE_AUTO_RECOVERY_')) throw cause;
+      throw d1Error(
+        'Failed to authorize Queue auto-recovery',
+        'D1_QUEUE_AUTO_RECOVERY_AUTHORIZE_FAILED',
+        cause,
+      );
+    }
+  }
+
+  async markSafeAutoRecoveryQueued(input = {}) {
+    const dlqId = requireText(input.dlqId, 'dlqId');
+    const operationId = requireText(input.operationId, 'operationId');
+    const workKey = requireText(input.workKey, 'workKey');
+    const recoveryReference = requireText(input.recoveryReference, 'recoveryReference');
+    const now = timestamp(input.now ?? this.now(), 'now');
+    try {
+      const results = await this.db.batch([
+        this.db.prepare(`
+          UPDATE dead_letter_jobs
+          SET status = 'redrive_pending',
+              redrive_requested_at = COALESCE(redrive_requested_at, ?),
+              redrive_reference = COALESCE(redrive_reference, ?),
+              updated_at = ?
+          WHERE dlq_id = ? AND status IN ('open', 'redrive_pending')
+        `).bind(now, recoveryReference, now, dlqId),
+        this.db.prepare(`
+          UPDATE dead_letter_operation_metadata
+          SET updated_at = ?
+          WHERE dlq_id = ?
+            AND operation_id = ?
+            AND original_work_key = ?
+            AND recovery_status = 'in_progress'
+            AND recovery_reference = ?
+        `).bind(now, dlqId, operationId, workKey, recoveryReference),
+      ]);
+      if (results.some((result) => readChanges(result) !== 1)) {
+        throw permanentError('Queue auto-recovery queued marker was rejected', {
+          code: 'QUEUE_AUTO_RECOVERY_MARK_QUEUED_REJECTED',
+          details: { dlqId, workKey },
+        });
+      }
+      return true;
+    } catch (cause) {
+      if (cause?.code?.startsWith?.('QUEUE_AUTO_RECOVERY_')) throw cause;
+      throw d1Error(
+        'Failed to persist Queue auto-recovery queued state',
+        'D1_QUEUE_AUTO_RECOVERY_MARK_QUEUED_FAILED',
+        cause,
+      );
+    }
+  }
+
+  /** Close only auto-recovery incidents after the exact Work is durably completed. */
+  async completeSafeAutoRecoveriesForWork(input = {}) {
+    const workKey = requireText(input.workKey, 'workKey');
+    const generation = timestamp(input.generation, 'generation');
+    const now = timestamp(input.now ?? this.now(), 'now');
+    try {
+      const work = await this.db.prepare(`
+        SELECT lifecycle_status, completed_at
+        FROM sync_work_runs
+        WHERE work_key = ? AND generation = ?
+      `).bind(workKey, generation).first();
+      if (work?.lifecycle_status !== 'completed' || work.completed_at === null) {
+        return Object.freeze({ completed: false, incidents: 0 });
+      }
+      const rows = await this.db.prepare(`
+        SELECT dlq_id, recovery_reference
+        FROM dead_letter_operation_metadata
+        WHERE original_work_key = ?
+          AND generation = ?
+          AND recovery_status = 'in_progress'
+          AND recovery_reference LIKE 'auto-recovery:%'
+        ORDER BY created_at ASC
+        LIMIT 25
+      `).bind(workKey, generation).all();
+      const incidents = readRows(rows);
+      for (const incident of incidents) {
+        const dlqId = requireText(incident.dlq_id, 'dlq_id');
+        const recoveryReference = requireText(incident.recovery_reference, 'recovery_reference');
+        await this.db.batch([
+          this.db.prepare(`
+            UPDATE dead_letter_operation_metadata
+            SET recovery_status = 'completed',
+                recovery_completed_at = COALESCE(recovery_completed_at, ?),
+                audit_reference = COALESCE(audit_reference, ?),
+                updated_at = ?
+            WHERE dlq_id = ?
+              AND original_work_key = ?
+              AND generation = ?
+              AND recovery_status = 'in_progress'
+              AND recovery_reference = ?
+          `).bind(now, recoveryReference, now, dlqId, workKey, generation, recoveryReference),
+          this.db.prepare(`
+            UPDATE dead_letter_jobs
+            SET status = 'redriven',
+                redrive_requested_at = COALESCE(redrive_requested_at, ?),
+                redrive_reference = COALESCE(redrive_reference, ?),
+                redriven_at = COALESCE(redriven_at, ?),
+                updated_at = ?
+            WHERE dlq_id = ? AND status IN ('open', 'redrive_pending', 'redriven')
+          `).bind(now, recoveryReference, now, now, dlqId),
+          this.db.prepare(`
+            UPDATE system_alerts
+            SET status = 'resolved', updated_at = ?
+            WHERE alert_id = ? AND status IN ('open', 'acknowledged', 'resolved')
+          `).bind(now, `alert:${dlqId}`),
+        ]);
+      }
+      return Object.freeze({ completed: true, incidents: incidents.length });
+    } catch (cause) {
+      throw d1Error(
+        'Failed to close completed Queue auto-recovery incidents',
+        'D1_QUEUE_AUTO_RECOVERY_COMPLETE_FAILED',
+        cause,
+      );
+    }
+  }
+
+  async #readSafeAutoRecoveryState({ dlqId, now }) {
+    const row = await this.db.prepare(`
+      SELECT
+        dead.dlq_id,
+        dead.job_type,
+        dead.status AS dlq_status,
+        dead.error_code,
+        metadata.operation_id,
+        metadata.original_work_key,
+        metadata.generation AS metadata_generation,
+        metadata.original_requested_at,
+        metadata.recovery_status,
+        metadata.recovery_reference,
+        metadata.recovery_started_at,
+        work.generation AS work_generation,
+        work.requested_at AS work_requested_at,
+        work.lifecycle_status,
+        work.terminal_reason,
+        work.completed_at,
+        (
+          SELECT MAX(lock.expires_at)
+          FROM sync_locks AS lock
+          WHERE lock.lock_key = work.cursor_key AND lock.expires_at > ?
+        ) AS active_lock_expires_at,
+        (
+          SELECT MAX(prior.recovery_started_at)
+          FROM dead_letter_operation_metadata AS prior
+          WHERE prior.original_work_key = metadata.original_work_key
+            AND prior.dlq_id <> metadata.dlq_id
+            AND prior.recovery_reference LIKE 'auto-recovery:%'
+        ) AS prior_recovery_started_at
+      FROM dead_letter_jobs AS dead
+      JOIN dead_letter_operation_metadata AS metadata ON metadata.dlq_id = dead.dlq_id
+      JOIN sync_work_runs AS work ON work.work_key = metadata.original_work_key
+      WHERE dead.dlq_id = ?
+      LIMIT 1
+    `).bind(now, dlqId).first();
+    if (!row) return null;
+    return Object.freeze({
+      dlqId: row.dlq_id,
+      jobType: row.job_type,
+      dlqStatus: row.dlq_status,
+      errorCode: row.error_code,
+      operationId: row.operation_id,
+      workKey: row.original_work_key,
+      metadataGeneration: nullableNumber(row.metadata_generation),
+      originalRequestedAt: nullableNumber(row.original_requested_at),
+      metadataRecoveryStatus: row.recovery_status,
+      metadataRecoveryReference: optionalText(row.recovery_reference),
+      metadataRecoveryStartedAt: nullableNumber(row.recovery_started_at),
+      workGeneration: nullableNumber(row.work_generation),
+      workRequestedAt: nullableNumber(row.work_requested_at),
+      workLifecycleStatus: row.lifecycle_status,
+      terminalReason: row.terminal_reason,
+      completedAt: nullableNumber(row.completed_at),
+      activeLockExpiresAt: nullableNumber(row.active_lock_expires_at),
+      priorRecoveryStartedAt: nullableNumber(row.prior_recovery_started_at),
+    });
+  }
+
+  /**
    * Authorize only the exact 2026-07-23 incident. First authorization requires the original
    * expired lock and nextSequence=2; retries/continuations reuse the persisted recovery reference.
    */
@@ -389,6 +700,75 @@ function incidentError(message, code, details = {}) {
   return permanentError(message, { code, details });
 }
 
+function assertSafeAutoRecoveryIdentity(current, expected) {
+  if (!current) {
+    throw permanentError('Queue auto-recovery state was not found', {
+      code: 'QUEUE_AUTO_RECOVERY_STATE_NOT_FOUND',
+      details: { dlqId: expected.dlqId },
+    });
+  }
+  const identityMatches = current.dlqId === expected.dlqId
+    && current.operationId === expected.operationId
+    && current.workKey === expected.workKey
+    && current.metadataGeneration === expected.generation
+    && current.originalRequestedAt === expected.originalRequestedAt
+    && current.workGeneration === expected.generation
+    && current.workRequestedAt === expected.originalRequestedAt
+    && current.jobType === expected.jobType;
+  if (!identityMatches) {
+    throw permanentError('Queue auto-recovery identity is inconsistent', {
+      code: 'QUEUE_AUTO_RECOVERY_IDENTITY_MISMATCH',
+      details: { dlqId: expected.dlqId, workKey: expected.workKey },
+    });
+  }
+  if (!['open', 'redrive_pending', 'redriven'].includes(current.dlqStatus)
+    || current.errorCode !== 'QUEUE_RETRY_EXHAUSTED') {
+    throw permanentError('Dead-letter is not eligible for Queue auto-recovery', {
+      code: 'QUEUE_AUTO_RECOVERY_DLQ_STATE_INVALID',
+      details: { dlqId: expected.dlqId },
+    });
+  }
+  if (!['not_started', 'in_progress', 'completed'].includes(current.metadataRecoveryStatus)) {
+    throw permanentError('Queue auto-recovery metadata state is invalid', {
+      code: 'QUEUE_AUTO_RECOVERY_METADATA_STATE_INVALID',
+      details: { dlqId: expected.dlqId },
+    });
+  }
+  if (current.metadataRecoveryReference
+    && current.metadataRecoveryReference !== expected.recoveryReference) {
+    throw permanentError('Queue auto-recovery reference changed', {
+      code: 'QUEUE_AUTO_RECOVERY_REFERENCE_MISMATCH',
+      details: { dlqId: expected.dlqId },
+    });
+  }
+  if (current.workLifecycleStatus === 'completed') return true;
+  if (current.workLifecycleStatus === 'active'
+    && current.metadataRecoveryStatus === 'in_progress'
+    && current.metadataRecoveryReference === expected.recoveryReference) return true;
+  if (current.workLifecycleStatus !== 'terminal'
+    || current.terminalReason !== 'QUEUE_RETRY_EXHAUSTED'
+    || current.completedAt !== null) {
+    throw permanentError('Queue Work is not a retry-exhausted terminal', {
+      code: 'QUEUE_AUTO_RECOVERY_WORK_STATE_INVALID',
+      details: { dlqId: expected.dlqId, workKey: expected.workKey },
+    });
+  }
+  return true;
+}
+
+function freezeSafeAutoRecovery(current, disposition, sendRequired, delaySeconds) {
+  return Object.freeze({
+    disposition,
+    sendRequired,
+    delaySeconds,
+    dlqId: current.dlqId,
+    operationId: current.operationId,
+    workKey: current.workKey,
+    generation: current.workGeneration,
+    lifecycleStatus: current.workLifecycleStatus,
+  });
+}
+
 function parseObject(value, fieldName) {
   if (value === null || value === undefined || value === '') return {};
   try {
@@ -445,4 +825,27 @@ function nullableTimestamp(value) {
 
 function nonNegative(value, fieldName) {
   return timestamp(value, fieldName);
+}
+
+function boundedPositiveInteger(value, fieldName, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0 || number > maximum) {
+    throw new TypeError(`D1QueueOperationStore ${fieldName} must be between 1 and ${maximum}`);
+  }
+  return number;
+}
+
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function readRows(result) {
+  return Array.isArray(result?.results) ? result.results : [];
+}
+
+function readChanges(result) {
+  const number = Number(result?.meta?.changes ?? result?.changes ?? 0);
+  return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : 0;
 }

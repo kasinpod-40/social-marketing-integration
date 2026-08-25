@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-25 — Customer Production bounded Queue auto-recovery
+
+- added disabled-by-default, exact Customer Production self-healing for retry-exhausted stable connector Work;
+- retained the original operation, generation, payload and checkpoint with lock-aware cooldown and a five-incident
+  per-Work recovery budget;
+- kept permanent/completed/superseded Work and the protected TikTok forensic terminal non-recoverable, while
+  leaving generic DLQ redrive disabled;
+- close only the exact DLQ/Alert after durable Work completion, preserving stable idempotency across send/marker
+  crash retries.
+
 ## 2026-08-25 — Customer Workers Free durable runtime recovery
 
 - gave daily YouTube scheduled work a stable operation identity and split playlist, video-resource and Owner

@@ -1,5 +1,21 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Production bounded Queue auto-recovery — 2026-08-25
+
+Customer Workers Free can legitimately exhaust one Queue delivery while a durably checkpointed connector still
+has recoverable work. Future self-healing is therefore implemented as an exact same-generation continuation, not
+as generic DLQ redrive: an eligible retry-exhausted DLQ atomically claims its existing Work in D1, reactivates only
+that Work, and sends the unchanged stable payload after a bounded lock-aware cooldown. The per-Work budget is five
+recovery incidents and the admitted set is limited to the eight active Customer connectors.
+
+The controller is disabled by default and requires the exact `production/chemistry_k/customer/chemistry_k`
+runtime. Permanent/completed/superseded Work, unstable identities, unsupported jobs and the retained TikTok
+forensic terminal `terminal:eafd8e43f1ae5113d12905301496fd4e` are non-recoverable. Generic
+`MKT_DLQ_REDRIVE_ENABLED` remains false. A recovered DLQ and its paired Alert remain open evidence until the exact
+Work completes; only then may the controller mark that incident redriven/resolved. A crash after Queue send but
+before its durable marker may resend the same stable payload, whose existing idempotency contract prevents a new
+Work identity or duplicate business rows.
+
 ## Customer Organic Dashboard copied-Base compatibility — 2026-08-24
 
 Exact Dev/Customer Base export comparison proved Customer already held all 272 canonical Organic Dashboard rows
