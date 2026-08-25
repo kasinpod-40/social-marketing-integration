@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_WORKERS_FREE_RUNTIME_RECOVERY_IN_PROGRESS
+TASK_STATUS                              = CUSTOMER_SAFE_AUTO_RECOVERY_REVIEW_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 28cd6b7247e41896f82f63861edc0e8e60ad5ad0
-CURRENT_BRANCH                           = codex/customer-free-runtime-repair-20260825
+BASE_MAIN_SHA                            = 20a0c71b
+CURRENT_BRANCH                           = codex/customer-safe-auto-recovery-20260825
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -46,6 +46,8 @@ TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 CUSTOMER_LARK_VIEW_HYGIENE               = COMPLETE_LIVE_PROVEN_FLAG_CLOSED
 CUSTOMER_LARK_VIEW_FIELD_ORDER           = CANCELED_RUNTIME_REMOVED_CPU_SAFE
 CURRENT_FREE_RUNTIME_REPAIR              = CODE_AND_GATES_PASS_LIVE_DEPLOY_RECOVERY_PENDING
+CUSTOMER_QUEUE_AUTO_RECOVERY             = CODE_FULL_TEST_PASS_REVIEW_DEPLOY_LIVE_PROOF_PENDING
+GENERIC_DLQ_REDRIVE                      = DISABLED
 ```
 
 ## Objective
@@ -84,6 +86,34 @@ Implementation on `codex/customer-free-runtime-repair-20260825`:
   Report reliability — PASS 106/106; npm audit — zero vulnerabilities; deploy dry-run — PASS;
 - reviewed PR/merge, Customer deploy and exact Google Ads → Chatwoot → Meta Ads → YouTube → TikTok live completion,
   D1/Lark parity and incident closure remain required before restoring `COMPLETE 100%`.
+
+## Current authorized reliability scope — bounded Customer Queue auto-recovery
+
+The user authorized the Customer Production runtime to resume future transient Queue exhaustion without waiting
+for a manual operator. This is not generic DLQ redrive. The controller is disabled by default and may run only on
+the exact `production/chemistry_k/customer/chemistry_k` ownership tuple.
+
+The implementation:
+
+- admits only stable same-generation operations for TikTok Organic, Facebook, Instagram, Meta Ads, Google Ads,
+  YouTube, WooCommerce and Chatwoot;
+- hard-blocks `terminal:eafd8e43f1ae5113d12905301496fd4e` and never revives permanent, completed or superseded Work;
+- atomically claims each exact DLQ incident in D1, preserves the original payload/work key/generation/checkpoint,
+  waits for active locks plus a bounded cooldown, and limits each Work to five recovery incidents;
+- treats a Queue-send/marker crash as an idempotent resend of the same stable payload, never a replacement Work;
+- keeps DLQ/Alert evidence open while recovery is running and closes only the exact auto-recovery incident after
+  the durable Work reaches `completed`;
+- keeps `MKT_DLQ_REDRIVE_ENABLED=false`; example configuration also keeps auto-recovery disabled by default.
+
+### Implementation result — bounded Customer Queue auto-recovery
+
+- focused policy/store/routing/config regression: PASS 44/44;
+- `npm run check`: PASS, 811 source files / 2,446 dependencies / zero cycles / hygiene PASS;
+- `npm test`: PASS, 3,249 Node tests plus 18 Workers-runtime tests;
+- `npm run test:report-reliability`: PASS 106/106; `npm audit --audit-level=high`: PASS, zero vulnerabilities;
+- `npm run deploy:dry-run`: PASS for both release configs (Wrangler log-file warnings are sandbox-only and the
+  command exited zero);
+- reviewed merge, Customer deploy and non-synthetic Live observation remain required before this scope is complete.
 
 ## Current authorized adjacent scope — Customer Lark View hygiene
 
