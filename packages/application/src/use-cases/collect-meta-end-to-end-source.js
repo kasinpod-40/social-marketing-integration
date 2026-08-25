@@ -5,7 +5,9 @@ import {
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const CONNECTOR_KEYS = new Set(Object.values(META_BUSINESS_CONNECTOR_KEYS));
-const MAX_PAGES = 100;
+// The Queue router fetches only one page per invocation. This is a whole-operation safety ceiling,
+// not an invocation CPU/subrequest budget.
+const MAX_PAGES = 2_500;
 
 /**
  * Fetch one bounded Meta source unit. The caller persists returned nextState in the

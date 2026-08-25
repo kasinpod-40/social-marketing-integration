@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CHATWOOT_RUNTIME_MODES,
+  assertChatwootDurableState,
   createInitialChatwootDurableState,
   isConversationInChatwootWindow,
   resolveChatwootRuntimeWindow,
@@ -10,6 +11,25 @@ import { syncChatwootDurableRuntime } from '../../packages/application/src/use-c
 
 const REQUESTED_AT = Date.parse('2026-07-31T01:00:00Z');
 const DAY_MS = 86_400_000;
+
+test('zero-progress deployed Daily discovery upgrades safely to paginated two-pass state', () => {
+  const state = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    conversationDiscoveryStrategy: 'updated_within_once',
+    stage: 'conversations',
+    mastersComplete: true,
+  };
+  const upgraded = assertChatwootDurableState(state, {
+    mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+    requestedAt: REQUESTED_AT,
+  });
+  assert.equal(upgraded.conversationDiscoveryStrategy, 'stable_identity_two_pass');
+  assert.equal(upgraded.conversationRowsScanned, 0);
+  assert.deepEqual(upgraded.conversationSeenIds, []);
+});
 
 function noOpStore() {
   const methods = [
@@ -152,7 +172,7 @@ test('Initial Conversation scan keeps stable two-pass discovery and one detail r
   assert.equal(third.nextSequence, 5);
 });
 
-test('Daily Conversation discovery reads only the bounded updated-within set once', async () => {
+test('Daily Conversation discovery uses page-bounded stable two-pass convergence', async () => {
   let durableState = {
     ...createInitialChatwootDurableState({
       mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
@@ -200,9 +220,9 @@ test('Daily Conversation discovery reads only the bounded updated-within set onc
   await syncChatwootDurableRuntime({ ...input, continuationSequence: 3 });
   const third = await syncChatwootDurableRuntime({ ...input, continuationSequence: 4 });
 
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 2);
   assert.equal(requests[0].page, 1);
-  assert.equal(requests[0].updatedWithinSeconds, 3 * 24 * 60 * 60 + 60 + 5 * 60);
+  assert.equal(requests[0].updatedWithinSeconds, undefined);
   assert.equal(durableState.conversationRowsScanned, 2);
   assert.equal(durableState.conversationsSelected, 2);
   assert.equal(durableState.conversationDiscoveryComplete, true);

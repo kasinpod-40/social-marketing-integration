@@ -62,6 +62,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       endDate: requireDateOnly(input.analyticsEndDate, { label: 'analyticsEndDate' }),
     })
     : null;
+  const sourceUnitBudget = createSourceUnitBudget(input.maxSourceUnitsPerInvocation);
 
   onProgress({ stage: 'youtube_checkpoint_loading', cursorKey });
   const checkpoint = await stateStore.loadCheckpoint(cursorKey);
@@ -122,7 +123,16 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     maxPages: contentMaxPages,
     assertLockActive: assertCurrentWork,
     onProgress,
+    sourceUnitBudget,
   });
+  if (!inventory.complete) {
+    return buildContinuationResult({
+      syncRunId,
+      workResumed: work.resumed,
+      continuationPhase: WORK_PHASES.CONTENT_INVENTORY,
+      sourceProgress: inventory,
+    });
+  }
   const videoIds = inventory.videoIds;
   const resourceLoad = await loadVideoResources({
     workStore,
@@ -131,7 +141,16 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     videoIds,
     assertLockActive: assertCurrentWork,
     onProgress,
+    sourceUnitBudget,
   });
+  if (!resourceLoad.complete) {
+    return buildContinuationResult({
+      syncRunId,
+      workResumed: work.resumed,
+      continuationPhase: WORK_PHASES.CONTENT_RESOURCES,
+      sourceProgress: resourceLoad,
+    });
+  }
   const videoResources = resourceLoad.videoResources;
   const returnedVideoIds = new Set(videoResources.map((video) => requireText(video?.id, 'video.id')));
   const requestedButUnavailable = videoIds.filter((videoId) => !returnedVideoIds.has(videoId));
@@ -210,8 +229,17 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       assertLockActive: assertCurrentWork,
       maxPages: positiveInteger(input.analyticsMaxPages ?? 1000, 'analyticsMaxPages'),
       onProgress,
+      sourceUnitBudget,
     })
     : emptyAnalyticsLoad();
+  if (analyticsRange && analyticsLoad.completeness?.complete !== true) {
+    return buildContinuationResult({
+      syncRunId,
+      workResumed: work.resumed,
+      continuationPhase: WORK_PHASES.ANALYTICS,
+      sourceProgress: analyticsLoad,
+    });
+  }
   const analyticsRows = analyticsLoad.rows;
   const analyticsReconciliation = analyticsRange
     ? await reconcileAnalyticsRows({
@@ -352,6 +380,14 @@ async function loadUploadInventory(input) {
   });
   const resumedPages = progress?.pagesProcessed ?? 0;
   while (!progress?.complete) {
+    if (!input.sourceUnitBudget.tryConsume()) {
+      return Object.freeze({
+        videoIds: Object.freeze([]),
+        pagesProcessed: progress?.pagesProcessed ?? 0,
+        resumedPages,
+        complete: false,
+      });
+    }
     const state = progress?.state ?? { pageToken: null, visitedPageTokens: [] };
     const pageToken = optionalText(state.pageToken);
     const visitedPageTokens = new Set(Array.isArray(state.visitedPageTokens)
@@ -489,6 +525,15 @@ async function loadVideoResources(input) {
   }
 
   while (!progress?.complete) {
+    if (!input.sourceUnitBudget.tryConsume()) {
+      return Object.freeze({
+        videoResources: Object.freeze([]),
+        pagesProcessed: progress?.pagesProcessed ?? 0,
+        chunksProcessed: progress?.chunksProcessed ?? 0,
+        resumedChunks,
+        complete: false,
+      });
+    }
     const chunkIndex = nonNegativeInteger(progress?.state?.chunkIndex ?? 0, 'content chunkIndex');
     if (chunkIndex >= totalChunks) {
       throw transientError('YouTube content resource progress exceeded selected chunks', {
@@ -668,6 +713,28 @@ async function loadAnalyticsRows(input) {
   }
 
   while (!progress?.complete) {
+    if (!input.sourceUnitBudget.tryConsume()) {
+      return Object.freeze({
+        rows: Object.freeze([]),
+        completeness: Object.freeze({
+          status: 'partial',
+          complete: false,
+          totalTrackedVideos: input.videoIds.length,
+          selectedVideos: input.videoIds.length,
+          successfullyQueriedVideos: progress?.processedItems ?? 0,
+          skippedVideos: 0,
+          failedVideos: 0,
+          pagesProcessed: progress?.pagesProcessed ?? 0,
+          chunksProcessed: progress?.chunksProcessed ?? 0,
+          totalChunks,
+          resumedPages,
+          resumedChunks,
+        }),
+        pagesProcessed: progress?.pagesProcessed ?? 0,
+        chunksProcessed: progress?.chunksProcessed ?? 0,
+        complete: false,
+      });
+    }
     const chunkIndex = nonNegativeInteger(progress?.state?.chunkIndex ?? 0, 'analytics chunkIndex');
     const startIndex = positiveInteger(progress?.state?.startIndex ?? 1, 'analytics startIndex');
     const pageInChunk = positiveInteger(progress?.state?.pageInChunk ?? 1, 'analytics pageInChunk');
@@ -829,6 +896,41 @@ async function assertOwnerChannel({ ownerClient, channelId }) {
   if (!ownerClient) throw permanentError('YouTube Analytics requires OAuth owner credentials', { code: 'YOUTUBE_ANALYTICS_OAUTH_REQUIRED' });
   const owner = await ownerClient.getChannel({ mine: true });
   mapYouTubeChannelResource(owner, channelId);
+}
+
+function createSourceUnitBudget(value) {
+  if (value === null || value === undefined || value === '') {
+    return Object.freeze({ tryConsume: () => true });
+  }
+  const maximum = positiveInteger(value, 'maxSourceUnitsPerInvocation');
+  let consumed = 0;
+  return Object.freeze({
+    tryConsume() {
+      if (consumed >= maximum) return false;
+      consumed += 1;
+      return true;
+    },
+  });
+}
+
+function buildContinuationResult(input) {
+  return Object.freeze({
+    syncRunId: input.syncRunId,
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    mode: 'continuation',
+    status: 'continuation_required',
+    continuationRequired: true,
+    continuationPhase: input.continuationPhase,
+    sourceProgress: input.sourceProgress,
+    checkpointSaved: false,
+    warnings: Object.freeze([]),
+    resumableWork: Object.freeze({
+      resumed: input.workResumed === true,
+      complete: false,
+      cleared: false,
+    }),
+  });
 }
 
 async function planAll(input) {

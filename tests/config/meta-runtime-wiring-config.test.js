@@ -82,6 +82,15 @@ test('Meta runtime accepts a bounded large-inventory unit ceiling without changi
   );
 });
 
+test('Meta runtime keeps one-page invocations while allowing a bounded large-account page ceiling', () => {
+  const config = loadMetaEndToEndRuntimeConfig({ MKT_META_SOURCE_MAX_PAGES: '500' });
+  assert.equal(config.limits.sourceMaxPages, 500);
+  assert.throws(
+    () => loadMetaEndToEndRuntimeConfig({ MKT_META_SOURCE_MAX_PAGES: '2501' }),
+    (error) => error instanceof TypeError && /1 to 2500/u.test(error.message),
+  );
+});
+
 test('builds GET-only source adapters with a separate Facebook Page credential', () => {
   const runtime = createMetaTokenConnectionRuntime({
     META_GRAPH_API_VERSION: 'v25.0',

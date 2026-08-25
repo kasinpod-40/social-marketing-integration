@@ -80,6 +80,49 @@ test('writes only customer-facing canonical tables and checkpoints idempotently'
   assert.equal(second.tables.accounts.result.skipped, 1);
 });
 
+test('stable Free-plan execution persists one source unit then resumes without duplicate writes', async () => {
+  const repository = createRepository();
+  const stateStore = createStateStore();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  let uploadRequests = 0;
+  let videoRequests = 0;
+  const publicClient = {
+    async getChannel() { return CHANNEL; },
+    async listUploadVideoIdsPage() {
+      uploadRequests += 1;
+      return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+    },
+    async listVideos() { videoRequests += 1; return videos; },
+  };
+  const input = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient,
+    syncRunId: 'run-free-1', channelId: 'channel_A', accountKey: 'youtube_dev',
+    customerProfile: 'integration_workspace', cursorKey: 'youtube-lock-free',
+    workKey: 'youtube:scheduled-20260715', metricDate: '2026-07-15',
+    reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
+    generation: 1000, requestedAt: 1000, tables: TABLES,
+    maxSourceUnitsPerInvocation: 1,
+  };
+
+  const first = await syncYouTubeOrganicToLark(input);
+  assert.equal(first.continuationRequired, true);
+  assert.equal(first.continuationPhase, 'youtube_content_resources');
+  assert.equal(uploadRequests, 1);
+  assert.equal(videoRequests, 0);
+  assert.equal(repository.events.some((event) => event.startsWith('write:')), false);
+
+  const second = await syncYouTubeOrganicToLark({ ...input, syncRunId: 'run-free-2' });
+  assert.equal(second.checkpointSaved, true);
+  assert.equal(uploadRequests, 1);
+  assert.equal(videoRequests, 1);
+  assert.equal(second.tables.content.result.created, 2);
+  assert.equal(stateStore.saved.length, 1);
+});
+
 test('operator-style dry-run plans with Lark GET, writes no Business data and replays completed work', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();

@@ -1223,3 +1223,16 @@ Live recovery then proved that reusing a 500-row page as the durable business un
 ceiling, and 100 rows was not stable across all units. The final contract therefore uses a 500-row probe page and
 25-row durable source/business units with one unit per Queue invocation. Closure still requires exact cursor,
 D1/Lark and incident-delta proof; the protected forensic terminal remains immutable.
+
+## Customer Workers Free runtime recovery — 2026-08-25
+
+Fresh Customer schedule evidence supersedes the earlier assumption that successful Paid Dev execution proves the
+same invocation sizing on Workers Free. Customer Business data remains authoritative; recovery resumes existing D1
+phase checkpoints rather than copying older Dev results or restarting source ingestion.
+
+The reviewed runtime direction is: Queue batch/concurrency one, one Provider/source unit per YouTube delivery,
+page-bounded stable two-pass Chatwoot discovery, Meta whole-operation inventory ceilings separated from its one-page
+invocation budget, and smaller Google/Meta D1 batches. TikTok uses migrated incremental state for new operations and
+10-row future source units. The exact retained TikTok forensic terminal
+`terminal:eafd8e43f1ae5113d12905301496fd4e` remains immutable. Production completion must be re-proven by exact
+checkpoint, D1/Lark stable-key parity and zero-new-incident evidence after reviewed merge/deploy.

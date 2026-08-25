@@ -352,7 +352,10 @@ export function buildScheduledJobs(input = {}) {
       job.analyticsStartDate = addDaysDateOnly(endDate, -(lookbackDays - 1));
       job.analyticsEndDate = endDate;
     }
-    jobs.push(Object.freeze(job));
+    jobs.push(createStableQueueOperationBody(job, {
+      operationId: `youtube-scheduled-${local.date.replaceAll('-', '')}`,
+      originalRequestedAt: Date.parse(requestedAt),
+    }));
   }
 
   if (includePrimaryJobs) {

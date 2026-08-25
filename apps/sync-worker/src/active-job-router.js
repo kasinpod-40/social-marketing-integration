@@ -71,6 +71,7 @@ import {
   enqueueTikTokSyncContinuation,
   resolveTikTokSyncInvocation,
 } from './tiktok-sync-continuation.js';
+import { enqueueYouTubeSyncContinuation } from './youtube-sync-continuation.js';
 
 /** Route Job type ไปยัง Use case จริง โดยตรวจ Implementation/Profile/Feature flag ตามลำดับ */
 export async function processJob(input) {
@@ -287,8 +288,7 @@ export async function processJob(input) {
         customerProfile: runtimeConfig.profileKey,
         customerKey: runtimeConfig.customerKey,
         cursorKey: lockKey,
-        // Production UAT ต้อง Resume ข้าม delivery/message ใหม่ได้ ส่วน Scheduled ปกติยังคง
-        // message-scoped identity เพื่อไม่เปลี่ยนพฤติกรรม Production ที่ผ่านการตรวจแล้ว.
+        // Stable scheduled/UAT identity lets a bounded delivery resume the exact D1 phase state.
         workKey: resolveYouTubeActiveWorkKey(input),
         requestedAt,
         generation: requestedAt,
@@ -306,6 +306,9 @@ export async function processJob(input) {
         analyticsStartDate: input.job.body?.analyticsStartDate,
         analyticsEndDate: input.job.body?.analyticsEndDate,
         analyticsMaxPages: readPositiveInteger(input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES, 1000),
+        maxSourceUnitsPerInvocation: input.operation?.stable === true
+          ? readPositiveInteger(input.env?.MKT_YOUTUBE_SOURCE_UNITS_PER_INVOCATION, 1)
+          : null,
         d1WriteEnabled: readBoolean(input.env?.MKT_TIME_SERIES_D1_WRITE_ENABLED, false),
         larkWriteEnabled: readBoolean(input.env?.MKT_YOUTUBE_LARK_WRITE_ENABLED, false),
         dryRun: input.job.body?.dryRun === true,
@@ -317,6 +320,14 @@ export async function processJob(input) {
       });
       },
     });
+    if (result.continuationRequired === true) {
+      await enqueueYouTubeSyncContinuation({
+        env: input.env,
+        originalBody: input.job.body,
+        operation: input.operation,
+        result,
+      });
+    }
     // Cleanup หลัง Reliability runner ปล่อย distributed lock แล้วเท่านั้น
     // เพื่อไม่ให้ retention sweep แข่งกับ active/retryable work ของ cursor เดียวกัน
     await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
@@ -614,15 +625,19 @@ function assertCustomerWeeklyNotificationSettingsActivation(input, runtimeConfig
 export { resolveConnectorRunMode } from './connector-run-mode.js';
 
 export function resolveYouTubeActiveWorkKey(input = {}) {
-  if (input.job?.body?.trigger !== JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT) {
+  const stableRequired = input.job?.body?.trigger === JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT
+    || input.job?.body?.trigger === 'scheduled';
+  if (!stableRequired) {
     return `youtube:${requireJobText(input.message?.id, 'message.id')}`;
   }
 
   const operationId = requireJobText(input.operation?.operationId, 'operation.operationId');
   const expectedWorkKey = `youtube:${operationId}`;
   if (input.operation?.stable !== true || input.operation?.workKey !== expectedWorkKey) {
-    throw permanentError('Controlled YouTube Production UAT requires stable Queue identity', {
-      code: 'YOUTUBE_PRODUCTION_UAT_OPERATION_INVALID',
+    throw permanentError('YouTube durable execution requires stable Queue identity', {
+      code: input.job?.body?.trigger === JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT
+        ? 'YOUTUBE_PRODUCTION_UAT_OPERATION_INVALID'
+        : 'YOUTUBE_SCHEDULED_OPERATION_INVALID',
       details: { operationId },
     });
   }
