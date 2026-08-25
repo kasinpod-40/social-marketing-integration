@@ -200,10 +200,19 @@ export function assertChatwootDurableState(value, expected = {}) {
   const hasDiscoveryProgress = legacyPartialPage
     || conversationSeenIds.length > 0
     || Number(value.conversationPagesProcessed ?? 0) > 0;
-  const conversationDiscoveryStrategy = value.conversationDiscoveryStrategy
+  const storedConversationDiscoveryStrategy = value.conversationDiscoveryStrategy
     ?? (hasDiscoveryProgress
       ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS
       : defaultConversationDiscoveryStrategy(mode));
+  const upgradeZeroProgressDailyDiscovery = mode === CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL
+    && storedConversationDiscoveryStrategy
+      === CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
+    && !hasDiscoveryProgress
+    && value.conversationDiscoveryComplete !== true
+    && value.conversationUpdatedWithinSeconds == null;
+  const conversationDiscoveryStrategy = upgradeZeroProgressDailyDiscovery
+    ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS
+    : storedConversationDiscoveryStrategy;
   assertConversationDiscoveryStrategy(conversationDiscoveryStrategy, mode);
   const conversationDiscoveryComplete = value.conversationDiscoveryComplete === true;
   const conversationUpdatedWithinSeconds = nullablePositiveInteger(
@@ -329,9 +338,10 @@ function requireMode(value) {
 }
 
 function defaultConversationDiscoveryStrategy(mode) {
-  return mode === CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL
-    ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
-    : CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS;
+  // Chatwoot may return a large updated-within result in one response. Stable two-pass discovery
+  // keeps every Daily and Initial invocation page-bounded for Workers Free while preserving the
+  // immutable requestedAt boundary and Stable-key idempotency.
+  return CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS;
 }
 
 function assertConversationDiscoveryStrategy(value, mode) {

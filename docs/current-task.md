@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_MULTICHANNEL_PRODUCTION_COMPLETE_100_PERCENT
+TASK_STATUS                              = CUSTOMER_WORKERS_FREE_RUNTIME_RECOVERY_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 3fd9b482446b6ab34fb18edd7e577d8ad71992c6
-CURRENT_BRANCH                           = main
+BASE_MAIN_SHA                            = 28cd6b7247e41896f82f63861edc0e8e60ad5ad0
+CURRENT_BRANCH                           = codex/customer-free-runtime-repair-20260825
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -45,6 +45,7 @@ CUSTOMER_BASE_PR_661                     = ISOLATED_NO_MUTATION
 TIKTOK_ADS_PR_220                        = DEFERRED_NO_MUTATION
 CUSTOMER_LARK_VIEW_HYGIENE               = COMPLETE_LIVE_PROVEN_FLAG_CLOSED
 CUSTOMER_LARK_VIEW_FIELD_ORDER           = CANCELED_RUNTIME_REMOVED_CPU_SAFE
+CURRENT_FREE_RUNTIME_REPAIR              = CODE_AND_GATES_PASS_LIVE_DEPLOY_RECOVERY_PENDING
 ```
 
 ## Objective
@@ -59,6 +60,30 @@ credentials used in the Integration Workspace are already customer assets. Custo
 therefore a runtime cutover to the customer-owned Cloudflare resources and customer Lark Base, not
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
+
+## Current authorized recovery — Customer Workers Free runtime
+
+The first post-cutover schedules proved that Dev data parity does not guarantee Customer runtime parity because
+Dev is Paid while Customer remains Workers Free. The user authorized reviewed code, merge, Customer deployment
+and exact one-connector-at-a-time recovery without another interactive approval. The recovery must preserve the
+existing Customer D1/Lark stable keys and checkpoints and must never redrive or mutate
+`terminal:eafd8e43f1ae5113d12905301496fd4e`.
+
+Implementation on `codex/customer-free-runtime-repair-20260825`:
+
+- Meta source remains one Provider page per Queue invocation, while the whole-operation page ceiling now accepts
+  reviewed large accounts up to 2,500 pages; Customer uses 500 and reduces D1 writes from 100 to 10 rows;
+- Chatwoot Daily discovery now uses the existing page-bounded stable two-pass path. The exact deployed zero-progress
+  `updated_within_once` state upgrades in memory without discarding masters or any Business rows;
+- YouTube scheduled work now has a stable daily operation/work key, persists one source page/chunk per delivery and
+  sends only a reference-only continuation after its D1 phase checkpoint;
+- Customer local runtime reduces Google Ads D1/Lark batches to 10/25, enables migrated TikTok incremental state,
+  reduces future TikTok source units to 10 rows and keeps Queue batch/concurrency at one;
+- focused regression — PASS 80/80 plus continuation/router coverage; `npm run check` — PASS, 810 source files /
+  2,441 dependencies / zero cycles / hygiene PASS; `npm test` — PASS 3,242 Node tests + 18 Workers-runtime tests;
+  Report reliability — PASS 106/106; npm audit — zero vulnerabilities; deploy dry-run — PASS;
+- reviewed PR/merge, Customer deploy and exact Google Ads → Chatwoot → Meta Ads → YouTube → TikTok live completion,
+  D1/Lark parity and incident closure remain required before restoring `COMPLETE 100%`.
 
 ## Current authorized adjacent scope — Customer Lark View hygiene
 

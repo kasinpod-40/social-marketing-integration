@@ -49,7 +49,9 @@ export function loadMetaEndToEndRuntimeConfig(env = {}) {
     ])),
     limits: {
       sourcePageSize: boundedInteger(env?.MKT_META_SOURCE_PAGE_SIZE, 100, 1, 100),
-      sourceMaxPages: boundedInteger(env?.MKT_META_SOURCE_MAX_PAGES, 100, 1, 100),
+      // One provider page is still processed per Queue invocation. This ceiling bounds the
+      // durable operation as a whole and must therefore accommodate legitimate large accounts.
+      sourceMaxPages: boundedInteger(env?.MKT_META_SOURCE_MAX_PAGES, 100, 1, 2_500),
       sourceMaxUnits: boundedInteger(env?.MKT_META_SOURCE_MAX_UNITS, 500, 1, 2_500),
       sourceMaxRows: boundedInteger(env?.MKT_META_SOURCE_MAX_ROWS, 50_000, 1, 50_000),
       sourceMaxUnitBytes: boundedInteger(

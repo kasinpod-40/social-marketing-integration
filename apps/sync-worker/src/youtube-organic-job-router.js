@@ -33,6 +33,7 @@ import {
   requireJobText,
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
+import { enqueueYouTubeSyncContinuation } from './youtube-sync-continuation.js';
 
 /** Dedicated YouTube route for the Integration Workspace shared Worker. */
 export async function processYouTubeOrganicEndToEndJob(input) {
@@ -120,7 +121,14 @@ export async function processYouTubeOrganicEndToEndJob(input) {
     customerKey: runtimeConfig.customerKey,
     channelId,
   });
-  const requestedAt = operatorIdentity?.originalRequestedAt
+  const durableIdentity = operatorIdentity ?? (input.operation?.stable === true
+    ? input.operation
+    : null);
+  const boundedQueueIdentity = input.job.body?.trigger === 'scheduled'
+    || input.job.body?.trigger === JOB_TRIGGERS.PRODUCTION_CONNECTOR_UAT
+    ? durableIdentity
+    : null;
+  const requestedAt = durableIdentity?.originalRequestedAt
     ?? readSyncJobGeneration(input.job, 'YouTube');
 
   if (!operatorDryRun) {
@@ -181,7 +189,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         customerProfile: runtimeConfig.profileKey,
         customerKey: requireJobText(runtimeConfig.customerKey, 'runtimeConfig.customerKey'),
         cursorKey: lockKey,
-        workKey: operatorIdentity?.workKey
+        workKey: durableIdentity?.workKey
           ?? `youtube:${requireJobText(input.message?.id, 'message.id')}`,
         requestedAt,
         generation: requestedAt,
@@ -203,6 +211,9 @@ export async function processYouTubeOrganicEndToEndJob(input) {
           input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES,
           1000,
         ),
+        maxSourceUnitsPerInvocation: boundedQueueIdentity
+          ? readPositiveInteger(input.env?.MKT_YOUTUBE_SOURCE_UNITS_PER_INVOCATION, 1)
+          : null,
         d1WriteEnabled,
         larkWriteEnabled,
         dryRun,
@@ -223,6 +234,15 @@ export async function processYouTubeOrganicEndToEndJob(input) {
       });
     },
   });
+
+  if (result.continuationRequired === true) {
+    await enqueueYouTubeSyncContinuation({
+      env: input.env,
+      originalBody: input.job.body,
+      operation: input.operation,
+      result,
+    });
+  }
 
   if (!operatorDryRun) {
     await resumableWorkStore.cleanupExpiredWork({ limit: 25 });

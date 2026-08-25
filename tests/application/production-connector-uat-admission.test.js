@@ -205,11 +205,16 @@ test('controlled YouTube Production UAT resumes from stable operation workKey ac
   assert.equal(resolveYouTubeActiveWorkKey(input), `youtube:${operationId}`);
 });
 
-test('ordinary YouTube execution remains scoped to its Cloudflare message ID', () => {
+test('scheduled YouTube execution resumes from its stable daily operation identity', () => {
   assert.equal(resolveYouTubeActiveWorkKey({
     job: { body: { trigger: 'scheduled' } },
     message: { id: 'scheduled-delivery' },
-  }), 'youtube:scheduled-delivery');
+    operation: {
+      stable: true,
+      operationId: 'youtube-scheduled-20260825',
+      workKey: 'youtube:youtube-scheduled-20260825',
+    },
+  }), 'youtube:youtube-scheduled-20260825');
 });
 
 test('controlled YouTube Production UAT rejects unstable recovery identity', () => {

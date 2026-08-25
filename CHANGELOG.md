@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-25 — Customer Workers Free durable runtime recovery
+
+- gave daily YouTube scheduled work a stable operation identity and split playlist, video-resource and Owner
+  Analytics source reads into one durably checkpointed unit per Queue delivery;
+- changed Chatwoot Daily conversation discovery to the existing page-bounded stable two-pass strategy, including
+  safe in-memory upgrade of the deployed zero-progress Daily state;
+- separated Meta's whole-operation large-account page ceiling from its existing one-page Queue invocation budget;
+- retained reference-only Queue continuations, Stable-key idempotency, Customer D1-first writes and the protected
+  TikTok forensic terminal boundary.
+
 ## 2026-08-25 — Customer YouTube daily-only schedule and TikTok Free-plan probe repair
 
 - reduced the dedicated YouTube trigger from four six-hourly runs to one daily run at `07:50` Asia/Bangkok;

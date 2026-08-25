@@ -173,6 +173,7 @@ async function processConversationUnit(context, state) {
         const exhausted = page.rows.length === 0 || page.hasMore === false;
         if (exhausted) {
           if (next.conversationNewIdsInPass === 0) {
+            next.conversationDiscoveryComplete = true;
             next.conversationsComplete = true;
             next.stage = 'reporting';
             break;
