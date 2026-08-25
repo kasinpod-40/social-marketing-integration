@@ -1217,8 +1217,9 @@ YouTube's dedicated trigger is intentionally reduced to one daily run at `07:50`
 external customer-owned Manager Script trigger and signed ingress, so the Cloudflare Google Ads producer stays
 disabled to avoid duplicate source scheduling.
 
-The first Customer TikTok 06:55 automatic probe for metric date `2026-08-24` failed before admission because the
-temporary production page size `25` required more external Lark fetches than Workers Free permits in one
-invocation during the two-pass 2,046-record watermark scan. Live tail reproduced `LARK_NETWORK_ERROR` on the same
-paginated Native-table read. Production must restore the reviewed `500`-row bounded page size and prove one fresh
-non-redrive recovery before this correction is closed. The protected forensic terminal remains immutable.
+The first Customer TikTok 06:55 automatic probe for metric date `2026-08-24` failed before admission because a
+25-row page required more external Lark fetches than Workers Free permits during the two-pass 2,048-record scan.
+Live recovery then proved that reusing a 500-row page as the durable business unit can exceed the independent CPU
+ceiling, and 100 rows was not stable across all units. The final contract therefore uses a 500-row probe page and
+25-row durable source/business units with one unit per Queue invocation. Closure still requires exact cursor,
+D1/Lark and incident-delta proof; the protected forensic terminal remains immutable.

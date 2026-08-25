@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertTikTokPostLarkRuntime } from '../../apps/sync-worker/src/tiktok-post-lark-job-router.js';
+import {
+  assertTikTokPostLarkRuntime,
+  resolveTikTokProbePageSize,
+} from '../../apps/sync-worker/src/tiktok-post-lark-job-router.js';
 
 function runtime(overrides = {}) {
   return {
@@ -35,4 +38,12 @@ test('TikTok post-Lark runtime rejects foreign Production profiles and ownership
       (error) => error?.code === 'TIKTOK_POST_LARK_ENVIRONMENT_BLOCKED',
     );
   }
+});
+
+test('TikTok watermark probe page size is independent from Free-safe business source chunks', () => {
+  assert.equal(resolveTikTokProbePageSize({
+    MKT_TIKTOK_PROBE_PAGE_SIZE: '500',
+    MKT_TIKTOK_SOURCE_PAGE_SIZE: '25',
+  }), 500);
+  assert.equal(resolveTikTokProbePageSize({ MKT_TIKTOK_SOURCE_PAGE_SIZE: '25' }), 500);
 });

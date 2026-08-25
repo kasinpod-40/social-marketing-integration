@@ -5,9 +5,9 @@
 - reduced the dedicated YouTube trigger from four six-hourly runs to one daily run at `07:50` Asia/Bangkok;
 - made the scheduler reject the retired six-hour Cron so an overlapping stale trigger cannot enqueue duplicate
   YouTube work;
-- diagnosed the Customer TikTok 06:55 failure as the two-pass Lark watermark scan exceeding the Workers Free
-  external-subrequest ceiling when the production page size was `25`; the reviewed production setting now uses
-  the existing `500`-row bounded contract before the fresh scheduled-date recovery run.
+- separated the Customer TikTok two-pass watermark probe (`500` rows/page) from durable business processing
+  (`25` rows/unit), keeping both external-subrequest count and per-invocation CPU inside independent Free-plan
+  budgets instead of forcing one page size to serve incompatible phases.
 
 ## 2026-08-24 — Customer Organic Dashboard copied-Base compatibility replay
 

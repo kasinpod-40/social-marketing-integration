@@ -26,6 +26,7 @@ import {
   DEFAULT_LOCK_LEASE_MS,
   DEFAULT_LOCK_RENEW_INTERVAL_MS,
   DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+  DEFAULT_TIKTOK_PROBE_PAGE_SIZE,
   DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
   DEFAULT_TIKTOK_SOURCE_PAGE_SIZE,
   logQueueResult,
@@ -72,10 +73,7 @@ async function processProbeJob(input) {
     tableId: tableIds.rawTikTokCreatorVideos,
     accountKey: connectorConfig.accountKey,
     expectedSourceHandle: connectorConfig.sourceHandle,
-    pageSize: readPositiveInteger(
-      input.env?.MKT_TIKTOK_SOURCE_PAGE_SIZE,
-      DEFAULT_TIKTOK_SOURCE_PAGE_SIZE,
-    ),
+    pageSize: resolveTikTokProbePageSize(input.env),
     maxPages: readPositiveInteger(
       input.env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? input.env?.LARK_MAX_PAGES,
       DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
@@ -401,6 +399,14 @@ export function assertTikTokPostLarkRuntime(runtimeConfig = {}) {
     });
   }
   return runtimeConfig;
+}
+
+/** Keep the full-table watermark probe efficient without coupling it to Free-safe business chunks. */
+export function resolveTikTokProbePageSize(env = {}) {
+  return readPositiveInteger(
+    env?.MKT_TIKTOK_PROBE_PAGE_SIZE,
+    DEFAULT_TIKTOK_PROBE_PAGE_SIZE,
+  );
 }
 
 function reliabilityLogger(event) {

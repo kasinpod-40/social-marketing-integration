@@ -389,13 +389,18 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   probe entered a new exact DLQ; a fresh non-redrive probe plus Live Worker tail reproduced retryable
   `LARK_NETWORK_ERROR` on the protected Native table pagination path before any admission/business write;
 - the Customer config had `MKT_TIKTOK_SOURCE_PAGE_SIZE=25`, requiring more than 50 external Lark fetches during
-  the two-pass 2,046-record watermark scan. The reviewed example contract already uses `500`; the Customer
-  deployment config is restored to that bounded value so the scan stays below the Workers Free subrequest ceiling;
+  the two-pass 2,048-record watermark scan. Raising the shared value to `500` fixed probe pagination but Live
+  recovery proved a 500-record business unit can exceed Workers Free CPU; `100` was also not stable across units;
+- the final contract separates `MKT_TIKTOK_PROBE_PAGE_SIZE=500` from
+  `MKT_TIKTOK_SOURCE_PAGE_SIZE=25`, preserving a bounded ten-request watermark read while staging and processing
+  one 25-record durable business unit per Queue invocation;
+- focused TikTok regression `35/35`, `npm run check`, full tests (`3,238` Node / `18` Workers-runtime), Report
+  reliability `106/106`, zero-vulnerability audit and deploy dry-run pass;
 - the retained protected TikTok forensic terminal was not read as a replay target, redriven, resolved or mutated.
 
-Remaining live gate: merge the reviewed change, deploy the exact merged head with YouTube `07:50` daily and
-TikTok page size `500`, then run one fresh TikTok `2026-08-24` probe and prove cursor/D1/Lark completion plus zero
-new exact-scope alert/DLQ/lock.
+Remaining live gate: merge and deploy the independent probe/business page-size contract, recover only the exact
+new `2026-08-24` operation from its 2,048-row durable snapshot, then prove cursor/D1/Lark completion plus zero new
+exact-scope alert/DLQ/lock. The protected forensic terminal remains excluded.
 
 ### 2026-08-24 — Customer Weekly Notification Settings controlled activation
 
