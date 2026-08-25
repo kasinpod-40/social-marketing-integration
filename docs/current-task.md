@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_WORKERS_FREE_RUNTIME_RECOVERY_IN_PROGRESS
+TASK_STATUS                              = CUSTOMER_FREE_QUEUE_DAILY_QUOTA_WAIT
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = ae37b064
-CURRENT_BRANCH                           = codex/customer-safe-auto-recovery-live-proof-20260825
+BASE_MAIN_SHA                            = 69b5ebf8
+CURRENT_BRANCH                           = codex/customer-free-queue-quota-handoff-20260825
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -48,6 +48,7 @@ CUSTOMER_LARK_VIEW_FIELD_ORDER           = CANCELED_RUNTIME_REMOVED_CPU_SAFE
 CURRENT_FREE_RUNTIME_REPAIR              = CODE_AND_GATES_PASS_LIVE_DEPLOY_RECOVERY_PENDING
 CUSTOMER_QUEUE_AUTO_RECOVERY             = LIVE_PROVEN_ACTIVE_VERSION_56b969fa
 GENERIC_DLQ_REDRIVE                      = DISABLED
+CUSTOMER_QUEUE_DAILY_WRITE               = EXHAUSTED_10253_WAIT_PROVIDER_RESET
 ```
 
 ## Objective
@@ -122,7 +123,12 @@ The implementation:
   advanced from 700 to 837 rows without a replacement Work or manual second recovery;
 - Customer-only Meta D1 batch was reduced from 10 to 5 after Live Free-CPU evidence, without changing the durable
   fingerprint. Worker version `56b969fa-3860-4aaa-8a00-ec9899a7a815` is active with the same schedules and Queue
-  topology. Long-running source completion/D1-Lark parity remains in progress under the existing monitor.
+  topology;
+- the extended soak then exposed the external stop condition: Cloudflare rejected the next Meta continuation with
+  `You have exceeded the daily write operations limit in Queues free tier (10253)`. Exact retained checkpoints are
+  Chatwoot 4/5, Meta K3 2,425/3,874, TikTok 390/2,048 and YouTube Owner Analytics 837/837; Meta K2 is separately
+  terminal on permanent `LARK_PREFLIGHT_FAILED`. Stop Queue mutation until the provider quota resets, then inspect
+  K2 preflight details and resume only the exact retained Works. No new secret or customer login is required.
 
 ## Current authorized adjacent scope — Customer Lark View hygiene
 
