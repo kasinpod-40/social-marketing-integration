@@ -9,6 +9,10 @@
   leaving generic DLQ redrive disabled;
 - close only the exact DLQ/Alert after durable Work completion, preserving stable idempotency across send/marker
   crash retries.
+- deployed PR #745 to Customer Production and proved non-synthetic same-checkpoint recovery for Chatwoot, Meta Ads
+  and TikTok, while YouTube advanced to complete its 837-row Owner Analytics phase;
+- reduced only the Customer Meta D1 batch from 10 to 5 after Live Workers Free evidence; generic redrive remains
+  disabled and the protected TikTok forensic terminal remains excluded.
 
 ## 2026-08-25 — Customer Workers Free durable runtime recovery
 
