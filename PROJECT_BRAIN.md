@@ -16,6 +16,13 @@ Work completes; only then may the controller mark that incident redriven/resolve
 before its durable marker may resend the same stable payload, whose existing idempotency contract prevents a new
 Work identity or duplicate business rows.
 
+PR #745 merged as `main@ae37b064` and was deployed at 100% Customer traffic. The first non-synthetic exhaustion
+proved exact automatic claims for Chatwoot, Meta K2, Meta K3 and TikTok; Meta K3, TikTok and YouTube subsequently
+advanced their original checkpoints. Customer Meta D1 batching was reduced from 10 to 5 after Free-CPU evidence,
+and version `56b969fa-3860-4aaa-8a00-ec9899a7a815` is the current active deployment. This proves bounded self-heal,
+not final source parity: the long-running Works must still complete before TikTok incremental is restored and
+final Report/Lark reconciliation is declared complete.
+
 ## Customer Organic Dashboard copied-Base compatibility — 2026-08-24
 
 Exact Dev/Customer Base export comparison proved Customer already held all 272 canonical Organic Dashboard rows
