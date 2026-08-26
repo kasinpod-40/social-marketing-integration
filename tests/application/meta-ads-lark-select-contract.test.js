@@ -11,6 +11,7 @@ const SELECT_OPTIONS = Object.freeze({
   adGroupStatus: new Set(['active', 'paused', 'removed', 'deleted', 'unknown']),
   adStatus: new Set(['active', 'paused', 'removed', 'unknown']),
   creativeType: new Set(['image', 'video', 'carousel', 'other']),
+  adChannel: new Set(['facebook_ads', 'instagram_ads']),
 });
 
 const fetchedAt = Date.parse('2026-07-31T12:00:00Z');
@@ -62,7 +63,22 @@ test('Meta curated Lark projection uses only applied SingleSelect options', asyn
       { id: 'creative_deleted', name: 'Deleted', object_type: 'POST_DELETED' },
       { id: 'creative_unknown', name: 'Unknown' },
     ],
-    dailyInsights: [],
+    dailyInsights: [
+      {
+        account_id: '987650001',
+        account_currency: 'THB',
+        campaign_id: 'campaign_1',
+        adset_id: 'adset_1',
+        ad_id: 'ad_1',
+        date_start: '2026-07-31',
+        date_stop: '2026-07-31',
+        publisher_platform: 'audience_network',
+        spend: '1.000000',
+        impressions: '10',
+        reach: '8',
+        clicks: '2',
+      },
+    ],
   });
 
   const account = writeSet.canonical.adsAccounts[0];
@@ -87,6 +103,14 @@ test('Meta curated Lark projection uses only applied SingleSelect options', asyn
   );
   assert.equal(
     writeSet.canonical.adsCreatives.every((row) => SELECT_OPTIONS.creativeType.has(row.creative_type)),
+    true,
+  );
+  assert.equal(writeSet.d1.adsDailyFacts[0].ad_channel, 'audience_network_ads');
+  assert.equal(Object.hasOwn(writeSet.canonical.adsDaily[0], 'ad_channel'), false);
+  assert.equal(
+    writeSet.canonical.adsDaily.every((row) => (
+      !Object.hasOwn(row, 'ad_channel') || SELECT_OPTIONS.adChannel.has(row.ad_channel)
+    )),
     true,
   );
 });

@@ -1,5 +1,21 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Meta daily Select projection repair — 2026-08-26
+
+The first post-quota-reset Customer Meta K2 schedule proved one permanent destination contract issue rather than
+a credential or provider failure. Complete-payload preflight checked six Lark tables, 19,222 rows and 116,090
+fields and found nine `MKT_Ads_Daily.ad_channel` rows whose auxiliary Meta publisher-placement values are not
+configured Customer Base Select options. No Lark write occurred for that failed generation.
+
+Detailed placement identity remains stored in D1 for reporting and forensic use. The canonical Customer Lark
+projection admits only `facebook_ads` and `instagram_ads`; auxiliary placement values are omitted from the Lark
+cell rather than remapped or invented. The scheduled builder, exact K2 snapshot importer and provider-direct
+materializer now share one projection contract. Stable keys, source rows and D1 facts are unchanged.
+
+The 2026-08-26 reset also proved current-day Customer D1 success for Facebook, Instagram, Google Ads,
+WooCommerce and TikTok. Meta K2/K3 and YouTube continue from durable checkpoints. Chatwoot retains one exact
+retry-exhausted Work for bounded recovery. These are runtime continuation states, not missing credentials.
+
 ## Customer Production bounded Queue auto-recovery — 2026-08-25
 
 Customer Workers Free can legitimately exhaust one Queue delivery while a durably checkpointed connector still

@@ -23,6 +23,7 @@ const DATASETS = Object.freeze([
 ]);
 const ENTITY_SCOPE_MODES = new Set(['full_inventory', 'report_range']);
 const LARK_PROJECTION_MODES = new Set(['detailed', 'curated_reports']);
+const META_LARK_DAILY_CHANNELS = new Set(['facebook_ads', 'instagram_ads']);
 
 /** Build Shared RAW, Canonical Lark and D1 rows for one complete Meta Ads snapshot. */
 export async function buildMetaAdsWriteSet(input = {}) {
@@ -256,7 +257,7 @@ export async function buildMetaAdsWriteSet(input = {}) {
     accountTimezone,
     currency,
   });
-  canonical.adsDaily.push(...canonicalDaily);
+  canonical.adsDaily.push(...projectMetaAdsDailyRowsForLark(canonicalDaily));
 
   return deepFreeze({
     schemaVersion: 'meta_ads_write_set_v1',
@@ -312,6 +313,22 @@ export async function buildMetaAdsWriteSet(input = {}) {
       spendStatus: dailyInputs.length === 0 ? 'no_data_confirmed' : 'revisable',
     },
   });
+}
+
+/**
+ * Keep provider placement detail in D1 while projecting only canonical Meta channels to Lark.
+ * Customer Base intentionally has no Select options for auxiliary publisher placements.
+ */
+export function projectMetaAdsDailyRowsForLark(rowsInput) {
+  const rows = requireArray(rowsInput, 'rows');
+  return Object.freeze(rows.map((row) => {
+    if (!Object.hasOwn(row, 'ad_channel') || META_LARK_DAILY_CHANNELS.has(row.ad_channel)) {
+      return row;
+    }
+    const projected = { ...row };
+    delete projected.ad_channel;
+    return Object.freeze(projected);
+  }));
 }
 
 function appendCanonicalEntity(canonical, input) {

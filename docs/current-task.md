@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_FREE_QUEUE_DAILY_QUOTA_WAIT
+TASK_STATUS                              = CUSTOMER_DAILY_CONTINUATIONS_ACTIVE_REPAIR_IN_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 69b5ebf8
-CURRENT_BRANCH                           = codex/customer-free-queue-quota-handoff-20260825
+BASE_MAIN_SHA                            = ab9555ca
+CURRENT_BRANCH                           = codex/customer-meta-ad-channel-repair-20260826
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -48,7 +48,8 @@ CUSTOMER_LARK_VIEW_FIELD_ORDER           = CANCELED_RUNTIME_REMOVED_CPU_SAFE
 CURRENT_FREE_RUNTIME_REPAIR              = CODE_AND_GATES_PASS_LIVE_DEPLOY_RECOVERY_PENDING
 CUSTOMER_QUEUE_AUTO_RECOVERY             = LIVE_PROVEN_ACTIVE_VERSION_56b969fa
 GENERIC_DLQ_REDRIVE                      = DISABLED
-CUSTOMER_QUEUE_DAILY_WRITE               = EXHAUSTED_10253_WAIT_PROVIDER_RESET
+CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
+CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = CODE_AND_GATES_PASS_REVIEW_DEPLOY_PENDING
 ```
 
 ## Objective
@@ -129,6 +130,25 @@ The implementation:
   Chatwoot 4/5, Meta K3 2,425/3,874, TikTok 390/2,048 and YouTube Owner Analytics 837/837; Meta K2 is separately
   terminal on permanent `LARK_PREFLIGHT_FAILED`. Stop Queue mutation until the provider quota resets, then inspect
   K2 preflight details and resume only the exact retained Works. No new secret or customer login is required.
+
+### Implementation result — Customer Meta K2 canonical ad-channel repair
+
+- after the 2026-08-26 provider reset, automatic schedules resumed without a new secret or login. Customer D1
+  proves current-day success for Facebook, Instagram, Google Ads, WooCommerce and TikTok; Meta K2/K3 and YouTube
+  have active durable Work, while one Chatwoot Work is terminal on retry exhaustion and remains an exact recovery
+  target;
+- exact K2 failure diagnostics prove a single permanent issue class: Customer `MKT_Ads_Daily.ad_channel` rejected
+  nine rows as `SELECT_OPTION_INVALID`. The complete preflight checked six tables, 19,222 rows and 116,090 fields;
+- detailed Meta placement channels remain authoritative in D1, but the canonical Lark projection now emits only
+  the reviewed `facebook_ads` / `instagram_ads` Select values and omits auxiliary placement channels from the
+  Customer Base row instead of failing the complete payload;
+- the existing exact K2 snapshot importer and provider-direct materializer now reuse the same shared projection,
+  removing three divergent implementations without changing stable keys, D1 facts or source normalization;
+- focused Meta/Lark regression: PASS 15/15; `npm run check` and `git diff --check`: PASS;
+  `npm test`: PASS 3,249 Node tests plus 18 Workers-runtime tests; Report reliability: PASS 106/106;
+  `npm audit --audit-level=high`: PASS, zero vulnerabilities; `npm run deploy:dry-run`: PASS;
+- reviewed PR/merge, Customer deploy, same-generation K2 completion and D1/Lark readback remain live gates. The
+  protected TikTok forensic terminal was not read, redriven or changed, and generic DLQ redrive remains disabled.
 
 ## Current authorized adjacent scope — Customer Lark View hygiene
 

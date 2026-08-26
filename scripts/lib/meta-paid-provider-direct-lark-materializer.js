@@ -1,4 +1,7 @@
-import { buildMetaAdsWriteSet } from '../../packages/application/src/use-cases/build-meta-ads-write-set.js';
+import {
+  buildMetaAdsWriteSet,
+  projectMetaAdsDailyRowsForLark,
+} from '../../packages/application/src/use-cases/build-meta-ads-write-set.js';
 import { META_END_TO_END_LARK_TABLES } from '../../packages/config/src/meta-end-to-end-runtime-config.js';
 import { createStableFingerprint } from '../../packages/shared/src/hash/stable-fingerprint.js';
 import {
@@ -22,7 +25,6 @@ export const META_PAID_PROVIDER_DIRECT_LARK_PERIOD = META_PAID_DIRECT_LARK_PERIO
 export const META_PAID_PROVIDER_DIRECT_LARK_MAX_PAGES = 500;
 export const META_PAID_PROVIDER_DIRECT_LARK_MAX_ROWS_PER_DATASET = 50_000;
 
-const META_LARK_DAILY_CHANNELS = new Set(['facebook_ads', 'instagram_ads']);
 const EXACT_LARK_CONTRACTS = Object.freeze(META_PAID_PROVIDER_DIRECT_LARK_TABLE_KEYS.map((tableKey) => {
   const contract = META_END_TO_END_LARK_TABLES.find((entry) => entry.tableKey === tableKey);
   if (!contract) throw new Error(`Missing Meta Lark contract: ${tableKey}`);
@@ -360,14 +362,7 @@ function normalizeLarkResult({ target, item, result }) {
 
 function projectRowsForLarkContract(rows, tableKey) {
   if (tableKey !== 'mktAdsDaily') return rows;
-  return Object.freeze(rows.map((row) => {
-    if (!Object.hasOwn(row, 'ad_channel') || META_LARK_DAILY_CHANNELS.has(row.ad_channel)) {
-      return row;
-    }
-    const projected = { ...row };
-    delete projected.ad_channel;
-    return Object.freeze(projected);
-  }));
+  return projectMetaAdsDailyRowsForLark(rows);
 }
 
 function readPath(value, path) {

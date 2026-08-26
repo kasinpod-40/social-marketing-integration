@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-26 — Customer Meta Ads Daily Select projection repair
+
+- proved the K2 permanent failure was nine auxiliary placement values rejected by the Customer
+  `MKT_Ads_Daily.ad_channel` Select, not a token, permission or provider problem;
+- retained all detailed Meta placement channels in D1 while limiting the canonical Lark projection to the
+  reviewed `facebook_ads` and `instagram_ads` options;
+- consolidated scheduled, exact-snapshot and provider-direct Lark paths onto one projection contract without
+  changing source normalization, D1 facts or stable identities;
+- added focused regression and passed the complete repository, Workers runtime, Report reliability, audit and
+  deploy dry-run gates before Customer release.
+
 ## 2026-08-25 — Customer Production bounded Queue auto-recovery
 
 - added disabled-by-default, exact Customer Production self-healing for retry-exhausted stable connector Work;
