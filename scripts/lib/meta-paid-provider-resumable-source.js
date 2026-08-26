@@ -2,6 +2,9 @@ import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createStableFingerprint } from '../../packages/shared/src/hash/stable-fingerprint.js';
 import {
+  isMetaAdsBusinessUseCaseRateLimit as isSharedMetaAdsBusinessUseCaseRateLimit,
+} from '../../packages/connectors/src/meta/meta-graph.client.js';
+import {
   META_PAID_PROVIDER_DIRECT_LARK_CONTRACT_VERSION,
   META_PAID_PROVIDER_DIRECT_LARK_MAX_PAGES,
   META_PAID_PROVIDER_DIRECT_LARK_MAX_ROWS_PER_DATASET,
@@ -287,8 +290,7 @@ export async function collectMetaPaidProviderResumablePages(input = {}) {
 }
 
 export function isMetaAdsBusinessUseCaseRateLimit(error) {
-  return Number(error?.details?.graphCode) === 80004
-    && Number(error?.details?.graphSubcode) === 2446079;
+  return isSharedMetaAdsBusinessUseCaseRateLimit(error);
 }
 
 async function loadOrFetchAccount(input) {

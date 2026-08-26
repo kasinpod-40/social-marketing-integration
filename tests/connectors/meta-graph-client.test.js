@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MetaGraphClient } from '../../packages/connectors/src/meta/meta-graph.client.js';
+import {
+  isMetaAdsBusinessUseCaseRateLimit,
+  MetaGraphClient,
+} from '../../packages/connectors/src/meta/meta-graph.client.js';
 
 test('Meta shared client uses bearer auth and cursor pagination without following response URL', async () => {
   const calls = [];
@@ -89,6 +92,44 @@ test('Meta shared client retries transient responses with bounded backoff', asyn
   assert.equal(result.id, 'ok');
   assert.equal(calls, 3);
   assert.deepEqual(delays, [10, 20]);
+});
+
+test('Meta Ads BUC throttle retries even when provider returns HTTP 400 without is_transient', async () => {
+  let calls = 0;
+  const delays = [];
+  const client = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    maxAttempts: 2,
+    retryBaseDelayMs: 10,
+    randomImpl: () => 0,
+    sleepImpl: async (ms) => { delays.push(ms); },
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return Response.json({
+          error: { code: 80004, error_subcode: 2446079, is_transient: false },
+        }, { status: 400 });
+      }
+      return Response.json({ id: 'ok' });
+    },
+  });
+
+  const result = await client.get('act_fixture/creatives', {}, {
+    operationName: 'meta_ads.creatives.inventory',
+  });
+  assert.equal(result.id, 'ok');
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [10]);
+  assert.equal(isMetaAdsBusinessUseCaseRateLimit({
+    details: { graphCode: 80004, graphSubcode: 2446079 },
+  }), true);
+  assert.equal(isMetaAdsBusinessUseCaseRateLimit({
+    details: { graphCode: 80004, graphSubcode: 2446078 },
+  }), false);
+  assert.equal(isMetaAdsBusinessUseCaseRateLimit({
+    details: { graphCode: 4, graphSubcode: 2446079 },
+  }), false);
 });
 
 test('Meta 429 honors retry-after and exposes usage metadata to request events', async () => {

@@ -10,6 +10,9 @@
   changing source normalization, D1 facts or stable identities;
 - added focused regression and passed the complete repository, Workers runtime, Report reliability, audit and
   deploy dry-run gates before Customer release.
+- classify the exact Meta Ads Business Use Case throttle pair `80004/2446079` as transient even when returned as
+  HTTP 400 without `is_transient`, reusing durable page checkpoints and bounded retries while near-matches remain
+  permanent.
 
 ## 2026-08-25 — Customer Production bounded Queue auto-recovery
 
