@@ -1003,20 +1003,42 @@ async function executeDurableDestinationPhases(input) {
     });
     if (!storagePhase?.complete) {
       await input.assertCurrentWork();
-      const storage = compactYouTubeStorageResult(await input.syncEngine.executeStorage());
+      const priorTotals = storagePhase?.state?.contentTotals ?? emptyYouTubeStorageContentTotals();
+      const batch = typeof input.syncEngine.executeStorageBatch === 'function'
+        ? await input.syncEngine.executeStorageBatch({
+          startIndex: Number(storagePhase?.state?.nextIndex ?? 0),
+          maxRows: input.maxRows,
+          contentTotals: priorTotals,
+        })
+        : null;
+      const storage = batch === null
+        ? compactYouTubeStorageResult(await input.syncEngine.executeStorage())
+        : batch.complete
+          ? compactYouTubeStorageResult(batch.storage)
+          : null;
+      const contentTotals = batch?.complete
+        ? storage.content
+        : addYouTubeStorageContentTotals(priorTotals, batch?.content);
+      const complete = batch === null || batch.complete === true;
+      const nextIndex = batch?.nextIndex ?? 1;
+      const expectedItems = batch?.expectedItems ?? 1;
       await input.assertCurrentWork();
       await input.workStore.savePhase({
         workKey: input.workKey,
         phase: WORK_PHASES.D1_STORAGE,
-        state: { storage },
-        expectedItems: 1,
-        processedItems: 1,
+        state: { storage: complete ? storage : null, contentTotals, nextIndex },
+        expectedItems,
+        processedItems: nextIndex,
         pagesProcessed: 0,
-        chunksProcessed: 1,
-        complete: true,
-        unit: { unitKey: 'storage', sequence: 0, payload: storage },
+        chunksProcessed: Number(storagePhase?.chunksProcessed ?? 0) + 1,
+        complete,
+        unit: {
+          unitKey: `rows:${Math.max(0, nextIndex - input.maxRows)}-${nextIndex}`,
+          sequence: Number(storagePhase?.chunksProcessed ?? 0),
+          payload: { nextIndex, complete },
+        },
       });
-      return durableDestinationContinuation(WORK_PHASES.D1_STORAGE, 1, 1);
+      return durableDestinationContinuation(WORK_PHASES.D1_STORAGE, nextIndex, expectedItems);
     }
     if (typeof input.syncEngine.resumeStorage === 'function') {
       input.syncEngine.resumeStorage(storagePhase.state?.storage);
@@ -1161,6 +1183,33 @@ function compactYouTubeStorageResult(value) {
     ? Object.freeze({ ...value.content, classifications: Object.freeze([]) })
     : value.content;
   return Object.freeze({ ...value, content });
+}
+
+function emptyYouTubeStorageContentTotals() {
+  return Object.freeze({
+    contentRows: 0,
+    stateWritten: 0,
+    stateSkipped: 0,
+    observationsCreated: 0,
+    observationsSkipped: 0,
+    observationsNotRequired: 0,
+    coverageEntitiesWritten: 0,
+    coverageEntitiesSkipped: 0,
+    classifications: Object.freeze([]),
+  });
+}
+
+function addYouTubeStorageContentTotals(left, right) {
+  const result = {};
+  for (const key of [
+    'contentRows', 'stateWritten', 'stateSkipped', 'observationsCreated',
+    'observationsSkipped', 'observationsNotRequired', 'coverageEntitiesWritten',
+    'coverageEntitiesSkipped',
+  ]) {
+    result[key] = Number(left?.[key] ?? 0) + Number(right?.[key] ?? 0);
+  }
+  result.classifications = Object.freeze([]);
+  return Object.freeze(result);
 }
 
 function buildContinuationResult(input) {

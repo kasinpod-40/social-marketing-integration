@@ -13,6 +13,11 @@ delivery envelope without replacing a retained generation, while work key, gener
 keys remain unchanged. The Customer recovery vector is 100 rows per YouTube destination and 100 rows per Meta
 preflight/D1/Lark delivery; Queue batch/concurrency stays one and generic redrive stays disabled.
 
+Live recovery proved that the preceding YouTube D1 storage write was itself an uncheckpointed 838-row sequential
+unit and could exceed Free CPU before destination batching began. D1 organic content now advances by the same
+100-row durable phase budget. Coverage remains partial until all content batches, availability, Analytics and
+Account storage complete; then the compact storage result is retained and Lark delivery begins.
+
 ## Chatwoot deploy-only execution caps — 2026-08-26
 
 Customer Workers Free may need a smaller per-delivery Chatwoot unit than the reviewed durable

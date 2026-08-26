@@ -53,6 +53,7 @@ CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = CODE_AND_ALL_GATES_PASS_LIVE_DEPLOY_PENDING
+CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = BOUNDED_100_ROWS_ALL_GATES_PASS_REVIEW_PENDING
 ```
 
 ## Objective
@@ -90,6 +91,13 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   PASS); `npm test` PASS 3,253 Node tests plus 18 Workers-runtime tests; Report reliability PASS 106/106;
   `npm audit --audit-level=high` PASS with zero vulnerabilities; deploy dry-run PASS. Reviewed PR/merge, Customer
   deploy, exact same-generation recovery and D1/Lark freshness proof remain required before Production completion.
+
+Live recovery on Customer version `12f3333c-ee9f-4182-87f0-55fb187cf774` then isolated one deeper YouTube bound:
+the 838-row D1 organic-history writer exceeded Workers Free CPU before it could create the new storage phase.
+The writer now checkpoints 100 content rows per delivery, accumulates compact coverage counts, and runs analytics,
+account and Coverage completion only after every content batch is durable. A retry of the same batch remains
+idempotent. Focused regression PASS 20/20; full `npm test` PASS 3,254 Node tests plus 18 Workers-runtime tests;
+check, Report 106/106, audit and deploy dry-run all PASS. Review/merge/deploy and exact Work continuation remain.
 
 ### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 

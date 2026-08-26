@@ -10,6 +10,8 @@
   without changing the retained operation fingerprint or creating replacement generations;
 - added focused large-payload continuation regression and passed all repository, Workers runtime, Report
   reliability, audit and deploy dry-run gates.
+- checkpoint YouTube organic-history D1 storage at 100 content rows per delivery after Live Free CPU evidence
+  proved the 838-row sequential writer was still an unbounded phase; Coverage completes only after all batches.
 
 ## 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 
