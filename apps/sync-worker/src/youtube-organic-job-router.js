@@ -214,6 +214,9 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         maxSourceUnitsPerInvocation: boundedQueueIdentity
           ? readPositiveInteger(input.env?.MKT_YOUTUBE_SOURCE_UNITS_PER_INVOCATION, 1)
           : null,
+        maxDestinationRowsPerInvocation: boundedQueueIdentity
+          ? readPositiveInteger(input.env?.MKT_YOUTUBE_DESTINATION_ROWS_PER_INVOCATION, 100)
+          : null,
         d1WriteEnabled,
         larkWriteEnabled,
         dryRun,

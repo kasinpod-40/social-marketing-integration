@@ -309,6 +309,9 @@ export async function processJob(input) {
         maxSourceUnitsPerInvocation: input.operation?.stable === true
           ? readPositiveInteger(input.env?.MKT_YOUTUBE_SOURCE_UNITS_PER_INVOCATION, 1)
           : null,
+        maxDestinationRowsPerInvocation: input.operation?.stable === true
+          ? readPositiveInteger(input.env?.MKT_YOUTUBE_DESTINATION_ROWS_PER_INVOCATION, 100)
+          : null,
         d1WriteEnabled: readBoolean(input.env?.MKT_TIME_SERIES_D1_WRITE_ENABLED, false),
         larkWriteEnabled: readBoolean(input.env?.MKT_YOUTUBE_LARK_WRITE_ENABLED, false),
         dryRun: input.job.body?.dryRun === true,

@@ -202,6 +202,8 @@ export async function processMetaEndToEndSync(input = {}) {
     d1WriteEnabled: true,
     larkWriteEnabled: input.larkWriteEnabled === true,
     maxD1RowsPerInvocation: limits.d1RowsPerInvocation,
+    maxPreflightRowsPerInvocation: limits.preflightRowsPerInvocation,
+    maxLarkRowsPerInvocation: limits.larkRowsPerInvocation,
     maxLarkTablesPerInvocation: limits.larkTablesPerInvocation,
     assertLockActive,
   });
@@ -790,6 +792,18 @@ function normalizeLimits(value) {
     d1RowsPerInvocation: boundedInteger(
       source.d1RowsPerInvocation ?? 250,
       'd1RowsPerInvocation',
+      1,
+      1_000,
+    ),
+    preflightRowsPerInvocation: boundedInteger(
+      source.preflightRowsPerInvocation ?? 100,
+      'preflightRowsPerInvocation',
+      1,
+      1_000,
+    ),
+    larkRowsPerInvocation: boundedInteger(
+      source.larkRowsPerInvocation ?? 100,
+      'larkRowsPerInvocation',
       1,
       1_000,
     ),

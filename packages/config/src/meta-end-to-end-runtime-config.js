@@ -66,6 +66,18 @@ export function loadMetaEndToEndRuntimeConfig(env = {}) {
         1,
         1_000,
       ),
+      preflightRowsPerInvocation: boundedInteger(
+        env?.MKT_META_PREFLIGHT_ROWS_PER_INVOCATION,
+        100,
+        1,
+        1_000,
+      ),
+      larkRowsPerInvocation: boundedInteger(
+        env?.MKT_META_LARK_ROWS_PER_INVOCATION,
+        100,
+        1,
+        1_000,
+      ),
       larkTablesPerInvocation: boundedInteger(
         env?.MKT_META_LARK_TABLES_PER_INVOCATION,
         1,

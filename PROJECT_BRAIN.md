@@ -1,5 +1,18 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Workers Free bounded post-source continuation — 2026-08-26
+
+Source completion and destination completion are separate durable boundaries. A large YouTube or Meta snapshot
+must never rebuild and write every Lark row in one Workers Free delivery. YouTube therefore records D1 storage
+once, then checkpoints Content, Daily and Account destination row offsets; Account remains last so freshness is
+published only after dependent rows finish. Meta preflight and Lark delivery checkpoint both table and row offsets,
+while stable-key duplicate validation remains full-scope. Existing complete Meta preflight state stays compatible.
+
+These row budgets are execution controls, not operation-fingerprint inputs. Customer may safely tune the bounded
+delivery envelope without replacing a retained generation, while work key, generation, source snapshot and stable
+keys remain unchanged. The Customer recovery vector is 100 rows per YouTube destination and 100 rows per Meta
+preflight/D1/Lark delivery; Queue batch/concurrency stays one and generic redrive stays disabled.
+
 ## Chatwoot deploy-only execution caps — 2026-08-26
 
 Customer Workers Free may need a smaller per-delivery Chatwoot unit than the reviewed durable

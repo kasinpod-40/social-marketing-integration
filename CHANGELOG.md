@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-26 — Customer Workers Free bounded post-source continuation
+
+- split YouTube D1 storage and Lark Content/Daily/Account writes into durable post-source phases, keeping Account
+  freshness last and preserving the complete canonical D1-first snapshot;
+- split Meta complete-payload preflight and Lark writes by durable table/row offsets while retaining full-scope
+  stable-key validation and compatibility with already completed preflight state;
+- added Customer-tunable 100-row execution envelopes for YouTube destination and Meta preflight/D1/Lark work,
+  without changing the retained operation fingerprint or creating replacement generations;
+- added focused large-payload continuation regression and passed all repository, Workers runtime, Report
+  reliability, audit and deploy dry-run gates.
+
 ## 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 
 - added deploy-only Chatwoot conversation/reporting caps that can shrink a Queue delivery without

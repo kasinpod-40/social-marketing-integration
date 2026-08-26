@@ -202,6 +202,61 @@ test('splits one durable D1 invocation into bounded store batches before checkpo
   assert.equal(phase.unit.unitKey, 'rows:0-250');
 });
 
+test('checkpoints bounded Meta preflight and Lark row batches for a large paid projection', async () => {
+  const workStore = createWorkStore();
+  const value = writeSet();
+  value.canonical.adsDaily = Array.from({ length: 205 }, (_, index) => ({
+    ads_daily_key: `daily_${index}`,
+    spend: index,
+  }));
+  const executedBatchSizes = [];
+  const syncEngine = {
+    async planByKey({ tableId, keyField, rows }) {
+      return {
+        tableId, keyField, createRows: rows, updateRows: [], skipped: 0, duplicateInputRows: 0,
+      };
+    },
+    async executePlan(plan) {
+      executedBatchSizes.push(plan.createRows.length);
+      return { created: plan.createRows.length, updated: 0, skipped: 0, duplicateInputRows: 0 };
+    },
+  };
+  const input = {
+    writeSet: value,
+    resumableWorkStore: workStore,
+    historyStore: historyStore(),
+    repository: {},
+    syncEngine,
+    tables: TABLES,
+    workKey: 'meta:work:bounded',
+    d1WriteEnabled: true,
+    larkWriteEnabled: true,
+    maxD1RowsPerInvocation: 100,
+    maxPreflightRowsPerInvocation: 50,
+    maxLarkRowsPerInvocation: 60,
+    maxLarkTablesPerInvocation: 2,
+  };
+
+  const statuses = [];
+  let result;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    result = await processMetaEndToEndGeneration(input);
+    statuses.push(result.status);
+    if (result.status === 'completed') break;
+  }
+
+  assert.equal(result.status, 'completed');
+  assert.ok(statuses.filter((status) => status === 'preflight_continuation').length >= 4);
+  assert.ok(statuses.filter((status) => status === 'lark_continuation').length >= 3);
+  assert.ok(executedBatchSizes.every((size) => size <= 60));
+  const preflight = workStore.phases.get('meta:work:bounded:meta_end_to_end_destination_preflight_v1');
+  const lark = workStore.phases.get('meta:work:bounded:meta_end_to_end_lark_write_v1');
+  assert.equal(preflight.complete, true);
+  assert.equal(preflight.processedItems, 206);
+  assert.equal(lark.complete, true);
+  assert.equal(lark.processedItems, 206);
+});
+
 test('D1 Marketing store executes bounded Meta operations through one database batch', async () => {
   const batchCalls = [];
   const db = {
