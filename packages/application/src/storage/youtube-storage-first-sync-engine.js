@@ -22,14 +22,26 @@ export class YouTubeStorageFirstSyncEngine {
     this.captured = new Map();
     this.storagePromise = null;
     this.storageResult = null;
+    this.canonicalCaptureComplete = false;
   }
 
   async planByKey(input = {}) {
     const captureName = CAPTURE_KEYS[input.keyField];
-    if (captureName) {
+    if (captureName && !this.canonicalCaptureComplete) {
       this.captured.set(captureName, Object.freeze([...(Array.isArray(input.rows) ? input.rows : [])]));
     }
     return this.tableSyncEngine.planByKey(input);
+  }
+
+  captureCanonicalRows(input = {}) {
+    for (const name of ['contentRows', 'dailyRows', 'accountRows']) {
+      const rows = input[name];
+      if (!Array.isArray(rows)) {
+        throw new TypeError(`YouTube storage capture requires ${name}`);
+      }
+      this.captured.set(name, Object.freeze([...rows]));
+    }
+    this.canonicalCaptureComplete = true;
   }
 
   captureSourceRows(input = {}) {
@@ -43,12 +55,7 @@ export class YouTubeStorageFirstSyncEngine {
   }
 
   async executePlan(plan, options = {}) {
-    if (!this.storagePromise) {
-      this.storagePromise = this.d1WriteEnabled
-        ? writeYouTubeOrganicStorageFirst(this.context, this.captured)
-        : Promise.resolve(disabledStorageResult(this.captured));
-    }
-    this.storageResult = await this.storagePromise;
+    await this.executeStorage();
 
     if (!this.larkWriteEnabled) {
       return Object.freeze({
@@ -60,6 +67,21 @@ export class YouTubeStorageFirstSyncEngine {
       });
     }
     return this.tableSyncEngine.executePlan(plan, options);
+  }
+
+  async executeStorage() {
+    if (!this.storagePromise) {
+      this.storagePromise = this.d1WriteEnabled
+        ? writeYouTubeOrganicStorageFirst(this.context, this.captured)
+        : Promise.resolve(disabledStorageResult(this.captured));
+    }
+    this.storageResult = await this.storagePromise;
+    return this.storageResult;
+  }
+
+  resumeStorage(result) {
+    this.storageResult = result ?? Object.freeze({ status: 'completed_idempotent' });
+    this.storagePromise = Promise.resolve(this.storageResult);
   }
 
   async previewStorage() {

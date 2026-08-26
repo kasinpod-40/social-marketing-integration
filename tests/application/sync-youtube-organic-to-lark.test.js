@@ -123,6 +123,52 @@ test('stable Free-plan execution persists one source unit then resumes without d
   assert.equal(stateStore.saved.length, 1);
 });
 
+test('stable Free-plan execution checkpoints bounded destination rows before publishing account freshness', async () => {
+  const repository = createRepository();
+  const stateStore = createStateStore();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  const input = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient: {
+      async getChannel() { return CHANNEL; },
+      async listUploadVideoIdsPage() {
+        return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+      },
+      async listVideos() { return videos; },
+    },
+    syncRunId: 'run-destination-1', channelId: 'channel_A', accountKey: 'youtube_dev',
+    customerProfile: 'integration_workspace', cursorKey: 'youtube-lock-destination',
+    workKey: 'youtube:scheduled-destination-20260715', metricDate: '2026-07-15',
+    reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
+    generation: 1000, requestedAt: 1000, tables: TABLES,
+    maxDestinationRowsPerInvocation: 1,
+  };
+
+  const continuations = [];
+  let result;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    result = await syncYouTubeOrganicToLark({ ...input, syncRunId: `run-destination-${attempt + 1}` });
+    if (result.continuationRequired !== true) break;
+    continuations.push(result.continuationPhase);
+  }
+
+  assert.equal(result.checkpointSaved, true);
+  assert.deepEqual(continuations, [
+    'youtube_destination_content_v1',
+    'youtube_destination_content_v1',
+    'youtube_destination_daily_v1',
+    'youtube_destination_daily_v1',
+  ]);
+  assert.equal(result.tables.content.result.created, 2);
+  assert.equal(result.tables.dailySnapshots.result.created, 2);
+  assert.equal(result.tables.accounts.result.created, 1);
+  assert.equal(repository.events.at(-1), 'write:accounts');
+  assert.equal(stateStore.saved.length, 1);
+});
+
 test('operator-style dry-run plans with Lark GET, writes no Business data and replays completed work', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();

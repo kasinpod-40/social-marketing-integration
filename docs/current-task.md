@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_DAILY_CONTINUATIONS_ACTIVE_REPAIR_IN_REVIEW
+TASK_STATUS                              = CUSTOMER_POST_SOURCE_FREE_REPAIR_GATES_PASS_REVIEW_PENDING
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = ab9555ca
-CURRENT_BRANCH                           = codex/meta-buc-rate-limit-retry-20260826
+BASE_MAIN_SHA                            = 153b2220
+CURRENT_BRANCH                           = codex/customer-post-source-free-repair-20260826
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -51,7 +51,8 @@ GENERIC_DLQ_REDRIVE                      = DISABLED
 CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
-CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = IMPLEMENTED_FOCUSED_TESTS_PASS_REVIEW_PENDING
+CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
+CUSTOMER_POST_SOURCE_FREE_REPAIR         = CODE_AND_ALL_GATES_PASS_LIVE_DEPLOY_PENDING
 ```
 
 ## Objective
@@ -68,6 +69,27 @@ a new per-channel ownership onboarding. A secret that cannot be exported/read ba
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
 ## Current authorized recovery — Customer Workers Free runtime
+
+### 2026-08-26 — bounded YouTube/Meta post-source continuation
+
+- Live Customer D1 proves YouTube source inventory/resources/Owner Analytics complete at 838/838, while the
+  retained Work has no destination phase; Meta K2 source is complete at 194/194 but has no preflight phase, and
+  Meta K3 is retained at D1 row 590/3,848. These are post-source execution limits, not missing credentials;
+- YouTube now records a compact D1-storage completion marker, then plans/writes Content, Daily and Account rows in
+  durable bounded batches. Account freshness remains last so Lark cannot claim connected/current before the
+  content destinations finish;
+- the D1-first wrapper captures the complete canonical snapshot before any bounded Lark batch and resumes the
+  stored D1 result on later deliveries, preventing repeated full D1 writes and partial snapshot capture;
+- Meta complete-payload preflight and Lark delivery now checkpoint row offsets as well as table offsets. Stable-key
+  duplicate validation remains full-scope, while each provider-free continuation handles at most the configured
+  row budget. Existing complete preflight phases remain compatible;
+- Customer runtime will use 100 rows per Meta preflight/D1/Lark and 100 rows per YouTube destination delivery;
+  these execution limits are outside the persisted source-operation fingerprint, so exact K2/K3/YouTube Works can
+  resume without a replacement generation;
+- focused regression PASS 29/29; `npm run check` PASS (811 source files, 2,448 dependencies, zero cycles and hygiene
+  PASS); `npm test` PASS 3,253 Node tests plus 18 Workers-runtime tests; Report reliability PASS 106/106;
+  `npm audit --audit-level=high` PASS with zero vulnerabilities; deploy dry-run PASS. Reviewed PR/merge, Customer
+  deploy, exact same-generation recovery and D1/Lark freshness proof remain required before Production completion.
 
 ### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 

@@ -37,6 +37,18 @@ export async function processMetaEndToEndGeneration(input = {}) {
     ? input.assertLockActive
     : async () => undefined;
   const maxD1Rows = boundedInteger(input.maxD1RowsPerInvocation ?? 250, 'maxD1RowsPerInvocation', 1, 1_000);
+  const maxPreflightRows = boundedInteger(
+    input.maxPreflightRowsPerInvocation ?? 100,
+    'maxPreflightRowsPerInvocation',
+    1,
+    1_000,
+  );
+  const maxLarkRows = boundedInteger(
+    input.maxLarkRowsPerInvocation ?? 100,
+    'maxLarkRowsPerInvocation',
+    1,
+    1_000,
+  );
   const maxLarkTables = boundedInteger(input.maxLarkTablesPerInvocation ?? 1, 'maxLarkTablesPerInvocation', 1, 4);
 
   if (input.d1WriteEnabled !== true) {
@@ -64,9 +76,13 @@ export async function processMetaEndToEndGeneration(input = {}) {
       repository,
       syncEngine,
       tables,
+      maxRows: maxPreflightRows,
       assertLockActive,
     })
     : disabledPreflight();
+  if (input.larkWriteEnabled === true && !preflight.complete) {
+    return continuation(writeSet, 'preflight_continuation', { preflight });
+  }
 
   const d1 = await executeD1Phase({
     workStore,
@@ -93,6 +109,7 @@ export async function processMetaEndToEndGeneration(input = {}) {
     syncEngine,
     tables,
     maxLarkTables,
+    maxLarkRows,
     assertLockActive,
   });
   if (!lark.complete) {
@@ -126,6 +143,117 @@ export async function processMetaEndToEndGeneration(input = {}) {
 }
 
 async function ensureDestinationPreflight(input) {
+  const totalRows = input.contracts.reduce(
+    (total, contract) => total + readPath(input.writeSet, contract.path).length,
+    0,
+  );
+  if (totalRows <= input.maxRows) return ensureDestinationPreflightLegacy(input);
+  return ensureBoundedDestinationPreflight({ ...input, totalRows });
+}
+
+async function ensureBoundedDestinationPreflight(input) {
+  const existing = await input.workStore.loadPhase({ workKey: input.workKey, phase: PREFLIGHT_PHASE });
+  if (existing?.complete) {
+    const preflight = normalizePreflight(existing);
+    assertDurablePreflightScope(preflight, input.contracts);
+    return preflight;
+  }
+
+  assertUniqueContractKeys(input.writeSet, input.contracts);
+  const state = normalizeBoundedPreflightState(existing?.state, input.contracts);
+  let consumed = 0;
+  while (state.nextContractIndex < input.contracts.length && consumed < input.maxRows) {
+    const contract = input.contracts[state.nextContractIndex];
+    const allRows = readPath(input.writeSet, contract.path);
+    const remainingBudget = input.maxRows - consumed;
+    const stop = Math.min(allRows.length, state.nextRowIndex + remainingBudget);
+    const rows = allRows.slice(state.nextRowIndex, stop);
+    if (rows.length === 0) {
+      state.summaries[state.nextContractIndex] = emptyPreflightSummary(contract, allRows.length);
+      state.nextContractIndex += 1;
+      state.nextRowIndex = 0;
+      continue;
+    }
+
+    await input.assertLockActive();
+    const inspection = await inspectLarkContractRows({
+      ...input,
+      contract,
+      rows,
+      rowOffset: state.nextRowIndex,
+    });
+    if (inspection.issueCount > 0) {
+      throw permanentError('Meta Lark preflight found invalid fields in a bounded payload', {
+        code: 'LARK_PREFLIGHT_FAILED',
+        details: inspection,
+      });
+    }
+    const tableId = requireText(input.tables[contract.tableKey], `tables.${contract.tableKey}`);
+    const plan = await input.syncEngine.planByKey({
+      repository: input.repository,
+      tableId,
+      keyField: contract.keyField,
+      rows,
+    });
+    if (plan.duplicateInputRows !== 0) {
+      throw permanentError('Meta Lark bounded preflight found duplicate stable keys', {
+        code: 'LARK_PREFLIGHT_FAILED',
+        details: { tableKey: contract.tableKey, fieldName: contract.keyField },
+      });
+    }
+    const summary = state.summaries[state.nextContractIndex]
+      ?? emptyPreflightSummary(contract, allRows.length);
+    state.summaries[state.nextContractIndex] = Object.freeze({
+      ...summary,
+      create: summary.create + plan.createRows.length,
+      update: summary.update + plan.updateRows.length,
+      skipped: summary.skipped + plan.skipped,
+    });
+    state.rowsChecked += inspection.rowsChecked;
+    state.fieldsChecked += inspection.fieldsChecked;
+    state.nextRowIndex = stop;
+    consumed += rows.length;
+    if (state.nextRowIndex >= allRows.length) {
+      state.nextContractIndex += 1;
+      state.nextRowIndex = 0;
+    }
+  }
+
+  const complete = state.nextContractIndex >= input.contracts.length;
+  const processedItems = state.summaries.reduce(
+    (total, summary) => total + Number(summary?.create ?? 0)
+      + Number(summary?.update ?? 0) + Number(summary?.skipped ?? 0),
+    0,
+  );
+  const saved = await input.workStore.savePhase({
+    workKey: input.workKey,
+    phase: PREFLIGHT_PHASE,
+    state: {
+      nextContractIndex: state.nextContractIndex,
+      nextRowIndex: state.nextRowIndex,
+      summaries: state.summaries,
+      diagnostics: {
+        tablesChecked: state.nextContractIndex,
+        rowsChecked: state.rowsChecked,
+        fieldsChecked: state.fieldsChecked,
+        issueCount: 0,
+      },
+    },
+    expectedItems: input.totalRows,
+    processedItems,
+    pagesProcessed: 0,
+    chunksProcessed: Number(existing?.chunksProcessed ?? 0) + 1,
+    complete,
+    unit: consumed > 0 ? {
+      unitKey: `rows:${processedItems - consumed}-${processedItems}`,
+      sequence: Number(existing?.chunksProcessed ?? 0),
+      payload: { processedItems, complete },
+    } : undefined,
+  });
+  return normalizePreflight(saved);
+}
+
+async function ensureDestinationPreflightLegacy(input) {
   const existing = await input.workStore.loadPhase({ workKey: input.workKey, phase: PREFLIGHT_PHASE });
   if (existing?.complete) {
     const preflight = normalizePreflight(existing);
@@ -247,6 +375,118 @@ function assertDurablePreflightScope(preflight, contracts) {
       },
     });
   }
+}
+
+function assertUniqueContractKeys(writeSet, contracts) {
+  for (const contract of contracts) {
+    const seen = new Set();
+    for (const row of readPath(writeSet, contract.path)) {
+      const key = requireText(row?.[contract.keyField], `${contract.path}.${contract.keyField}`);
+      if (seen.has(key)) {
+        throw permanentError('Meta Lark preflight found duplicate stable keys', {
+          code: 'LARK_PREFLIGHT_FAILED',
+          details: { tableKey: contract.tableKey, fieldName: contract.keyField },
+        });
+      }
+      seen.add(key);
+    }
+  }
+}
+
+function normalizeBoundedPreflightState(value, contracts) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    nextContractIndex: nonNegativeInteger(source.nextContractIndex ?? 0, 'preflight.nextContractIndex'),
+    nextRowIndex: nonNegativeInteger(source.nextRowIndex ?? 0, 'preflight.nextRowIndex'),
+    summaries: Array.isArray(source.summaries) ? [...source.summaries] : new Array(contracts.length),
+    rowsChecked: nonNegativeInteger(source.diagnostics?.rowsChecked ?? 0, 'preflight.rowsChecked'),
+    fieldsChecked: nonNegativeInteger(source.diagnostics?.fieldsChecked ?? 0, 'preflight.fieldsChecked'),
+  };
+}
+
+function emptyPreflightSummary(contract, expected) {
+  return Object.freeze({
+    tableKey: contract.tableKey,
+    keyField: contract.keyField,
+    expected,
+    create: 0,
+    update: 0,
+    skipped: 0,
+  });
+}
+
+async function inspectLarkContractRows(input) {
+  if (typeof input.repository?.prepareRows !== 'function'
+    || typeof input.repository?.getTableFields !== 'function') {
+    return Object.freeze({
+      tableKey: input.contract.tableKey,
+      fieldName: null,
+      tablesChecked: 0,
+      rowsChecked: 0,
+      fieldsChecked: 0,
+      issueCount: 0,
+      issues: Object.freeze([]),
+      issuesTruncated: false,
+    });
+  }
+  const tableId = requireText(
+    input.tables[input.contract.tableKey],
+    `tables.${input.contract.tableKey}`,
+  );
+  const fields = await input.repository.getTableFields(tableId);
+  const fieldTypes = new Map(fields.map((field) => [
+    requireText(field?.fieldName ?? field?.field_name ?? field?.name, 'field.name'),
+    Number.isInteger(Number(field?.type)) ? Number(field.type) : null,
+  ]));
+  const issues = [];
+  let fieldsChecked = 0;
+  for (let index = 0; index < input.rows.length; index += 1) {
+    const row = requireObject(input.rows[index], `${input.contract.path}[${index}]`);
+    const rowIndex = input.rowOffset + index;
+    fieldsChecked += Object.keys(row).length;
+    const keyValid = await inspectLarkFieldProbe({
+      repository: input.repository,
+      tableId,
+      tableKey: input.contract.tableKey,
+      keyField: input.contract.keyField,
+      fieldName: input.contract.keyField,
+      value: row[input.contract.keyField],
+      rowIndex,
+      probe: { [input.contract.keyField]: row[input.contract.keyField] },
+      destinationType: fieldTypes.get(input.contract.keyField) ?? null,
+      issues,
+    });
+    if (!keyValid) continue;
+    for (const fieldName of Object.keys(row).sort()) {
+      if (fieldName === input.contract.keyField) continue;
+      await inspectLarkFieldProbe({
+        repository: input.repository,
+        tableId,
+        tableKey: input.contract.tableKey,
+        keyField: input.contract.keyField,
+        fieldName,
+        value: row[fieldName],
+        rowIndex,
+        probe: {
+          [input.contract.keyField]: row[input.contract.keyField],
+          [fieldName]: row[fieldName],
+        },
+        destinationType: fieldTypes.get(fieldName) ?? null,
+        issues,
+      });
+    }
+  }
+  const limited = sortAndLimitIssues(issues);
+  return Object.freeze({
+    tableKey: input.contract.tableKey,
+    fieldName: limited.items[0]?.fieldName ?? null,
+    tablesChecked: 1,
+    rowsChecked: input.rows.length,
+    fieldsChecked,
+    issueCount: issues.length,
+    issues: limited.items,
+    issuesTruncated: limited.truncated,
+  });
 }
 
 async function inspectCompleteLarkPayload(input) {
@@ -513,10 +753,15 @@ async function executeLarkPhase(input) {
   const existing = await input.workStore.loadPhase({ workKey: input.workKey, phase: LARK_PHASE });
   const state = normalizeLarkState(existing?.state);
   if (existing?.complete) return Object.freeze({ complete: true, state });
-  const stop = Math.min(input.contracts.length, state.nextTableIndex + input.maxLarkTables);
-  while (state.nextTableIndex < stop) {
+  let tablesAdvanced = 0;
+  let rowsConsumed = 0;
+  while (state.nextTableIndex < input.contracts.length
+    && tablesAdvanced < input.maxLarkTables
+    && rowsConsumed < input.maxLarkRows) {
     const contract = input.contracts[state.nextTableIndex];
-    const rows = readPath(input.writeSet, contract.path);
+    const allRows = readPath(input.writeSet, contract.path);
+    const stop = Math.min(allRows.length, state.nextRowIndex + input.maxLarkRows - rowsConsumed);
+    const rows = allRows.slice(state.nextRowIndex, stop);
     const tableId = requireText(input.tables[contract.tableKey], `tables.${contract.tableKey}`);
     await input.assertLockActive();
     const plan = await input.syncEngine.planByKey({
@@ -541,29 +786,52 @@ async function executeLarkPhase(input) {
         details: { tableKey: contract.tableKey, expected: rows.length, accounted },
       });
     }
-    state.results[state.nextTableIndex] = Object.freeze({
+    const previous = state.results[state.nextTableIndex] ?? {
       tableKey: contract.tableKey,
-      expected: rows.length,
-      created: result.created,
-      updated: result.updated,
-      skipped: result.skipped,
+      expected: allRows.length,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+    };
+    state.results[state.nextTableIndex] = Object.freeze({
+      ...previous,
+      created: previous.created + result.created,
+      updated: previous.updated + result.updated,
+      skipped: previous.skipped + result.skipped,
     });
-    state.nextTableIndex += 1;
+    state.nextRowIndex = stop;
+    rowsConsumed += rows.length;
+    if (state.nextRowIndex >= allRows.length) {
+      state.nextTableIndex += 1;
+      state.nextRowIndex = 0;
+      tablesAdvanced += 1;
+    } else {
+      break;
+    }
   }
   const complete = state.nextTableIndex >= input.contracts.length;
+  const expectedRows = input.contracts.reduce(
+    (total, contract) => total + readPath(input.writeSet, contract.path).length,
+    0,
+  );
+  const processedRows = state.results.reduce(
+    (total, result) => total + Number(result?.created ?? 0)
+      + Number(result?.updated ?? 0) + Number(result?.skipped ?? 0),
+    0,
+  );
   const saved = await input.workStore.savePhase({
     workKey: input.workKey,
     phase: LARK_PHASE,
     state,
-    expectedItems: input.contracts.length,
-    processedItems: state.nextTableIndex,
+    expectedItems: expectedRows,
+    processedItems: processedRows,
     pagesProcessed: 0,
-    chunksProcessed: state.nextTableIndex,
+    chunksProcessed: Number(existing?.chunksProcessed ?? 0) + (rowsConsumed > 0 ? 1 : 0),
     complete,
-    unit: state.nextTableIndex > 0 ? {
-      unitKey: input.contracts[state.nextTableIndex - 1].tableKey,
-      sequence: state.nextTableIndex - 1,
-      payload: state.results[state.nextTableIndex - 1],
+    unit: rowsConsumed > 0 ? {
+      unitKey: `rows:${processedRows - rowsConsumed}-${processedRows}`,
+      sequence: Number(existing?.chunksProcessed ?? 0),
+      payload: { processedRows, complete },
     } : undefined,
   });
   return Object.freeze({ complete, state: normalizeLarkState(saved?.state ?? state) });
@@ -759,6 +1027,7 @@ function normalizeLarkState(value) {
   const source = value && typeof value === 'object' ? value : {};
   return {
     nextTableIndex: nonNegativeInteger(source.nextTableIndex ?? 0, 'lark.nextTableIndex'),
+    nextRowIndex: nonNegativeInteger(source.nextRowIndex ?? 0, 'lark.nextRowIndex'),
     results: Array.isArray(source.results) ? [...source.results] : [],
   };
 }

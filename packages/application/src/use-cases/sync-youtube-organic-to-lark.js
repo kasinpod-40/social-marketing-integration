@@ -23,6 +23,10 @@ const WORK_PHASES = Object.freeze({
   CONTENT_INVENTORY: 'youtube_content_inventory',
   CONTENT_RESOURCES: 'youtube_content_resources',
   ANALYTICS: 'youtube_owner_analytics',
+  D1_STORAGE: 'youtube_d1_storage_v1',
+  DESTINATION_CONTENT: 'youtube_destination_content_v1',
+  DESTINATION_DAILY: 'youtube_destination_daily_v1',
+  DESTINATION_ACCOUNTS: 'youtube_destination_accounts_v1',
 });
 
 /** YouTube Organic sync: RAW → Canonical → Account activation row → D1 checkpoint */
@@ -276,20 +280,27 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     });
   }
 
-  const plans = await planAll({
-    repository,
-    syncEngine,
-    tables,
-    rows: {
-      content: normalized.contentRows,
-      daily: normalized.dailySnapshotRows,
-      accounts: accountRows,
-    },
-    onProgress,
-    assertCurrentWork,
-  });
+  if (typeof syncEngine.captureCanonicalRows === 'function') {
+    syncEngine.captureCanonicalRows({
+      contentRows: normalized.contentRows,
+      dailyRows: normalized.dailySnapshotRows,
+      accountRows,
+    });
+  }
 
   if (input.dryRun === true) {
+    const plans = await planAll({
+      repository,
+      syncEngine,
+      tables,
+      rows: {
+        content: normalized.contentRows,
+        daily: normalized.dailySnapshotRows,
+        accounts: accountRows,
+      },
+      onProgress,
+      assertCurrentWork,
+    });
     const result = buildResult({
       mode: 'dry_run', syncRunId, syncMode, videoIds, videoResources, missingIds,
       inventory, resourceLoad, analyticsLoad, analyticsVideoIds, analyticsRows,
@@ -300,13 +311,60 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     return completedResult;
   }
 
-  const results = {};
-  for (const [name, plan] of orderedPlans(plans)) {
-    await assertCurrentWork();
-    results[name] = await syncEngine.executePlan(plan, {
-      beforeWriteChunk: assertCurrentWork,
-      onProgress: (event) => onProgress({ scope: name, ...event }),
+  let plans;
+  let results;
+  if (input.maxDestinationRowsPerInvocation !== null
+    && input.maxDestinationRowsPerInvocation !== undefined
+    && input.maxDestinationRowsPerInvocation !== '') {
+    const destination = await executeDurableDestinationPhases({
+      repository,
+      syncEngine,
+      workStore,
+      workKey,
+      tables,
+      rows: {
+        content: normalized.contentRows,
+        dailySnapshots: normalized.dailySnapshotRows,
+        accounts: accountRows,
+      },
+      maxRows: positiveInteger(
+        input.maxDestinationRowsPerInvocation,
+        'maxDestinationRowsPerInvocation',
+      ),
+      onProgress,
+      assertCurrentWork,
     });
+    if (!destination.complete) {
+      return buildContinuationResult({
+        syncRunId,
+        workResumed: work.resumed,
+        continuationPhase: destination.continuationPhase,
+        sourceProgress: destination.progress,
+      });
+    }
+    plans = destination.plans;
+    results = destination.results;
+  } else {
+    plans = await planAll({
+      repository,
+      syncEngine,
+      tables,
+      rows: {
+        content: normalized.contentRows,
+        daily: normalized.dailySnapshotRows,
+        accounts: accountRows,
+      },
+      onProgress,
+      assertCurrentWork,
+    });
+    results = {};
+    for (const [name, plan] of orderedPlans(plans)) {
+      await assertCurrentWork();
+      results[name] = await syncEngine.executePlan(plan, {
+        beforeWriteChunk: assertCurrentWork,
+        onProgress: (event) => onProgress({ scope: name, ...event }),
+      });
+    }
   }
 
   await assertCurrentWork();
@@ -913,6 +971,198 @@ function createSourceUnitBudget(value) {
   });
 }
 
+async function executeDurableDestinationPhases(input) {
+  const definitions = [
+    Object.freeze({
+      name: 'content',
+      phase: WORK_PHASES.DESTINATION_CONTENT,
+      tableId: input.tables.mktContent,
+      keyField: 'content_key',
+      rows: input.rows.content,
+    }),
+    Object.freeze({
+      name: 'dailySnapshots',
+      phase: WORK_PHASES.DESTINATION_DAILY,
+      tableId: input.tables.mktContentDaily,
+      keyField: 'content_daily_key',
+      rows: input.rows.dailySnapshots,
+    }),
+    Object.freeze({
+      name: 'accounts',
+      phase: WORK_PHASES.DESTINATION_ACCOUNTS,
+      tableId: input.tables.mktAccounts,
+      keyField: 'account_key',
+      rows: input.rows.accounts,
+    }),
+  ];
+
+  if (typeof input.syncEngine.executeStorage === 'function') {
+    const storagePhase = await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.D1_STORAGE,
+    });
+    if (!storagePhase?.complete) {
+      await input.assertCurrentWork();
+      const storage = compactYouTubeStorageResult(await input.syncEngine.executeStorage());
+      await input.assertCurrentWork();
+      await input.workStore.savePhase({
+        workKey: input.workKey,
+        phase: WORK_PHASES.D1_STORAGE,
+        state: { storage },
+        expectedItems: 1,
+        processedItems: 1,
+        pagesProcessed: 0,
+        chunksProcessed: 1,
+        complete: true,
+        unit: { unitKey: 'storage', sequence: 0, payload: storage },
+      });
+      return durableDestinationContinuation(WORK_PHASES.D1_STORAGE, 1, 1);
+    }
+    if (typeof input.syncEngine.resumeStorage === 'function') {
+      input.syncEngine.resumeStorage(storagePhase.state?.storage);
+    }
+  }
+
+  const plans = {};
+  const results = {};
+  for (const definition of definitions) {
+    const existing = await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: definition.phase,
+    });
+    const state = normalizeYouTubeDestinationState(existing?.state);
+    if (existing?.complete) {
+      plans[definition.name] = state.plan;
+      results[definition.name] = state.result;
+      continue;
+    }
+
+    const start = state.nextIndex;
+    const stop = Math.min(definition.rows.length, start + input.maxRows);
+    const rows = definition.rows.slice(start, stop);
+    let plan = emptyYouTubePlanSummary();
+    let result = emptyYouTubeWriteResult();
+    if (rows.length > 0) {
+      await input.assertCurrentWork();
+      const batchPlan = await input.syncEngine.planByKey({
+        repository: input.repository,
+        tableId: definition.tableId,
+        keyField: definition.keyField,
+        rows,
+        onProgress: (event) => input.onProgress({ scope: definition.name, ...event }),
+      });
+      plan = summarizeYouTubePlan(batchPlan);
+      result = await input.syncEngine.executePlan(batchPlan, {
+        beforeWriteChunk: input.assertCurrentWork,
+        onProgress: (event) => input.onProgress({ scope: definition.name, ...event }),
+      });
+    }
+    const nextState = {
+      nextIndex: stop,
+      plan: addYouTubePlanSummary(state.plan, plan),
+      result: addYouTubeWriteResult(state.result, result),
+    };
+    const complete = stop >= definition.rows.length;
+    await input.assertCurrentWork();
+    await input.workStore.savePhase({
+      workKey: input.workKey,
+      phase: definition.phase,
+      state: nextState,
+      expectedItems: definition.rows.length,
+      processedItems: stop,
+      pagesProcessed: 0,
+      chunksProcessed: Math.ceil(stop / input.maxRows),
+      complete,
+      ...(rows.length > 0 ? {
+        unit: {
+          unitKey: `rows:${start}-${stop}`,
+          sequence: Math.max(0, Math.ceil(stop / input.maxRows) - 1),
+          payload: { start, stop, plan, result },
+        },
+      } : {}),
+    });
+    plans[definition.name] = nextState.plan;
+    results[definition.name] = nextState.result;
+
+    const remaining = definitions.some((candidate) => {
+      if (candidate.phase === definition.phase) return !complete;
+      return definitions.indexOf(candidate) > definitions.indexOf(definition);
+    });
+    if (remaining) {
+      return {
+        ...durableDestinationContinuation(definition.phase, stop, definition.rows.length),
+        plans: Object.freeze(plans),
+        results: Object.freeze(results),
+      };
+    }
+  }
+  return Object.freeze({
+    complete: true,
+    plans: Object.freeze(plans),
+    results: Object.freeze(results),
+  });
+}
+
+function durableDestinationContinuation(phase, processedItems, expectedItems) {
+  return Object.freeze({
+    complete: false,
+    continuationPhase: phase,
+    progress: Object.freeze({ complete: false, processedItems, expectedItems }),
+  });
+}
+
+function normalizeYouTubeDestinationState(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    nextIndex: Number.isSafeInteger(source.nextIndex) && source.nextIndex >= 0 ? source.nextIndex : 0,
+    plan: addYouTubePlanSummary(emptyYouTubePlanSummary(), source.plan),
+    result: addYouTubeWriteResult(emptyYouTubeWriteResult(), source.result),
+  };
+}
+
+function summarizeYouTubePlan(plan) {
+  return Object.freeze({
+    createRows: Array.isArray(plan?.createRows) ? plan.createRows.length : 0,
+    updateRows: Array.isArray(plan?.updateRows) ? plan.updateRows.length : 0,
+    skipped: Number(plan?.skipped ?? 0),
+    duplicateInputRows: Number(plan?.duplicateInputRows ?? 0),
+  });
+}
+
+function emptyYouTubePlanSummary() {
+  return Object.freeze({ createRows: 0, updateRows: 0, skipped: 0, duplicateInputRows: 0 });
+}
+
+function emptyYouTubeWriteResult() {
+  return Object.freeze({ created: 0, updated: 0, skipped: 0, duplicateInputRows: 0 });
+}
+
+function addYouTubePlanSummary(left, right) {
+  return Object.freeze({
+    createRows: Number(left?.createRows ?? 0) + Number(right?.createRows ?? 0),
+    updateRows: Number(left?.updateRows ?? 0) + Number(right?.updateRows ?? 0),
+    skipped: Number(left?.skipped ?? 0) + Number(right?.skipped ?? 0),
+    duplicateInputRows: Number(left?.duplicateInputRows ?? 0) + Number(right?.duplicateInputRows ?? 0),
+  });
+}
+
+function addYouTubeWriteResult(left, right) {
+  return Object.freeze({
+    created: Number(left?.created ?? 0) + Number(right?.created ?? 0),
+    updated: Number(left?.updated ?? 0) + Number(right?.updated ?? 0),
+    skipped: Number(left?.skipped ?? 0) + Number(right?.skipped ?? 0),
+    duplicateInputRows: Number(left?.duplicateInputRows ?? 0) + Number(right?.duplicateInputRows ?? 0),
+  });
+}
+
+function compactYouTubeStorageResult(value) {
+  if (!value || typeof value !== 'object') return Object.freeze({ status: 'complete' });
+  const content = value.content && typeof value.content === 'object'
+    ? Object.freeze({ ...value.content, classifications: Object.freeze([]) })
+    : value.content;
+  return Object.freeze({ ...value, content });
+}
+
 function buildContinuationResult(input) {
   return Object.freeze({
     syncRunId: input.syncRunId,
@@ -1132,8 +1382,8 @@ function supersededResult(input) {
 
 function buildResult(input) {
   const summaries = Object.fromEntries(Object.entries(input.plans).map(([name, plan]) => [name, Object.freeze({
-    createRows: plan.createRows.length,
-    updateRows: plan.updateRows.length,
+    createRows: planCount(plan.createRows),
+    updateRows: planCount(plan.updateRows),
     skipped: plan.skipped,
     ...(input.results?.[name] ? { result: input.results[name] } : {}),
   })]));
@@ -1204,6 +1454,12 @@ function buildResult(input) {
       cleared: true,
     }),
   });
+}
+
+function planCount(value) {
+  if (Array.isArray(value)) return value.length;
+  const numeric = Number(value ?? 0);
+  return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : 0;
 }
 
 function createAnalyticsReconciliation(input = {}) {
