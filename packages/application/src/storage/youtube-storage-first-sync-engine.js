@@ -1,5 +1,6 @@
 import {
   previewYouTubeOrganicStorage,
+  writeYouTubeOrganicStorageBatch,
   writeYouTubeOrganicStorageFirst,
 } from './youtube-organic-history-storage.js';
 
@@ -77,6 +78,15 @@ export class YouTubeStorageFirstSyncEngine {
     }
     this.storageResult = await this.storagePromise;
     return this.storageResult;
+  }
+
+  async executeStorageBatch(input = {}) {
+    const result = await writeYouTubeOrganicStorageBatch(this.context, this.captured, input);
+    if (result.complete) {
+      this.storageResult = result.storage;
+      this.storagePromise = Promise.resolve(this.storageResult);
+    }
+    return result;
   }
 
   resumeStorage(result) {

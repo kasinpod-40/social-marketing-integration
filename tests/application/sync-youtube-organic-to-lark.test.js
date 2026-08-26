@@ -169,6 +169,84 @@ test('stable Free-plan execution checkpoints bounded destination rows before pub
   assert.equal(stateStore.saved.length, 1);
 });
 
+test('stable Free-plan execution checkpoints D1 storage batches before any Lark destination plan', async () => {
+  const repository = createRepository();
+  const stateStore = createStateStore();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  const tableEngine = new TableSyncEngine();
+  const storageStarts = [];
+  let canonicalRows;
+  const syncEngine = {
+    captureSourceRows() {},
+    captureCanonicalRows(rows) { canonicalRows = rows; },
+    async executeStorage() { throw new Error('unbounded storage must not run'); },
+    async executeStorageBatch({ startIndex, maxRows, contentTotals }) {
+      storageStarts.push(startIndex);
+      const nextIndex = Math.min(canonicalRows.contentRows.length, startIndex + maxRows);
+      const content = {
+        contentRows: nextIndex - startIndex,
+        stateWritten: nextIndex - startIndex,
+        stateSkipped: 0,
+        observationsCreated: nextIndex - startIndex,
+        observationsSkipped: 0,
+        observationsNotRequired: 0,
+        coverageEntitiesWritten: nextIndex - startIndex,
+        coverageEntitiesSkipped: 0,
+        classifications: [],
+      };
+      if (nextIndex < canonicalRows.contentRows.length) {
+        return { complete: false, nextIndex, expectedItems: canonicalRows.contentRows.length, content };
+      }
+      return {
+        complete: true,
+        nextIndex,
+        expectedItems: canonicalRows.contentRows.length,
+        storage: {
+          status: 'complete',
+          content: {
+            ...content,
+            contentRows: contentTotals.contentRows + content.contentRows,
+            stateWritten: contentTotals.stateWritten + content.stateWritten,
+            observationsCreated: contentTotals.observationsCreated + content.observationsCreated,
+            coverageEntitiesWritten: contentTotals.coverageEntitiesWritten + content.coverageEntitiesWritten,
+          },
+        },
+      };
+    },
+    resumeStorage() {},
+    planByKey: (value) => tableEngine.planByKey(value),
+    executePlan: (plan, options) => tableEngine.executePlan(plan, options),
+  };
+  const input = {
+    repository, syncEngine, incrementalStateStore: stateStore, resumableWorkStore,
+    publicClient: {
+      async getChannel() { return CHANNEL; },
+      async listUploadVideoIdsPage() {
+        return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+      },
+      async listVideos() { return videos; },
+    },
+    syncRunId: 'run-storage-1', channelId: 'channel_A', accountKey: 'youtube_dev',
+    customerProfile: 'integration_workspace', cursorKey: 'youtube-lock-storage',
+    workKey: 'youtube:scheduled-storage-20260715', metricDate: '2026-07-15',
+    reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
+    generation: 1000, requestedAt: 1000, tables: TABLES,
+    maxDestinationRowsPerInvocation: 1,
+  };
+
+  let result;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    result = await syncYouTubeOrganicToLark({ ...input, syncRunId: `run-storage-${attempt + 1}` });
+    if (result.continuationRequired !== true) break;
+    if (storageStarts.length < 2) {
+      assert.equal(repository.events.some((event) => event.startsWith('read:')), false);
+    }
+  }
+  assert.equal(result.checkpointSaved, true);
+  assert.deepEqual(storageStarts, [0, 1]);
+  assert.equal(result.tables.content.result.created, 2);
+});
+
 test('operator-style dry-run plans with Lark GET, writes no Business data and replays completed work', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();

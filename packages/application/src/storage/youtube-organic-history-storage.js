@@ -134,6 +134,114 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
   });
 }
 
+export async function writeYouTubeOrganicStorageBatch(context, captured, input = {}) {
+  const rows = requireCapturedRows(captured);
+  const ids = await createStorageIds(context, rows);
+  const availabilityRows = selectYouTubeAvailabilityRows(rows.rawVideos);
+  const contentRows = sortContentRows(rows.contentRows);
+  const dailyByContentId = indexDailyRows(rows.dailyRows);
+  const contentIds = new Set(contentRows.map((row) => (
+    requireText(row.external_content_id, 'external_content_id')
+  )));
+  const unavailableWithoutContent = availabilityRows.filter((row) => (
+    normalizeYouTubeAvailability(row.source_availability_status) !== 'available'
+      && !contentIds.has(requireText(row.video_id, 'video_id'))
+  ));
+  const writer = createWriter(context, ids, createYouTubeAvailabilityAwareGateway({
+    gateway: context.gateway,
+    rows: availabilityRows,
+    accountKey: context.accountKey,
+  }));
+  const start = boundedStorageIndex(input.startIndex ?? 0, contentRows.length);
+  const maximum = boundedStorageBatchSize(input.maxRows ?? 100);
+  const stop = Math.min(contentRows.length, start + maximum);
+  const contentBatch = contentRows.slice(start, stop);
+
+  await writer.beginCoverage({
+    expectedEntities: availabilityRows.length,
+    expectedRows: availabilityRows.length,
+    sourceWatermark: ids.sourceWatermark,
+  });
+  await assertLockActive(context);
+  const contentWrite = contentBatch.length === 0
+    ? emptyContentWrite()
+    : await writer.writeBatch({
+      contentRows: contentBatch,
+      dailySnapshotRows: contentBatch.map((row) => {
+        const externalContentId = requireText(row.external_content_id, 'external_content_id');
+        const daily = dailyByContentId.get(externalContentId);
+        if (!daily) {
+          throw permanentError('YouTube D1 storage is missing a matching Daily row', {
+            code: 'YOUTUBE_END_TO_END_CAPTURE_INCOMPLETE',
+            details: { externalContentId },
+          });
+        }
+        return daily;
+      }),
+    });
+  if (stop < contentRows.length) {
+    return Object.freeze({
+      complete: false,
+      nextIndex: stop,
+      expectedItems: contentRows.length,
+      content: contentWrite,
+      sourceWatermark: ids.sourceWatermark,
+    });
+  }
+
+  await assertLockActive(context);
+  const availabilityWrite = await writeYouTubeAvailabilityStates({
+    context,
+    ids,
+    rawVideoRows: unavailableWithoutContent,
+    batchSize: STORAGE_BATCH_SIZE,
+  });
+  const totals = mergeContentWrite(input.contentTotals ?? emptyContentWrite(), contentWrite);
+  await assertLockActive(context);
+  await writer.completeCoverage({
+    expectedEntities: availabilityRows.length,
+    observedEntities: availabilityRows.length,
+    expectedRows: availabilityRows.length,
+    observedRows: availabilityRows.length,
+    writtenRows: availabilityRows.length
+      + totals.observationsCreated
+      + totals.observationsSkipped,
+    sourceWatermark: ids.sourceWatermark,
+    completedAt: context.observedAt,
+  });
+  await assertLockActive(context);
+  const analyticsWrite = await context.analyticsStore.upsertMany(rows.rawAnalytics, {
+    customerProfile: context.customerProfile,
+    customerKey: context.customerKey,
+    accountKey: context.accountKey,
+    syncRunId: context.syncRunId,
+  });
+  await assertLockActive(context);
+  const accountWrite = await writeYouTubeAccountSnapshot({
+    context,
+    ids,
+    rawChannelRows: rows.rawChannels,
+  });
+  return Object.freeze({
+    complete: true,
+    nextIndex: stop,
+    expectedItems: contentRows.length,
+    storage: Object.freeze({
+      status: 'complete',
+      mode: 'd1_first_bounded',
+      sourceWatermark: ids.sourceWatermark,
+      contentCoverageRunId: ids.contentCoverageRunId,
+      accountCoverageRunId: ids.accountCoverageRunId,
+      historySyncRunId: ids.historySyncRunId,
+      content: totals,
+      availability: availabilityWrite,
+      account: accountWrite,
+      analytics: analyticsWrite,
+      analyticsStoragePolicy: 'd1_period_facts_not_coerced_into_cumulative_observations',
+    }),
+  });
+}
+
 export async function previewYouTubeOrganicStorage(context, captured) {
   const rows = requireCapturedRows(captured);
   const ids = await createStorageIds(context, rows);
@@ -286,6 +394,22 @@ function chunks(rows, size) {
     result.push(Object.freeze(rows.slice(offset, offset + size)));
   }
   return result;
+}
+
+function boundedStorageIndex(value, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0 || number > maximum) {
+    throw new TypeError('YouTube D1 storage startIndex is outside the snapshot');
+  }
+  return number;
+}
+
+function boundedStorageBatchSize(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 1 || number > 500) {
+    throw new TypeError('YouTube D1 storage maxRows must be an integer from 1 to 500');
+  }
+  return number;
 }
 
 function mergeContentWrite(left, right) {
