@@ -169,7 +169,7 @@ test('stable Free-plan execution checkpoints bounded destination rows before pub
   assert.equal(stateStore.saved.length, 1);
 });
 
-test('stable Free-plan execution checkpoints D1 storage batches before any Lark destination plan', async () => {
+test('stable Free-plan execution uses a smaller D1 batch before larger Lark destination batches', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();
   const resumableWorkStore = new InMemoryResumableWorkStore();
@@ -180,9 +180,12 @@ test('stable Free-plan execution checkpoints D1 storage batches before any Lark 
     captureSourceRows() {},
     captureCanonicalRows(rows) { canonicalRows = rows; },
     async executeStorage() { throw new Error('unbounded storage must not run'); },
-    async executeStorageBatch({ startIndex, maxRows, contentTotals }) {
+    async executeStorageBatch({ startIndex, maxRows, contentTotals, preselected, expectedItems }) {
       storageStarts.push(startIndex);
-      const nextIndex = Math.min(canonicalRows.contentRows.length, startIndex + maxRows);
+      const totalRows = preselected ? expectedItems : canonicalRows.contentRows.length;
+      const nextIndex = preselected
+        ? startIndex + canonicalRows.contentRows.length
+        : Math.min(totalRows, startIndex + maxRows);
       const content = {
         contentRows: nextIndex - startIndex,
         stateWritten: nextIndex - startIndex,
@@ -194,13 +197,13 @@ test('stable Free-plan execution checkpoints D1 storage batches before any Lark 
         coverageEntitiesSkipped: 0,
         classifications: [],
       };
-      if (nextIndex < canonicalRows.contentRows.length) {
-        return { complete: false, nextIndex, expectedItems: canonicalRows.contentRows.length, content };
+      if (nextIndex < totalRows || preselected) {
+        return { complete: false, nextIndex, expectedItems: totalRows, content };
       }
       return {
         complete: true,
         nextIndex,
-        expectedItems: canonicalRows.contentRows.length,
+        expectedItems: totalRows,
         storage: {
           status: 'complete',
           content: {
@@ -231,7 +234,8 @@ test('stable Free-plan execution checkpoints D1 storage batches before any Lark 
     workKey: 'youtube:scheduled-storage-20260715', metricDate: '2026-07-15',
     reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
     generation: 1000, requestedAt: 1000, tables: TABLES,
-    maxDestinationRowsPerInvocation: 1,
+    maxStorageRowsPerInvocation: 1,
+    maxDestinationRowsPerInvocation: 2,
   };
 
   let result;
@@ -243,7 +247,7 @@ test('stable Free-plan execution checkpoints D1 storage batches before any Lark 
     }
   }
   assert.equal(result.checkpointSaved, true);
-  assert.deepEqual(storageStarts, [0, 1]);
+  assert.deepEqual(storageStarts, [0, 1, 2]);
   assert.equal(result.tables.content.result.created, 2);
 });
 

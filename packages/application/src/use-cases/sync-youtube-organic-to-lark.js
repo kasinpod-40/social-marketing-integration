@@ -67,6 +67,16 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     })
     : null;
   const sourceUnitBudget = createSourceUnitBudget(input.maxSourceUnitsPerInvocation);
+  const maxDestinationRowsPerInvocation = readOptionalPositiveInteger(
+    input.maxDestinationRowsPerInvocation,
+    'maxDestinationRowsPerInvocation',
+  );
+  const maxStorageRowsPerInvocation = maxDestinationRowsPerInvocation === null
+    ? null
+    : positiveInteger(
+      input.maxStorageRowsPerInvocation ?? maxDestinationRowsPerInvocation,
+      'maxStorageRowsPerInvocation',
+    );
 
   onProgress({ stage: 'youtube_checkpoint_loading', cursorKey });
   const checkpoint = await stateStore.loadCheckpoint(cursorKey);
@@ -138,6 +148,37 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     });
   }
   const videoIds = inventory.videoIds;
+  const existingStoragePhase = maxStorageRowsPerInvocation === null
+    ? null
+    : await workStore.loadPhase({ workKey, phase: WORK_PHASES.D1_STORAGE });
+  if (existingStoragePhase && !existingStoragePhase.complete) {
+    const storageContinuation = await continueExistingYouTubeStoragePhase({
+      repository,
+      syncEngine,
+      workStore,
+      workKey,
+      existingStoragePhase,
+      videoIds,
+      channelResource,
+      channelId,
+      accountKey,
+      customerProfile,
+      metricDate,
+      reportingTimezone: input.reportingTimezone,
+      maxRows: maxStorageRowsPerInvocation,
+      dictionaryRules: input.dictionaryRules,
+      fetchedAt,
+      assertCurrentWork,
+    });
+    if (storageContinuation) {
+      return buildContinuationResult({
+        syncRunId,
+        workResumed: work.resumed,
+        continuationPhase: WORK_PHASES.D1_STORAGE,
+        sourceProgress: storageContinuation,
+      });
+    }
+  }
   const resourceLoad = await loadVideoResources({
     workStore,
     workKey,
@@ -313,9 +354,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
 
   let plans;
   let results;
-  if (input.maxDestinationRowsPerInvocation !== null
-    && input.maxDestinationRowsPerInvocation !== undefined
-    && input.maxDestinationRowsPerInvocation !== '') {
+  if (maxDestinationRowsPerInvocation !== null) {
     const destination = await executeDurableDestinationPhases({
       repository,
       syncEngine,
@@ -327,10 +366,8 @@ export async function syncYouTubeOrganicToLark(input = {}) {
         dailySnapshots: normalized.dailySnapshotRows,
         accounts: accountRows,
       },
-      maxRows: positiveInteger(
-        input.maxDestinationRowsPerInvocation,
-        'maxDestinationRowsPerInvocation',
-      ),
+      maxRows: maxDestinationRowsPerInvocation,
+      maxStorageRows: maxStorageRowsPerInvocation,
       onProgress,
       assertCurrentWork,
     });
@@ -971,6 +1008,167 @@ function createSourceUnitBudget(value) {
   });
 }
 
+async function continueExistingYouTubeStoragePhase(input) {
+  if (typeof input.syncEngine.executeStorageBatch !== 'function') return null;
+  const start = nonNegativeInteger(
+    input.existingStoragePhase?.state?.nextIndex ?? 0,
+    'youtube storage nextIndex',
+  );
+  const expectedItems = nonNegativeInteger(
+    input.existingStoragePhase?.expectedItems ?? 0,
+    'youtube storage expectedItems',
+  );
+  if (start >= expectedItems) return null;
+
+  let returnedVideoIds = input.existingStoragePhase?.state?.returnedVideoIds;
+  if (!Array.isArray(returnedVideoIds)) {
+    const observed = [];
+    const seen = new Set();
+    await visitWorkUnits({
+      workStore: input.workStore,
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_RESOURCES,
+      visit: (unit) => {
+        for (const video of requireArray(unit.payload.videos, 'content resource videos')) {
+          const videoId = requireText(video?.id, 'video.id');
+          if (seen.has(videoId)) {
+            throw permanentError('YouTube content resource staging contains a duplicate Video ID', {
+              code: 'YOUTUBE_VIDEO_DUPLICATE_RESOURCE',
+              details: { duplicateResources: 1 },
+            });
+          }
+          seen.add(videoId);
+          observed.push(videoId);
+        }
+      },
+    });
+    returnedVideoIds = observed;
+  }
+  const inventoryIndex = new Map(input.videoIds.map((videoId, index) => [videoId, index]));
+  if (returnedVideoIds.some((videoId) => !inventoryIndex.has(videoId))) {
+    throw permanentError('YouTube staged resource is outside the retained inventory', {
+      code: 'YOUTUBE_VIDEO_SCOPE_MISMATCH',
+    });
+  }
+  const sortedReturnedIds = Object.freeze([...returnedVideoIds].sort((left, right) => (
+    left.localeCompare(right)
+  )));
+  if (sortedReturnedIds.length !== expectedItems) {
+    throw transientError('YouTube D1 storage expected count differs from staged resources', {
+      code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
+      details: { expectedVideos: expectedItems, stagedVideos: sortedReturnedIds.length },
+    });
+  }
+  const selectedIds = sortedReturnedIds.slice(start, start + input.maxRows);
+  const selectedSet = new Set(selectedIds);
+  const chunkIndexes = [...new Set(selectedIds.map((videoId) => (
+    Math.floor(inventoryIndex.get(videoId) / VIDEO_BATCH_SIZE)
+  )))].sort((left, right) => left - right);
+  const selectedById = new Map();
+  for (const chunkIndex of chunkIndexes) {
+    const page = await input.workStore.listPhaseUnits({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_RESOURCES,
+      afterSequence: chunkIndex,
+      limit: 1,
+    });
+    const unit = requireArray(page?.units, 'content resource unit page')[0];
+    if (!unit || unit.sequence !== chunkIndex) {
+      throw transientError('YouTube content resource unit is unavailable for bounded storage', {
+        code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
+        details: { chunkIndex },
+      });
+    }
+    for (const video of requireArray(unit.payload.videos, 'content resource videos')) {
+      const videoId = requireText(video?.id, 'video.id');
+      if (selectedSet.has(videoId)) selectedById.set(videoId, video);
+    }
+  }
+  const videoResources = selectedIds.map((videoId) => selectedById.get(videoId));
+  if (videoResources.some((video) => !video)) {
+    throw transientError('YouTube bounded storage could not hydrate every selected Video resource', {
+      code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
+      details: { selectedVideos: selectedIds.length, hydratedVideos: selectedById.size },
+    });
+  }
+  const normalized = normalizeYouTubeVideoBatch({
+    videoResources,
+    accountId: input.accountKey,
+    channelId: input.channelId,
+    metricDate: input.metricDate,
+    dictionaryRules: input.dictionaryRules ?? [],
+  });
+  if (normalized.skippedRows.length > 0
+    || normalized.sourceChannelIds.some((id) => id !== input.channelId)) {
+    throw permanentError('YouTube bounded normalization preflight failed', {
+      code: 'YOUTUBE_SYNC_NOT_READY',
+      details: { skippedRows: normalized.skippedRows.length },
+    });
+  }
+  const rawChannels = [mapYouTubeChannelRawRow(input.channelResource, {
+    expectedChannelId: input.channelId,
+    fetchedAt: input.fetchedAt,
+  })];
+  const rawVideos = videoResources.map((video) => mapYouTubeVideoRawRow(video, {
+    expectedChannelId: input.channelId,
+    fetchedAt: input.fetchedAt,
+  }));
+  const accountRows = [Object.freeze({
+    account_key: `youtube:${input.accountKey}`,
+    platform: 'youtube',
+    account_id: input.channelId,
+    account_name: mapYouTubeChannelResource(input.channelResource, input.channelId).title,
+    account_type: 'channel',
+    connection_status: 'connected',
+    timezone: requireText(input.reportingTimezone ?? 'Asia/Bangkok', 'reportingTimezone'),
+    last_sync_at: input.fetchedAt,
+  })];
+  input.syncEngine.captureSourceRows({ rawChannels, rawVideos, rawAnalytics: [] });
+  input.syncEngine.captureCanonicalRows({
+    contentRows: normalized.contentRows,
+    dailyRows: normalized.dailySnapshotRows,
+    accountRows,
+  });
+  await input.assertCurrentWork();
+  const priorTotals = input.existingStoragePhase?.state?.contentTotals
+    ?? emptyYouTubeStorageContentTotals();
+  const batch = await input.syncEngine.executeStorageBatch({
+    startIndex: start,
+    maxRows: input.maxRows,
+    expectedItems,
+    preselected: true,
+    contentTotals: priorTotals,
+  });
+  const contentTotals = addYouTubeStorageContentTotals(priorTotals, batch.content);
+  await input.assertCurrentWork();
+  await input.workStore.savePhase({
+    workKey: input.workKey,
+    phase: WORK_PHASES.D1_STORAGE,
+    state: {
+      storage: null,
+      contentTotals,
+      nextIndex: batch.nextIndex,
+      returnedVideoIds: sortedReturnedIds,
+    },
+    expectedItems,
+    processedItems: batch.nextIndex,
+    pagesProcessed: 0,
+    chunksProcessed: Number(input.existingStoragePhase?.chunksProcessed ?? 0) + 1,
+    complete: false,
+    unit: {
+      unitKey: `rows:${start}-${batch.nextIndex}`,
+      sequence: Number(input.existingStoragePhase?.chunksProcessed ?? 0),
+      payload: { nextIndex: batch.nextIndex, complete: false },
+    },
+  });
+  return Object.freeze({
+    complete: false,
+    expectedItems,
+    processedItems: batch.nextIndex,
+    chunksProcessed: Number(input.existingStoragePhase?.chunksProcessed ?? 0) + 1,
+  });
+}
+
 async function executeDurableDestinationPhases(input) {
   const definitions = [
     Object.freeze({
@@ -1007,7 +1205,7 @@ async function executeDurableDestinationPhases(input) {
       const batch = typeof input.syncEngine.executeStorageBatch === 'function'
         ? await input.syncEngine.executeStorageBatch({
           startIndex: Number(storagePhase?.state?.nextIndex ?? 0),
-          maxRows: input.maxRows,
+          maxRows: input.maxStorageRows,
           contentTotals: priorTotals,
         })
         : null;
@@ -1033,7 +1231,7 @@ async function executeDurableDestinationPhases(input) {
         chunksProcessed: Number(storagePhase?.chunksProcessed ?? 0) + 1,
         complete,
         unit: {
-          unitKey: `rows:${Math.max(0, nextIndex - input.maxRows)}-${nextIndex}`,
+          unitKey: `rows:${Math.max(0, nextIndex - input.maxStorageRows)}-${nextIndex}`,
           sequence: Number(storagePhase?.chunksProcessed ?? 0),
           payload: { nextIndex, complete },
         },
@@ -1716,6 +1914,10 @@ function positiveInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
   return number;
+}
+function readOptionalPositiveInteger(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  return positiveInteger(value, fieldName);
 }
 function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
