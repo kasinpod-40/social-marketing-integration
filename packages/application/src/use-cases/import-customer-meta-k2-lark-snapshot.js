@@ -1,6 +1,7 @@
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
+import { projectMetaAdsDailyRowsForLark } from './build-meta-ads-write-set.js';
 
 export const CUSTOMER_META_K2_LARK_IMPORT_MODE_ENV = 'MKT_CUSTOMER_META_K2_LARK_IMPORT_MODE';
 export const CUSTOMER_META_K2_LARK_IMPORT_MODE = 'IMPORT_EXACT_K2_RECENT_MONTH_SNAPSHOT';
@@ -173,14 +174,7 @@ export function listCustomerMetaK2LarkImportContracts() {
 export function projectCustomerMetaK2RowsForLark(tableKey, rowsInput) {
   const rows = requireArray(rowsInput, 'rows');
   if (tableKey !== 'mktAdsDaily') return Object.freeze([...rows]);
-  return Object.freeze(rows.map((row) => {
-    if (!Object.hasOwn(row, 'ad_channel')
-      || row.ad_channel === 'facebook_ads'
-      || row.ad_channel === 'instagram_ads') return row;
-    const projected = { ...row };
-    delete projected.ad_channel;
-    return Object.freeze(projected);
-  }));
+  return projectMetaAdsDailyRowsForLark(rows);
 }
 
 function validateRows(rows, contract, tableKey) {
