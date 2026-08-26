@@ -272,7 +272,10 @@ function responseTooLarge(maxResponseBytes) {
 
 function createMetaApiError({ response, payload, operation }) {
   const metaError = payload?.error ?? {};
-  const retryable = response.status === 429 || response.status >= 500 || metaError.is_transient === true;
+  const retryable = response.status === 429
+    || response.status >= 500
+    || metaError.is_transient === true
+    || isMetaAdsBusinessUseCaseRateLimit(metaError);
   const factory = retryable ? transientError : permanentError;
   return factory(`Meta Graph request failed: ${operation}`, {
     code: retryable ? 'META_TRANSIENT_API_ERROR' : 'META_PERMANENT_API_ERROR',
@@ -286,6 +289,13 @@ function createMetaApiError({ response, payload, operation }) {
       providerReason: classifyMetaErrorReason(metaError.message),
     },
   });
+}
+
+/** Meta returns this temporary Ads BUC throttle as HTTP 400 without is_transient. */
+export function isMetaAdsBusinessUseCaseRateLimit(error) {
+  const details = error?.details ?? error;
+  return Number(details?.graphCode ?? details?.code) === 80004
+    && Number(details?.graphSubcode ?? details?.error_subcode) === 2446079;
 }
 
 function parseJsonPayload(text, operation, status) {

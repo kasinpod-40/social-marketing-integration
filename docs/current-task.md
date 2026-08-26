@@ -6,7 +6,7 @@
 TASK_STATUS                              = CUSTOMER_DAILY_CONTINUATIONS_ACTIVE_REPAIR_IN_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
 BASE_MAIN_SHA                            = ab9555ca
-CURRENT_BRANCH                           = codex/customer-meta-ad-channel-repair-20260826
+CURRENT_BRANCH                           = codex/meta-buc-rate-limit-retry-20260826
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -49,7 +49,8 @@ CURRENT_FREE_RUNTIME_REPAIR              = CODE_AND_GATES_PASS_LIVE_DEPLOY_RECOV
 CUSTOMER_QUEUE_AUTO_RECOVERY             = LIVE_PROVEN_ACTIVE_VERSION_56b969fa
 GENERIC_DLQ_REDRIVE                      = DISABLED
 CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
-CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = CODE_AND_GATES_PASS_REVIEW_DEPLOY_PENDING
+CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
+CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 ```
 
 ## Objective
@@ -149,6 +150,22 @@ The implementation:
   `npm audit --audit-level=high`: PASS, zero vulnerabilities; `npm run deploy:dry-run`: PASS;
 - reviewed PR/merge, Customer deploy, same-generation K2 completion and D1/Lark readback remain live gates. The
   protected TikTok forensic terminal was not read, redriven or changed, and generic DLQ redrive remains disabled.
+
+Live release follow-up:
+
+- PR #748 passed all three CI gates, merged as `main@657b35f6` and deployed to Customer Worker version
+  `ac8aa2dc-3a4b-4430-a0f8-2b5293d91039` with the existing two crons and Queue/DLQ topology;
+- the new K2 generation stopped earlier in source staging at Creative page 188/500, before Lark preflight, on
+  HTTP 400 / Graph code `80004` / subcode `2446079`. Existing reviewed recovery code already classifies this exact
+  pair as a resumable Meta Ads Business Use Case rate limit, but the shared Graph client only treated HTTP 429,
+  5xx or `is_transient=true` as retryable;
+- the shared client now classifies only this exact code/subcode pair as transient, preserving bounded request and
+  Queue retries plus the existing durable page checkpoint. Neighboring codes/subcodes remain permanent;
+- focused classifier/checkpoint regression: PASS 16/16; `npm run check` and `git diff --check`: PASS;
+  `npm test`: PASS 3,250 Node tests plus 18 Workers-runtime tests; Report reliability: PASS 106/106;
+  `npm audit --audit-level=high`: PASS, zero vulnerabilities; `npm run deploy:dry-run`: PASS;
+- K3 retained D1 progress 590/3,848, YouTube retained complete 838/838 inventory/resources/Owner Analytics, and
+  Chatwoot retained 1/2 Daily units. No active lock remains; these checkpoints require exact bounded continuation.
 
 ## Current authorized adjacent scope — Customer Lark View hygiene
 

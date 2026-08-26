@@ -16,6 +16,12 @@ The 2026-08-26 reset also proved current-day Customer D1 success for Facebook, I
 WooCommerce and TikTok. Meta K2/K3 and YouTube continue from durable checkpoints. Chatwoot retains one exact
 retry-exhausted Work for bounded recovery. These are runtime continuation states, not missing credentials.
 
+The next K2 generation reached Creative source page 188/500 and then returned HTTP 400 / Graph code `80004` /
+subcode `2446079`. This exact pair is an Ads Business Use Case rate limit and is already treated as resumable by
+the reviewed local checkpoint recovery, but the shared Production Graph client previously relied only on HTTP
+429/5xx or `is_transient=true`. The client must classify only this exact pair as transient so Queue retries resume
+the persisted cursor; all neighboring codes and permanent permission/identity failures remain fail-closed.
+
 ## Customer Production bounded Queue auto-recovery — 2026-08-25
 
 Customer Workers Free can legitimately exhaust one Queue delivery while a durably checkpointed connector still
