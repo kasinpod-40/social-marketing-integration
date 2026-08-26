@@ -51,6 +51,7 @@ GENERIC_DLQ_REDRIVE                      = DISABLED
 CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
+CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = IMPLEMENTED_FOCUSED_TESTS_PASS_REVIEW_PENDING
 ```
 
 ## Objective
@@ -67,6 +68,17 @@ a new per-channel ownership onboarding. A secret that cannot be exported/read ba
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
 ## Current authorized recovery — Customer Workers Free runtime
+
+### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
+
+- live same-generation recovery proved that changing the reviewed conversation/reporting limits
+  correctly fails closed as `SYNC_WORK_OPERATION_MISMATCH`, while retaining the exact durable phase;
+- the runtime now applies optional deploy-only execution caps after `beginWork`, so smaller Free-plan
+  units do not alter the persisted operation fingerprint or permit an expansion beyond reviewed limits;
+- Customer will retain the original fingerprint limits while using one conversation and one reporting
+  page per execution; provider timeout/attempt limits remain separate non-fingerprint controls;
+- focused Chatwoot runtime/wiring/recovery regression passes 31/31; full repository gates, review,
+  merge, Customer deploy and exact same-generation live completion remain required.
 
 The first post-cutover schedules proved that Dev data parity does not guarantee Customer runtime parity because
 Dev is Paid while Customer remains Workers Free. The user authorized reviewed code, merge, Customer deployment

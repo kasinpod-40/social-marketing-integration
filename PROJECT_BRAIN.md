@@ -1,5 +1,12 @@
 # Project Brain — Social Marketing Data Integration
 
+## Chatwoot deploy-only execution caps — 2026-08-26
+
+Customer Workers Free may need a smaller per-delivery Chatwoot unit than the reviewed durable
+operation fingerprint. Execution caps are therefore applied only after `beginWork`: they may shrink
+conversation rows/reporting pages but never expand the reviewed limits. Changing the fingerprint
+configuration for an active same-generation Work remains a permanent fail-closed mismatch.
+
 ## Customer Meta daily Select projection repair — 2026-08-26
 
 The first post-quota-reset Customer Meta K2 schedule proved one permanent destination contract issue rather than

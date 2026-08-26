@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
+
+- added deploy-only Chatwoot conversation/reporting caps that can shrink a Queue delivery without
+  changing the existing durable operation fingerprint;
+- kept expansion impossible and preserved the same generation, phase checkpoint and stable keys.
+
 ## 2026-08-26 — Customer Meta Ads Daily Select projection repair
 
 - proved the K2 permanent failure was nine auxiliary placement values rejected by the Customer
