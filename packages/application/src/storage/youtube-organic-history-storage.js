@@ -136,7 +136,8 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
 
 export async function writeYouTubeOrganicStorageBatch(context, captured, input = {}) {
   const rows = requireCapturedRows(captured);
-  const ids = await createStorageIds(context, rows);
+  const preselected = input.preselected === true;
+  const ids = await createStorageIds(context, rows, { reuseExistingCoverage: preselected });
   const availabilityRows = selectYouTubeAvailabilityRows(rows.rawVideos);
   const contentRows = sortContentRows(rows.contentRows);
   const dailyByContentId = indexDailyRows(rows.dailyRows);
@@ -152,14 +153,22 @@ export async function writeYouTubeOrganicStorageBatch(context, captured, input =
     rows: availabilityRows,
     accountKey: context.accountKey,
   }));
-  const start = boundedStorageIndex(input.startIndex ?? 0, contentRows.length);
+  const expectedItems = preselected
+    ? boundedStorageExpectedItems(input.expectedItems)
+    : contentRows.length;
+  const start = boundedStorageIndex(input.startIndex ?? 0, expectedItems);
   const maximum = boundedStorageBatchSize(input.maxRows ?? 100);
-  const stop = Math.min(contentRows.length, start + maximum);
-  const contentBatch = contentRows.slice(start, stop);
+  const contentBatch = preselected
+    ? contentRows
+    : contentRows.slice(start, Math.min(contentRows.length, start + maximum));
+  if (contentBatch.length > maximum || start + contentBatch.length > expectedItems) {
+    throw new TypeError('YouTube preselected D1 storage batch is outside the reviewed bounds');
+  }
+  const stop = start + contentBatch.length;
 
   await writer.beginCoverage({
-    expectedEntities: availabilityRows.length,
-    expectedRows: availabilityRows.length,
+    expectedEntities: expectedItems,
+    expectedRows: expectedItems,
     sourceWatermark: ids.sourceWatermark,
   });
   await assertLockActive(context);
@@ -179,11 +188,12 @@ export async function writeYouTubeOrganicStorageBatch(context, captured, input =
         return daily;
       }),
     });
-  if (stop < contentRows.length) {
+  if (stop < expectedItems || preselected) {
     return Object.freeze({
       complete: false,
       nextIndex: stop,
-      expectedItems: contentRows.length,
+      expectedItems,
+      contentComplete: stop >= expectedItems,
       content: contentWrite,
       sourceWatermark: ids.sourceWatermark,
     });
@@ -199,11 +209,11 @@ export async function writeYouTubeOrganicStorageBatch(context, captured, input =
   const totals = mergeContentWrite(input.contentTotals ?? emptyContentWrite(), contentWrite);
   await assertLockActive(context);
   await writer.completeCoverage({
-    expectedEntities: availabilityRows.length,
-    observedEntities: availabilityRows.length,
-    expectedRows: availabilityRows.length,
-    observedRows: availabilityRows.length,
-    writtenRows: availabilityRows.length
+    expectedEntities: expectedItems,
+    observedEntities: expectedItems,
+    expectedRows: expectedItems,
+    observedRows: expectedItems,
+    writtenRows: expectedItems
       + totals.observationsCreated
       + totals.observationsSkipped,
     sourceWatermark: ids.sourceWatermark,
@@ -305,8 +315,18 @@ function createWriter(context, ids, gateway) {
   });
 }
 
-async function createStorageIds(context, rows) {
-  const sourceWatermark = await createStableFingerprint({
+async function createStorageIds(context, rows, options = {}) {
+  const digest = await createStableFingerprint({
+    contract: 'youtube-organic-storage-operation-v1',
+    workKey: context.workKey,
+    generation: context.generation,
+    accountKey: context.accountKey,
+  });
+  const contentCoverageRunId = `coverage:youtube:${digest}`;
+  const existing = options.reuseExistingCoverage === true
+    ? await context.gateway.readCoverageRun(contentCoverageRunId)
+    : null;
+  const sourceWatermark = existing?.source_watermark ?? await createStableFingerprint({
     contract: 'youtube-organic-storage-source-v1',
     workKey: context.workKey,
     generation: context.generation,
@@ -325,15 +345,14 @@ async function createStorageIds(context, rows) {
       subscriberCount: row.subscriber_count ?? null,
     })),
   });
-  const digest = await createStableFingerprint({
-    contract: 'youtube-organic-storage-operation-v1',
-    workKey: context.workKey,
-    generation: context.generation,
-    accountKey: context.accountKey,
-  });
+  if (options.reuseExistingCoverage === true && !existing?.source_watermark) {
+    throw permanentError('YouTube bounded storage cannot resume without its existing source watermark', {
+      code: 'YOUTUBE_D1_STORAGE_IDENTITY_MISSING',
+    });
+  }
   return Object.freeze({
     sourceWatermark,
-    contentCoverageRunId: `coverage:youtube:${digest}`,
+    contentCoverageRunId,
     accountCoverageRunId: `coverage:youtube-account:${digest}`,
     historySyncRunId: `history:youtube:${digest}`,
   });
@@ -408,6 +427,14 @@ function boundedStorageBatchSize(value) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 1 || number > 500) {
     throw new TypeError('YouTube D1 storage maxRows must be an integer from 1 to 500');
+  }
+  return number;
+}
+
+function boundedStorageExpectedItems(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError('YouTube D1 storage expectedItems must be a non-negative integer');
   }
   return number;
 }

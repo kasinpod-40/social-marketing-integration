@@ -12,6 +12,12 @@
   reliability, audit and deploy dry-run gates.
 - checkpoint YouTube organic-history D1 storage at 100 content rows per delivery after Live Free CPU evidence
   proved the 838-row sequential writer was still an unbounded phase; Coverage completes only after all batches.
+- separate the YouTube D1 execution budget from the Lark destination budget after Live continuation proved the
+  100-row D1 batch could persist progress but still exceed Customer Workers Free CPU; Customer can run D1 at five
+  rows while retaining 100-row Lark delivery without changing the durable Work fingerprint.
+- resume incomplete YouTube D1 storage from an indexed, stable sorted Video range instead of rehydrating and
+  normalizing all 838 staged resources on every five-row continuation; reuse the existing Coverage watermark and
+  retain the same storage offset/generation.
 
 ## 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 

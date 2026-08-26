@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_POST_SOURCE_FREE_REPAIR_GATES_PASS_REVIEW_PENDING
+TASK_STATUS                              = CUSTOMER_YOUTUBE_FREE_CPU_LIVE_CONTINUATION_ACTIVE
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 153b2220
-CURRENT_BRANCH                           = codex/customer-post-source-free-repair-20260826
+BASE_MAIN_SHA                            = 18d50501
+CURRENT_BRANCH                           = codex/youtube-split-storage-destination-batches-20260827
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -52,8 +52,8 @@ CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
-CUSTOMER_POST_SOURCE_FREE_REPAIR         = CODE_AND_ALL_GATES_PASS_LIVE_DEPLOY_PENDING
-CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = BOUNDED_100_ROWS_ALL_GATES_PASS_REVIEW_PENDING
+CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
+CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = MERGED_PR_752_LIVE_CHECKPOINT_210_OF_838
 ```
 
 ## Objective
@@ -98,6 +98,22 @@ The writer now checkpoints 100 content rows per delivery, accumulates compact co
 account and Coverage completion only after every content batch is durable. A retry of the same batch remains
 idempotent. Focused regression PASS 20/20; full `npm test` PASS 3,254 Node tests plus 18 Workers-runtime tests;
 check, Report 106/106, audit and deploy dry-run all PASS. Review/merge/deploy and exact Work continuation remain.
+
+PR #752 merged as `main@18d50501` and Customer version `8e0acb58-e753-4c65-9802-03ffaf17028a` created the first
+durable storage checkpoints at 100/838 and 200/838. Live Tail proved that 100-row executions can persist progress
+but still end as `exceededCpu`; the exact Work then terminalled with lock zero before the smaller runtime was
+active. The same generation was recovered once on version `dcb763e7-8a17-4d53-91bd-9f844fa6af20` with a five-row
+execution batch and advanced 200→210/838 with successful continuation outcomes. The storage and Lark limits are
+now separated so Production can retain D1=5 while restoring Lark destination batches to 100 without changing the
+persisted Work identity. Focused YouTube tests pass 20/20 and `npm run check` passes; reviewed merge/deploy remains
+required before the Work reaches Lark phases.
+
+Subsequent Live Tail proved a remaining CPU spike happened before the five-row write: every continuation still
+hydrated and normalized all 838 staged Video resources. The resumed D1 path now retains the exact returned Video
+ID index in the existing storage phase, loads only the one-to-five source units needed for the next stable sorted
+range, reuses the already persisted Coverage watermark and normalizes only that range. It defers the one-time
+finalization to the completed content boundary and never rewinds `nextIndex` or creates a replacement generation.
+Focused YouTube regression passes 16/16 and repository check passes.
 
 ### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 
