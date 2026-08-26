@@ -15,7 +15,10 @@ import {
   createChatwootActiveJobRouter,
   selectChatwootActiveRoute,
 } from '../../apps/sync-worker/src/chatwoot-active-job-router.js';
-import { processChatwootAnalyticsJob } from '../../apps/sync-worker/src/chatwoot-job-router.js';
+import {
+  processChatwootAnalyticsJob,
+  resolveChatwootExecutionLimits,
+} from '../../apps/sync-worker/src/chatwoot-job-router.js';
 
 const REQUESTED_AT = Date.parse('2026-07-27T00:00:00Z');
 const OPERATION_ID = 'chatwoot-integration-1';
@@ -97,6 +100,26 @@ test('Chatwoot Queue identity is account-scoped and continuation preserves it', 
   }, operation);
   assert.equal(continuation.workKey, operation.workKey);
   assert.equal(continuation.originalRequestedAt, REQUESTED_AT);
+});
+
+test('Chatwoot execution caps shrink a deployed unit without expanding reviewed limits', () => {
+  const limits = Object.freeze({
+    conversationRowsPerInvocation: 25,
+    reportingPagesPerInvocation: 5,
+    conversationPagesPerInvocation: 1,
+  });
+  assert.deepEqual(resolveChatwootExecutionLimits(limits, {
+    MKT_CHATWOOT_EXECUTION_CONVERSATION_ROWS_PER_INVOCATION: '1',
+    MKT_CHATWOOT_EXECUTION_REPORTING_PAGES_PER_INVOCATION: '1',
+  }), {
+    conversationRowsPerInvocation: 1,
+    reportingPagesPerInvocation: 1,
+    conversationPagesPerInvocation: 1,
+  });
+  assert.deepEqual(resolveChatwootExecutionLimits(limits, {
+    MKT_CHATWOOT_EXECUTION_CONVERSATION_ROWS_PER_INVOCATION: '100',
+    MKT_CHATWOOT_EXECUTION_REPORTING_PAGES_PER_INVOCATION: '100',
+  }), limits);
 });
 
 test('all Chatwoot Lark logical keys are centrally registered and unique', () => {

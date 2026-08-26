@@ -161,7 +161,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
         accountKey: connector.accountKey,
         externalAccountId: chatwootConfig.source.externalAccountId,
         reportingTimezone: chatwootConfig.reportingTimezone,
-        limits: chatwootConfig.limits,
+        limits: resolveChatwootExecutionLimits(chatwootConfig.limits, input.env),
         flags: {
           reportWrite: chatwootConfig.flags.reportWrite,
           larkWrite: chatwootConfig.flags.larkWrite,
@@ -243,6 +243,33 @@ export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig, trigg
     });
   }
   return connector;
+}
+
+/**
+ * Apply a deploy-specific execution cap without changing the durable operation fingerprint.
+ * This lets an existing same-generation Work use smaller Free-plan units while the reviewed
+ * contract limits retained in D1 remain unchanged.
+ */
+export function resolveChatwootExecutionLimits(limits = {}, env = {}) {
+  const configuredRows = readPositiveInteger(limits.conversationRowsPerInvocation, 1);
+  const configuredReportingPages = readPositiveInteger(limits.reportingPagesPerInvocation, 1);
+  return Object.freeze({
+    ...limits,
+    conversationRowsPerInvocation: Math.min(
+      configuredRows,
+      readPositiveInteger(
+        env.MKT_CHATWOOT_EXECUTION_CONVERSATION_ROWS_PER_INVOCATION,
+        configuredRows,
+      ),
+    ),
+    reportingPagesPerInvocation: Math.min(
+      configuredReportingPages,
+      readPositiveInteger(
+        env.MKT_CHATWOOT_EXECUTION_REPORTING_PAGES_PER_INVOCATION,
+        configuredReportingPages,
+      ),
+    ),
+  });
 }
 
 function assertChatwootJobDefinition(definition, job, trigger) {
