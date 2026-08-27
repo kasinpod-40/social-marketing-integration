@@ -41,6 +41,7 @@ const META_ORGANIC_JOB_TYPES = new Set([
 ]);
 const CONTINUATION_STATUSES = new Set([
   'source_continuation',
+  'preflight_continuation',
   'd1_continuation',
   'lark_continuation',
 ]);

@@ -144,6 +144,21 @@ test('Meta continuation keeps the originating trigger instead of reverting sched
   assert.match(source, /Scheduled Meta job cannot reduce into dry-run or D1-only mode/u);
 });
 
+test('Meta router enqueues every durable post-source continuation phase', () => {
+  const source = readFileSync(
+    new URL('../../apps/sync-worker/src/meta-active-job-router.js', import.meta.url),
+    'utf8',
+  );
+  for (const status of [
+    'source_continuation',
+    'preflight_continuation',
+    'd1_continuation',
+    'lark_continuation',
+  ]) {
+    assert.match(source, new RegExp(`'${status}'`, 'u'));
+  }
+});
+
 function buildPrimary({ scheduledAt, env }) {
   return buildScheduledJobs({
     event: {
