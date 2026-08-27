@@ -216,10 +216,11 @@ test('stable Free-plan execution uses a smaller D1 batch before larger Lark dest
   const resumableWorkStore = new InMemoryResumableWorkStore();
   const tableEngine = new TableSyncEngine();
   const storageStarts = [];
+  let canonicalCaptureCalls = 0;
   let canonicalRows;
   const syncEngine = {
     captureSourceRows() {},
-    captureCanonicalRows(rows) { canonicalRows = rows; },
+    captureCanonicalRows(rows) { canonicalCaptureCalls += 1; canonicalRows = rows; },
     async executeStorage() { throw new Error('unbounded storage must not run'); },
     async executeStorageBatch({ startIndex, maxRows, contentTotals, preselected, expectedItems }) {
       storageStarts.push(startIndex);
@@ -276,12 +277,22 @@ test('stable Free-plan execution uses a smaller D1 batch before larger Lark dest
     reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
     generation: 1000, requestedAt: 1000, tables: TABLES,
     maxStorageRowsPerInvocation: 1,
-    maxDestinationRowsPerInvocation: 2,
+    maxDestinationRowsPerInvocation: 1,
   };
 
   let result;
+  let fastDestinationResumeProven = false;
   for (let attempt = 0; attempt < 12; attempt += 1) {
+    const capturesBefore = canonicalCaptureCalls;
     result = await syncYouTubeOrganicToLark({ ...input, syncRunId: `run-storage-${attempt + 1}` });
+    const contentProgress = await resumableWorkStore.loadPhase({
+      workKey: input.workKey,
+      phase: 'youtube_destination_content_v1',
+    });
+    if (contentProgress?.complete && contentProgress.processedItems === videos.length
+      && canonicalCaptureCalls === capturesBefore) {
+      fastDestinationResumeProven = true;
+    }
     if (result.continuationRequired !== true) break;
     if (storageStarts.length < 2) {
       assert.equal(repository.events.some((event) => event.startsWith('read:')), false);
@@ -290,6 +301,7 @@ test('stable Free-plan execution uses a smaller D1 batch before larger Lark dest
   assert.equal(result.checkpointSaved, true);
   assert.deepEqual(storageStarts, [0, 1, 2]);
   assert.equal(result.tables.content.result.created, 2);
+  assert.equal(fastDestinationResumeProven, true);
 });
 
 test('operator-style dry-run plans with Lark GET, writes no Business data and replays completed work', async () => {
