@@ -23,6 +23,8 @@
   50-video Analytics chunk or repeat provider calls.
 - allocate YouTube destination unit sequences from durable `chunksProcessed` rather than the current batch-size
   arithmetic, preserving unique resumable units when a Free-plan execution limit changes mid-phase.
+- resume an existing bounded YouTube Content/Daily destination from only the exact staged Video range needed for
+  the next batch, avoiding full 838-resource hydration and normalization on every Lark continuation.
 
 ## 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 

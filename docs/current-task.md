@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_YOUTUBE_DESTINATION_SEQUENCE_REPAIR_REVIEW
+TASK_STATUS                              = CUSTOMER_YOUTUBE_DESTINATION_RANGE_RESUME_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 37601551
-CURRENT_BRANCH                           = codex/youtube-destination-resize-stable-20260827
+BASE_MAIN_SHA                            = 4bfc13a8
+CURRENT_BRANCH                           = codex/youtube-destination-range-resume-20260827
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = db90c92b-09c5-469a-aa97-0602c3bd1ca5
+PRODUCTION_WORKER_HEAD                   = 57418082-ccff-4586-b382-cf0186c24783
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -55,7 +55,7 @@ CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e78
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
 CUSTOMER_YOUTUBE_ANALYTICS_RESUME        = MERGED_PR_754_LIVE_COMPLETE_838_OF_838
-CUSTOMER_YOUTUBE_LARK_DESTINATION        = CONTENT_COMPLETE_838_DAILY_RETAINED_100_SEQUENCE_REPAIR_REVIEW
+CUSTOMER_YOUTUBE_LARK_DESTINATION        = CONTENT_COMPLETE_838_DAILY_RETAINED_245_RANGE_RESUME_REVIEW
 ```
 
 ## Objective
@@ -140,6 +140,20 @@ checkpoint was rolled back. Destination units now use the existing durable `chun
 so execution limits can shrink or grow mid-phase without reusing a sequence. Focused YouTube regression passes 17/17,
 including a live-shape batch-resize test. Full gates, reviewed merge/deploy and continuation of the exact same Work
 from Lark Daily 100/838 remain required.
+
+PR #755 merged as `main@4bfc13a8`; exact same-generation recovery proved the corrected destination sequence live by
+advancing Lark Daily 100→150 without collision. Staged 50/25/10-row execution then isolated a remaining Free CPU
+cost: after each successful small write, the following continuation still reconstructed and normalized all 838
+staged Video resources before slicing the next Daily rows. This produced alternating successful checkpoints and
+abrupt `running` rows/lock expiry even at ten rows, retaining Daily at 245/838 without a new DLQ.
+
+The current repair adds an exact-range destination resume after D1 completion. For an already active Content or
+Daily phase whose expected count matches the retained inventory, it loads only the source-unit chunks containing
+the next configured IDs, normalizes only that range, writes/checkpoints it, and returns immediately. It does not
+rehydrate Owner Analytics or the other 838 Video resources, does not change generation/fingerprint, and falls back
+to full assembly when availability counts differ. Focused YouTube regression passes 17/17 and explicitly proves a
+destination phase completes without another full canonical capture. Full gates, reviewed merge/deploy and exact
+same-generation continuation from Daily 245/838 remain required.
 
 ### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 

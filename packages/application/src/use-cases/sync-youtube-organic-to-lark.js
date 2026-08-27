@@ -209,6 +209,34 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       });
     }
   }
+  if (maxDestinationRowsPerInvocation !== null && existingStoragePhase?.complete) {
+    const destinationContinuation = await continueExistingYouTubeDestinationPhase({
+      repository,
+      syncEngine,
+      workStore,
+      workKey,
+      videoIds,
+      channel,
+      channelId,
+      accountKey,
+      metricDate,
+      reportingTimezone: input.reportingTimezone,
+      maxRows: maxDestinationRowsPerInvocation,
+      dictionaryRules: input.dictionaryRules,
+      tables,
+      fetchedAt,
+      onProgress,
+      assertCurrentWork,
+    });
+    if (destinationContinuation) {
+      return buildContinuationResult({
+        syncRunId,
+        workResumed: work.resumed,
+        continuationPhase: destinationContinuation.phase,
+        sourceProgress: destinationContinuation.progress,
+      });
+    }
+  }
   const resourceLoad = await loadVideoResources({
     workStore,
     workKey,
@@ -1113,37 +1141,12 @@ async function continueExistingYouTubeStoragePhase(input) {
     });
   }
   const selectedIds = sortedReturnedIds.slice(start, start + input.maxRows);
-  const selectedSet = new Set(selectedIds);
-  const chunkIndexes = [...new Set(selectedIds.map((videoId) => (
-    Math.floor(inventoryIndex.get(videoId) / VIDEO_BATCH_SIZE)
-  )))].sort((left, right) => left - right);
-  const selectedById = new Map();
-  for (const chunkIndex of chunkIndexes) {
-    const page = await input.workStore.listPhaseUnits({
-      workKey: input.workKey,
-      phase: WORK_PHASES.CONTENT_RESOURCES,
-      afterSequence: chunkIndex,
-      limit: 1,
-    });
-    const unit = requireArray(page?.units, 'content resource unit page')[0];
-    if (!unit || unit.sequence !== chunkIndex) {
-      throw transientError('YouTube content resource unit is unavailable for bounded storage', {
-        code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
-        details: { chunkIndex },
-      });
-    }
-    for (const video of requireArray(unit.payload.videos, 'content resource videos')) {
-      const videoId = requireText(video?.id, 'video.id');
-      if (selectedSet.has(videoId)) selectedById.set(videoId, video);
-    }
-  }
-  const videoResources = selectedIds.map((videoId) => selectedById.get(videoId));
-  if (videoResources.some((video) => !video)) {
-    throw transientError('YouTube bounded storage could not hydrate every selected Video resource', {
-      code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
-      details: { selectedVideos: selectedIds.length, hydratedVideos: selectedById.size },
-    });
-  }
+  const videoResources = await loadSelectedVideoResources({
+    workStore: input.workStore,
+    workKey: input.workKey,
+    inventoryIndex,
+    selectedIds,
+  });
   const normalized = normalizeYouTubeVideoBatch({
     videoResources,
     accountId: input.accountKey,
@@ -1220,6 +1223,161 @@ async function continueExistingYouTubeStoragePhase(input) {
     processedItems: batch.nextIndex,
     chunksProcessed: Number(input.existingStoragePhase?.chunksProcessed ?? 0) + 1,
   });
+}
+
+async function continueExistingYouTubeDestinationPhase(input) {
+  const contentPhase = await input.workStore.loadPhase({
+    workKey: input.workKey,
+    phase: WORK_PHASES.DESTINATION_CONTENT,
+  });
+  const dailyPhase = contentPhase?.complete
+    ? await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.DESTINATION_DAILY,
+    })
+    : null;
+  if ((!contentPhase || contentPhase.complete)
+    && (!dailyPhase || dailyPhase.complete)) return null;
+
+  let phase;
+  let tableId;
+  let keyField;
+  let scope;
+  let existing;
+  let rows;
+  let expectedItems;
+  if (contentPhase && !contentPhase.complete) {
+    phase = WORK_PHASES.DESTINATION_CONTENT;
+    tableId = input.tables.mktContent;
+    keyField = 'content_key';
+    scope = 'content';
+    existing = contentPhase;
+  } else {
+    phase = WORK_PHASES.DESTINATION_DAILY;
+    tableId = input.tables.mktContentDaily;
+    keyField = 'content_daily_key';
+    scope = 'dailySnapshots';
+    existing = dailyPhase;
+  }
+
+  const state = normalizeYouTubeDestinationState(existing?.state);
+  const start = state.nextIndex;
+  expectedItems = nonNegativeInteger(existing.expectedItems, 'youtube destination expectedItems');
+  if (expectedItems !== input.videoIds.length) return null;
+  const stop = Math.min(expectedItems, start + input.maxRows);
+  const selectedIds = input.videoIds.slice(start, stop);
+  const inventoryIndex = new Map(input.videoIds.map((videoId, index) => [videoId, index]));
+  const videoResources = await loadSelectedVideoResources({
+    workStore: input.workStore,
+    workKey: input.workKey,
+    inventoryIndex,
+    selectedIds,
+  });
+  const normalized = normalizeYouTubeVideoBatch({
+    videoResources,
+    accountId: input.accountKey,
+    channelId: input.channelId,
+    metricDate: input.metricDate,
+    dictionaryRules: input.dictionaryRules ?? [],
+  });
+  if (normalized.skippedRows.length > 0
+    || normalized.sourceChannelIds.some((id) => id !== input.channelId)) {
+    throw permanentError('YouTube bounded destination normalization preflight failed', {
+      code: 'YOUTUBE_SYNC_NOT_READY',
+      details: { skippedRows: normalized.skippedRows.length },
+    });
+  }
+  rows = phase === WORK_PHASES.DESTINATION_CONTENT
+    ? normalized.contentRows
+    : normalized.dailySnapshotRows;
+  let plan = emptyYouTubePlanSummary();
+  let result = emptyYouTubeWriteResult();
+  if (rows.length > 0) {
+    await input.assertCurrentWork();
+    const batchPlan = await input.syncEngine.planByKey({
+      repository: input.repository,
+      tableId,
+      keyField,
+      rows,
+      onProgress: (event) => input.onProgress({ scope, ...event }),
+    });
+    plan = summarizeYouTubePlan(batchPlan);
+    result = await input.syncEngine.executePlan(batchPlan, {
+      beforeWriteChunk: input.assertCurrentWork,
+      onProgress: (event) => input.onProgress({ scope, ...event }),
+    });
+  }
+  const nextState = {
+    nextIndex: stop,
+    plan: addYouTubePlanSummary(state.plan, plan),
+    result: addYouTubeWriteResult(state.result, result),
+  };
+  const complete = stop >= expectedItems;
+  const priorChunksProcessed = Number(existing?.chunksProcessed ?? 0);
+  const chunksProcessed = priorChunksProcessed + (rows.length > 0 ? 1 : 0);
+  await input.assertCurrentWork();
+  await input.workStore.savePhase({
+    workKey: input.workKey,
+    phase,
+    state: nextState,
+    expectedItems,
+    processedItems: stop,
+    pagesProcessed: 0,
+    chunksProcessed,
+    complete,
+    ...(rows.length > 0 ? {
+      unit: {
+        unitKey: `rows:${start}-${stop}`,
+        sequence: priorChunksProcessed,
+        payload: { start, stop, plan, result },
+      },
+    } : {}),
+  });
+  return Object.freeze({
+    phase,
+    progress: Object.freeze({ complete, processedItems: stop, expectedItems }),
+  });
+}
+
+async function loadSelectedVideoResources(input) {
+  const selectedSet = new Set(input.selectedIds);
+  const chunkIndexes = [...new Set(input.selectedIds.map((videoId) => {
+    const index = input.inventoryIndex.get(videoId);
+    if (index === undefined) {
+      throw permanentError('YouTube selected Video is outside the retained inventory', {
+        code: 'YOUTUBE_VIDEO_SCOPE_MISMATCH',
+      });
+    }
+    return Math.floor(index / VIDEO_BATCH_SIZE);
+  }))].sort((left, right) => left - right);
+  const selectedById = new Map();
+  for (const chunkIndex of chunkIndexes) {
+    const page = await input.workStore.listPhaseUnits({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_RESOURCES,
+      afterSequence: chunkIndex,
+      limit: 1,
+    });
+    const unit = requireArray(page?.units, 'content resource unit page')[0];
+    if (!unit || unit.sequence !== chunkIndex) {
+      throw transientError('YouTube content resource unit is unavailable for bounded continuation', {
+        code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
+        details: { chunkIndex },
+      });
+    }
+    for (const video of requireArray(unit.payload.videos, 'content resource videos')) {
+      const videoId = requireText(video?.id, 'video.id');
+      if (selectedSet.has(videoId)) selectedById.set(videoId, video);
+    }
+  }
+  const resources = input.selectedIds.map((videoId) => selectedById.get(videoId));
+  if (resources.some((video) => !video)) {
+    throw transientError('YouTube bounded continuation could not hydrate every selected Video resource', {
+      code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
+      details: { selectedVideos: input.selectedIds.length, hydratedVideos: selectedById.size },
+    });
+  }
+  return Object.freeze(resources);
 }
 
 async function executeDurableDestinationPhases(input) {
