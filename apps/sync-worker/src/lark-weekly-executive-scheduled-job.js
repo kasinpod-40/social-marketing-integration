@@ -15,8 +15,8 @@ import {
   requireJobText,
 } from './worker-runtime-support.js';
 
-const DEFAULT_WEEKLY_NOTIFICATION_TIME = '08:30';
-const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
+const DEFAULT_WEEKLY_NOTIFICATION_TIME = '09:30';
+const DEFAULT_WEEKLY_REPORT_TIME = '09:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
 const WEEKDAYS = new Set([
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',

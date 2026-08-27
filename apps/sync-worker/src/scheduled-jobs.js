@@ -16,26 +16,26 @@ import {
   requireJobText,
 } from './worker-runtime-support.js';
 
-const DEFAULT_FACEBOOK_SYNC_TIME = '07:30';
-const DEFAULT_TIKTOK_SYNC_TIME = '06:55';
-const DEFAULT_INSTAGRAM_SYNC_TIME = '07:35';
-const DEFAULT_DAILY_REPORT_TIME = '08:10';
+const DEFAULT_FACEBOOK_SYNC_TIME = '06:30';
+const DEFAULT_TIKTOK_SYNC_TIME = '05:30';
+const DEFAULT_INSTAGRAM_SYNC_TIME = '07:30';
+const DEFAULT_DAILY_REPORT_TIME = '09:00';
 const DEFAULT_CONTENT_DAILY_RETENTION_TIME = '08:05';
-const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
+const DEFAULT_WEEKLY_REPORT_TIME = '09:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
-const DEFAULT_YOUTUBE_ANALYTICS_TIME = '07:50';
+const DEFAULT_YOUTUBE_ANALYTICS_TIME = '01:30';
 const DEFAULT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS = 7;
-const DEFAULT_WOOCOMMERCE_SYNC_TIME = '01:30';
-const DEFAULT_META_ADS_SYNC_TIME = '07:40';
-const DEFAULT_CHATWOOT_SYNC_TIME = '07:45';
+const DEFAULT_WOOCOMMERCE_SYNC_TIME = '04:30';
+const DEFAULT_META_ADS_SYNC_TIME = '00:30';
+const DEFAULT_CHATWOOT_SYNC_TIME = '02:30';
 const DASHBOARD_WINDOWS = Object.freeze([1, 3, 7, 30]);
 const SCHEDULED_REPORT_PLATFORM_SCOPES = Object.freeze(listReportPlatformContracts()
   .filter((contract) => contract.sourceStatus === REPORT_SOURCE_STATUS.ACTIVE)
   .map((contract) => contract.platformScope));
 const YOUTUBE_ANALYTICS_TIMEZONE = 'America/Los_Angeles';
 const SCHEDULE_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
-const YOUTUBE_SCHEDULE_MINUTE_UTC = 50;
-const YOUTUBE_SCHEDULE_HOURS_UTC = Object.freeze([0]);
+const YOUTUBE_SCHEDULE_MINUTE_UTC = 30;
+const YOUTUBE_SCHEDULE_HOURS_UTC = Object.freeze([18]);
 
 export const PRIMARY_SCHEDULE_CRON = '*/5 * * * *';
 export const YOUTUBE_SCHEDULE_CRON = `${YOUTUBE_SCHEDULE_MINUTE_UTC} ${YOUTUBE_SCHEDULE_HOURS_UTC.join(',')} * * *`;

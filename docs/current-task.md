@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_YOUTUBE_DESTINATION_RANGE_RESUME_REVIEW
+TASK_STATUS                              = CUSTOMER_STAGGERED_SCHEDULE_AND_NEWER_ONLY_PARITY_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 4bfc13a8
-CURRENT_BRANCH                           = codex/youtube-destination-range-resume-20260827
+BASE_MAIN_SHA                            = a7b6a544
+CURRENT_BRANCH                           = codex/customer-staggered-schedules-20260827
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = 57418082-ccff-4586-b382-cf0186c24783
+PRODUCTION_WORKER_HEAD                   = 8238edc6-bdce-488c-ba2c-aa12b8753c6b
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -56,6 +56,9 @@ CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
 CUSTOMER_YOUTUBE_ANALYTICS_RESUME        = MERGED_PR_754_LIVE_COMPLETE_838_OF_838
 CUSTOMER_YOUTUBE_LARK_DESTINATION        = CONTENT_COMPLETE_838_DAILY_RETAINED_245_RANGE_RESUME_REVIEW
+CUSTOMER_STAGGERED_SCHEDULE              = CODE_FOCUSED_GATES_PASS_REVIEW_PENDING
+DEV_TO_CUSTOMER_DATA_POLICY              = INSERT_ONLY_PRODUCTION_MISSING_NEWER_STABLE_KEYS
+REPORT_PARITY_TARGET                     = EXACT_1D_3D_7D_30D_AFTER_CUSTOMER_D1_MATERIALIZATION
 ```
 
 ## Objective
@@ -70,6 +73,33 @@ credentials used in the Integration Workspace are already customer assets. Custo
 therefore a runtime cutover to the customer-owned Cloudflare resources and customer Lark Base, not
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
+
+## Current authorized schedule and newer-only parity scope — 2026-08-27
+
+- Customer source admissions are staggered at least one hour apart on the serial Queue: Meta Ads `00:30`,
+  YouTube `01:30`, Chatwoot `02:30`, WooCommerce `04:30`, TikTok `05:30`, Facebook `06:30` and Instagram
+  `07:30` Asia/Bangkok. Google Ads remains the customer-owned external Manager Script producer in the
+  `03:00–04:00` provider window; the Cloudflare Google Ads schedule remains disabled to prevent duplicates;
+- Daily Report runs only after every source window at `09:00`; Weekly Report runs Monday `09:15` and the exact
+  weekly notification follows at `09:30`. Queue batch/concurrency remains `1` and the primary scheduler remains
+  every five minutes;
+- Dev data may be used only as an insert-only bridge for exact Customer-owned stable keys that Customer
+  Production does not have and whose business date is strictly newer than the current Customer row boundary.
+  Older/equal Production rows, operational Work, locks, cursors, DLQ, alerts and checkpoints are out of scope;
+- read-only evidence currently shows newer Dev canonical data only for Facebook `2026-08-26`, TikTok through
+  `2026-08-26` and WooCommerce through `2026-08-26`. Instagram, YouTube and Chatwoot are already at the same or
+  newer Customer boundary; Dev Ads are older than Customer and must not be copied;
+- completion requires Customer D1/Lark stable-key parity for the accepted delta, then fresh Customer-owned
+  materializations for `1D/3D/7D/30D` with exact metric equality to the Dev reference for the same period end.
+  Copying a Dev Report row without Customer source/D1 proof is not accepted as parity.
+
+### Implementation result — staggered schedule code
+
+- focused schedule/config/notification regression PASS `127/127`; Workers runtime PASS `18/18`;
+- `npm run check` PASS (`811` source files, `2,448` local dependencies, zero cycles and hygiene PASS);
+- full `npm test` PASS `3,255` Node tests plus `18` Workers-runtime tests; Report reliability PASS `106/106`;
+- `npm audit --audit-level=high` PASS with zero vulnerabilities; deploy dry-run and `git diff --check` PASS;
+- reviewed PR/merge, Customer deploy, Remote trigger/config readback and next-window Production proof remain required.
 
 ## Current authorized recovery — Customer Workers Free runtime
 

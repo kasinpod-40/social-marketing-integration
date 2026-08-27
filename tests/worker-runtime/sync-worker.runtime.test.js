@@ -363,7 +363,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     const send = vi.fn(async () => undefined);
     const worker = createSyncWorker();
     const controller = createScheduledController({
-      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+      scheduledTime: Date.parse('2026-07-18T18:30:00.000Z'),
       cron: '0 * * * *',
     });
 
@@ -454,8 +454,8 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     const send = vi.fn(async () => undefined);
     const worker = createSyncWorker();
     const controller = createScheduledController({
-      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
-      cron: '50 0 * * *',
+      scheduledTime: Date.parse('2026-07-18T18:30:00.000Z'),
+      cron: '30 18 * * *',
     });
 
     await worker.scheduled(controller, {
@@ -467,7 +467,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
       MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
       MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
-      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+      MKT_YOUTUBE_ANALYTICS_TIME: '01:30',
       MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS: '7',
       MKT_SYNC_QUEUE: { send },
     });

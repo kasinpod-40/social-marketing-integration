@@ -41,7 +41,7 @@ const FULL_SHA = /^[0-9a-f]{40}$/u;
 const VERSION_ID = /^[0-9a-f-]{36}$/u;
 const SAFE_OPERATION_ID = /^[a-z0-9][a-z0-9_-]{0,95}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '50 0 * * *']);
+const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '30 18 * * *']);
 
 export function parseYouTubeLarkUatArgs(args = []) {
   let phase = 'plan';

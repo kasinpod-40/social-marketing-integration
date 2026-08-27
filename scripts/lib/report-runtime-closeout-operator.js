@@ -41,7 +41,7 @@ const EXPECTED_WORKER_NAME = 'social-mkt-sync-worker';
 const EXPECTED_DATABASE_NAME = 'social-mkt-state-dev';
 const EXPECTED_MAIN_QUEUE = 'social-mkt-sync-jobs';
 const EXPECTED_DLQ = 'social-mkt-sync-dlq';
-const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '50 0 * * *']);
+const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '30 18 * * *']);
 const GENERATED_FALSE_FLAG_NAMES = new Set([
   'MKT_WOOCOMMERCE_REPORT_READ_ENABLED',
 ]);

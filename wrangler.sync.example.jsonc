@@ -24,7 +24,7 @@
   "triggers": {
     // Existing Cron contracts remain; every Business schedule below is false.
     // Google Ads has no Cron producer in this implementation.
-    "crons": ["*/5 * * * *", "50 0 * * *"]
+    "crons": ["*/5 * * * *", "30 18 * * *"]
   },
 
   "d1_databases": [
@@ -164,17 +164,19 @@
     "MKT_SCHEDULE_GOOGLE_ADS_ENABLED": "false",
     "MKT_SCHEDULE_WOOCOMMERCE_ENABLED": "false",
     "MKT_SCHEDULE_CHATWOOT_ENABLED": "false",
-    "MKT_TIKTOK_SYNC_TIME": "06:55",
-    "MKT_YOUTUBE_ANALYTICS_TIME": "07:50",
+    "MKT_TIKTOK_SYNC_TIME": "05:30",
+    "MKT_YOUTUBE_ANALYTICS_TIME": "01:30",
     "MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS": "7",
-    "MKT_FACEBOOK_SYNC_TIME": "07:30",
-    "MKT_INSTAGRAM_SYNC_TIME": "07:35",
-    "MKT_META_ADS_SYNC_TIME": "07:40",
-    "MKT_CHATWOOT_SYNC_TIME": "07:45",
+    "MKT_FACEBOOK_SYNC_TIME": "06:30",
+    "MKT_INSTAGRAM_SYNC_TIME": "07:30",
+    "MKT_META_ADS_SYNC_TIME": "00:30",
+    "MKT_CHATWOOT_SYNC_TIME": "02:30",
+    "MKT_WOOCOMMERCE_SYNC_TIME": "04:30",
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
-    "MKT_DAILY_REPORT_TIME": "08:10",
-    "MKT_WEEKLY_REPORT_TIME": "08:15",
+    "MKT_DAILY_REPORT_TIME": "09:00",
+    "MKT_WEEKLY_REPORT_TIME": "09:15",
+    "MKT_WEEKLY_NOTIFICATION_TIME": "09:30",
     "MKT_WEEKLY_REPORT_WEEKDAY": "monday",
     "MKT_REPORT_MAX_CONTENT_RECORDS": "800",
     "MKT_REPORT_MAX_SNAPSHOT_RECORDS": "50000",

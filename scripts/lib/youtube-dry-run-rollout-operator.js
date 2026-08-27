@@ -185,7 +185,7 @@ export const YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES = Object.freeze([
 ]);
 const EXPECTED_CRONS = Object.freeze([
   '*/5 * * * *',
-  '50 0 * * *',
+  '30 18 * * *',
 ]);
 const EVIDENCE_PHASE_FILES = deepFreeze({
   plan: 'plan.json',

@@ -57,7 +57,7 @@ const REQUIRED_SECRET_NAMES = Object.freeze([
   'LARK_APP_SECRET',
   'YOUTUBE_API_KEY',
 ]);
-const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '50 0 * * *']);
+const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '30 18 * * *']);
 const BUSINESS_KEY_FIELDS = Object.freeze({
   rawYouTubeChannels: 'raw_channel_key',
   rawYouTubeVideos: 'raw_video_key',

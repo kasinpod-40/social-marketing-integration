@@ -50,7 +50,7 @@ export function createReportSettingRowsForProfile(profileKey) {
       reportType: 'daily_organic_report',
       periodIdentity: 'daily',
       reportName: 'TikTok Daily Organic',
-      sendTime: '08:10',
+      sendTime: '09:00',
     }),
     createSettingRow({
       ...template,
@@ -61,7 +61,7 @@ export function createReportSettingRowsForProfile(profileKey) {
       reportType: 'weekly_organic_report',
       periodIdentity: 'weekly',
       reportName: 'TikTok Weekly Organic',
-      sendTime: '08:15',
+      sendTime: '09:15',
       sendWeekday: 'monday',
     }),
     ...DASHBOARD_REPORT_PLATFORM_SCOPES.flatMap((platformScope) => [

@@ -321,7 +321,7 @@ test('config validation rejects extra true gates and binding, Cron or route drif
   );
   for (const drifted of [
     active.replace('"database_name": "social-mkt-state-dev"', '"database_name": "other-db"'),
-    active.replace('"50 0 * * *"', '"51 0 * * *"'),
+    active.replace('"30 18 * * *"', '"51 0 * * *"'),
     active.replace('"name": "social-mkt-sync-worker"', '"name": "other-worker"'),
     active.replace('"max_batch_size": 10', '"max_batch_size": 11'),
     active.replace('{', '{\n  "routes": ["https://unexpected.example/*"],'),
@@ -500,7 +500,7 @@ test('Remote command parsers validate bindings, flags, Secret names, consumers a
       ...triggerState,
     }),
     {
-      crons: ['*/5 * * * *', '50 0 * * *'],
+      crons: ['*/5 * * * *', '30 18 * * *'],
       routes: [],
       workersDev: false,
     },
@@ -859,7 +859,7 @@ function remoteTriggerState() {
       result: {
         schedules: [
           { cron: '*/5 * * * *' },
-          { cron: '50 0 * * *' },
+          { cron: '30 18 * * *' },
         ],
       },
     },
