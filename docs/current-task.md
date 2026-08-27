@@ -59,6 +59,7 @@ CUSTOMER_YOUTUBE_LARK_DESTINATION        = CONTENT_COMPLETE_838_DAILY_RETAINED_2
 CUSTOMER_STAGGERED_SCHEDULE              = CODE_FOCUSED_GATES_PASS_REVIEW_PENDING
 DEV_TO_CUSTOMER_DATA_POLICY              = INSERT_ONLY_PRODUCTION_MISSING_NEWER_STABLE_KEYS
 REPORT_PARITY_TARGET                     = EXACT_1D_3D_7D_30D_AFTER_CUSTOMER_D1_MATERIALIZATION
+CUSTOMER_CHATWOOT_DAILY_DISCOVERY        = UPDATED_WITHIN_ONCE_CODE_AND_FULL_GATES_PASS
 ```
 
 ## Objective
@@ -123,6 +124,23 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   reliability PASS `106/106`; npm audit, deploy dry-run and diff-check PASS;
 - live D1 apply, exact D1 verification, Customer-owned Report regeneration and same-period Dev metric comparison
   remain required. Dev Report rows will not be copied into Customer Production.
+
+### Implementation result — Chatwoot Daily updated-only discovery
+
+- new Daily generations use Chatwoot's server-side `updated_within` filter once for the immutable three-day
+  overlap, persist the exact returned conversation identities, then hydrate only those conversations through the
+  existing bounded durable continuations;
+- Initial reconciliation retains complete stable-identity two-pass discovery, and an existing persisted Work
+  retains its stored strategy/checkpoint. The change therefore does not restart or silently reinterpret a legacy
+  generation;
+- requested-at filtering, stable-key writes, D1-first persistence, idempotent replay and bounded conversation /
+  reporting execution remain unchanged. This removes the unnecessary twice-daily account-history scan that made
+  the Customer Workers Free path excessively slow;
+- focused runtime/durable/API regression PASS `29/29`; `npm run check` PASS (`813` source files, `2,452` local
+  dependencies, zero cycles and repository hygiene PASS); full `npm test` PASS `3,259` Node tests plus `18`
+  Workers-runtime tests; Report reliability PASS `106/106`; audit reports zero vulnerabilities; deploy dry-run
+  and `git diff --check` PASS. Reviewed PR/merge, Customer deploy and first scheduled Daily D1/Lark proof remain
+  required.
 
 ## Current authorized recovery — Customer Workers Free runtime
 

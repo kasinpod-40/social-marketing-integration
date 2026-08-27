@@ -60,7 +60,7 @@ test('Chatwoot runtime contract is locked to 30d initial and daily 3d overlap', 
   assert.equal(createInitialChatwootDurableState({
     mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
     requestedAt: REQUESTED_AT,
-  }).conversationDiscoveryStrategy, 'stable_identity_two_pass');
+  }).conversationDiscoveryStrategy, 'updated_within_once');
 });
 
 test('Chatwoot catalog centralizes triggers and schema version', () => {
