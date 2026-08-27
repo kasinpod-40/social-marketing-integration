@@ -99,7 +99,30 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - `npm run check` PASS (`811` source files, `2,448` local dependencies, zero cycles and hygiene PASS);
 - full `npm test` PASS `3,255` Node tests plus `18` Workers-runtime tests; Report reliability PASS `106/106`;
 - `npm audit --audit-level=high` PASS with zero vulnerabilities; deploy dry-run and `git diff --check` PASS;
-- reviewed PR/merge, Customer deploy, Remote trigger/config readback and next-window Production proof remain required.
+- reviewed PR `#757` merged as `main@5559a7f0`; Customer Worker version
+  `53e1dafc-4ffd-40c5-9a19-7e6f8bdfc49a` is active with the five-minute primary trigger and the daily
+  `01:30` YouTube UTC trigger. The staggered Customer schedule/config readback is complete; next-window
+  source completion remains part of final Production proof.
+
+### Implementation result — strictly-newer Dev Lark bridge
+
+- added a plan-only-by-default operator that reads only Dev canonical `MKT_Content`, `MKT_Content_Daily` and
+  `MKT_Account_Daily`, then compares Customer D1 boundaries before generating any SQL;
+- the reviewed live preparation selected exactly Facebook `95` rows for `2026-08-26` and TikTok
+  `2,048`/`2,049`/`2,051` rows for `2026-08-24`/`25`/`26`, plus one Facebook Account Daily row. It excluded
+  every older/equal date and excluded Instagram, YouTube, Chatwoot, Google Ads and Meta Ads;
+- generated four private SQL chunks totaling `6,243` observations and six Production-missing Content master
+  keys. Every statement is `INSERT OR IGNORE` into the allowlisted Organic/Account/Coverage tables; there is no
+  update/delete path and no Work, cursor, lock, DLQ or Alert table reference;
+- full-inventory Coverage is generated per exact platform/day so Report scope can be proven instead of inferred.
+  SQL SHA-256 digests, the exact Customer boundary and the target account/profile/database are sealed in a
+  private plan; apply fails closed if a schedule advances either boundary before execution;
+- temporary SQLite execution against migration `0009` PASS with exact `95`, `2,048`, `2,049`, `2,051` row
+  readback and six missing master keys; focused tests PASS `4/4`; `npm run check` PASS (`813` files, `2,452`
+  dependencies, zero cycles/hygiene); full `npm test` PASS `3,259` Node tests plus `18` Workers tests; Report
+  reliability PASS `106/106`; npm audit, deploy dry-run and diff-check PASS;
+- live D1 apply, exact D1 verification, Customer-owned Report regeneration and same-period Dev metric comparison
+  remain required. Dev Report rows will not be copied into Customer Production.
 
 ## Current authorized recovery — Customer Workers Free runtime
 
