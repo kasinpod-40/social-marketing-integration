@@ -21,6 +21,8 @@
 - resume an incomplete YouTube Owner Analytics phase before hydrating Video resources, and place an explicit
   continuation boundary after its final checkpoint so Free-plan retries do not rebuild 838 resources for each
   50-video Analytics chunk or repeat provider calls.
+- allocate YouTube destination unit sequences from durable `chunksProcessed` rather than the current batch-size
+  arithmetic, preserving unique resumable units when a Free-plan execution limit changes mid-phase.
 
 ## 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 

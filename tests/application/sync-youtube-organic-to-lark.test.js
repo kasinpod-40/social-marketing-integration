@@ -169,6 +169,47 @@ test('stable Free-plan execution checkpoints bounded destination rows before pub
   assert.equal(stateStore.saved.length, 1);
 });
 
+test('destination unit sequences remain unique when the execution batch shrinks or grows mid-phase', async () => {
+  const repository = createRepository();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  const input = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: createStateStore(),
+    resumableWorkStore,
+    publicClient: {
+      async getChannel() { return CHANNEL; },
+      async listUploadVideoIdsPage() {
+        return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+      },
+      async listVideos() { return videos; },
+    },
+    syncRunId: 'run-destination-resize-1', channelId: 'channel_A', accountKey: 'youtube_dev',
+    customerProfile: 'integration_workspace', cursorKey: 'youtube-lock-destination-resize',
+    workKey: 'youtube:scheduled-destination-resize-20260715', metricDate: '2026-07-15',
+    reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
+    generation: 1000, requestedAt: 1000, tables: TABLES,
+    maxDestinationRowsPerInvocation: 1,
+  };
+
+  const first = await syncYouTubeOrganicToLark(input);
+  assert.equal(first.continuationPhase, 'youtube_destination_content_v1');
+  const second = await syncYouTubeOrganicToLark({
+    ...input,
+    syncRunId: 'run-destination-resize-2',
+    maxDestinationRowsPerInvocation: 2,
+  });
+  assert.equal(second.continuationPhase, 'youtube_destination_content_v1');
+
+  const staged = await resumableWorkStore.listPhaseUnits({
+    workKey: input.workKey,
+    phase: 'youtube_destination_content_v1',
+    afterSequence: 0,
+    limit: 10,
+  });
+  assert.deepEqual(staged.units.map((unit) => unit.sequence), [0, 1]);
+});
+
 test('stable Free-plan execution uses a smaller D1 batch before larger Lark destination batches', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();

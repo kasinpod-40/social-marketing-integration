@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_YOUTUBE_ANALYTICS_RESUME_REPAIR_REVIEW
+TASK_STATUS                              = CUSTOMER_YOUTUBE_DESTINATION_SEQUENCE_REPAIR_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 3ca00c1f
-CURRENT_BRANCH                           = codex/youtube-analytics-resume-free-20260827
+BASE_MAIN_SHA                            = 37601551
+CURRENT_BRANCH                           = codex/youtube-destination-resize-stable-20260827
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = 3e165388-2548-4aae-a62f-1dcfe81159ee
+PRODUCTION_WORKER_HEAD                   = db90c92b-09c5-469a-aa97-0602c3bd1ca5
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -53,8 +53,9 @@ CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
-CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = MERGED_PR_753_DEPLOYED_INDEXED_RANGE_RESUME
-CUSTOMER_YOUTUBE_ANALYTICS_RESUME        = CODE_FOCUSED_16_OF_16_REVIEW_PENDING_LIVE_700_OF_838
+CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
+CUSTOMER_YOUTUBE_ANALYTICS_RESUME        = MERGED_PR_754_LIVE_COMPLETE_838_OF_838
+CUSTOMER_YOUTUBE_LARK_DESTINATION        = CONTENT_COMPLETE_838_DAILY_RETAINED_100_SEQUENCE_REPAIR_REVIEW
 ```
 
 ## Objective
@@ -126,6 +127,19 @@ continuation boundary after the final Analytics checkpoint so the full canonical
 provider retry test proves 837 unique videos, no repeated inventory/resource calls and no repeated Analytics calls;
 focused YouTube regression passes 16/16. Full gates, review, merge, Customer deploy and exact same-generation live
 continuation from 700/838 remain required.
+
+PR #754 merged as `main@37601551` and Customer version `b999230b-cf6f-4364-985c-3dcc56b8b790` proved the direct
+Analytics resume live: the exact 2026-08-27 generation advanced 700→750→838 without rebuilding Video resources or
+creating a new DLQ. Indexed D1 storage then completed 838 content rows, 1,860 Analytics facts, Account Daily and
+both Coverage scopes. Lark Content completed 838/838 under staged 100→50→25 execution limits.
+
+The retained Lark Daily phase then exposed a distinct resize-safety defect rather than a CPU failure. Changing its
+execution limit after 100 rows recalculated unit sequence from `ceil(stop / currentBatchSize)`, colliding with an
+already durable `(work_key, phase, sequence)` and failing closed as `D1_SYNC_WORK_WRITE_FAILED`; no Business row or
+checkpoint was rolled back. Destination units now use the existing durable `chunksProcessed` as their next sequence,
+so execution limits can shrink or grow mid-phase without reusing a sequence. Focused YouTube regression passes 17/17,
+including a live-shape batch-resize test. Full gates, reviewed merge/deploy and continuation of the exact same Work
+from Lark Daily 100/838 remain required.
 
 ### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 
