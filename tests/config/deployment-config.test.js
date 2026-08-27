@@ -49,7 +49,7 @@ test('YouTube schedule and Analytics policy stay fail-closed in release examples
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"MKT_SCHEDULE_YOUTUBE_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_ENABLED"\s*:\s*"false"/);
-  assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_TIME"\s*:\s*"07:50"/);
+  assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_TIME"\s*:\s*"01:30"/);
   assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS"\s*:\s*"7"/);
   assert.match(configText, /"MKT_DLQ_REDRIVE_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_QUEUE_AUTO_RECOVERY_ENABLED"\s*:\s*"false"/);
@@ -114,11 +114,13 @@ test('report schedules stay disabled until D1 report parity is complete', async 
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"MKT_SCHEDULE_DAILY_REPORT_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_SCHEDULE_WEEKLY_REPORT_ENABLED"\s*:\s*"false"/);
-  assert.match(configText, /"MKT_DAILY_REPORT_TIME"\s*:\s*"08:10"/);
-  assert.match(configText, /"MKT_WEEKLY_REPORT_TIME"\s*:\s*"08:15"/);
+  assert.match(configText, /"MKT_DAILY_REPORT_TIME"\s*:\s*"09:00"/);
+  assert.match(configText, /"MKT_WEEKLY_REPORT_TIME"\s*:\s*"09:15"/);
   assert.match(configText, /"MKT_SCHEDULE_META_ADS_ENABLED"\s*:\s*"false"/);
-  assert.match(configText, /"MKT_META_ADS_SYNC_TIME"\s*:\s*"07:40"/);
-  assert.match(configText, /"MKT_CHATWOOT_SYNC_TIME"\s*:\s*"07:45"/);
+  assert.match(configText, /"MKT_META_ADS_SYNC_TIME"\s*:\s*"00:30"/);
+  assert.match(configText, /"MKT_CHATWOOT_SYNC_TIME"\s*:\s*"02:30"/);
+  assert.match(configText, /"MKT_WOOCOMMERCE_SYNC_TIME"\s*:\s*"04:30"/);
+  assert.match(configText, /"MKT_WEEKLY_NOTIFICATION_TIME"\s*:\s*"09:30"/);
   assert.match(configText, /"MKT_DAILY_REPORT_SETTING_KEY"\s*:\s*"integration_workspace:tiktok:daily"/);
   assert.match(configText, /"LARK_TABLE_MKT_REPORT_METRIC_VALUES"/);
   assert.match(configText, /"LARK_TABLE_MKT_REPORT_TOP_CONTENT"/);

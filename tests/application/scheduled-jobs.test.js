@@ -170,7 +170,7 @@ test('scheduled report period uses leap day as the last completed local day', ()
 });
 
 test('Meta Ads schedule emits one previous-day stable operation per reviewed account mapping', () => {
-  const scheduledAt = '2026-08-09T00:40:00.000Z';
+  const scheduledAt = '2026-08-08T17:30:00.000Z';
   const jobs = buildPrimaryScheduledJobs({
     scheduledAt,
     env: {
@@ -210,19 +210,19 @@ test('Meta Ads schedule fails closed before enqueue when a consumer gate or mapp
     MKT_META_LARK_WRITE_ENABLED: 'true',
   };
   assert.throws(() => buildPrimaryScheduledJobs({
-    scheduledAt: '2026-08-09T00:40:00.000Z',
+    scheduledAt: '2026-08-08T17:30:00.000Z',
     env: { ...base, MKT_META_LARK_WRITE_ENABLED: 'false' },
   }), (error) => error?.code === 'MKT_SCHEDULE_CONFIG_INVALID'
     && error?.details?.fieldName === 'MKT_META_LARK_WRITE_ENABLED');
   assert.throws(() => buildPrimaryScheduledJobs({
-    scheduledAt: '2026-08-09T00:40:00.000Z',
+    scheduledAt: '2026-08-08T17:30:00.000Z',
     env: base,
   }), (error) => error?.code === 'MKT_SCHEDULE_CONFIG_INVALID'
     && error?.details?.fieldName === 'META_AD_ACCOUNT_MAPPINGS');
 });
 
 test('Chatwoot schedule emits one account-scoped daily incremental operation', () => {
-  const scheduledAt = '2026-08-09T00:45:00.000Z';
+  const scheduledAt = '2026-08-08T19:30:00.000Z';
   const jobs = buildPrimaryScheduledJobs({
     scheduledAt,
     env: {
@@ -283,13 +283,13 @@ test('YouTube Analytics runs once daily and locks a 7-day completed Pacific rang
   const jobs = buildScheduledJobs({
     event: {
       cron: YOUTUBE_SCHEDULE_CRON,
-      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+      scheduledTime: Date.parse('2026-07-18T18:30:00.000Z'),
     },
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
       MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
-      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+      MKT_YOUTUBE_ANALYTICS_TIME: '01:30',
       MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS: '7',
     },
   });
@@ -390,7 +390,7 @@ test('YouTube Analytics time fails closed when dedicated cron cannot reach it', 
   assert.throws(() => buildScheduledJobs({
     event: {
       cron: YOUTUBE_SCHEDULE_CRON,
-      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+      scheduledTime: Date.parse('2026-07-18T18:30:00.000Z'),
     },
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -400,7 +400,7 @@ test('YouTube Analytics time fails closed when dedicated cron cannot reach it', 
     },
   }), (error) => {
     assert.equal(error?.code, 'MKT_SCHEDULE_CONFIG_INVALID');
-    assert.deepEqual(error?.details?.supportedTimes, ['07:50']);
+    assert.deepEqual(error?.details?.supportedTimes, ['01:30']);
     return true;
   });
 });
@@ -409,13 +409,13 @@ test('YouTube Analytics lookback is bounded to protect API quota', () => {
   assert.throws(() => buildScheduledJobs({
     event: {
       cron: YOUTUBE_SCHEDULE_CRON,
-      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+      scheduledTime: Date.parse('2026-07-18T18:30:00.000Z'),
     },
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
       MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
-      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+      MKT_YOUTUBE_ANALYTICS_TIME: '01:30',
       MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS: '32',
     },
   }), (error) => error?.code === 'MKT_SCHEDULE_CONFIG_INVALID');

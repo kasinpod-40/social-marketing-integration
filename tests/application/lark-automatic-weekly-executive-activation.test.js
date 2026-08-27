@@ -46,7 +46,7 @@ test('automatic Weekly activation changes only notification runtime and schedule
   assert.equal(target.vars.MKT_NOTIFICATION_LARK_MIRROR_ENABLED, 'true');
   assert.equal(target.vars.MKT_NOTIFICATION_RUNTIME_MODE, 'runtime');
   assert.equal(target.vars.MKT_SCHEDULE_WEEKLY_NOTIFICATION_ENABLED, 'true');
-  assert.equal(target.vars.MKT_WEEKLY_NOTIFICATION_TIME, '08:30');
+  assert.equal(target.vars.MKT_WEEKLY_NOTIFICATION_TIME, '09:30');
   assert.equal(target.vars.MKT_WEEKLY_NOTIFICATION_MAX_QUEUE_ATTEMPTS, '5');
   assert.deepEqual(target.triggers, { crons: ['*/5 * * * *'] });
   assert.deepEqual(result.changedEnabledFlags, [

@@ -60,8 +60,8 @@ test('Integration Workspace can enable reviewed Meta Organic connectors without 
   assert.doesNotThrow(() => assertConnectorRunnable(runtime, 'instagram'));
 });
 
-test('Facebook schedule emits one stable previous-day job at Bangkok 07:30', () => {
-  const scheduledAt = '2026-08-09T00:30:00.000Z';
+test('Facebook schedule emits one stable previous-day job at Bangkok 06:30', () => {
+  const scheduledAt = '2026-08-08T23:30:00.000Z';
   const jobs = buildPrimary({
     scheduledAt,
     env: {
@@ -86,8 +86,8 @@ test('Facebook schedule emits one stable previous-day job at Bangkok 07:30', () 
   assert.equal(jobs[0].d1Only, false);
 });
 
-test('Instagram schedule is staggered to Bangkok 07:35 and uses its own stable identity', () => {
-  const scheduledAt = '2026-08-09T00:35:00.000Z';
+test('Instagram schedule is staggered to Bangkok 07:30 and uses its own stable identity', () => {
+  const scheduledAt = '2026-08-09T00:30:00.000Z';
   const jobs = buildPrimary({
     scheduledAt,
     env: {

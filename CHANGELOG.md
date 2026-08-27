@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-27 — Customer staggered schedules and newer-only parity guard
+
+- staggered the serial Customer source windows from `00:30` through `07:30` Asia/Bangkok, keeping each
+  Cloudflare-produced connector at least one hour apart and leaving Google Ads on its external Manager Script
+  boundary;
+- moved Daily/Weekly Report to `09:00`/Monday `09:15` and the exactly-once weekly notification to `09:30`, after
+  every source window;
+- defined Dev-to-Customer repair as insert-only for Production-missing stable keys with strictly newer business
+  dates; older/equal Customer rows and all operational state remain immutable;
+- require fresh Customer D1/Lark materialization and exact `1D/3D/7D/30D` metric parity before completion.
+
 ## 2026-08-26 — Customer Workers Free bounded post-source continuation
 
 - split YouTube D1 storage and Lark Content/Daily/Account writes into durable post-source phases, keeping Account

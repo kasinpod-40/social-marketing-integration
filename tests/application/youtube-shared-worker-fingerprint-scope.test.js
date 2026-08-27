@@ -271,7 +271,7 @@ function remoteTriggerState() {
       result: {
         schedules: [
           { cron: '*/5 * * * *' },
-          { cron: '50 0 * * *' },
+          { cron: '30 18 * * *' },
         ],
       },
     },
