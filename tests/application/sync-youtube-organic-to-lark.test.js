@@ -726,16 +726,27 @@ test('Analytics retry resumes at the failed chunk without writing RAW Lark rows'
   const uploadCallsBeforeRetry = publicClient.uploadCalls.length;
   const videoCallsBeforeRetry = publicClient.videoCalls.length;
 
-  const recovered = await syncYouTubeOrganicToLark({
+  const resumed = await syncYouTubeOrganicToLark({
     ...base,
     syncRunId: 'run-analytics-attempt-2',
     syncEngine: new TableSyncEngine(),
   });
+  assert.equal(resumed.continuationRequired, true);
+  assert.equal(resumed.continuationPhase, 'youtube_owner_analytics');
   assert.equal(publicClient.uploadCalls.length, uploadCallsBeforeRetry);
   assert.equal(publicClient.videoCalls.length, videoCallsBeforeRetry);
   assert.equal(analyticsCallCount, 18);
   assert.equal(new Set(successfulFilters.flat()).size, 837);
   assert.equal(successfulFilters.flat().length, 837);
+
+  const recovered = await syncYouTubeOrganicToLark({
+    ...base,
+    syncRunId: 'run-analytics-attempt-3',
+    syncEngine: new TableSyncEngine(),
+  });
+  assert.equal(publicClient.uploadCalls.length, uploadCallsBeforeRetry);
+  assert.equal(publicClient.videoCalls.length, videoCallsBeforeRetry);
+  assert.equal(analyticsCallCount, 18);
   assert.equal(recovered.sourceSummary.analyticsSuccessfullyQueriedVideos, 837);
   assert.equal(recovered.sourceSummary.analyticsChunksProcessed, 17);
   assert.equal(recovered.sourceSummary.analyticsCompletenessStatus, 'complete');

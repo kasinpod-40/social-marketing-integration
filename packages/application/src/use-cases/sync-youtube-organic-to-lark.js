@@ -148,6 +148,36 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     });
   }
   const videoIds = inventory.videoIds;
+  const existingAnalyticsPhase = analyticsRange
+    ? await workStore.loadPhase({ workKey, phase: WORK_PHASES.ANALYTICS })
+    : null;
+  if (existingAnalyticsPhase && !existingAnalyticsPhase.complete) {
+    const trackedVideoIds = resolveTrackedAnalyticsVideoIds({
+      priorStates,
+      currentVideoIds: videoIds,
+    });
+    const analyticsProgress = await loadAnalyticsRows({
+      workStore,
+      workKey,
+      ownerClient,
+      channelId,
+      videoIds: trackedVideoIds,
+      startDate: analyticsRange.startDate,
+      endDate: analyticsRange.endDate,
+      fetchedAt,
+      assertLockActive: assertCurrentWork,
+      maxPages: positiveInteger(input.analyticsMaxPages ?? 1000, 'analyticsMaxPages'),
+      onProgress,
+      sourceUnitBudget,
+      deferCompletedRead: true,
+    });
+    return buildContinuationResult({
+      syncRunId,
+      workResumed: work.resumed,
+      continuationPhase: WORK_PHASES.ANALYTICS,
+      sourceProgress: analyticsProgress,
+    });
+  }
   const existingStoragePhase = maxStorageRowsPerInvocation === null
     ? null
     : await workStore.loadPhase({ workKey, phase: WORK_PHASES.D1_STORAGE });
@@ -923,6 +953,29 @@ async function loadAnalyticsRows(input) {
       successfullyQueriedVideos: processedItems,
       totalTrackedVideos: input.videoIds.length,
       complete,
+    });
+  }
+
+  if (input.deferCompletedRead === true) {
+    return Object.freeze({
+      rows: Object.freeze([]),
+      completeness: Object.freeze({
+        status: 'complete',
+        complete: true,
+        totalTrackedVideos: input.videoIds.length,
+        selectedVideos: input.videoIds.length,
+        successfullyQueriedVideos: progress.processedItems,
+        skippedVideos: 0,
+        failedVideos: 0,
+        pagesProcessed: progress.pagesProcessed,
+        chunksProcessed: progress.chunksProcessed,
+        totalChunks,
+        resumedPages,
+        resumedChunks,
+      }),
+      pagesProcessed: progress.pagesProcessed,
+      chunksProcessed: progress.chunksProcessed,
+      complete: true,
     });
   }
 
