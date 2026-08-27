@@ -293,4 +293,3 @@ function operatorError(message, code, details = {}) {
   error.details = details;
   return error;
 }
-
