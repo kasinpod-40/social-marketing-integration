@@ -1336,6 +1336,8 @@ async function executeDurableDestinationPhases(input) {
       result: addYouTubeWriteResult(state.result, result),
     };
     const complete = stop >= definition.rows.length;
+    const priorChunksProcessed = Number(existing?.chunksProcessed ?? 0);
+    const chunksProcessed = priorChunksProcessed + (rows.length > 0 ? 1 : 0);
     await input.assertCurrentWork();
     await input.workStore.savePhase({
       workKey: input.workKey,
@@ -1344,12 +1346,12 @@ async function executeDurableDestinationPhases(input) {
       expectedItems: definition.rows.length,
       processedItems: stop,
       pagesProcessed: 0,
-      chunksProcessed: Math.ceil(stop / input.maxRows),
+      chunksProcessed,
       complete,
       ...(rows.length > 0 ? {
         unit: {
           unitKey: `rows:${start}-${stop}`,
-          sequence: Math.max(0, Math.ceil(stop / input.maxRows) - 1),
+          sequence: priorChunksProcessed,
           payload: { start, stop, plan, result },
         },
       } : {}),
