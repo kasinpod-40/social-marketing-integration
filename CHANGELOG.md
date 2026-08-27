@@ -10,6 +10,11 @@
 - defined Dev-to-Customer repair as insert-only for Production-missing stable keys with strictly newer business
   dates; older/equal Customer rows and all operational state remain immutable;
 - require fresh Customer D1/Lark materialization and exact `1D/3D/7D/30D` metric parity before completion.
+- add a fail-closed Dev Lark to Customer D1 bridge for the exact reviewed Facebook/TikTok delta. The operator
+  seals Customer date boundaries and SQL digests, permits only append-only Organic/Account/Coverage statements,
+  and aborts if a Customer schedule advances before apply;
+- prove the prepared delta contains only Facebook `2026-08-26` and TikTok `2026-08-24` through `2026-08-26`,
+  with no Ads, Instagram, YouTube, Chatwoot, older/equal row, operational-state mutation or copied Report row.
 
 ## 2026-08-26 — Customer Workers Free bounded post-source continuation
 
