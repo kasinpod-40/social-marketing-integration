@@ -18,6 +18,9 @@
 - resume incomplete YouTube D1 storage from an indexed, stable sorted Video range instead of rehydrating and
   normalizing all 838 staged resources on every five-row continuation; reuse the existing Coverage watermark and
   retain the same storage offset/generation.
+- resume an incomplete YouTube Owner Analytics phase before hydrating Video resources, and place an explicit
+  continuation boundary after its final checkpoint so Free-plan retries do not rebuild 838 resources for each
+  50-video Analytics chunk or repeat provider calls.
 
 ## 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 

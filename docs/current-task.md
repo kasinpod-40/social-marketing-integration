@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_YOUTUBE_FREE_CPU_LIVE_CONTINUATION_ACTIVE
+TASK_STATUS                              = CUSTOMER_YOUTUBE_ANALYTICS_RESUME_REPAIR_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 18d50501
-CURRENT_BRANCH                           = codex/youtube-split-storage-destination-batches-20260827
+BASE_MAIN_SHA                            = 3ca00c1f
+CURRENT_BRANCH                           = codex/youtube-analytics-resume-free-20260827
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = 8f151a18-f07a-4cab-ad08-4cd4ba84433e
+PRODUCTION_WORKER_HEAD                   = 3e165388-2548-4aae-a62f-1dcfe81159ee
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -53,7 +53,8 @@ CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
-CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = MERGED_PR_752_LIVE_CHECKPOINT_210_OF_838
+CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = MERGED_PR_753_DEPLOYED_INDEXED_RANGE_RESUME
+CUSTOMER_YOUTUBE_ANALYTICS_RESUME        = CODE_FOCUSED_16_OF_16_REVIEW_PENDING_LIVE_700_OF_838
 ```
 
 ## Objective
@@ -114,6 +115,17 @@ ID index in the existing storage phase, loads only the one-to-five source units 
 range, reuses the already persisted Coverage watermark and normalizes only that range. It defers the one-time
 finalization to the completed content boundary and never rewinds `nextIndex` or creates a replacement generation.
 Focused YouTube regression passes 16/16 and repository check passes.
+
+PR #753 merged as `main@3ca00c1f` and Customer version `3e165388-2548-4aae-a62f-1dcfe81159ee` activated the indexed
+D1 resume path with D1=5 and Lark=100. The newer scheduled Work `youtube:youtube-scheduled-20260827` supersedes the
+retained 2026-08-26 generation and durably advanced Owner Analytics from 600 to 700/838. Live evidence then isolated
+another pre-write Free CPU cost: each incomplete Analytics continuation still hydrated and normalized all 838
+Video resources before requesting only the next Analytics chunk. The current repair detects the retained incomplete
+Analytics phase immediately after inventory, resumes that phase without resource hydration, and adds one explicit
+continuation boundary after the final Analytics checkpoint so the full canonical assembly happens only once. The
+provider retry test proves 837 unique videos, no repeated inventory/resource calls and no repeated Analytics calls;
+focused YouTube regression passes 16/16. Full gates, review, merge, Customer deploy and exact same-generation live
+continuation from 700/838 remain required.
 
 ### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 
