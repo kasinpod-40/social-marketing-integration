@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-28 — Chatwoot Daily updated-only discovery
+
+- changed only new Chatwoot Daily generations to snapshot the immutable three-day `updated_within` result once,
+  then hydrate the stored conversation identities through existing bounded durable continuations;
+- retained full stable two-pass discovery for Initial reconciliation and retained every explicit strategy and
+  checkpoint already persisted by legacy Work;
+- preserved requested-at filtering, stable-key idempotency, D1-first writes and bounded reporting execution while
+  removing the repeated full-account Daily scan that was unsuitable for Customer Workers Free.
+
 ## 2026-08-27 — Customer staggered schedules and newer-only parity guard
 
 - staggered the serial Customer source windows from `00:30` through `07:30` Asia/Bangkok, keeping each

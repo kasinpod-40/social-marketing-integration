@@ -12,7 +12,7 @@ import { syncChatwootDurableRuntime } from '../../packages/application/src/use-c
 const REQUESTED_AT = Date.parse('2026-07-31T01:00:00Z');
 const DAY_MS = 86_400_000;
 
-test('zero-progress deployed Daily discovery upgrades safely to paginated two-pass state', () => {
+test('zero-progress Daily discovery retains server-side updated-within strategy', () => {
   const state = {
     ...createInitialChatwootDurableState({
       mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
@@ -26,7 +26,7 @@ test('zero-progress deployed Daily discovery upgrades safely to paginated two-pa
     mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
     requestedAt: REQUESTED_AT,
   });
-  assert.equal(upgraded.conversationDiscoveryStrategy, 'stable_identity_two_pass');
+  assert.equal(upgraded.conversationDiscoveryStrategy, 'updated_within_once');
   assert.equal(upgraded.conversationRowsScanned, 0);
   assert.deepEqual(upgraded.conversationSeenIds, []);
 });
@@ -172,7 +172,7 @@ test('Initial Conversation scan keeps stable two-pass discovery and one detail r
   assert.equal(third.nextSequence, 5);
 });
 
-test('Daily Conversation discovery uses page-bounded stable two-pass convergence', async () => {
+test('Daily Conversation discovery snapshots updated-within identities exactly once', async () => {
   let durableState = {
     ...createInitialChatwootDurableState({
       mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
@@ -220,9 +220,9 @@ test('Daily Conversation discovery uses page-bounded stable two-pass convergence
   await syncChatwootDurableRuntime({ ...input, continuationSequence: 3 });
   const third = await syncChatwootDurableRuntime({ ...input, continuationSequence: 4 });
 
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 1);
   assert.equal(requests[0].page, 1);
-  assert.equal(requests[0].updatedWithinSeconds, undefined);
+  assert.equal(requests[0].updatedWithinSeconds, (3 * 24 * 60 * 60) + 60 + (5 * 60));
   assert.equal(durableState.conversationRowsScanned, 2);
   assert.equal(durableState.conversationsSelected, 2);
   assert.equal(durableState.conversationDiscoveryComplete, true);

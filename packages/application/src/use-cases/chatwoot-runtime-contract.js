@@ -204,15 +204,7 @@ export function assertChatwootDurableState(value, expected = {}) {
     ?? (hasDiscoveryProgress
       ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS
       : defaultConversationDiscoveryStrategy(mode));
-  const upgradeZeroProgressDailyDiscovery = mode === CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL
-    && storedConversationDiscoveryStrategy
-      === CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
-    && !hasDiscoveryProgress
-    && value.conversationDiscoveryComplete !== true
-    && value.conversationUpdatedWithinSeconds == null;
-  const conversationDiscoveryStrategy = upgradeZeroProgressDailyDiscovery
-    ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS
-    : storedConversationDiscoveryStrategy;
+  const conversationDiscoveryStrategy = storedConversationDiscoveryStrategy;
   assertConversationDiscoveryStrategy(conversationDiscoveryStrategy, mode);
   const conversationDiscoveryComplete = value.conversationDiscoveryComplete === true;
   const conversationUpdatedWithinSeconds = nullablePositiveInteger(
@@ -338,10 +330,14 @@ function requireMode(value) {
 }
 
 function defaultConversationDiscoveryStrategy(mode) {
-  // Chatwoot may return a large updated-within result in one response. Stable two-pass discovery
-  // keeps every Daily and Initial invocation page-bounded for Workers Free while preserving the
-  // immutable requestedAt boundary and Stable-key idempotency.
-  return CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS;
+  // Initial reconciliation must converge over the complete bounded inventory. Daily work already
+  // has an immutable three-day overlap, so use Chatwoot's server-side updated_within filter once,
+  // persist the returned identities, then hydrate only those rows across bounded continuations.
+  // This avoids scanning the full account twice every day on Workers Free while stable-key writes
+  // and the immutable requestedAt boundary preserve idempotency.
+  return mode === CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL
+    ? CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
+    : CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.STABLE_IDENTITY_TWO_PASS;
 }
 
 function assertConversationDiscoveryStrategy(value, mode) {
