@@ -1,5 +1,19 @@
 # Project Brain — Social Marketing Data Integration
 
+## Meta K2 bounded post-source materialization — 2026-08-28
+
+A completed large Meta source snapshot must not be reassembled from every staged source unit in one Workers Free
+delivery before bounded destination work begins. The Customer K2 `20260827` Work proved this boundary with
+`194/194` retained source units totaling about `13.96 MB`: source was complete, but the invocation terminated
+before it could create the preflight phase.
+
+The durable repair adds `meta_ads_post_source_materialization_v1`. Each delivery reads and compacts at most five
+retained source units, preserving only canonical Ads-builder fields plus the exact Daily source payload hash.
+Once the compact phase is complete, the same operation and generation enters the existing bounded preflight, D1
+and Lark phases. This phase never rereads Meta, never changes stable keys or source fingerprints and never creates
+a replacement generation. Execution batch size is a deploy-time runtime control, not an operation-fingerprint
+input.
+
 ## Customer Workers Free bounded post-source continuation — 2026-08-26
 
 Source completion and destination completion are separate durable boundaries. A large YouTube or Meta snapshot

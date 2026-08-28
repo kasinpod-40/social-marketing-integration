@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-28 — Meta K2 bounded post-source materialization
+
+- split the 194-unit retained K2 snapshot into a durable Workers Free-safe compaction phase instead of loading
+  and assembling about 13.96 MB in one post-source Queue delivery;
+- preserve the same Work, generation, stable identities and exact Daily source payload hashes while persisting
+  only canonical Ads-builder fields in batches of five source units;
+- continue from the compact snapshot into the existing bounded preflight, D1 and Lark phases without another
+  Meta provider read or a replacement generation.
+
 ## 2026-08-28 — Customer TikTok exact newer-only fast bridge
 
 - imported only the sealed Dev Lark TikTok `2026-08-27` delta into Customer D1 and Lark: `2,053` Daily rows,
