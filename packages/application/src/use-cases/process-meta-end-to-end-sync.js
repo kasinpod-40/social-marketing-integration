@@ -1,5 +1,6 @@
 import { buildMetaAdsWriteSet } from './build-meta-ads-write-set.js';
 import { buildMetaOrganicWriteSet } from './build-meta-organic-write-set.js';
+import { normalizeMetaAdsEntityFixture } from './normalize-meta-ads-source.js';
 import {
   collectMetaEndToEndSourceUnit,
 } from './collect-meta-end-to-end-source.js';
@@ -8,7 +9,7 @@ import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerp
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
-const ADS_MATERIALIZATION_PHASE = 'meta_ads_post_source_materialization_v1';
+const ADS_MATERIALIZATION_PHASE = 'meta_ads_post_source_materialization_v2';
 const ORGANIC_CONNECTORS = new Set(['facebook', 'instagram']);
 const ADS_CONNECTOR = 'meta_ads';
 const META_ADS_MAX_REPORT_RANGE_DAYS = 31;
@@ -163,6 +164,9 @@ export async function processMetaEndToEndSync(input = {}) {
       maximum: limits.sourceMaxUnits,
       unitsPerInvocation: limits.postSourceUnitsPerInvocation,
       assertLockActive,
+      sourceAccountId,
+      fetchedAt: operation.originalRequestedAt,
+      syncRunId,
     });
     if (materialized.workPerformed) {
       return Object.freeze({
@@ -727,7 +731,7 @@ async function materializeAdsSourceUnits(input) {
     }
     await input.assertLockActive();
     const source = normalizeStagedPayload(unit.payload, unit.sequence);
-    const payload = await compactAdsStagedPayload(source);
+    const payload = await compactAdsStagedPayload(source, input);
     state.nextSequence += 1;
     const complete = state.nextSequence === input.expectedUnits;
     await input.workStore.savePhase({
@@ -753,10 +757,10 @@ async function materializeAdsSourceUnits(input) {
   });
 }
 
-async function compactAdsStagedPayload(source) {
+async function compactAdsStagedPayload(source, context) {
   const rows = [];
   for (const row of source.rows) {
-    rows.push(await compactAdsSourceRow(source.datasetKey, row));
+    rows.push(await compactAdsSourceRow(source.datasetKey, row, context));
   }
   return deepFreeze({
     schemaVersion: 'meta_ads_compact_staged_source_unit_v1',
@@ -769,13 +773,17 @@ async function compactAdsStagedPayload(source) {
   });
 }
 
-async function compactAdsSourceRow(datasetKey, value) {
+async function compactAdsSourceRow(datasetKey, value, context) {
   const row = requireObject(value, 'Meta Ads staged source row');
   if (datasetKey === 'meta_ads.account.latest') {
-    return pickSourceFields(row, [
+    const compact = pickSourceFields(row, [
       'id', 'account_id', 'name', 'status', 'effective_status', 'account_status',
       'currency', 'timezone_name', 'updated_time',
     ]);
+    compact.__entity_metadata_hash = await createAdsEntityMetadataHash({
+      entityType: 'account', resource: compact, context,
+    });
+    return Object.freeze(compact);
   }
   if (datasetKey === 'meta_ads.creatives.inventory') {
     const compact = pickSourceFields(row, [
@@ -786,6 +794,9 @@ async function compactAdsSourceRow(datasetKey, value) {
     if (row.creative && typeof row.creative === 'object' && row.creative.id !== undefined) {
       compact.creative = { id: row.creative.id };
     }
+    compact.__entity_metadata_hash = await createAdsEntityMetadataHash({
+      entityType: 'creative', resource: compact, context,
+    });
     return Object.freeze(compact);
   }
   if (datasetKey === 'meta_ads.performance.daily') {
@@ -803,6 +814,20 @@ async function compactAdsSourceRow(datasetKey, value) {
   throw permanentError('Meta Ads post-source materialization found an unsupported dataset', {
     code: 'META_ADS_POST_SOURCE_DATASET_INVALID',
     details: { datasetKey },
+  });
+}
+
+async function createAdsEntityMetadataHash({ entityType, resource, context }) {
+  const normalized = normalizeMetaAdsEntityFixture({
+    entityType,
+    accountId: context.sourceAccountId,
+    resource,
+    fetchedAt: context.fetchedAt,
+    syncRunId: context.syncRunId,
+  });
+  return createStableFingerprint({
+    schemaVersion: 'meta_ads_entity_metadata_v1',
+    ...normalized.entityCandidate,
   });
 }
 

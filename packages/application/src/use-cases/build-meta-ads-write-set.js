@@ -91,10 +91,11 @@ export async function buildMetaAdsWriteSet(input = {}) {
         syncRunId,
       });
       rawEntities.push(normalized.rawRow);
-      const metadataHash = await createStableFingerprint({
-        schemaVersion: 'meta_ads_entity_metadata_v1',
-        ...normalized.entityCandidate,
-      });
+      const metadataHash = optionalText(resource.__entity_metadata_hash)
+        ?? await createStableFingerprint({
+          schemaVersion: 'meta_ads_entity_metadata_v1',
+          ...normalized.entityCandidate,
+        });
       d1Entities.push(validateStorageRow('ads_entity_state', {
         entity_key: createAdsEntityKey({
           platform: 'meta_ads',

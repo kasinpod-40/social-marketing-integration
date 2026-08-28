@@ -6,6 +6,8 @@
   and assembling about 13.96 MB in one post-source Queue delivery;
 - preserve the same Work, generation, stable identities and exact Daily source payload hashes while persisting
   only canonical Ads-builder fields in batches of five source units;
+- precompute normalized entity metadata hashes inside the same bounded phase so 19,200 Creative fingerprints are
+  not recalculated on every preflight/D1/Lark continuation;
 - continue from the compact snapshot into the existing bounded preflight, D1 and Lark phases without another
   Meta provider read or a replacement generation.
 
