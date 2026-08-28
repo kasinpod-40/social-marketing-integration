@@ -30,6 +30,10 @@ const STABLE_OPERATION_CONTRACTS = new Map([
     prefix: 'lark_customer_d1',
     operationIdPattern: SAFE_OPERATION_ID,
   })],
+  [JOB_TYPES.CUSTOMER_TIKTOK_LARK_SNAPSHOT_IMPORT, Object.freeze({
+    prefix: 'lark_customer_tiktok',
+    operationIdPattern: SAFE_OPERATION_ID,
+  })],
   [JOB_TYPES.MKT_CONTENT_DAILY_RETENTION, Object.freeze({ prefix: 'mkt_content_daily' })],
 ]);
 

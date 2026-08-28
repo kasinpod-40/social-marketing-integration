@@ -84,6 +84,13 @@ test('Customer D1 snapshot import is exact-trigger manual-only', () => {
   assert.equal(definition.connectorKey, null);
 });
 
+test('Customer TikTok snapshot import is exact-trigger manual-only', () => {
+  const definition = getJobDefinition(JOB_TYPES.CUSTOMER_TIKTOK_LARK_SNAPSHOT_IMPORT);
+  assert.equal(definition.implementationStatus, 'active');
+  assert.equal(definition.manualOnly, true);
+  assert.deepEqual(definition.allowedTriggers, [JOB_TRIGGERS.CUSTOMER_TIKTOK_SNAPSHOT_IMPORT]);
+});
+
 test('Dashboard materialization job is one shared manual/scheduled report type', () => {
   const definition = getJobDefinition(JOB_TYPES.REPORT_MATERIALIZATION_GENERATE);
   assert.equal(definition.implementationStatus, 'active');

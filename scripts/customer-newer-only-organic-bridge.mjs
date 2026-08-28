@@ -13,6 +13,7 @@ import {
   assertCustomerNewerOnlyOrganicBridgeConfirmation,
   buildCustomerBridgeVerificationSql,
   buildCustomerNewerOnlyOrganicBridgePlan,
+  buildCustomerTikTok20260827BridgePlan,
   customerBoundarySql,
   parseCustomerBoundaryResults,
   parseCustomerNewerOnlyOrganicBridgeArgs,
@@ -32,7 +33,7 @@ try {
   if (!options.execute || options.phase === 'plan') printPlan();
   else {
     assertCustomerNewerOnlyOrganicBridgeConfirmation(options.phase, process.env);
-    if (options.phase === 'prepare') await prepare();
+    if (options.phase === 'prepare') await prepare(options.scope);
     else if (options.phase === 'apply') await apply(options.planPath);
     else await verify(options.planPath);
   }
@@ -69,13 +70,16 @@ function printPlan() {
   }, null, 2)}\n`);
 }
 
-async function prepare() {
+async function prepare(scopeName) {
   const generatedAt = Date.now();
   const [sourceTables, customerSnapshot] = await Promise.all([
-    readDevLarkSource(),
+    readDevLarkSource(scopeName),
     readCustomerSnapshot(),
   ]);
-  const plan = await buildCustomerNewerOnlyOrganicBridgePlan({ generatedAt, sourceTables, customerSnapshot });
+  const buildPlan = scopeName === 'tiktok-20260827'
+    ? buildCustomerTikTok20260827BridgePlan
+    : buildCustomerNewerOnlyOrganicBridgePlan;
+  const plan = await buildPlan({ generatedAt, sourceTables, customerSnapshot });
   const root = resolve('/tmp', `customer-newer-only-organic-bridge-${generatedAt}`);
   await mkdir(root, { recursive: true, mode: 0o700 });
   const chunks = [];
@@ -174,28 +178,41 @@ async function verifyPlan(plan) {
         'CUSTOMER_NEWER_ONLY_BRIDGE_COVERAGE_PARITY_FAILED', { platform: chunk.platform, metricDate: chunk.metricDate });
     }
   }
-  if (Number(accounts[0]?.account_rows ?? -1) !== 1) {
+  if (Number(plan.sourceSummary?.accountRows ?? 0) > 0
+    && Number(accounts[0]?.account_rows ?? -1) !== 1) {
     throw operatorError('Customer Facebook account daily parity failed', 'CUSTOMER_NEWER_ONLY_BRIDGE_ACCOUNT_PARITY_FAILED');
   }
   return safeEvidence({ observations, coverage, accounts });
 }
 
-async function readDevLarkSource() {
+async function readDevLarkSource(scopeName = 'default') {
   const fileEnv = await readDevVars(DEV_VARS_FILE);
   const env = { ...fileEnv, ...process.env };
   const client = createLarkBitableClientFromEnv(env);
   const tables = await client.listTables();
+  const platform = scopeName === 'tiktok-20260827' ? 'tiktok' : null;
   const [content, contentDaily, accountDaily] = await Promise.all([
-    listTable(client, tables, 'MKT_Content'),
-    listTable(client, tables, 'MKT_Content_Daily'),
-    listTable(client, tables, 'MKT_Account_Daily'),
+    listTable(client, tables, 'MKT_Content', platform),
+    listTable(client, tables, 'MKT_Content_Daily', platform),
+    platform ? Promise.resolve([]) : listTable(client, tables, 'MKT_Account_Daily'),
   ]);
   return Object.freeze({ content, contentDaily, accountDaily });
 }
 
-async function listTable(client, tables, normalizedName) {
+async function listTable(client, tables, normalizedName, platform = null) {
   const matches = tables.filter((table) => normalizeTableName(table.name) === normalizedName);
   if (matches.length !== 1) throw operatorError(`Expected one Dev Lark ${normalizedName} table`, 'CUSTOMER_NEWER_ONLY_BRIDGE_LARK_TABLE_INVALID');
+  if (platform) {
+    return client.searchRecords({
+      tableId: matches[0].tableId,
+      filter: {
+        conjunction: 'and',
+        conditions: [{ fieldName: 'platform', operator: 'is', value: [platform] }],
+      },
+      pageSize: 500,
+      maxPages: 100,
+    });
+  }
   return client.listRecords({ tableId: matches[0].tableId, pageSize: 500, includeRecordMetadata: false });
 }
 

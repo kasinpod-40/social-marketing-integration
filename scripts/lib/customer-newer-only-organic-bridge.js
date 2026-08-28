@@ -17,17 +17,26 @@ export const CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_EXPECTED_ROWS = Object.freeze({
   }),
 });
 
+export const CUSTOMER_TIKTOK_20260827_BRIDGE_SCOPE = Object.freeze({
+  periodEnd: '2026-08-27',
+  platforms: Object.freeze(['tiktok']),
+  expectedRows: Object.freeze({
+    tiktok: Object.freeze({ '2026-08-27': 2_053 }),
+  }),
+});
+
 const ALLOWED_PLATFORMS = Object.freeze(['facebook', 'tiktok']);
 const CUSTOMER_KEY = 'chemistry_k';
 const ACCOUNT_KEY = 'chemistry_k';
 const TIME_ZONE = 'Asia/Bangkok';
 
 export function parseCustomerNewerOnlyOrganicBridgeArgs(args = []) {
-  const result = { phase: 'plan', execute: false, planPath: null };
+  const result = { phase: 'plan', execute: false, planPath: null, scope: 'default' };
   for (const arg of args) {
     if (arg === '--execute') result.execute = true;
     else if (arg.startsWith('--phase=')) result.phase = arg.slice('--phase='.length);
     else if (arg.startsWith('--plan=')) result.planPath = arg.slice('--plan='.length);
+    else if (arg.startsWith('--scope=')) result.scope = arg.slice('--scope='.length);
     else throw bridgeError(`Unsupported argument: ${arg}`, 'CUSTOMER_NEWER_ONLY_BRIDGE_ARGUMENT_INVALID');
   }
   if (!['plan', 'prepare', 'apply', 'verify'].includes(result.phase)) {
@@ -35,6 +44,9 @@ export function parseCustomerNewerOnlyOrganicBridgeArgs(args = []) {
   }
   if (['apply', 'verify'].includes(result.phase) && !hasText(result.planPath)) {
     throw bridgeError('--plan is required for apply/verify', 'CUSTOMER_NEWER_ONLY_BRIDGE_PLAN_REQUIRED');
+  }
+  if (!['default', 'tiktok-20260827'].includes(result.scope)) {
+    throw bridgeError(`Unsupported scope: ${result.scope}`, 'CUSTOMER_NEWER_ONLY_BRIDGE_SCOPE_INVALID');
   }
   return Object.freeze(result);
 }
@@ -51,12 +63,26 @@ export function assertCustomerNewerOnlyOrganicBridgeConfirmation(phase, env = pr
 }
 
 export async function buildCustomerNewerOnlyOrganicBridgePlan(input = {}) {
+  return buildScopedBridgePlan(input, Object.freeze({
+    periodEnd: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END,
+    platforms: ALLOWED_PLATFORMS,
+    expectedRows: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_EXPECTED_ROWS,
+  }));
+}
+
+export async function buildCustomerTikTok20260827BridgePlan(input = {}) {
+  return buildScopedBridgePlan(input, CUSTOMER_TIKTOK_20260827_BRIDGE_SCOPE);
+}
+
+async function buildScopedBridgePlan(input, scope) {
   const generatedAt = requireTimestamp(input.generatedAt, 'generatedAt');
   const source = normalizeSourceTables(input.sourceTables);
-  const customer = normalizeCustomerSnapshot(input.customerSnapshot);
-  const sourceRows = selectSourceRows(source.contentDaily, customer.maxObservationDate);
-  assertExpectedSourceRows(sourceRows);
-  const accountRows = selectFacebookAccountRows(source.accountDaily, customer.maxAccountDate);
+  const customer = normalizeCustomerSnapshot(input.customerSnapshot, scope);
+  const sourceRows = selectSourceRows(source.contentDaily, customer.maxObservationDate, scope);
+  assertExpectedSourceRows(sourceRows, scope);
+  const accountRows = scope.platforms.includes('facebook')
+    ? selectFacebookAccountRows(source.accountDaily, customer.maxAccountDate, scope.periodEnd)
+    : [];
   const masterByIdentity = indexMasterRows(source.content);
   const latestByContent = latestRowsByContent(sourceRows);
   const sourceIdentities = [...new Set(sourceRows.map((row) => contentKey(row.platform, row.externalContentId)))];
@@ -71,15 +97,16 @@ export async function buildCustomerNewerOnlyOrganicBridgePlan(input = {}) {
 
   const sourceDigest = await createStableFingerprint({
     contract: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_CONTRACT,
-    periodEnd: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END,
+    periodEnd: scope.periodEnd,
+    platforms: scope.platforms,
     accountRows: accountRows.map(stableAccountSource),
     contentRows: sourceRows.map(stableDailySource),
     missingStateKeys,
   });
-  const observedAtByPlatformDate = buildObservedAtByPlatformDate({ generatedAt, accountRows });
+  const observedAtByPlatformDate = buildObservedAtByPlatformDate({ generatedAt, accountRows, scope });
   const chunks = [];
-  for (const platform of ALLOWED_PLATFORMS) {
-    const dates = Object.keys(CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_EXPECTED_ROWS[platform]).sort();
+  for (const platform of scope.platforms) {
+    const dates = Object.keys(scope.expectedRows[platform]).sort();
     for (const metricDate of dates) {
       const rows = sourceRows.filter((row) => row.platform === platform && row.metricDate === metricDate);
       const coverage = await buildCoverageIdentity({ platform, metricDate, rows, sourceDigest, generatedAt });
@@ -90,7 +117,7 @@ export async function buildCustomerNewerOnlyOrganicBridgePlan(input = {}) {
         platform,
         metricDate,
         rows,
-        accountRows: platform === 'facebook' && metricDate === CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END
+        accountRows: platform === 'facebook' && metricDate === scope.periodEnd
           ? accountRows
           : [],
         stateKeys: stateKeysForChunk,
@@ -114,7 +141,8 @@ export async function buildCustomerNewerOnlyOrganicBridgePlan(input = {}) {
 
   return Object.freeze({
     contract: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_CONTRACT,
-    periodEnd: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END,
+    periodEnd: scope.periodEnd,
+    platforms: scope.platforms,
     generatedAt,
     sourceDigest,
     customerBoundary: Object.freeze({
@@ -215,12 +243,12 @@ function normalizeSourceTables(value) {
   });
 }
 
-function normalizeCustomerSnapshot(value) {
+function normalizeCustomerSnapshot(value, scope) {
   if (!value || typeof value !== 'object') throw bridgeError('customerSnapshot is required', 'CUSTOMER_NEWER_ONLY_BRIDGE_CUSTOMER_INVALID');
   const observations = new Map(Object.entries(value.observationDates ?? {}));
   const accounts = new Map(Object.entries(value.accountDates ?? {}));
-  for (const platform of ALLOWED_PLATFORMS) requireDate(observations.get(platform), `observationDates.${platform}`);
-  requireDate(accounts.get('facebook'), 'accountDates.facebook');
+  for (const platform of scope.platforms) requireDate(observations.get(platform), `observationDates.${platform}`);
+  if (scope.platforms.includes('facebook')) requireDate(accounts.get('facebook'), 'accountDates.facebook');
   return Object.freeze({
     maxObservationDate: observations,
     maxAccountDate: accounts,
@@ -294,29 +322,29 @@ function normalizeAccountRecord(record) {
   });
 }
 
-function selectSourceRows(rows, boundaries) {
-  return rows.filter((row) => ALLOWED_PLATFORMS.includes(row.platform)
+function selectSourceRows(rows, boundaries, scope) {
+  return rows.filter((row) => scope.platforms.includes(row.platform)
     && row.metricDate > boundaries.get(row.platform)
-    && row.metricDate <= CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END)
+    && row.metricDate <= scope.periodEnd)
     .sort(compareDailyRows);
 }
 
-function selectFacebookAccountRows(rows, boundaries) {
+function selectFacebookAccountRows(rows, boundaries, periodEnd) {
   const selected = rows.filter((row) => row.platform === 'facebook'
     && row.metricDate > boundaries.get('facebook')
-    && row.metricDate <= CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END);
-  if (selected.length !== 1 || selected[0].metricDate !== CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END) {
+    && row.metricDate <= periodEnd);
+  if (selected.length !== 1 || selected[0].metricDate !== periodEnd) {
     throw bridgeError('Expected exactly one newer Facebook account daily row',
       'CUSTOMER_NEWER_ONLY_BRIDGE_ACCOUNT_SOURCE_INVALID', { count: selected.length });
   }
   return selected;
 }
 
-function assertExpectedSourceRows(rows) {
+function assertExpectedSourceRows(rows, scope) {
   const actual = groupCounts(rows);
   const expected = [];
-  for (const platform of ALLOWED_PLATFORMS) {
-    for (const [metricDate, count] of Object.entries(CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_EXPECTED_ROWS[platform])) {
+  for (const platform of scope.platforms) {
+    for (const [metricDate, count] of Object.entries(scope.expectedRows[platform])) {
       expected.push({ platform, metricDate, count });
     }
   }
@@ -350,9 +378,11 @@ function latestRowsByContent(rows) {
 
 function buildObservedAtByPlatformDate(input) {
   const result = new Map();
-  const accountFetchedAt = input.accountRows[0].fetchedAt;
-  result.set(`facebook|${CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_PERIOD_END}`, accountFetchedAt);
-  const dates = Object.keys(CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_EXPECTED_ROWS.tiktok).sort();
+  if (input.scope.platforms.includes('facebook')) {
+    const accountFetchedAt = input.accountRows[0].fetchedAt;
+    result.set(`facebook|${input.scope.periodEnd}`, accountFetchedAt);
+  }
+  const dates = Object.keys(input.scope.expectedRows.tiktok ?? {}).sort();
   dates.forEach((metricDate, index) => result.set(
     `tiktok|${metricDate}`,
     input.generatedAt - dates.length + index,

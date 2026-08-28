@@ -6,11 +6,14 @@ import {
   assertCustomerNewerOnlyOrganicBridgeConfirmation,
   buildCustomerBridgeVerificationSql,
   buildCustomerNewerOnlyOrganicBridgePlan,
+  buildCustomerTikTok20260827BridgePlan,
   parseCustomerNewerOnlyOrganicBridgeArgs,
 } from '../../scripts/lib/customer-newer-only-organic-bridge.js';
 
 test('operator defaults to plan-only and requires an exact confirmation per mutation phase', () => {
-  assert.deepEqual(parseCustomerNewerOnlyOrganicBridgeArgs([]), { phase: 'plan', execute: false, planPath: null });
+  assert.deepEqual(parseCustomerNewerOnlyOrganicBridgeArgs([]), {
+    phase: 'plan', execute: false, planPath: null, scope: 'default',
+  });
   assert.throws(() => parseCustomerNewerOnlyOrganicBridgeArgs(['--phase=apply', '--execute']),
     (error) => error.code === 'CUSTOMER_NEWER_ONLY_BRIDGE_PLAN_REQUIRED');
   assert.throws(() => assertCustomerNewerOnlyOrganicBridgeConfirmation('apply', {}),
@@ -18,6 +21,37 @@ test('operator defaults to plan-only and requires an exact confirmation per muta
   assert.doesNotThrow(() => assertCustomerNewerOnlyOrganicBridgeConfirmation('apply', {
     CONFIRM_CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_CONFIRMATIONS.apply,
   }));
+});
+
+test('TikTok 2026-08-27 scope selects only the exact newer 2,053-row snapshot', async () => {
+  const rows = dailyRows('tiktok', '2026-08-27', 2_053);
+  const result = await buildCustomerTikTok20260827BridgePlan({
+    generatedAt: 1_787_900_000_000,
+    sourceTables: {
+      content: rows.map((record) => ({ fields: {
+        platform: 'tiktok',
+        external_content_id: record.fields.external_content_id,
+        content_type: 'video',
+      } })),
+      contentDaily: [
+        ...dailyRows('tiktok', '2026-08-26', 2_051),
+        ...rows,
+      ],
+      accountDaily: [],
+    },
+    customerSnapshot: {
+      observationDates: { facebook: '2026-08-26', tiktok: '2026-08-26' },
+      accountDates: { facebook: '2026-08-26' },
+      stateKeys: rows.map((record) => `tiktok:chemistry_k:${record.fields.external_content_id}`),
+    },
+  });
+  assert.equal(result.periodEnd, '2026-08-27');
+  assert.deepEqual(result.platforms, ['tiktok']);
+  assert.equal(result.sourceSummary.rows, 2_053);
+  assert.equal(result.sourceSummary.accountRows, 0);
+  assert.equal(result.sourceSummary.missingStateKeys.length, 0);
+  assert.equal(result.chunks.length, 1);
+  assert.equal(result.chunks[0].rowCount, 2_053);
 });
 
 test('newer-only plan rejects a Customer boundary drift instead of overwriting a completed date', () => {

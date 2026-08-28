@@ -220,6 +220,18 @@ test('Customer D1 Lark import keeps a stable batch operation identity', () => {
   assert.equal(body.generation, REQUESTED_AT);
 });
 
+test('Customer TikTok Lark import keeps a stable batch operation identity', () => {
+  const body = createStableQueueOperationBody({
+    type: JOB_TYPES.CUSTOMER_TIKTOK_LARK_SNAPSHOT_IMPORT,
+    trigger: JOB_TRIGGERS.CUSTOMER_TIKTOK_SNAPSHOT_IMPORT,
+    tableKey: 'mktContentDaily',
+  }, {
+    operationId: 'tiktok-20260827-daily-000',
+    originalRequestedAt: REQUESTED_AT,
+  });
+  assert.equal(body.workKey, 'lark_customer_tiktok:tiktok-20260827-daily-000');
+});
+
 test('scheduled Shared Report uses stable identity while manual presets keep their existing shape', () => {
   const scheduledBody = {
     schemaVersion: 1,
