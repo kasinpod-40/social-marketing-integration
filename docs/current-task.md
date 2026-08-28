@@ -60,6 +60,7 @@ CUSTOMER_STAGGERED_SCHEDULE              = CODE_FOCUSED_GATES_PASS_REVIEW_PENDIN
 DEV_TO_CUSTOMER_DATA_POLICY              = INSERT_ONLY_PRODUCTION_MISSING_NEWER_STABLE_KEYS
 REPORT_PARITY_TARGET                     = EXACT_1D_3D_7D_30D_AFTER_CUSTOMER_D1_MATERIALIZATION
 CUSTOMER_CHATWOOT_DAILY_DISCOVERY        = UPDATED_WITHIN_ONCE_CODE_AND_FULL_GATES_PASS
+CUSTOMER_TIKTOK_20260827_FAST_BRIDGE     = COMPLETE_D1_LARK_REPORT_IMPORT_GATE_DISABLED
 ```
 
 ## Objective
@@ -139,8 +140,18 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - focused importer/catalog/Queue/operator tests PASS `36/36`; `npm run check` PASS (`814` source files, `2,456`
   local dependencies, zero cycles and hygiene PASS); full tests, Report reliability, audit, deploy dry-run and
   diff-check PASS;
-- reviewed merge/deploy, exact Customer D1 apply, serial 44-batch Customer Lark import, `1D/3D/7D/30D` Report
-  regeneration and temporary import-gate removal remain the live completion steps.
+- reviewed PR `#762` merged as `main@2471e7bc`. Customer D1 readback proves exactly `2,053` observations,
+  `2,053` distinct Content identities, complete full-inventory Coverage `2,053/2,053`, zero failed rows and the
+  two previously missing Content state rows;
+- the serial Customer Queue acknowledged all `44/44` sealed Lark batches on their first attempt with zero exact
+  retry, DLQ or Alert. This wrote the two missing Content rows, `2,053` exact Daily rows and one Account freshness
+  row without overwriting older/equal Customer Business rows;
+- fresh Customer-owned TikTok `1D/3D/7D/30D` Reports for period end `2026-08-27` materialized successfully. The
+  latest totals exactly equal the sealed Dev Lark source: tracked Content `2,053`, Views `138,265,961`, Likes
+  `6,410,041`, Comments `26,143`, Shares `589,373` and Engagement `7,025,557`;
+- Dev D1 contained only `189` TikTok observations for that date and its older Report was not copied. The exact
+  Dev Lark snapshot is therefore the authoritative same-period comparison. The temporary Customer importer mode
+  is disabled; active Customer Worker version is `787ca811-fab2-4a07-9a94-1199306d283f`.
 
 ### Implementation result — Chatwoot Daily updated-only discovery
 
