@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_STAGGERED_SCHEDULE_AND_NEWER_ONLY_PARITY_REVIEW
+TASK_STATUS                              = CUSTOMER_META_K2_BOUNDED_MATERIALIZATION_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = a7b6a544
-CURRENT_BRANCH                           = codex/customer-staggered-schedules-20260827
+BASE_MAIN_SHA                            = a5219ef8
+CURRENT_BRANCH                           = codex/meta-k2-bounded-materialization-20260828
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = 8238edc6-bdce-488c-ba2c-aa12b8753c6b
+PRODUCTION_WORKER_HEAD                   = 48a519e3-7d72-4411-b604-185227a70d63
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -51,6 +51,7 @@ GENERIC_DLQ_REDRIVE                      = DISABLED
 CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
+CUSTOMER_META_K2_POST_SOURCE_MATERIALIZATION = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
@@ -169,6 +170,24 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   Workers-runtime tests; Report reliability PASS `106/106`; audit reports zero vulnerabilities; deploy dry-run
   and `git diff --check` PASS. Reviewed PR/merge, Customer deploy and first scheduled Daily D1/Lark proof remain
   required.
+
+### Implementation result — Meta K2 bounded post-source materialization
+
+- live Customer evidence proves the exact `20260827` K2 Work has completed all `194/194` provider source units
+  and retained about `13.96 MB` of staged payload, but Workers Free terminated before the existing preflight
+  phase because one invocation reloaded and assembled the entire snapshot;
+- added durable phase `meta_ads_post_source_materialization_v1`. It reads at most five staged source units per
+  delivery, persists only the fields needed by the canonical Ads builders and retains the exact Daily source
+  payload hash. After all 194 units are compact, the same Work/generation continues through the existing bounded
+  preflight, D1 and Lark phases;
+- the repair never calls Meta again, never creates a replacement generation and does not change stable keys,
+  source fingerprints or completed K3/YouTube Work. Queue routing now explicitly admits the durable
+  `materialization_continuation` result;
+- focused Meta runtime/audit/materializer tests PASS `26/26`; `npm run check` PASS; full `npm test` PASS `3,267`
+  Node tests plus `18` Workers-runtime tests; Report reliability PASS `106/106`; npm audit reports zero
+  vulnerabilities; deploy dry-run and `git diff --check` PASS;
+- reviewed PR/merge, Customer deploy and exact same-generation K2 recovery from the retained `194/194` source
+  checkpoint remain required before D1/Lark completion proof. Blind replay is prohibited.
 
 ## Current authorized recovery — Customer Workers Free runtime
 

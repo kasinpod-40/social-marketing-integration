@@ -268,6 +268,112 @@ test('durably stages one Meta page per invocation, completes D1-only, then resum
   assert.equal(replay.status, 'completed_idempotent');
 });
 
+test('compacts completed Meta Ads source units in bounded post-source deliveries before building the write set', async () => {
+  const workStore = createWorkStore();
+  const sourceUnits = [
+    {
+      datasetKey: 'meta_ads.account.latest',
+      rows: [{
+        id: 'act_123456', account_id: '123456', name: 'Fixture Meta Ads', status: 'ACTIVE',
+        currency: 'THB', timezone_name: 'Asia/Bangkok', unused_blob: 'x'.repeat(50_000),
+      }],
+    },
+    {
+      datasetKey: 'meta_ads.creatives.inventory',
+      rows: [{ id: 'creative_1', name: 'Creative 1', object_story_spec: { body: 'x'.repeat(50_000) } }],
+    },
+    {
+      datasetKey: 'meta_ads.creatives.inventory',
+      rows: [{ id: 'creative_2', name: 'Creative 2', asset_feed_spec: { bodies: ['x'.repeat(50_000)] } }],
+    },
+    {
+      datasetKey: 'meta_ads.performance.daily',
+      rows: [{
+        account_id: '123456', account_currency: 'THB', campaign_id: 'campaign_1',
+        campaign_name: 'Campaign 1', objective: 'OUTCOME_TRAFFIC', adset_id: 'adset_1',
+        adset_name: 'Ad Set 1', ad_id: 'ad_1', ad_name: 'Ad 1', date_start: '2026-07-25',
+        date_stop: '2026-07-25', publisher_platform: 'facebook', spend: '1.000000',
+        impressions: '10', reach: '8', clicks: '2', actions: [{ action_type: 'link_click', value: '2' }],
+      }],
+    },
+  ];
+  for (const [sequence, unit] of sourceUnits.entries()) {
+    await workStore.savePhase({
+      workKey: OPERATION.workKey,
+      phase: 'meta_end_to_end_source_staging_v1',
+      state: {
+        stage: 'complete', pageState: null, contentIds: [], contentIndex: 0,
+        unitCount: sourceUnits.length, rowCount: 4, sourceWatermark: 'watermark-1',
+      },
+      expectedItems: sourceUnits.length,
+      processedItems: sourceUnits.length,
+      pagesProcessed: sourceUnits.length,
+      chunksProcessed: sourceUnits.length,
+      complete: true,
+      unit: {
+        unitKey: `source:${sequence}`,
+        sequence,
+        payload: {
+          schemaVersion: 'meta_end_to_end_staged_source_unit_v1',
+          sourceEntityId: null,
+          sourceStatus: 'available',
+          sourceWatermark: 'watermark-1',
+          pageNumber: sequence + 1,
+          ...unit,
+        },
+      },
+    });
+  }
+  const input = baseInput({
+    resumableWorkStore: workStore,
+    historyStore: createHistoryStore(),
+    d1WriteEnabled: true,
+    larkWriteEnabled: false,
+    limits: {
+      ...baseInput().limits,
+      postSourceUnitsPerInvocation: 2,
+      d1RowsPerInvocation: 100,
+    },
+  });
+
+  const first = await processMetaEndToEndSync(input);
+  assert.equal(first.status, 'materialization_continuation');
+  assert.equal(first.materializedUnits, 2);
+  const firstPage = await workStore.listPhaseUnits({
+    workKey: OPERATION.workKey,
+    phase: 'meta_ads_post_source_materialization_v1',
+    afterSequence: 0,
+    limit: 10,
+  });
+  assert.equal(firstPage.units.length, 2);
+  assert.equal(JSON.stringify(firstPage.units).includes('unused_blob'), false);
+  assert.equal(JSON.stringify(firstPage.units).includes('object_story_spec'), false);
+
+  const second = await processMetaEndToEndSync(input);
+  assert.equal(second.status, 'materialization_continuation');
+  assert.equal(second.materializedUnits, 4);
+  assert.equal(second.complete, true);
+  const compact = await workStore.listPhaseUnits({
+    workKey: OPERATION.workKey,
+    phase: 'meta_ads_post_source_materialization_v1',
+    afterSequence: 0,
+    limit: 10,
+  });
+  assert.equal(compact.units.length, 4);
+  assert.match(compact.units[3].payload.rows[0].__source_payload_hash, /^[a-f0-9]{64}$/u);
+
+  const third = await processMetaEndToEndSync(input);
+  assert.notEqual(third.status, 'materialization_continuation');
+  assert.deepEqual(third.sourceSummary, {
+    accountRows: 1,
+    campaignRows: 1,
+    adSetRows: 1,
+    adRows: 1,
+    creativeRows: 2,
+    dailyRows: 1,
+  });
+});
+
 test('forwards the reviewed period to Facebook content inventory staging', async () => {
   const workStore = createWorkStore();
   const contentCalls = [];

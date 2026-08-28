@@ -282,7 +282,7 @@ test('existing Meta pipeline writes only Creatives + Daily then fresh replay is 
 });
 
 async function runPipeline(snapshot, store, syncEngine, tables) {
-  return processMetaEndToEndSync({
+  const input = {
     connectorKey: 'meta_ads',
     jobType: JOB_TYPES.META_ADS_SYNC,
     operation: {
@@ -318,7 +318,12 @@ async function runPipeline(snapshot, store, syncEngine, tables) {
       d1RowsPerInvocation: 1_000,
       larkTablesPerInvocation: 2,
     },
-  });
+  };
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await processMetaEndToEndSync(input);
+    if (['completed', 'completed_idempotent'].includes(result.status)) return result;
+  }
+  throw new Error('Meta paid direct pipeline did not complete within the bounded test attempts');
 }
 
 function createStatefulFakeSyncEngine(destination) {

@@ -8,6 +8,7 @@ import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerp
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
+const ADS_MATERIALIZATION_PHASE = 'meta_ads_post_source_materialization_v1';
 const ORGANIC_CONNECTORS = new Set(['facebook', 'instagram']);
 const ADS_CONNECTOR = 'meta_ads';
 const META_ADS_MAX_REPORT_RANGE_DAYS = 31;
@@ -150,13 +151,48 @@ export async function processMetaEndToEndSync(input = {}) {
     }
   }
 
-  const staged = await readAllStagedUnits({
-    workStore,
-    workKey: operation.workKey,
-    expectedUnits: state.unitCount,
-    maximum: limits.sourceMaxUnits,
-    requiredStartSequence: requiredStagedSequenceStart({ connectorKey, state }),
-  });
+  let staged;
+  if (connectorKey === ADS_CONNECTOR
+    && input.sourceReadOnly !== true
+    && input.d1WriteEnabled === true
+    && input.postSourceMaterializationEnabled !== false) {
+    const materialized = await materializeAdsSourceUnits({
+      workStore,
+      workKey: operation.workKey,
+      expectedUnits: state.unitCount,
+      maximum: limits.sourceMaxUnits,
+      unitsPerInvocation: limits.postSourceUnitsPerInvocation,
+      assertLockActive,
+    });
+    if (materialized.workPerformed) {
+      return Object.freeze({
+        status: 'materialization_continuation',
+        connectorKey,
+        operationId: operation.operationId,
+        continuationRequired: true,
+        continuationPhase: ADS_MATERIALIZATION_PHASE,
+        materializedUnits: materialized.processedUnits,
+        expectedUnits: state.unitCount,
+        complete: materialized.complete,
+        sourceWatermark: state.sourceWatermark,
+      });
+    }
+    staged = await readAllStagedUnits({
+      workStore,
+      workKey: operation.workKey,
+      phase: ADS_MATERIALIZATION_PHASE,
+      expectedUnits: state.unitCount,
+      maximum: limits.sourceMaxUnits,
+    });
+  } else {
+    staged = await readAllStagedUnits({
+      workStore,
+      workKey: operation.workKey,
+      expectedUnits: state.unitCount,
+      maximum: limits.sourceMaxUnits,
+      requiredStartSequence: requiredStagedSequenceStart({ connectorKey, state }),
+    });
+  }
   const sourceSnapshot = assembleSourceSnapshot({
     connectorKey,
     sourceAccountId,
@@ -586,6 +622,7 @@ function activityRowSortKey(row) {
 async function readAllStagedUnits({
   workStore,
   workKey,
+  phase = SOURCE_PHASE,
   expectedUnits,
   maximum,
   requiredStartSequence = 0,
@@ -609,7 +646,7 @@ async function readAllStagedUnits({
   while (units.length < expectedUnits) {
     const result = await workStore.listPhaseUnits({
       workKey,
-      phase: SOURCE_PHASE,
+      phase,
       afterSequence,
       limit: Math.min(SOURCE_UNIT_READ_PAGE_SIZE, expectedUnits - units.length),
     });
@@ -654,6 +691,139 @@ async function readAllStagedUnits({
     });
   }
   return Object.freeze(units.map((unit) => normalizeStagedPayload(unit.payload, unit.sequence)));
+}
+
+async function materializeAdsSourceUnits(input) {
+  const existing = await input.workStore.loadPhase({
+    workKey: input.workKey,
+    phase: ADS_MATERIALIZATION_PHASE,
+  });
+  const state = normalizeAdsMaterializationState(existing?.state, input.expectedUnits);
+  if (existing?.complete) {
+    return Object.freeze({
+      complete: true,
+      processedUnits: state.nextSequence,
+      workPerformed: false,
+    });
+  }
+  const page = await input.workStore.listPhaseUnits({
+    workKey: input.workKey,
+    phase: SOURCE_PHASE,
+    afterSequence: state.nextSequence,
+    limit: Math.min(input.unitsPerInvocation, input.expectedUnits - state.nextSequence),
+  });
+  if (page.units.length === 0) {
+    throw permanentError('Meta Ads post-source materialization could not read the next staged unit', {
+      code: 'META_ADS_POST_SOURCE_MATERIALIZATION_INCOMPLETE',
+      details: { nextSequence: state.nextSequence, expectedUnits: input.expectedUnits },
+    });
+  }
+  for (const unit of page.units) {
+    if (unit.sequence !== state.nextSequence) {
+      throw permanentError('Meta Ads post-source materialization sequence is not contiguous', {
+        code: 'META_ADS_POST_SOURCE_MATERIALIZATION_INCOMPLETE',
+        details: { expectedSequence: state.nextSequence, observedSequence: unit.sequence },
+      });
+    }
+    await input.assertLockActive();
+    const source = normalizeStagedPayload(unit.payload, unit.sequence);
+    const payload = await compactAdsStagedPayload(source);
+    state.nextSequence += 1;
+    const complete = state.nextSequence === input.expectedUnits;
+    await input.workStore.savePhase({
+      workKey: input.workKey,
+      phase: ADS_MATERIALIZATION_PHASE,
+      state,
+      expectedItems: input.expectedUnits,
+      processedItems: state.nextSequence,
+      pagesProcessed: state.nextSequence,
+      chunksProcessed: state.nextSequence,
+      complete,
+      unit: {
+        unitKey: `compact:${unit.sequence}`,
+        sequence: unit.sequence,
+        payload,
+      },
+    });
+  }
+  return Object.freeze({
+    complete: state.nextSequence === input.expectedUnits,
+    processedUnits: state.nextSequence,
+    workPerformed: true,
+  });
+}
+
+async function compactAdsStagedPayload(source) {
+  const rows = [];
+  for (const row of source.rows) {
+    rows.push(await compactAdsSourceRow(source.datasetKey, row));
+  }
+  return deepFreeze({
+    schemaVersion: 'meta_ads_compact_staged_source_unit_v1',
+    datasetKey: source.datasetKey,
+    sourceEntityId: source.sourceEntityId,
+    sourceStatus: source.sourceStatus,
+    sourceWatermark: source.sourceWatermark,
+    pageNumber: source.pageNumber,
+    rows,
+  });
+}
+
+async function compactAdsSourceRow(datasetKey, value) {
+  const row = requireObject(value, 'Meta Ads staged source row');
+  if (datasetKey === 'meta_ads.account.latest') {
+    return pickSourceFields(row, [
+      'id', 'account_id', 'name', 'status', 'effective_status', 'account_status',
+      'currency', 'timezone_name', 'updated_time',
+    ]);
+  }
+  if (datasetKey === 'meta_ads.creatives.inventory') {
+    const compact = pickSourceFields(row, [
+      'id', 'name', 'status', 'effective_status', 'updated_time', 'campaign_id', 'adset_id',
+      'ad_id', 'creative_id', 'landing_page_url', 'effective_object_story_id', 'object_type',
+      'asset_type',
+    ]);
+    if (row.creative && typeof row.creative === 'object' && row.creative.id !== undefined) {
+      compact.creative = { id: row.creative.id };
+    }
+    return Object.freeze(compact);
+  }
+  if (datasetKey === 'meta_ads.performance.daily') {
+    const compact = pickSourceFields(row, [
+      'account_id', 'account_currency', 'campaign_id', 'campaign_name', 'objective',
+      'adset_id', 'adset_name', 'ad_id', 'ad_name', 'creative_id', 'date_start', 'date_stop',
+      'publisher_platform', 'spend', 'impressions', 'reach', 'clicks', 'actions', 'action_values',
+    ]);
+    compact.__source_payload_hash = await createStableFingerprint({
+      schemaVersion: 'meta_ads_daily_source_v1',
+      resource: row,
+    });
+    return Object.freeze(compact);
+  }
+  throw permanentError('Meta Ads post-source materialization found an unsupported dataset', {
+    code: 'META_ADS_POST_SOURCE_DATASET_INVALID',
+    details: { datasetKey },
+  });
+}
+
+function pickSourceFields(source, fields) {
+  const result = {};
+  for (const field of fields) {
+    if (Object.hasOwn(source, field)) result[field] = source[field];
+  }
+  return result;
+}
+
+function normalizeAdsMaterializationState(value, expectedUnits) {
+  const source = value && typeof value === 'object' ? value : {};
+  const nextSequence = nonNegativeInteger(source.nextSequence ?? 0, 'materialization.nextSequence');
+  if (nextSequence > expectedUnits) {
+    throw permanentError('Meta Ads post-source materialization checkpoint exceeds its source unit count', {
+      code: 'META_ADS_POST_SOURCE_MATERIALIZATION_INCOMPLETE',
+      details: { nextSequence, expectedUnits },
+    });
+  }
+  return { nextSequence };
 }
 
 function createStagedPayload(unit) {
@@ -788,6 +958,12 @@ function normalizeLimits(value) {
       'sourceMaxUnitBytes',
       1_024,
       1_048_576,
+    ),
+    postSourceUnitsPerInvocation: boundedInteger(
+      source.postSourceUnitsPerInvocation ?? 5,
+      'postSourceUnitsPerInvocation',
+      1,
+      25,
     ),
     d1RowsPerInvocation: boundedInteger(
       source.d1RowsPerInvocation ?? 250,

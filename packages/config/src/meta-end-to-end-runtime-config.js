@@ -60,6 +60,12 @@ export function loadMetaEndToEndRuntimeConfig(env = {}) {
         1_024,
         1_048_576,
       ),
+      postSourceUnitsPerInvocation: boundedInteger(
+        env?.MKT_META_POST_SOURCE_UNITS_PER_INVOCATION,
+        5,
+        1,
+        25,
+      ),
       d1RowsPerInvocation: boundedInteger(
         env?.MKT_META_D1_ROWS_PER_INVOCATION,
         250,

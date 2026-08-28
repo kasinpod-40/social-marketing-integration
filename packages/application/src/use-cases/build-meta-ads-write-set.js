@@ -181,10 +181,11 @@ export async function buildMetaAdsWriteSet(input = {}) {
       syncRunId,
     });
     rawDaily.push(normalized.rawRow);
-    const sourcePayloadHash = await createStableFingerprint({
-      schemaVersion: 'meta_ads_daily_source_v1',
-      resource,
-    });
+    const sourcePayloadHash = optionalText(resource.__source_payload_hash)
+      ?? await createStableFingerprint({
+        schemaVersion: 'meta_ads_daily_source_v1',
+        resource,
+      });
     d1DailyFacts.push(validateStorageRow('ads_daily_facts', {
       ads_fact_key: normalized.factCandidate.adsFactKey,
       customer_key: customerKey,
