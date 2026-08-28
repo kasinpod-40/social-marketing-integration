@@ -125,6 +125,23 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - live D1 apply, exact D1 verification, Customer-owned Report regeneration and same-period Dev metric comparison
   remain required. Dev Report rows will not be copied into Customer Production.
 
+### Implementation result — TikTok 2026-08-27 exact newer-only fast bridge
+
+- sealed the exact Dev canonical TikTok snapshot for `2026-08-27`: `2,053` Daily rows, two Content master rows
+  absent from Customer D1 and one Account freshness row. Older/equal Customer dates and every non-TikTok table
+  are excluded;
+- extended the D1 bridge with a dedicated exact-date scope. Generated SQL remains `INSERT OR IGNORE` only and
+  fails closed if the Customer boundary moves before apply; Work, cursor, lock, DLQ, Alert and the protected
+  forensic terminal are outside the plan;
+- added a temporary Customer-Production-only manual Queue importer that accepts only the sealed snapshot ID,
+  allowlisted tables/fields, exact batch counts and 44 SHA-256 batch fingerprints. Content and Daily updates are
+  rejected so existing Customer Business rows cannot be overwritten; the Account row may advance freshness only;
+- focused importer/catalog/Queue/operator tests PASS `36/36`; `npm run check` PASS (`814` source files, `2,456`
+  local dependencies, zero cycles and hygiene PASS); full tests, Report reliability, audit, deploy dry-run and
+  diff-check PASS;
+- reviewed merge/deploy, exact Customer D1 apply, serial 44-batch Customer Lark import, `1D/3D/7D/30D` Report
+  regeneration and temporary import-gate removal remain the live completion steps.
+
 ### Implementation result — Chatwoot Daily updated-only discovery
 
 - new Daily generations use Chatwoot's server-side `updated_within` filter once for the immutable three-day
