@@ -324,9 +324,10 @@ test('compacts completed Meta Ads source units in bounded post-source deliveries
       },
     });
   }
+  const historyStore = createHistoryStore();
   const input = baseInput({
     resumableWorkStore: workStore,
-    historyStore: createHistoryStore(),
+    historyStore,
     d1WriteEnabled: true,
     larkWriteEnabled: false,
     limits: {
@@ -341,7 +342,7 @@ test('compacts completed Meta Ads source units in bounded post-source deliveries
   assert.equal(first.materializedUnits, 2);
   const firstPage = await workStore.listPhaseUnits({
     workKey: OPERATION.workKey,
-    phase: 'meta_ads_post_source_materialization_v1',
+    phase: 'meta_ads_post_source_materialization_v2',
     afterSequence: 0,
     limit: 10,
   });
@@ -355,11 +356,13 @@ test('compacts completed Meta Ads source units in bounded post-source deliveries
   assert.equal(second.complete, true);
   const compact = await workStore.listPhaseUnits({
     workKey: OPERATION.workKey,
-    phase: 'meta_ads_post_source_materialization_v1',
+    phase: 'meta_ads_post_source_materialization_v2',
     afterSequence: 0,
     limit: 10,
   });
   assert.equal(compact.units.length, 4);
+  assert.match(compact.units[0].payload.rows[0].__entity_metadata_hash, /^[a-f0-9]{64}$/u);
+  assert.match(compact.units[1].payload.rows[0].__entity_metadata_hash, /^[a-f0-9]{64}$/u);
   assert.match(compact.units[3].payload.rows[0].__source_payload_hash, /^[a-f0-9]{64}$/u);
 
   const third = await processMetaEndToEndSync(input);
@@ -372,6 +375,13 @@ test('compacts completed Meta Ads source units in bounded post-source deliveries
     creativeRows: 2,
     dailyRows: 1,
   });
+  const creativeWrite = historyStore.writes.find(
+    ([kind, row]) => kind === 'ads_entity' && row.external_entity_id === 'creative_1',
+  );
+  assert.equal(
+    creativeWrite?.[1]?.metadata_hash,
+    compact.units[1].payload.rows[0].__entity_metadata_hash,
+  );
 });
 
 test('forwards the reviewed period to Facebook content inventory staging', async () => {

@@ -51,7 +51,7 @@ GENERIC_DLQ_REDRIVE                      = DISABLED
 CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
-CUSTOMER_META_K2_POST_SOURCE_MATERIALIZATION = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
+CUSTOMER_META_K2_POST_SOURCE_MATERIALIZATION = V1_LIVE_COMPACTION_COMPLETE_V2_CODE_AND_FULL_GATES_PASS
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
@@ -176,10 +176,11 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - live Customer evidence proves the exact `20260827` K2 Work has completed all `194/194` provider source units
   and retained about `13.96 MB` of staged payload, but Workers Free terminated before the existing preflight
   phase because one invocation reloaded and assembled the entire snapshot;
-- added durable phase `meta_ads_post_source_materialization_v1`. It reads at most five staged source units per
+- added durable phase `meta_ads_post_source_materialization_v2`. It reads at most five staged source units per
   delivery, persists only the fields needed by the canonical Ads builders and retains the exact Daily source
-  payload hash. After all 194 units are compact, the same Work/generation continues through the existing bounded
-  preflight, D1 and Lark phases;
+  payload hash plus the exact normalized entity metadata hash. After all 194 units are compact, the same
+  Work/generation continues through the existing bounded preflight, D1 and Lark phases without hashing all
+  19,200 Creative rows again on every continuation;
 - the repair never calls Meta again, never creates a replacement generation and does not change stable keys,
   source fingerprints or completed K3/YouTube Work. Queue routing now explicitly admits the durable
   `materialization_continuation` result;
@@ -188,6 +189,15 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   vulnerabilities; deploy dry-run and `git diff --check` PASS;
 - reviewed PR/merge, Customer deploy and exact same-generation K2 recovery from the retained `194/194` source
   checkpoint remain required before D1/Lark completion proof. Blind replay is prohibited.
+
+Live v1 recovery compacted `194/194` retained source units and created the destination preflight at
+`200/19,203`, proving source read/assembly no longer hits the previous CPU boundary. It then terminalled because
+each preflight continuation still recalculated metadata fingerprints for all 19,200 Creative rows. The v2 phase
+therefore moves those hashes into the same bounded five-unit materialization and changes no Business identity or
+destination value. Focused regression PASS `26/26`; full gates/review/deploy and exact same-generation recovery
+from the retained source checkpoint remain required. V2 full gates PASS: `npm run check`, `3,267` Node tests,
+`18` Workers-runtime tests, Report reliability `106/106`, zero high-severity audit findings, deploy dry-run and
+diff-check.
 
 ## Current authorized recovery — Customer Workers Free runtime
 
