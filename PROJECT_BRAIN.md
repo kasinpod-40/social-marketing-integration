@@ -1261,6 +1261,14 @@ Shares stays null/not-observed because 28/91 Provider rows omit it. Facebook con
 for 07:30 and retention defer is removed for the 08:05 scheduled evidence on 2026-08-16. RAW 27-table
 deletion remains outside this workstream and waits for its scheduled-soak authority.
 
+## Customer TikTok 2026-08-27 exact newer-only bridge — 2026-08-28
+
+The Customer TikTok gap was closed from the sealed Dev Lark canonical snapshot without copying older/equal rows
+or operational state. Customer D1 now has `2,053` observations and complete `2,053/2,053` full-inventory Coverage;
+Customer Lark accepted all `44/44` sealed batches once with zero exact retry, DLQ or Alert. Fresh Customer-owned
+`1D/3D/7D/30D` Reports for period end `2026-08-27` match the sealed source totals exactly. The Dev D1 Report was
+stale and was not copied. The temporary Customer importer mode is disabled after proof.
+
 ## Permanent safety rules
 
 - Data model before Connector;

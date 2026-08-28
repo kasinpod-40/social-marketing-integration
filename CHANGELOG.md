@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-28 — Customer TikTok exact newer-only fast bridge
+
+- imported only the sealed Dev Lark TikTok `2026-08-27` delta into Customer D1 and Lark: `2,053` Daily rows,
+  two missing Content identities and one Account freshness row, with no older/equal overwrite;
+- proved complete `2,053/2,053` Coverage, `44/44` first-attempt Lark Queue deliveries and zero exact retry,
+  DLQ or Alert;
+- regenerated Customer-owned `1D/3D/7D/30D` Reports and matched their latest totals exactly to the sealed Dev
+  Lark source, then disabled the temporary import gate;
+- made the bridge operator tolerate Wrangler progress text before valid JSON so a successful large D1 apply is
+  not reported as a parser failure.
+
 ## 2026-08-28 — Chatwoot Daily updated-only discovery
 
 - changed only new Chatwoot Daily generations to snapshot the immutable three-day `updated_within` result once,

@@ -25,6 +25,20 @@ export const CUSTOMER_TIKTOK_20260827_BRIDGE_SCOPE = Object.freeze({
   }),
 });
 
+export function parseCustomerBridgeWranglerJson(value) {
+  const text = String(value ?? '').trim();
+  const starts = [text.indexOf('{'), text.indexOf('[')]
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right);
+  for (const start of starts) {
+    try { return JSON.parse(text.slice(start)); } catch { /* continue */ }
+  }
+  throw bridgeError(
+    'Wrangler output did not contain valid JSON',
+    'CUSTOMER_NEWER_ONLY_BRIDGE_WRANGLER_JSON_INVALID',
+  );
+}
+
 const ALLOWED_PLATFORMS = Object.freeze(['facebook', 'tiktok']);
 const CUSTOMER_KEY = 'chemistry_k';
 const ACCOUNT_KEY = 'chemistry_k';

@@ -7,6 +7,7 @@ import {
   buildCustomerBridgeVerificationSql,
   buildCustomerNewerOnlyOrganicBridgePlan,
   buildCustomerTikTok20260827BridgePlan,
+  parseCustomerBridgeWranglerJson,
   parseCustomerNewerOnlyOrganicBridgeArgs,
 } from '../../scripts/lib/customer-newer-only-organic-bridge.js';
 
@@ -21,6 +22,14 @@ test('operator defaults to plan-only and requires an exact confirmation per muta
   assert.doesNotThrow(() => assertCustomerNewerOnlyOrganicBridgeConfirmation('apply', {
     CONFIRM_CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE: CUSTOMER_NEWER_ONLY_ORGANIC_BRIDGE_CONFIRMATIONS.apply,
   }));
+});
+
+test('Wrangler JSON parser tolerates progress text before a successful D1 payload', () => {
+  assert.deepEqual(parseCustomerBridgeWranglerJson('Applied 2,053 rows\n[{"success":true,"results":[]}]'), [
+    { success: true, results: [] },
+  ]);
+  assert.throws(() => parseCustomerBridgeWranglerJson('Applied rows without JSON'),
+    (error) => error.code === 'CUSTOMER_NEWER_ONLY_BRIDGE_WRANGLER_JSON_INVALID');
 });
 
 test('TikTok 2026-08-27 scope selects only the exact newer 2,053-row snapshot', async () => {

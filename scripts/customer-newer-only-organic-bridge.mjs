@@ -16,6 +16,7 @@ import {
   buildCustomerTikTok20260827BridgePlan,
   customerBoundarySql,
   parseCustomerBoundaryResults,
+  parseCustomerBridgeWranglerJson,
   parseCustomerNewerOnlyOrganicBridgeArgs,
 } from './lib/customer-newer-only-organic-bridge.js';
 
@@ -243,8 +244,7 @@ function runWrangler(args) {
       stderr: String(result.stderr ?? '').slice(0, 2_000),
     });
   }
-  try { return JSON.parse(result.stdout); }
-  catch { throw operatorError('Wrangler JSON output was invalid', 'CUSTOMER_NEWER_ONLY_BRIDGE_WRANGLER_JSON_INVALID'); }
+  return parseCustomerBridgeWranglerJson(result.stdout);
 }
 
 function d1ResultSets(output) {
