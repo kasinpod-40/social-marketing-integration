@@ -217,6 +217,7 @@ test('stable Free-plan execution uses a smaller D1 batch before larger Lark dest
   const tableEngine = new TableSyncEngine();
   const storageStarts = [];
   let canonicalCaptureCalls = 0;
+  let storageResumeCalls = 0;
   let canonicalRows;
   const syncEngine = {
     captureSourceRows() {},
@@ -258,7 +259,7 @@ test('stable Free-plan execution uses a smaller D1 batch before larger Lark dest
         },
       };
     },
-    resumeStorage() {},
+    resumeStorage() { storageResumeCalls += 1; },
     planByKey: (value) => tableEngine.planByKey(value),
     executePlan: (plan, options) => tableEngine.executePlan(plan, options),
   };
@@ -284,13 +285,15 @@ test('stable Free-plan execution uses a smaller D1 batch before larger Lark dest
   let fastDestinationResumeProven = false;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const capturesBefore = canonicalCaptureCalls;
+    const resumesBefore = storageResumeCalls;
     result = await syncYouTubeOrganicToLark({ ...input, syncRunId: `run-storage-${attempt + 1}` });
     const contentProgress = await resumableWorkStore.loadPhase({
       workKey: input.workKey,
       phase: 'youtube_destination_content_v1',
     });
     if (contentProgress?.complete && contentProgress.processedItems === videos.length
-      && canonicalCaptureCalls === capturesBefore) {
+      && canonicalCaptureCalls === capturesBefore
+      && storageResumeCalls > resumesBefore) {
       fastDestinationResumeProven = true;
     }
     if (result.continuationRequired !== true) break;

@@ -210,6 +210,12 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     }
   }
   if (maxDestinationRowsPerInvocation !== null && existingStoragePhase?.complete) {
+    // The exact-range destination path bypasses executeDurableDestinationPhases(), which normally
+    // restores the already-complete D1-first result. Restore it here as well so executePlan() does
+    // not attempt a fresh full storage capture from a one-row destination continuation.
+    if (typeof syncEngine.resumeStorage === 'function') {
+      syncEngine.resumeStorage(existingStoragePhase.state?.storage);
+    }
     const destinationContinuation = await continueExistingYouTubeDestinationPhase({
       repository,
       syncEngine,

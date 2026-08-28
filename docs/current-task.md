@@ -226,6 +226,16 @@ to full assembly when availability counts differ. Focused YouTube regression pas
 destination phase completes without another full canonical capture. Full gates, reviewed merge/deploy and exact
 same-generation continuation from Daily 245/838 remain required.
 
+Live recovery later isolated `YOUTUBE_END_TO_END_CAPTURE_INCOMPLETE` at Daily 275/838: the exact-range path bypassed
+the normal durable destination wrapper and therefore did not restore the already-complete D1-first storage result
+before `executePlan()`. The repair now calls the existing `resumeStorage()` contract before exact-range Content/Daily
+delivery, so a one-row continuation cannot trigger a fresh full capture. Focused YouTube tests PASS 17/17; repository
+check, full `npm test` (3,260 Node plus 18 Workers-runtime), Report reliability 106/106, audit, deploy dry-run and
+diff-check PASS. Customer D1 capacity was also restored from 499,998,720 to 461,234,176 bytes by deleting only 494
+staged `sync_work_units` from four superseded/older terminal generations; Business tables, current Works and the
+protected TikTok forensic incident were unchanged. Reviewed merge/deploy and exact same-generation live proof from
+Daily 275/838 remain required.
+
 ### 2026-08-26 — Chatwoot fingerprint-stable Free execution cap
 
 - live same-generation recovery proved that changing the reviewed conversation/reporting limits
