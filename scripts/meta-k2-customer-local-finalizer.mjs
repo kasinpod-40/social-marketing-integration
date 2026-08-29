@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { execFile, spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { JOB_TYPES } from '../packages/application/src/jobs/job-catalog.js';
 import { processMetaEndToEndSync } from '../packages/application/src/use-cases/process-meta-end-to-end-sync.js';
 import { readLarkTableIdsFromEnv } from '../packages/config/src/lark-table-config.js';
 import { createStableFingerprint } from '../packages/shared/src/hash/stable-fingerprint.js';
 import { InMemoryResumableWorkStore } from '../packages/sync-engine/src/in-memory-resumable-work-store.js';
 import { createInfrastructure } from '../apps/sync-worker/src/runtime-infrastructure.js';
-import { CloudflareD1RestBinding } from './lib/cloudflare-d1-rest-binding.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 import { createForbiddenMetaPaidDirectAdapter } from './lib/meta-paid-direct-lark-materializer.js';
-import { resolveCloudflareBearerAuth } from './lib/woocommerce-final-one-command.js';
 import { readWranglerScalarVars } from './lib/wrangler-jsonc-vars.js';
 
 const CONFIRMATION = 'FINALIZE_EXACT_CUSTOMER_META_K2_LOCALLY';
@@ -21,6 +21,7 @@ const ACCOUNT_ID = '154f6bf72740d29d7453cec7fb800d32';
 const DATABASE_ID = 'f03ab092-a1aa-4478-8ba2-c20d7b54851f';
 const CONFIG_PATH = resolve(process.env.MKT_CUSTOMER_WRANGLER_CONFIG ?? '.customer-youtube-uat.wrangler.jsonc');
 const PROFILE = 'chemistry-k-prod';
+const execFileAsync = promisify(execFile);
 const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
 const TABLE_KEYS = Object.freeze([
   'mktAdsAccounts', 'mktAdsCampaigns', 'mktAdsAdGroups',
@@ -77,20 +78,10 @@ async function main() {
   requireExact(runtimeEnv.MKT_CUSTOMER_PROFILE, 'chemistry_k', 'MKT_CUSTOMER_PROFILE');
   requireExact(runtimeEnv.LARK_APP_ID, 'cli_aaf9b6ddfcf99ed1', 'LARK_APP_ID');
 
-  let token = null;
-  const loadToken = async (refresh = false) => {
-    if (!token || refresh) {
-      const authOutput = execFileSync('npx', [
-        'wrangler', 'auth', 'token', '--profile', PROFILE, '--json',
-      ], { cwd: process.cwd(), env: runtimeEnv, encoding: 'utf8' });
-      token = resolveCloudflareBearerAuth({ authOutput }).token;
-    }
-    return token;
-  };
-  const db = new CloudflareD1RestBinding({
-    accountId: ACCOUNT_ID,
-    databaseId: DATABASE_ID,
-    tokenProvider: loadToken,
+  const db = new WranglerRemoteD1Binding({
+    env: runtimeEnv,
+    configPath: CONFIG_PATH,
+    databaseName: binding.database_name,
   });
   const snapshot = await readExactSnapshot(db);
   const store = await seedLocalStore(snapshot);
@@ -312,4 +303,95 @@ function finalizerError(message, code, details = {}) {
   error.code = code;
   error.details = details;
   return error;
+}
+
+class WranglerRemoteD1Binding {
+  constructor(input) {
+    this.env = input.env;
+    this.configPath = input.configPath;
+    this.databaseName = input.databaseName;
+  }
+
+  prepare(sql) {
+    return new WranglerPreparedStatement(this, sql);
+  }
+
+  async batch(statements) {
+    const sql = statements.map((statement) => statement.render()).join(';\n');
+    return this.execute(sql);
+  }
+
+  async execute(sql) {
+    const directory = await mkdtemp(join(tmpdir(), 'customer-k2-d1-'));
+    const path = join(directory, 'batch.sql');
+    try {
+      await writeFile(path, `${sql};\n`, { mode: 0o600 });
+      const result = await execFileAsync('npx', [
+        'wrangler', 'd1', 'execute', this.databaseName,
+        '--remote', '--config', this.configPath, '--profile', PROFILE,
+        '--file', path, '--json',
+      ], {
+        cwd: process.cwd(),
+        env: this.env,
+        encoding: 'utf8',
+        timeout: 120_000,
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      const parsed = JSON.parse(String(result.stdout ?? ''));
+      const blocks = Array.isArray(parsed) ? parsed : [parsed];
+      return blocks.map((block) => ({
+        success: block?.success !== false,
+        results: Array.isArray(block?.results) ? block.results : [],
+        meta: block?.meta ?? {},
+      }));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+}
+
+class WranglerPreparedStatement {
+  constructor(binding, sql, params = []) {
+    this.binding = binding;
+    this.sql = sql;
+    this.params = params;
+  }
+
+  bind(...params) {
+    return new WranglerPreparedStatement(this.binding, this.sql, structuredClone(params));
+  }
+
+  render() {
+    let index = 0;
+    const rendered = this.sql.replace(/\?/gu, () => {
+      if (index >= this.params.length) throw new TypeError('D1 bind parameter is missing');
+      return sqlLiteral(this.params[index++]);
+    });
+    if (index !== this.params.length) throw new TypeError('D1 bind parameter count does not match SQL');
+    return rendered;
+  }
+
+  async run() {
+    return (await this.binding.execute(this.render()))[0];
+  }
+
+  async all() {
+    return (await this.binding.execute(this.render()))[0];
+  }
+
+  async first(column) {
+    const row = (await this.all()).results[0] ?? null;
+    return column === undefined || row === null ? row : row[column];
+  }
+}
+
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new TypeError('D1 numeric bind must be finite');
+    return String(value);
+  }
+  if (typeof value === 'string') return `'${value.replaceAll("'", "''")}'`;
+  throw new TypeError('Unsupported D1 bind value');
 }
