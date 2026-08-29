@@ -33,10 +33,10 @@ const LIMITS = Object.freeze({
   sourceMaxRows: 50_000,
   sourceMaxUnitBytes: 1_048_576,
   postSourceUnitsPerInvocation: 25,
-  preflightRowsPerInvocation: 1_000,
+  preflightRowsPerInvocation: 25,
   d1RowsPerInvocation: 1_000,
-  larkRowsPerInvocation: 1_000,
-  larkTablesPerInvocation: 4,
+  larkRowsPerInvocation: 25,
+  larkTablesPerInvocation: 1,
 });
 
 async function main() {
@@ -68,6 +68,12 @@ async function main() {
     ...readLarkTableIdsFromEnv(runtimeEnv, TABLE_KEYS),
     __metaLarkTableKeys: [...TABLE_KEYS],
   });
+  const projection = await createWorkerLarkProjection({
+    snapshot,
+    tables,
+    projectionUrl: process.env.MKT_META_K2_LARK_PROJECTION_URL,
+    tokenFile: process.env.MKT_META_K2_LARK_PROJECTION_TOKEN_FILE,
+  });
   const input = {
     connectorKey: 'meta_ads',
     jobType: JOB_TYPES.META_ADS_SYNC,
@@ -93,8 +99,10 @@ async function main() {
     resumableWorkStore: store,
     historyStore: infrastructure.getMarketingHistoryStore(),
     organicHistoryGateway: null,
-    repository: infrastructure.repository,
-    syncEngine: infrastructure.syncEngine,
+    // Lark schema/diff/write runs inside the isolated Customer Preview Worker, where the
+    // existing Customer LARK_APP_SECRET is bound. Local execution never reads that Secret.
+    repository: {},
+    syncEngine: projection.syncEngine,
     tables,
     limits: LIMITS,
   };
@@ -118,6 +126,7 @@ async function main() {
     throw finalizerError('Local K2 pipeline exceeded bounded invocation count', 'META_K2_LOCAL_LIMIT');
   }
   await assertFenceUnchanged(db, snapshot);
+  await projection.finalize();
   console.log(JSON.stringify({
     ok: true,
     status: 'CUSTOMER_META_K2_D1_LARK_COMPLETED',
@@ -126,8 +135,198 @@ async function main() {
     sourceUnits: snapshot.units.length,
     reconciliation: result.reconciliation,
     providerReads: 0,
+    customerLarkSecretReadLocally: false,
+    projection: projection.summary(),
     replacementGeneration: false,
   }, null, 2));
+}
+
+async function createWorkerLarkProjection(input) {
+  const projectionUrl = requireHttpsUrl(input.projectionUrl, 'MKT_META_K2_LARK_PROJECTION_URL');
+  const tokenPath = requireText(input.tokenFile, 'MKT_META_K2_LARK_PROJECTION_TOKEN_FILE');
+  const token = String(await readFile(resolve(tokenPath), 'utf8')).trim();
+  if (token.length < 32) {
+    throw finalizerError('Projection token file is invalid', 'META_K2_LOCAL_PROJECTION_TOKEN_INVALID');
+  }
+  const tableKeyById = new Map(Object.entries(input.tables)
+    .filter(([key]) => key !== '__metaLarkTableKeys')
+    .map(([key, tableId]) => [tableId, key]));
+  const engine = new WorkerLarkProjectionSyncEngine({
+    projectionUrl,
+    token,
+    snapshot: input.snapshot,
+    tableKeyById,
+  });
+  return Object.freeze({
+    syncEngine: engine,
+    finalize: () => engine.finalize(),
+    summary: () => engine.summary(),
+  });
+}
+
+class WorkerLarkProjectionSyncEngine {
+  constructor(input) {
+    this.projectionUrl = input.projectionUrl;
+    this.token = input.token;
+    this.snapshot = input.snapshot;
+    this.tableKeyById = input.tableKeyById;
+    this.plans = [];
+    this.planByDigest = new Map();
+    this.manifest = null;
+    this.results = { batches: 0, rows: 0, created: 0, updated: 0, skipped: 0 };
+  }
+
+  async planByKey(input) {
+    const tableKey = this.tableKeyById.get(input.tableId);
+    if (!tableKey) throw finalizerError('Projection table ID is outside the exact scope', 'META_K2_LOCAL_PROJECTION_TABLE_INVALID');
+    const rows = structuredClone(input.rows ?? []);
+    if (rows.length === 0) return Object.freeze({ tableKey, keyField: input.keyField, rows, empty: true });
+    const digest = await createStableFingerprint({
+      schemaVersion: 'meta_k2_local_lark_projection_plan_v1',
+      tableKey,
+      keyField: input.keyField,
+      rows,
+    });
+    let plan = this.planByDigest.get(digest);
+    if (!plan) {
+      plan = Object.freeze({
+        tableKey,
+        keyField: input.keyField,
+        rows: Object.freeze(rows),
+        digest,
+        createRows: Object.freeze(rows),
+        updateRows: Object.freeze([]),
+        skipped: 0,
+        duplicateInputRows: 0,
+      });
+      this.planByDigest.set(digest, plan);
+      this.plans.push(plan);
+    }
+    return plan;
+  }
+
+  async executePlan(plan) {
+    if (plan.empty) return Object.freeze({ created: 0, updated: 0, skipped: 0, duplicateInputRows: 0 });
+    await this.#freezeManifest();
+    const batchSequence = this.plans.indexOf(plan);
+    if (batchSequence < 0) throw finalizerError('Projection plan is absent from the manifest', 'META_K2_LOCAL_PROJECTION_MANIFEST_INVALID');
+    const batchDigest = await createStableFingerprint({
+      schemaVersion: 'meta_k2_local_lark_projection_batch_v1',
+      operation: this.#operation(),
+      tableKey: plan.tableKey,
+      keyField: plan.keyField,
+      batchSequence,
+      rows: plan.rows,
+    });
+    const response = await this.#request({
+      mode: 'write',
+      operation: this.#operation(),
+      tableKey: plan.tableKey,
+      keyField: plan.keyField,
+      rows: plan.rows,
+      batchSequence,
+      expectedBatches: this.manifest.expectedBatches,
+      expectedRows: this.manifest.expectedRows,
+      manifestDigest: this.manifest.manifestDigest,
+      batchDigest,
+    });
+    const result = Object.freeze({
+      created: nonNegative(response.created, 'created'),
+      updated: nonNegative(response.updated, 'updated'),
+      skipped: nonNegative(response.skipped, 'skipped'),
+      duplicateInputRows: 0,
+    });
+    if (result.created + result.updated + result.skipped !== plan.rows.length) {
+      throw finalizerError('Projection response did not reconcile the batch', 'META_K2_LOCAL_PROJECTION_RECONCILIATION_FAILED');
+    }
+    this.results.batches += 1;
+    this.results.rows += plan.rows.length;
+    this.results.created += result.created;
+    this.results.updated += result.updated;
+    this.results.skipped += result.skipped;
+    return result;
+  }
+
+  async finalize() {
+    await this.#freezeManifest();
+    if (this.results.batches !== this.manifest.expectedBatches
+      || this.results.rows !== this.manifest.expectedRows) {
+      throw finalizerError('Projection execution is incomplete', 'META_K2_LOCAL_PROJECTION_INCOMPLETE');
+    }
+    const response = await this.#request({
+      mode: 'finalize',
+      operation: this.#operation(),
+      expectedBatches: this.manifest.expectedBatches,
+      expectedRows: this.manifest.expectedRows,
+      manifestDigest: this.manifest.manifestDigest,
+    });
+    if (response.status !== 'completed') {
+      throw finalizerError('Projection finalization did not complete the exact Work', 'META_K2_LOCAL_PROJECTION_FINALIZE_FAILED');
+    }
+  }
+
+  summary() {
+    return Object.freeze({ ...this.results, manifestDigest: this.manifest?.manifestDigest ?? null });
+  }
+
+  async #freezeManifest() {
+    if (this.manifest) return;
+    const entries = this.plans.map((plan, batchSequence) => ({
+      batchSequence,
+      tableKey: plan.tableKey,
+      keyField: plan.keyField,
+      rowCount: plan.rows.length,
+      planDigest: plan.digest,
+    }));
+    const expectedRows = entries.reduce((total, entry) => total + entry.rowCount, 0);
+    if (entries.length === 0 || expectedRows === 0) {
+      throw finalizerError('Projection manifest is empty', 'META_K2_LOCAL_PROJECTION_MANIFEST_INVALID');
+    }
+    this.manifest = Object.freeze({
+      expectedBatches: entries.length,
+      expectedRows,
+      manifestDigest: await createStableFingerprint({
+        schemaVersion: 'meta_k2_local_lark_projection_manifest_v1',
+        operation: this.#operation(),
+        entries,
+      }),
+    });
+  }
+
+  #operation() {
+    return Object.freeze({
+      operationId: this.snapshot.operationId,
+      workKey: this.snapshot.workKey,
+      generation: this.snapshot.generation,
+    });
+  }
+
+  async #request(body) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const response = await fetch(this.projectionUrl, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${this.token}`,
+            'content-type': 'application/json; charset=utf-8',
+          },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok && payload?.ok === true) return payload;
+        const error = finalizerError('Customer Preview projection rejected the request', payload?.code ?? 'META_K2_LOCAL_PROJECTION_HTTP_FAILED', {
+          status: response.status,
+        });
+        if (response.status < 500) throw error;
+        lastError = error;
+      } catch (error) {
+        if (Number(error?.details?.status ?? 500) < 500) throw error;
+        lastError = error;
+      }
+    }
+    throw lastError ?? finalizerError('Customer Preview projection request failed', 'META_K2_LOCAL_PROJECTION_HTTP_FAILED');
+  }
 }
 
 async function readExactSnapshot(db) {
@@ -266,6 +465,35 @@ function git(args, required = true) {
 
 function requireExact(value, expected, fieldName) {
   if (value !== expected) throw finalizerError(`${fieldName} does not match Customer Production`, 'META_K2_LOCAL_TARGET_INVALID');
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw finalizerError(`${fieldName} is required`, 'META_K2_LOCAL_INPUT_INVALID');
+  }
+  return value.trim();
+}
+
+function requireHttpsUrl(value, fieldName) {
+  const text = requireText(value, fieldName);
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    throw finalizerError(`${fieldName} is invalid`, 'META_K2_LOCAL_INPUT_INVALID');
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+    throw finalizerError(`${fieldName} must be a clean HTTPS URL`, 'META_K2_LOCAL_INPUT_INVALID');
+  }
+  return url.toString();
+}
+
+function nonNegative(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw finalizerError(`${fieldName} must be a non-negative integer`, 'META_K2_LOCAL_PROJECTION_RESPONSE_INVALID');
+  }
+  return number;
 }
 
 function sanitize(value) {
