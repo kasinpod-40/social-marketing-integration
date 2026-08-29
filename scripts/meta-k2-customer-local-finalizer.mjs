@@ -38,6 +38,15 @@ const LIMITS = Object.freeze({
   larkRowsPerInvocation: 25,
   larkTablesPerInvocation: 1,
 });
+// Keep the local recovery finite while allowing every contract-bounded phase to exhaust its
+// maximum rows. The previous fixed limit of 100 stopped large K2 inventories during preflight
+// before any destination reconciliation could finish.
+const MAX_LOCAL_INVOCATIONS = Math.ceil(LIMITS.sourceMaxUnits / LIMITS.postSourceUnitsPerInvocation)
+  + Math.ceil(LIMITS.sourceMaxRows / LIMITS.preflightRowsPerInvocation)
+  + Math.ceil(LIMITS.sourceMaxRows / LIMITS.d1RowsPerInvocation)
+  + Math.ceil(LIMITS.sourceMaxRows / LIMITS.larkRowsPerInvocation)
+  + TABLE_KEYS.length
+  + 16;
 
 async function main() {
   if (process.env.CONFIRM_META_K2_CUSTOMER_LOCAL_FINALIZER !== CONFIRMATION) {
@@ -108,7 +117,7 @@ async function main() {
   };
 
   let result = null;
-  for (let invocation = 1; invocation <= 100; invocation += 1) {
+  for (let invocation = 1; invocation <= MAX_LOCAL_INVOCATIONS; invocation += 1) {
     result = await processMetaEndToEndSync(input);
     console.log(JSON.stringify({
       invocation,
