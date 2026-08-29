@@ -567,17 +567,31 @@ class WranglerRemoteD1Binding {
   }
 
   async executeCommand(sql) {
-    const result = await execFileAsync('npx', [
-      'wrangler', 'd1', 'execute', this.databaseName,
-      '--remote', '--config', this.configPath, '--profile', PROFILE,
-      '--command', sql, '--json',
-    ], {
-      cwd: process.cwd(),
-      env: this.env,
-      encoding: 'utf8',
-      timeout: 120_000,
-      maxBuffer: 64 * 1024 * 1024,
-    });
+    const readOnly = /^\s*(?:SELECT|PRAGMA)\b/iu.test(sql);
+    let result = null;
+    let lastError = null;
+    for (let attempt = 1; attempt <= (readOnly ? 5 : 1); attempt += 1) {
+      try {
+        result = await execFileAsync('npx', [
+          'wrangler', 'd1', 'execute', this.databaseName,
+          '--remote', '--config', this.configPath, '--profile', PROFILE,
+          '--command', sql, '--json',
+        ], {
+          cwd: process.cwd(),
+          env: this.env,
+          encoding: 'utf8',
+          timeout: 120_000,
+          maxBuffer: 64 * 1024 * 1024,
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 5 && readOnly) await new Promise((resolvePromise) => {
+          setTimeout(resolvePromise, 250 * (2 ** (attempt - 1)));
+        });
+      }
+    }
+    if (!result) throw lastError;
     const parsed = parseWranglerJsonSuffix(result.stdout);
     const blocks = Array.isArray(parsed) ? parsed : [parsed];
     return blocks.map((block) => ({
