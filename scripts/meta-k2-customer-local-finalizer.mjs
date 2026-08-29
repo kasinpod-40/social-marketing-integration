@@ -39,28 +39,6 @@ const LIMITS = Object.freeze({
   larkTablesPerInvocation: 4,
 });
 
-if (!process.argv.includes('--execute')) {
-  console.log(JSON.stringify({
-    ok: true,
-    planOnly: true,
-    source: 'latest fenced complete Customer K2 source snapshot',
-    providerReads: 0,
-    execution: 'local transform plus parameterized Customer D1 and stable-key Customer Lark writes',
-    deletes: 0,
-    replacementGeneration: false,
-  }, null, 2));
-} else {
-  await main().catch((error) => {
-    console.error(JSON.stringify({
-      ok: false,
-      code: error?.code ?? 'META_K2_CUSTOMER_LOCAL_FINALIZER_FAILED',
-      message: error?.message ?? String(error),
-      details: sanitize(error?.details ?? {}),
-    }, null, 2));
-    process.exitCode = 1;
-  });
-}
-
 async function main() {
   if (process.env.CONFIRM_META_K2_CUSTOMER_LOCAL_FINALIZER !== CONFIRMATION) {
     throw finalizerError('Execution confirmation is required', 'META_K2_LOCAL_CONFIRMATION_REQUIRED');
@@ -394,4 +372,26 @@ function sqlLiteral(value) {
   }
   if (typeof value === 'string') return `'${value.replaceAll("'", "''")}'`;
   throw new TypeError('Unsupported D1 bind value');
+}
+
+if (!process.argv.includes('--execute')) {
+  console.log(JSON.stringify({
+    ok: true,
+    planOnly: true,
+    source: 'latest fenced complete Customer K2 source snapshot',
+    providerReads: 0,
+    execution: 'local transform plus parameterized Customer D1 and stable-key Customer Lark writes',
+    deletes: 0,
+    replacementGeneration: false,
+  }, null, 2));
+} else {
+  await main().catch((error) => {
+    console.error(JSON.stringify({
+      ok: false,
+      code: error?.code ?? 'META_K2_CUSTOMER_LOCAL_FINALIZER_FAILED',
+      message: error?.message ?? String(error),
+      details: sanitize(error?.details ?? {}),
+    }, null, 2));
+    process.exitCode = 1;
+  });
 }
