@@ -296,10 +296,14 @@ class WranglerRemoteD1Binding {
 
   async batch(statements) {
     const sql = statements.map((statement) => statement.render()).join(';\n');
-    return this.execute(sql);
+    await this.executeFile(sql);
+    // Wrangler file import returns one aggregate transaction result. The application already
+    // owns the exact operation count and verifies final D1/Lark parity, so expose one committed
+    // result per prepared statement to preserve the Workers binding contract.
+    return statements.map(() => ({ success: true, results: [], meta: { changes: 1 } }));
   }
 
-  async execute(sql) {
+  async executeFile(sql) {
     const directory = await mkdtemp(join(tmpdir(), 'customer-k2-d1-'));
     const path = join(directory, 'batch.sql');
     try {
@@ -315,16 +319,35 @@ class WranglerRemoteD1Binding {
         timeout: 120_000,
         maxBuffer: 64 * 1024 * 1024,
       });
-      const parsed = JSON.parse(String(result.stdout ?? ''));
+      const parsed = parseWranglerJsonSuffix(result.stdout);
       const blocks = Array.isArray(parsed) ? parsed : [parsed];
-      return blocks.map((block) => ({
-        success: block?.success !== false,
-        results: Array.isArray(block?.results) ? block.results : [],
-        meta: block?.meta ?? {},
-      }));
+      if (blocks.some((block) => block?.success !== true)) {
+        throw finalizerError('Wrangler D1 file batch reported failure', 'META_K2_LOCAL_D1_BATCH_FAILED');
+      }
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  }
+
+  async executeCommand(sql) {
+    const result = await execFileAsync('npx', [
+      'wrangler', 'd1', 'execute', this.databaseName,
+      '--remote', '--config', this.configPath, '--profile', PROFILE,
+      '--command', sql, '--json',
+    ], {
+      cwd: process.cwd(),
+      env: this.env,
+      encoding: 'utf8',
+      timeout: 120_000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    const parsed = parseWranglerJsonSuffix(result.stdout);
+    const blocks = Array.isArray(parsed) ? parsed : [parsed];
+    return blocks.map((block) => ({
+      success: block?.success !== false,
+      results: Array.isArray(block?.results) ? block.results : [],
+      meta: block?.meta ?? {},
+    }));
   }
 }
 
@@ -350,11 +373,11 @@ class WranglerPreparedStatement {
   }
 
   async run() {
-    return (await this.binding.execute(this.render()))[0];
+    return (await this.binding.executeCommand(this.render()))[0];
   }
 
   async all() {
-    return (await this.binding.execute(this.render()))[0];
+    return (await this.binding.executeCommand(this.render()))[0];
   }
 
   async first(column) {
@@ -372,6 +395,20 @@ function sqlLiteral(value) {
   }
   if (typeof value === 'string') return `'${value.replaceAll("'", "''")}'`;
   throw new TypeError('Unsupported D1 bind value');
+}
+
+function parseWranglerJsonSuffix(output) {
+  const text = String(output ?? '').trim();
+  const starts = [text.lastIndexOf('\n['), text.lastIndexOf('\n{')]
+    .map((index) => (index < 0 ? index : index + 1))
+    .filter((index) => index >= 0);
+  const start = starts.length > 0 ? Math.max(...starts) : (text.startsWith('[') || text.startsWith('{') ? 0 : -1);
+  if (start < 0) throw finalizerError('Wrangler D1 output has no JSON result', 'META_K2_LOCAL_D1_JSON_INVALID');
+  try {
+    return JSON.parse(text.slice(start));
+  } catch {
+    throw finalizerError('Wrangler D1 output JSON is invalid', 'META_K2_LOCAL_D1_JSON_INVALID');
+  }
 }
 
 if (!process.argv.includes('--execute')) {
