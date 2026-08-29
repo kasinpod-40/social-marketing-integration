@@ -71,7 +71,9 @@ async function main() {
   requireExact(config.account_id, ACCOUNT_ID, 'account_id');
   requireExact(binding?.database_id, DATABASE_ID, 'database_id');
   const fileEnv = await readDevVars(resolve(process.env.DEV_VARS_FILE ?? '.dev.vars'));
-  const runtimeEnv = { ...readWranglerScalarVars(configText), ...fileEnv, ...process.env };
+  // Customer config is authoritative for every non-secret runtime identity. The local Secret
+  // file supplies credentials only and must not silently switch this operator back to Dev.
+  const runtimeEnv = { ...process.env, ...fileEnv, ...readWranglerScalarVars(configText) };
   requireExact(runtimeEnv.MKT_CUSTOMER_PROFILE, 'chemistry_k', 'MKT_CUSTOMER_PROFILE');
   requireExact(runtimeEnv.LARK_APP_ID, 'cli_aaf9b6ddfcf99ed1', 'LARK_APP_ID');
 
