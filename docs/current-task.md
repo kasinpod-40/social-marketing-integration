@@ -62,6 +62,7 @@ DEV_TO_CUSTOMER_DATA_POLICY              = INSERT_ONLY_PRODUCTION_MISSING_NEWER_
 REPORT_PARITY_TARGET                     = EXACT_1D_3D_7D_30D_AFTER_CUSTOMER_D1_MATERIALIZATION
 CUSTOMER_CHATWOOT_DAILY_DISCOVERY        = UPDATED_WITHIN_ONCE_CODE_AND_FULL_GATES_PASS
 CUSTOMER_TIKTOK_20260827_FAST_BRIDGE     = COMPLETE_D1_LARK_REPORT_IMPORT_GATE_DISABLED
+CUSTOMER_D1_FREE_CAPACITY_GUARD          = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
 ```
 
 ## Objective
@@ -153,6 +154,23 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - Dev D1 contained only `189` TikTok observations for that date and its older Report was not copied. The exact
   Dev Lark snapshot is therefore the authoritative same-period comparison. The temporary Customer importer mode
   is disabled; active Customer Worker version is `787ca811-fab2-4a07-9a94-1199306d283f`.
+
+### Implementation result — D1 Free capacity guard and incremental retention safety
+
+- live Customer D1 reached the Free per-database capacity boundary and blocked Queue-attempt persistence before
+  Connector code could run. A guarded one-time cleanup removed only `sync_work_units` belonging to expired or
+  strictly older terminal/superseded generations; Business tables, Lark rows, Work/phase audit, active/current
+  Work and the protected TikTok forensic Work were retained. Database size reduced from about `510.8 MB` to
+  about `424.8 MB`, after which Queue processing resumed successfully;
+- the Worker now performs the same bounded cleanup before recording a new main-Queue attempt. Eligibility
+  requires a strictly newer generation fence, terminal/superseded lifecycle, no active cursor lock and no pending
+  warning. A private protected-key list excludes the exact forensic Work, and cleanup deletes staging units only;
+- Customer TikTok retains its existing `2,046` incremental source-state rows. The private Production runtime is
+  prepared to enable daily incremental comparison with a seven-day full-reconciliation safety interval; no
+  Business history is deleted or rewritten by this setting;
+- focused cleanup/Queue tests PASS `18/18`; `npm run check` PASS; full `npm test` PASS including `18`
+  Workers-runtime tests; Report reliability PASS `106/106`; npm audit reports zero vulnerabilities; deploy
+  dry-run and `git diff --check` PASS. Reviewed PR/merge and Customer deploy remain required.
 
 ### Implementation result — Chatwoot Daily updated-only discovery
 

@@ -605,6 +605,80 @@ export class D1ResumableWorkStore {
     }
   }
 
+  /**
+   * คืนพื้นที่ staging ก่อนรับ Queue attempt ใหม่ โดยลบเฉพาะ payload ของ Work เก่าที่มี
+   * generation ใหม่กว่าครอง cursor แล้วเท่านั้น Work/phase/audit และ Business data ยังอยู่ครบ
+   * เพื่อให้ตรวจย้อนหลังได้ และ protected/current/locked/pending-warning Work จะไม่ถูกแตะ
+   */
+  async cleanupSupersededWorkUnits(input = {}) {
+    const now = safeTimestamp(input.now ?? this.now(), 'now');
+    const limit = boundedPositiveInteger(input.limit ?? 25, 'limit', 100);
+    const protectedWorkKeys = requireUniqueTextList(
+      input.protectedWorkKeys ?? [],
+      'protectedWorkKeys',
+      25,
+    );
+    const protectedPlaceholders = protectedWorkKeys.map(() => '?').join(', ');
+    const protectedFilter = protectedWorkKeys.length > 0
+      ? `AND work.work_key NOT IN (${protectedPlaceholders})`
+      : '';
+    try {
+      const result = await this.db.prepare(`
+        SELECT work.work_key
+        FROM sync_work_runs AS work
+        INNER JOIN sync_generation_fences AS fence
+          ON fence.cursor_key = work.cursor_key
+         AND fence.generation > work.generation
+        WHERE work.lifecycle_status IN ('terminal', 'superseded')
+          ${protectedFilter}
+          AND NOT EXISTS (
+            SELECT 1 FROM sync_locks AS lock
+            WHERE lock.lock_key = work.cursor_key AND lock.expires_at > ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM sync_warning_outbox AS warning
+            WHERE warning.work_key = work.work_key AND warning.status = 'pending'
+          )
+        ORDER BY work.updated_at ASC
+        LIMIT ?
+      `).bind(...protectedWorkKeys, now, limit).all();
+      const candidates = readRows(result).map((row) => requireText(row.work_key, 'work_key'));
+      let deletedUnits = 0;
+      for (const workKey of candidates) {
+        const deleteResult = await this.db.prepare(`
+          DELETE FROM sync_work_units
+          WHERE work_key = ?
+            AND EXISTS (
+              SELECT 1
+              FROM sync_work_runs AS work
+              INNER JOIN sync_generation_fences AS fence
+                ON fence.cursor_key = work.cursor_key
+               AND fence.generation > work.generation
+              WHERE work.work_key = sync_work_units.work_key
+                AND work.lifecycle_status IN ('terminal', 'superseded')
+                ${protectedFilter}
+                AND NOT EXISTS (
+                  SELECT 1 FROM sync_locks AS lock
+                  WHERE lock.lock_key = work.cursor_key AND lock.expires_at > ?
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM sync_warning_outbox AS warning
+                  WHERE warning.work_key = work.work_key AND warning.status = 'pending'
+                )
+            )
+        `).bind(workKey, ...protectedWorkKeys, now).run();
+        deletedUnits += readChanges(deleteResult);
+      }
+      return Object.freeze({ candidates: candidates.length, deletedUnits });
+    } catch (cause) {
+      throw d1Error(
+        'Failed to clean superseded resumable sync work units',
+        'D1_SYNC_WORK_SUPERSEDED_UNIT_CLEANUP_FAILED',
+        cause,
+      );
+    }
+  }
+
   async #recordSupersededWork(work, now) {
     await this.db.prepare(`
       INSERT INTO sync_work_runs (
@@ -765,6 +839,16 @@ function boundedPositiveInteger(value, fieldName, maximum) {
     throw new TypeError(`D1ResumableWorkStore ${fieldName} must be from 1 to ${maximum}`);
   }
   return number;
+}
+function requireUniqueTextList(value, fieldName, maximum) {
+  if (!Array.isArray(value) || value.length > maximum) {
+    throw new TypeError(`D1ResumableWorkStore ${fieldName} must contain at most ${maximum} entries`);
+  }
+  const items = value.map((item) => requireText(item, fieldName));
+  if (new Set(items).size !== items.length) {
+    throw new TypeError(`D1ResumableWorkStore ${fieldName} must not contain duplicates`);
+  }
+  return items;
 }
 function d1Error(message, code, cause) {
   return transientError(message, {

@@ -273,6 +273,37 @@ test('terminal lifecycle is idempotent and TTL cleanup excludes active or locked
   assert.doesNotMatch(cleanupSelection.sql, /lifecycle_status = 'active'/u);
 });
 
+test('pre-attempt capacity cleanup deletes only superseded staging units and preserves audit state', async () => {
+  const db = createFakeD1({
+    allRows: [[
+      { work_key: 'old-terminal' },
+      { work_key: 'old-superseded' },
+    ]],
+    runChanges: [3, 2],
+  });
+  const store = new D1ResumableWorkStore({ db, now: () => 10_000 });
+
+  const result = await store.cleanupSupersededWorkUnits({
+    limit: 25,
+    protectedWorkKeys: ['tiktok:protected-forensic-work'],
+  });
+
+  assert.deepEqual(result, { candidates: 2, deletedUnits: 5 });
+  const selection = db.prepared[0];
+  assert.match(selection.sql, /sync_generation_fences/u);
+  assert.match(selection.sql, /fence\.generation > work\.generation/u);
+  assert.match(selection.sql, /lifecycle_status IN \('terminal', 'superseded'\)/u);
+  assert.match(selection.sql, /sync_locks/u);
+  assert.match(selection.sql, /sync_warning_outbox/u);
+  assert.match(selection.sql, /work_key NOT IN \(\?\)/u);
+  assert.deepEqual(selection.bindings, ['tiktok:protected-forensic-work', 10_000, 25]);
+  const deletions = db.prepared.slice(1);
+  assert.equal(deletions.length, 2);
+  assert.equal(deletions.every((statement) => /DELETE FROM sync_work_units/u.test(statement.sql)), true);
+  assert.equal(db.prepared.some((statement) => /DELETE FROM sync_work_runs/u.test(statement.sql)), false);
+  assert.equal(db.prepared.some((statement) => /DELETE FROM sync_work_phases/u.test(statement.sql)), false);
+});
+
 test('DLQ redrive starts a new generation and never resumes terminal staging implicitly', async () => {
   const store = new D1ResumableWorkStore({
     db: createFakeD1({

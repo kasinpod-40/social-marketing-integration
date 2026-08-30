@@ -87,6 +87,10 @@ async function processMainQueueBatch(batch, env, dependencies) {
     let operation = null;
     let mainQueueAttempts = readAttempts(message);
     try {
+      await cleanupQueueCapacityBeforeAttempts({
+        env,
+        createWorkStore: dependencies.createQueueCapacityWorkStore,
+      });
       job = normalizeQueueJobMessage(message);
       operation = resolveQueueOperation({ job, message });
       if (operation.stable && queueOperationStore) {
@@ -177,6 +181,36 @@ async function processMainQueueBatch(batch, env, dependencies) {
       message.ack();
     }
   }
+}
+
+export async function cleanupQueueCapacityBeforeAttempts(input = {}) {
+  const db = input.env?.MKT_STATE_DB;
+  if (typeof db?.prepare !== 'function' || typeof db?.batch !== 'function') {
+    return Object.freeze({ candidates: 0, deletedUnits: 0, skipped: true });
+  }
+  const workStore = typeof input.createWorkStore === 'function'
+    ? input.createWorkStore({ db })
+    : new D1ResumableWorkStore({ db });
+  return workStore.cleanupSupersededWorkUnits({
+    limit: 25,
+    protectedWorkKeys: readProtectedCleanupWorkKeys(
+      input.env?.MKT_RESUMABLE_WORK_CLEANUP_PROTECTED_KEYS,
+    ),
+  });
+}
+
+function readProtectedCleanupWorkKeys(value) {
+  if (value === undefined || value === null || value === '') return [];
+  const items = String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (items.length > 25 || new Set(items).size !== items.length) {
+    throw permanentError('Protected resumable Work cleanup keys are invalid', {
+      code: 'MKT_RUNTIME_CONFIG_INVALID',
+    });
+  }
+  return items;
 }
 
 async function processDeadLetterBatch(batch, env, storeFactory) {
