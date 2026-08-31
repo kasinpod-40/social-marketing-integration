@@ -118,6 +118,14 @@ async function processMastersUnit(context, state) {
 
 async function processConversationUnit(context, state) {
   const next = { ...state };
+  if (next.conversationDiscoveryStrategy
+      === CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
+      && next.conversationDiscoveryComplete
+      && !next.conversationStateFilterApplied) {
+    await refreshRecentlyUpdatedConversationCandidates(context, next);
+    next.nextSequence += 1;
+    return Object.freeze(next);
+  }
   let pagesFetched = 0;
   let rowsProcessed = 0;
   while (pagesFetched < context.limits.conversationPagesPerInvocation
@@ -232,9 +240,7 @@ async function processConversationUnit(context, state) {
 }
 
 async function discoverRecentlyUpdatedConversations(context, next) {
-  const updatedWithinSeconds = Math.ceil(
-    (Math.max(context.now(), context.requestedAt) - context.window.startAt) / 1_000,
-  ) + UPDATED_WITHIN_CLOCK_SKEW_SECONDS;
+  const updatedWithinSeconds = calculateUpdatedWithinSeconds(context);
   await context.assertCurrent();
   const page = await context.client.listConversationsPage({
     page: 1,
@@ -265,16 +271,91 @@ async function discoverRecentlyUpdatedConversations(context, next) {
   const boundaryRows = uniqueRows.filter(
     (row) => isConversationAtOrBeforeChatwootBoundary(row, context.window),
   );
+  const candidateRows = boundaryRows.filter(
+    (row) => isConversationInChatwootWindow(row, context.window),
+  );
+  const pendingRows = await filterConversationRowsByStoredRevision(context, candidateRows);
   next.conversationSeenIds = [...seen];
-  next.conversationPendingIds = boundaryRows
-    .filter((row) => isConversationInChatwootWindow(row, context.window))
+  next.conversationPendingIds = pendingRows
     .map((row) => requirePositiveId(row?.id, 'conversation.id'));
+  next.conversationsSkippedUnchanged += candidateRows.length - pendingRows.length;
+  next.conversationStateFilterApplied = true;
   next.conversationNewIdsInPass = boundaryRows.length;
   next.conversationRowsScanned += uniqueRows.length;
   next.conversationPagesProcessed += 1;
   next.conversationPage = 2;
   next.conversationDiscoveryComplete = true;
   next.conversationUpdatedWithinSeconds = updatedWithinSeconds;
+}
+
+async function refreshRecentlyUpdatedConversationCandidates(context, next) {
+  const updatedWithinSeconds = calculateUpdatedWithinSeconds(context);
+  await context.assertCurrent();
+  const page = await context.client.listConversationsPage({
+    page: 1,
+    status: 'all',
+    assigneeType: 'all',
+    updatedWithinSeconds,
+  });
+  if (page.hasMore !== false) {
+    throw permanentError('Chatwoot updated-within refresh returned a paginated result', {
+      code: 'CHATWOOT_PAGE_CONTRACT_INVALID',
+      details: { operation: 'refresh_recently_updated_conversations' },
+    });
+  }
+  const rowsById = new Map();
+  for (const row of page.rows) {
+    const id = requirePositiveId(row?.id, 'conversation.id');
+    if (isConversationAtOrBeforeChatwootBoundary(row, context.window)
+        && isConversationInChatwootWindow(row, context.window)) {
+      rowsById.set(id, row);
+    }
+  }
+  const pendingRows = next.conversationPendingIds
+    .map((id) => rowsById.get(id) ?? null)
+    .filter(Boolean);
+  const filteredRows = await filterConversationRowsByStoredRevision(context, pendingRows);
+  const retained = new Set(
+    filteredRows.map((row) => requirePositiveId(row?.id, 'conversation.id')),
+  );
+  const previousCount = next.conversationPendingIds.length;
+  next.conversationPendingIds = next.conversationPendingIds.filter((id) => {
+    return !rowsById.has(id) || retained.has(id);
+  });
+  next.conversationsSkippedUnchanged += previousCount - next.conversationPendingIds.length;
+  next.conversationStateFilterApplied = true;
+  next.conversationUpdatedWithinSeconds = updatedWithinSeconds;
+}
+
+async function filterConversationRowsByStoredRevision(context, rows) {
+  if (rows.length === 0) return Object.freeze([]);
+  const externalIds = rows.map((row) => requirePositiveId(row?.id, 'conversation.id'));
+  const previousStates = [];
+  for (let index = 0; index < externalIds.length; index += 100) {
+    await context.assertCurrent();
+    previousStates.push(...await context.chatwootStore.readConversationStates({
+      accountKey: context.accountKey,
+      externalIds: externalIds.slice(index, index + 100),
+    }));
+  }
+  const previousById = new Map(
+    previousStates.map((row) => [String(row.externalConversationId), row]),
+  );
+  return Object.freeze(rows.filter((row) => {
+    const id = requirePositiveId(row?.id, 'conversation.id');
+    const previous = previousById.get(String(id));
+    const sourceUpdatedAt = timestamp(row?.updated_at ?? row?.last_activity_at);
+    return !previous
+      || sourceUpdatedAt === null
+      || previous.sourceUpdatedAt === null
+      || previous.sourceUpdatedAt < sourceUpdatedAt;
+  }));
+}
+
+function calculateUpdatedWithinSeconds(context) {
+  return Math.ceil(
+    (Math.max(context.now(), context.requestedAt) - context.window.startAt) / 1_000,
+  ) + UPDATED_WITHIN_CLOCK_SKEW_SECONDS;
 }
 
 async function processReportingUnit(context, state) {
@@ -828,6 +909,8 @@ function reconciliation(state) {
     conversationDiscoveryStrategy: state.conversationDiscoveryStrategy,
     conversationDiscoveryComplete: state.conversationDiscoveryComplete,
     conversationUpdatedWithinSeconds: state.conversationUpdatedWithinSeconds,
+    conversationStateFilterApplied: state.conversationStateFilterApplied,
+    conversationsSkippedUnchanged: state.conversationsSkippedUnchanged,
     conversationPagesProcessed: state.conversationPagesProcessed,
     conversationRowsScanned: state.conversationRowsScanned,
     conversationsSelected: state.conversationsSelected,

@@ -189,6 +189,22 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   and `git diff --check` PASS. Reviewed PR/merge, Customer deploy and first scheduled Daily D1/Lark proof remain
   required.
 
+### Implementation result — Chatwoot persisted-revision filter and bounded parallel hydration
+
+- Daily discovery now compares each candidate's provider `updated_at` revision with the existing D1
+  Conversation state before detail/message/event hydration. Equal or older revisions are skipped; missing or
+  strictly newer identities continue through the unchanged stable-key upsert path;
+- an already persisted Daily generation that completed discovery before this repair performs one bounded
+  `updated_within` refresh, removes only unchanged pending identities and retains candidates absent from the
+  refresh fail-safe. It resumes the same generation/checkpoint and does not delete historical D1 or Lark rows;
+- each execution envelope hydrates at most five Conversations concurrently while collecting results in original
+  identity order. Provider limits, total reporting-event bounds, deterministic normalization and D1-first
+  persistence remain unchanged;
+- focused Chatwoot regression PASS `28/28`; `npm run check` PASS; full `npm test` PASS `3,278` Node tests plus
+  `18` Workers-runtime tests; Report reliability PASS `106/106`; npm audit reports zero vulnerabilities; deploy
+  dry-run and `git diff --check` PASS. Reviewed merge/deploy and exact same-generation Production continuation
+  remain required for final D1/Lark completion proof.
+
 ### Implementation result — Meta K2 bounded post-source materialization
 
 - live Customer evidence proves the exact `20260827` K2 Work has completed all `194/194` provider source units

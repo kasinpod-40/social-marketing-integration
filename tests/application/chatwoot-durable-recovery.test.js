@@ -229,6 +229,76 @@ test('Daily Conversation discovery snapshots updated-within identities exactly o
   assert.equal(third.stage, 'reporting');
 });
 
+test('resumed Daily discovery prunes unchanged revisions before Provider hydration', async () => {
+  const rows = [91, 92].map((id) => ({
+    id,
+    account_id: 1,
+    inbox_id: 3,
+    status: 'open',
+    created_at: REQUESTED_AT - DAY_MS,
+    updated_at: REQUESTED_AT - DAY_MS,
+    last_activity_at: REQUESTED_AT - DAY_MS,
+  }));
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'conversations',
+    mastersComplete: true,
+    nextSequence: 2,
+    conversationPage: 2,
+    conversationSeenIds: [91, 92],
+    conversationPendingIds: [91, 92],
+    conversationDiscoveryComplete: true,
+    conversationUpdatedWithinSeconds: 259_500,
+    conversationPagesProcessed: 1,
+    conversationRowsScanned: 2,
+  };
+  let detailReads = 0;
+  const store = noOpStore();
+  store.readConversationStates = async () => [
+    { externalConversationId: '91', sourceUpdatedAt: REQUESTED_AT - DAY_MS },
+    { externalConversationId: '92', sourceUpdatedAt: REQUESTED_AT - (2 * DAY_MS) },
+  ];
+  const input = runtimeInput({
+    continuationSequence: 2,
+    now: () => REQUESTED_AT + 60_000,
+    client: requiredClient({
+      listConversationsPage: async () => ({
+        page: 1, rows, totalCount: 2, hasMore: false,
+      }),
+      getConversation: async (id) => {
+        detailReads += 1;
+        return rows.find((row) => row.id === id);
+      },
+    }),
+    chatwootStore: store,
+    coverageStore: {
+      saveCoverageRun: async (row) => row,
+      saveCoverageEntities: async (values) => values,
+    },
+    workStore: {
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (value) => {
+        durableState = value.state;
+        return { state: value.state };
+      },
+    },
+  });
+
+  const filtered = await syncChatwootDurableRuntime(input);
+  assert.equal(filtered.nextSequence, 3);
+  assert.equal(detailReads, 0);
+  assert.deepEqual(durableState.conversationPendingIds, [92]);
+  assert.equal(durableState.conversationStateFilterApplied, true);
+  assert.equal(durableState.conversationsSkippedUnchanged, 1);
+
+  await syncChatwootDurableRuntime({ ...input, continuationSequence: 3 });
+  assert.equal(detailReads, 1);
+  assert.deepEqual(durableState.conversationPendingIds, []);
+});
+
 test('legacy page fingerprint resume migrates to stable identity discovery', async () => {
   const initial = createInitialChatwootDurableState({
     mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
