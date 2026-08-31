@@ -6,8 +6,9 @@
   strictly newer identities for the existing idempotent D1/Lark write path;
 - let an in-flight Daily generation refresh and prune its persisted pending identities without changing its
   generation, checkpoint or historical Business data;
-- hydrate up to five retained Conversations concurrently per bounded execution envelope while preserving
-  deterministic result ordering and existing provider/reporting limits.
+- hydrate retained Conversations serially inside each bounded execution envelope after live Customer evidence
+  showed the provider's message/reporting endpoints become unstable under parallel reads; deterministic ordering
+  and existing provider/reporting limits remain unchanged.
 
 ## 2026-08-28 — Meta K2 bounded post-source materialization
 
