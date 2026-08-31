@@ -25,6 +25,7 @@ const DEFAULT_MAX_REPORTING_EVENTS = 10_000;
 const DEFAULT_MAX_MESSAGE_PAGES_PER_CONVERSATION = 50;
 const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 1_000;
 const STORE_READ_BATCH_SIZE = 500;
+const CHATWOOT_CONVERSATION_HYDRATION_CONCURRENCY = 1;
 
 const CHATWOOT_STORE_METHODS = Object.freeze([
   'upsertAccountState', 'upsertInboxState', 'upsertContactState', 'upsertAgentState',
@@ -127,7 +128,7 @@ export async function syncChatwootAnalytics(input = {}) {
   let unresolvedLabelReferences = 0;
   const conversationBatches = await mapConcurrentOrdered(
     sourceConversations,
-    5,
+    CHATWOOT_CONVERSATION_HYDRATION_CONCURRENCY,
     async (sourceConversation) => {
     await assertLockActive();
     const externalConversationId = requirePositiveId(sourceConversation.id, 'conversation.id');
