@@ -16,7 +16,10 @@ import {
   normalizeChatwootReportingEvent,
   normalizeChatwootTeam,
 } from '../../../connectors/src/chatwoot/chatwoot-analytics-normalizers.js';
-import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import {
+  isRetryableError,
+  permanentError,
+} from '../../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_INCREMENTAL_OVERLAP_HOURS = 48;
 const DEFAULT_MAX_CONVERSATIONS = 5_000;
@@ -125,65 +128,85 @@ export async function syncChatwootAnalytics(input = {}) {
   const messages = [];
   const reportingEvents = [];
   const conversations = [];
+  const deferredConversationIds = [];
+  let firstDeferredError = null;
   let unresolvedLabelReferences = 0;
   const conversationBatches = await mapConcurrentOrdered(
     sourceConversations,
     CHATWOOT_CONVERSATION_HYDRATION_CONCURRENCY,
     async (sourceConversation) => {
-    await assertLockActive();
-    const externalConversationId = requirePositiveId(sourceConversation.id, 'conversation.id');
-    const [sourceMessages, sourceConversationEvents] = await Promise.all([
-      collectConversationMessages({
-        client,
-        externalConversationId,
-        maxPages: context.maxMessagePagesPerConversation,
-        maxRows: context.maxMessagesPerConversation,
-      }),
-      client.listConversationReportingEvents(externalConversationId),
-    ]);
-    const normalizedMessages = await mapAsync(sourceMessages, (row) => normalizeChatwootMessage(row, {
-      ...normalizationContext,
-      externalConversationId,
-      externalInboxId: sourceConversation.inbox_id,
-    }));
-    const normalizedEvents = await mapAsync(
-      sourceConversationEvents,
-      (row) => normalizeChatwootReportingEvent(row, normalizationContext),
-    );
-    const labelTitles = await readConversationLabelTitles(client, sourceConversation, externalConversationId);
-    const labelIds = [];
-    let unresolved = 0;
-    for (const title of labelTitles) {
-      const titleHash = await hashChatwootLabelTitle(title);
-      const id = labelIdsByTitleHash.get(titleHash);
-      if (!id) {
-        // Deleted labels can remain on historical Conversations without a stable external label ID.
-        unresolved += 1;
-        continue;
+      const externalConversationId = requirePositiveId(sourceConversation.id, 'conversation.id');
+      try {
+        await assertLockActive();
+        const [sourceMessages, sourceConversationEvents] = await Promise.all([
+          collectConversationMessages({
+            client,
+            externalConversationId,
+            maxPages: context.maxMessagePagesPerConversation,
+            maxRows: context.maxMessagesPerConversation,
+          }),
+          client.listConversationReportingEvents(externalConversationId),
+        ]);
+        const normalizedMessages = await mapAsync(sourceMessages, (row) => normalizeChatwootMessage(row, {
+          ...normalizationContext,
+          externalConversationId,
+          externalInboxId: sourceConversation.inbox_id,
+        }));
+        const normalizedEvents = await mapAsync(
+          sourceConversationEvents,
+          (row) => normalizeChatwootReportingEvent(row, normalizationContext),
+        );
+        const labelTitles = await readConversationLabelTitles(
+          client,
+          sourceConversation,
+          externalConversationId,
+        );
+        const labelIds = [];
+        let unresolved = 0;
+        for (const title of labelTitles) {
+          const titleHash = await hashChatwootLabelTitle(title);
+          const id = labelIdsByTitleHash.get(titleHash);
+          if (!id) {
+            // Deleted labels can remain on historical Conversations without a stable external label ID.
+            unresolved += 1;
+            continue;
+          }
+          labelIds.push(id);
+        }
+        const previous = previousById.get(externalConversationId) ?? null;
+        const conversation = await normalizeChatwootConversation(sourceConversation, {
+          ...normalizationContext,
+          messages: normalizedMessages,
+          reportingEvents: normalizedEvents,
+          labelIds,
+          previousStatus: previous?.status ?? null,
+          previousSourceUpdatedAt: previous?.sourceUpdatedAt ?? null,
+        });
+        return Object.freeze({
+          conversation,
+          messages: normalizedMessages,
+          reportingEvents: normalizedEvents,
+          unresolvedLabelReferences: unresolved,
+        });
+      } catch (error) {
+        if (!isRetryableError(error)) throw error;
+        return Object.freeze({ externalConversationId, deferredError: error });
       }
-      labelIds.push(id);
-    }
-    const previous = previousById.get(externalConversationId) ?? null;
-    const conversation = await normalizeChatwootConversation(sourceConversation, {
-      ...normalizationContext,
-      messages: normalizedMessages,
-      reportingEvents: normalizedEvents,
-      labelIds,
-      previousStatus: previous?.status ?? null,
-      previousSourceUpdatedAt: previous?.sourceUpdatedAt ?? null,
-    });
-    return Object.freeze({
-      conversation,
-      messages: normalizedMessages,
-      reportingEvents: normalizedEvents,
-      unresolvedLabelReferences: unresolved,
-    });
-  });
+    },
+  );
   for (const batch of conversationBatches) {
+    if (batch.deferredError) {
+      deferredConversationIds.push(batch.externalConversationId);
+      firstDeferredError ??= batch.deferredError;
+      continue;
+    }
     conversations.push(batch.conversation);
     messages.push(...batch.messages);
     reportingEvents.push(...batch.reportingEvents);
     unresolvedLabelReferences += batch.unresolvedLabelReferences;
+  }
+  if (sourceConversations.length > 0 && conversations.length === 0 && firstDeferredError) {
+    throw firstDeferredError;
   }
   if (reportingEvents.length > context.maxReportingEvents) {
     throw permanentError('Chatwoot reporting events exceeded configured row limit', {
@@ -276,7 +299,8 @@ export async function syncChatwootAnalytics(input = {}) {
       conversationPages: conversationCollection.pagesProcessed,
       contactPages: contactCollection.pagesProcessed,
       conversationsScanned: conversationCollection.rows.length,
-      conversationsSelected: sourceConversations.length,
+      conversationsSelected: conversations.length,
+      deferredConversationIds: Object.freeze(deferredConversationIds),
       contactsSelected: sourceContacts.length,
       messagesSelected: messages.length,
       reportingEventsSelected: reportingEvents.length,

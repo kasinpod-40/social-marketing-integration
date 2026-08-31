@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { syncChatwootAnalytics } from '../../packages/application/src/use-cases/sync-chatwoot-analytics.js';
+import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
 
 const OBSERVED_AT = Date.parse('2026-07-27T12:00:00Z');
 
@@ -85,6 +86,62 @@ test('Chatwoot sync backfills complete message history with backward before pagi
   assert.equal(result.source.messagesSelected, 45);
   assert.equal(captured[0].message_count, 45);
   assert.equal(captured[0].incoming_message_count, 45);
+});
+
+test('Chatwoot sync defers one retryable Conversation while committing the healthy peers', async () => {
+  const captured = [];
+  const client = clientWithConversations([conversation(71), conversation(72)], {
+    async listMessagesPage(input) {
+      if (String(input.conversationId) === '71') {
+        throw transientError('provider timeout', { code: 'CHATWOOT_TRANSIENT_API_ERROR' });
+      }
+      return { rows: [], hasMore: false, nextBefore: null };
+    },
+    async listConversationReportingEvents() { return []; },
+  });
+  const result = await syncChatwootAnalytics({
+    ...baseInput(),
+    connectorEnabled: true,
+    d1WriteEnabled: true,
+    larkWriteEnabled: false,
+    reportWriteEnabled: false,
+    checkpointWriteEnabled: true,
+    fullSnapshot: true,
+    client,
+    chatwootStore: makeStore({ capturedConversations: captured }),
+    coverageStore: coverageStore(),
+    incrementalStateStore: checkpointStore([]),
+  });
+
+  assert.equal(result.source.conversationsSelected, 1);
+  assert.deepEqual(result.source.deferredConversationIds, ['71']);
+  assert.deepEqual(captured.map((row) => row.external_conversation_id), ['72']);
+});
+
+test('Chatwoot sync rethrows when every selected Conversation is retryable', async () => {
+  const client = clientWithConversations([conversation(71)], {
+    async listMessagesPage() {
+      throw transientError('provider timeout', { code: 'CHATWOOT_TRANSIENT_API_ERROR' });
+    },
+    async listConversationReportingEvents() { return []; },
+  });
+
+  await assert.rejects(
+    syncChatwootAnalytics({
+      ...baseInput(),
+      connectorEnabled: true,
+      d1WriteEnabled: true,
+      larkWriteEnabled: false,
+      reportWriteEnabled: false,
+      checkpointWriteEnabled: true,
+      fullSnapshot: true,
+      client,
+      chatwootStore: makeStore({}),
+      coverageStore: coverageStore(),
+      incrementalStateStore: checkpointStore([]),
+    }),
+    (error) => error?.code === 'CHATWOOT_TRANSIENT_API_ERROR' && error.retryable === true,
+  );
 });
 
 test('Chatwoot sync omits an orphan label reference without fabricating a label identity', async () => {

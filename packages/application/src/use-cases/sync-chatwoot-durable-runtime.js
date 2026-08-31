@@ -230,9 +230,18 @@ async function processConversationUnit(context, state) {
       next.conversationsSelected += result.source.conversationsSelected;
       next.messagesSelected += result.source.messagesSelected;
       next.conversationReportingEventsSelected += result.source.reportingEventsSelected;
-      next.conversationRowOffset += rows.length;
+      next.conversationRowOffset += result.source.conversationsSelected;
+      const deferred = new Set(
+        (result.source.deferredConversationIds ?? []).map((id) => String(id)),
+      );
+      const remaining = next.conversationPendingIds.slice(ids.length);
+      next.conversationPendingIds = [
+        ...remaining,
+        ...ids.filter((id) => deferred.has(String(id))),
+      ];
+    } else {
+      next.conversationPendingIds = next.conversationPendingIds.slice(ids.length);
     }
-    next.conversationPendingIds = next.conversationPendingIds.slice(ids.length);
     rowsProcessed += ids.length;
   }
   next.nextSequence += 1;
