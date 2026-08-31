@@ -8,6 +8,7 @@ import {
   resolveChatwootRuntimeWindow,
 } from '../../packages/application/src/use-cases/chatwoot-runtime-contract.js';
 import { syncChatwootDurableRuntime } from '../../packages/application/src/use-cases/sync-chatwoot-durable-runtime.js';
+import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
 
 const REQUESTED_AT = Date.parse('2026-07-31T01:00:00Z');
 const DAY_MS = 86_400_000;
@@ -297,6 +298,73 @@ test('resumed Daily discovery prunes unchanged revisions before Provider hydrati
   await syncChatwootDurableRuntime({ ...input, continuationSequence: 3 });
   assert.equal(detailReads, 1);
   assert.deepEqual(durableState.conversationPendingIds, []);
+});
+
+test('retryable Conversation hydration moves only the failed identity behind healthy pending work', async () => {
+  const rows = [91, 92].map((id) => ({
+    id,
+    account_id: 1,
+    inbox_id: 3,
+    status: 'open',
+    created_at: REQUESTED_AT - DAY_MS,
+    updated_at: REQUESTED_AT - DAY_MS,
+    last_activity_at: REQUESTED_AT - DAY_MS,
+    labels: [],
+  }));
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'conversations',
+    mastersComplete: true,
+    nextSequence: 2,
+    conversationSeenIds: [91, 92],
+    conversationPendingIds: [91, 92],
+    conversationDiscoveryComplete: true,
+    conversationUpdatedWithinSeconds: 259_500,
+    conversationStateFilterApplied: true,
+  };
+  const written = [];
+  const store = noOpStore();
+  store.upsertConversationState = async (row) => {
+    written.push(row.external_conversation_id);
+    return { outcome: 'written' };
+  };
+  const input = runtimeInput({
+    limits: {
+      ...runtimeInput().limits,
+      conversationRowsPerInvocation: 2,
+    },
+    client: requiredClient({
+      getConversation: async (id) => rows.find((row) => String(row.id) === String(id)),
+      listMessagesPage: async (request) => {
+        if (String(request.conversationId) === '91') {
+          throw transientError('provider timeout', { code: 'CHATWOOT_TRANSIENT_API_ERROR' });
+        }
+        return { rows: [], hasMore: false, nextBefore: null };
+      },
+    }),
+    chatwootStore: store,
+    coverageStore: {
+      saveCoverageRun: async (row) => row,
+      saveCoverageEntities: async (values) => values,
+    },
+    workStore: {
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (value) => {
+        durableState = value.state;
+        return { state: value.state };
+      },
+    },
+  });
+
+  const result = await syncChatwootDurableRuntime(input);
+
+  assert.equal(result.nextSequence, 3);
+  assert.deepEqual(written, ['92']);
+  assert.deepEqual(durableState.conversationPendingIds, [91]);
+  assert.equal(durableState.conversationsSelected, 1);
 });
 
 test('legacy page fingerprint resume migrates to stable identity discovery', async () => {
