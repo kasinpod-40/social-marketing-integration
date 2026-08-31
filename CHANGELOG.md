@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-31 — Chatwoot revision-aware Daily continuation
+
+- skip Chatwoot Daily candidates whose provider revision is already present in D1, while retaining missing and
+  strictly newer identities for the existing idempotent D1/Lark write path;
+- let an in-flight Daily generation refresh and prune its persisted pending identities without changing its
+  generation, checkpoint or historical Business data;
+- hydrate up to five retained Conversations concurrently per bounded execution envelope while preserving
+  deterministic result ordering and existing provider/reporting limits.
+
 ## 2026-08-28 — Meta K2 bounded post-source materialization
 
 - split the 194-unit retained K2 snapshot into a durable Workers Free-safe compaction phase instead of loading

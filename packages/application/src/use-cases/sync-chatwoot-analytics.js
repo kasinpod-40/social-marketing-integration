@@ -125,7 +125,10 @@ export async function syncChatwootAnalytics(input = {}) {
   const reportingEvents = [];
   const conversations = [];
   let unresolvedLabelReferences = 0;
-  for (const sourceConversation of sourceConversations) {
+  const conversationBatches = await mapConcurrentOrdered(
+    sourceConversations,
+    5,
+    async (sourceConversation) => {
     await assertLockActive();
     const externalConversationId = requirePositiveId(sourceConversation.id, 'conversation.id');
     const [sourceMessages, sourceConversationEvents] = await Promise.all([
@@ -137,12 +140,6 @@ export async function syncChatwootAnalytics(input = {}) {
       }),
       client.listConversationReportingEvents(externalConversationId),
     ]);
-    if (reportingEvents.length + sourceConversationEvents.length > context.maxReportingEvents) {
-      throw permanentError('Chatwoot reporting events exceeded configured row limit', {
-        code: 'CHATWOOT_REPORTING_EVENT_LIMIT',
-        details: { maxRows: context.maxReportingEvents },
-      });
-    }
     const normalizedMessages = await mapAsync(sourceMessages, (row) => normalizeChatwootMessage(row, {
       ...normalizationContext,
       externalConversationId,
@@ -152,30 +149,46 @@ export async function syncChatwootAnalytics(input = {}) {
       sourceConversationEvents,
       (row) => normalizeChatwootReportingEvent(row, normalizationContext),
     );
-    messages.push(...normalizedMessages);
-    reportingEvents.push(...normalizedEvents);
-
     const labelTitles = await readConversationLabelTitles(client, sourceConversation, externalConversationId);
     const labelIds = [];
+    let unresolved = 0;
     for (const title of labelTitles) {
       const titleHash = await hashChatwootLabelTitle(title);
       const id = labelIdsByTitleHash.get(titleHash);
       if (!id) {
         // Deleted labels can remain on historical Conversations without a stable external label ID.
-        unresolvedLabelReferences += 1;
+        unresolved += 1;
         continue;
       }
       labelIds.push(id);
     }
     const previous = previousById.get(externalConversationId) ?? null;
-    conversations.push(await normalizeChatwootConversation(sourceConversation, {
+    const conversation = await normalizeChatwootConversation(sourceConversation, {
       ...normalizationContext,
       messages: normalizedMessages,
       reportingEvents: normalizedEvents,
       labelIds,
       previousStatus: previous?.status ?? null,
       previousSourceUpdatedAt: previous?.sourceUpdatedAt ?? null,
-    }));
+    });
+    return Object.freeze({
+      conversation,
+      messages: normalizedMessages,
+      reportingEvents: normalizedEvents,
+      unresolvedLabelReferences: unresolved,
+    });
+  });
+  for (const batch of conversationBatches) {
+    conversations.push(batch.conversation);
+    messages.push(...batch.messages);
+    reportingEvents.push(...batch.reportingEvents);
+    unresolvedLabelReferences += batch.unresolvedLabelReferences;
+  }
+  if (reportingEvents.length > context.maxReportingEvents) {
+    throw permanentError('Chatwoot reporting events exceeded configured row limit', {
+      code: 'CHATWOOT_REPORTING_EVENT_LIMIT',
+      details: { maxRows: context.maxReportingEvents },
+    });
   }
 
   const writeSets = await prepareChatwootAnalyticsSync({
@@ -568,6 +581,25 @@ async function mapAsync(values, mapper) {
   const result = [];
   for (const value of values) result.push(await mapper(value));
   return Object.freeze(result);
+}
+
+async function mapConcurrentOrdered(values, concurrency, mapper) {
+  if (values.length === 0) return Object.freeze([]);
+  const output = new Array(values.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      output[index] = await mapper(values[index], index);
+    }
+  };
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return Object.freeze(output);
 }
 
 function requireMethods(value, methods, fieldName) {

@@ -134,6 +134,8 @@ export function createInitialChatwootDurableState(input = {}) {
     conversationDiscoveryStrategy,
     conversationDiscoveryComplete: false,
     conversationUpdatedWithinSeconds: null,
+    conversationStateFilterApplied: false,
+    conversationsSkippedUnchanged: 0,
     conversationLegacyDriftRecovered: false,
     conversationPagesProcessed: 0,
     conversationRowsScanned: 0,
@@ -239,6 +241,11 @@ export function assertChatwootDurableState(value, expected = {}) {
     conversationDiscoveryStrategy,
     conversationDiscoveryComplete,
     conversationUpdatedWithinSeconds,
+    conversationStateFilterApplied: value.conversationStateFilterApplied === true,
+    conversationsSkippedUnchanged: nonNegativeInteger(
+      value.conversationsSkippedUnchanged ?? 0,
+      'conversationsSkippedUnchanged',
+    ),
     conversationLegacyDriftRecovered: value.conversationLegacyDriftRecovered === true
       || legacyPartialPage,
     ...(legacyPartialPage ? {
