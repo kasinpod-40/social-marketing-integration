@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_META_K2_LOCAL_CPU_FINALIZER_REVIEW
+TASK_STATUS                              = CUSTOMER_META_K2_LOCAL_CPU_D1_RESPONSE_RETRY_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 579fb062
-CURRENT_BRANCH                           = codex/meta-k2-local-confirmed-d1
+BASE_MAIN_SHA                            = 2b2e480f
+CURRENT_BRANCH                           = codex/meta-k2-d1-ambiguous-response-retry
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -52,7 +52,7 @@ CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_META_K2_POST_SOURCE_MATERIALIZATION = V1_LIVE_COMPACTION_COMPLETE_V2_CODE_AND_FULL_GATES_PASS
-CUSTOMER_META_K2_LOCAL_CPU_FINALIZER     = D1_COMPLETE_WIRE_DIGEST_REPAIR_REVIEW_PENDING
+CUSTOMER_META_K2_LOCAL_CPU_FINALIZER     = WIRE_DIGEST_MERGED_D1_AMBIGUOUS_RESPONSE_RETRY_REVIEW
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
@@ -1207,4 +1207,9 @@ child identity after reviewed merge/deploy.
   narrowing the remaining pre-write rejection to `batchDigest` only;
 - local `structuredClone` preserved Date values while Fetch JSON transport converted them to ISO strings, so the
   Preview Worker correctly rejected the pre-transport digest. Projection rows are now canonicalized to their exact
-  JSON wire representation before both hashing and transport; the focused transport/digest regression passes.
+  JSON wire representation before both hashing and transport; PR #779 merged as `main@2b2e480f` and its focused
+  transport/digest regression passes;
+- the next exact run reached D1 after completing materialization and all `19,213` preflight rows, but Wrangler
+  exited successfully without a JSON result for the first bounded D1 command. The adapter now retries only this
+  ambiguous-response class up to three times; the deterministic stable-key upsert makes the replay logically
+  idempotent, while SQL, auth and every other classified failure remain non-retryable.

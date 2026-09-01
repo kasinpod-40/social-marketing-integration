@@ -537,7 +537,7 @@ class WranglerRemoteD1Binding {
 
   async batch(statements) {
     const sql = statements.map((statement) => statement.render()).join(';\n');
-    const results = await this.executeCommand(sql);
+    const results = await this.executeStableKeyCommand(sql);
     if (results.length === 0 || results.some((result) => result.success !== true)) {
       throw finalizerError('Wrangler D1 command batch reported failure', 'META_K2_LOCAL_D1_BATCH_FAILED');
     }
@@ -545,6 +545,25 @@ class WranglerRemoteD1Binding {
     // final D1/Lark parity. Replaying every statement is intentional: never infer a resume point
     // from row counts, and never risk skipping a key after an ambiguous remote response.
     return statements.map(() => ({ success: true, results: [], meta: { changes: 1 } }));
+  }
+
+  async executeStableKeyCommand(sql) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await this.executeCommand(sql);
+      } catch (error) {
+        lastError = error;
+        // A successful Wrangler process can rarely exit before emitting its JSON result. The
+        // commit outcome is then ambiguous, but replaying this deterministic stable-key upsert
+        // batch is logically idempotent. Never retry SQL, auth or other classified failures.
+        if (error?.code !== 'META_K2_LOCAL_D1_JSON_INVALID' || attempt >= 3) throw error;
+        await new Promise((resolvePromise) => {
+          setTimeout(resolvePromise, 500 * (2 ** (attempt - 1)));
+        });
+      }
+    }
+    throw lastError;
   }
 
   async executeCommand(sql) {
