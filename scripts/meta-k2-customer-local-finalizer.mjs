@@ -17,6 +17,7 @@ import { createForbiddenMetaPaidDirectAdapter } from './lib/meta-paid-direct-lar
 import { readWranglerScalarVars } from './lib/wrangler-jsonc-vars.js';
 
 const CONFIRMATION = 'FINALIZE_EXACT_CUSTOMER_META_K2_LOCALLY';
+const D1_REUSE_CONFIRMATION = 'REUSE_CONFIRMED_EXACT_CUSTOMER_META_K2_D1';
 const ACCOUNT_ID = '154f6bf72740d29d7453cec7fb800d32';
 const DATABASE_ID = 'f03ab092-a1aa-4478-8ba2-c20d7b54851f';
 const CONFIG_PATH = resolve(process.env.MKT_CUSTOMER_WRANGLER_CONFIG ?? '.customer-youtube-uat.wrangler.jsonc');
@@ -33,9 +34,9 @@ const LIMITS = Object.freeze({
   sourceMaxRows: 50_000,
   sourceMaxUnitBytes: 1_048_576,
   postSourceUnitsPerInvocation: 25,
-  // Preflight is CPU-bound local work here. Keep it at the application contract maximum so
-  // the exact write set is assembled fewer times without increasing any remote write batch.
-  preflightRowsPerInvocation: 1_000,
+  // Preflight must use the same row boundary as Lark execution so the frozen projection
+  // manifest contains exactly the batches that will be written and no planning-only batches.
+  preflightRowsPerInvocation: 25,
   d1RowsPerInvocation: 1_000,
   larkRowsPerInvocation: 25,
   larkTablesPerInvocation: 1,
@@ -85,6 +86,10 @@ async function main() {
     projectionUrl: process.env.MKT_META_K2_LARK_PROJECTION_URL,
     tokenFile: process.env.MKT_META_K2_LARK_PROJECTION_TOKEN_FILE,
   });
+  const historyStore = resolveHistoryStore({
+    infrastructure,
+    confirmation: process.env.CONFIRM_META_K2_CUSTOMER_D1_ALREADY_COMPLETE,
+  });
   const input = {
     connectorKey: 'meta_ads',
     jobType: JOB_TYPES.META_ADS_SYNC,
@@ -108,7 +113,7 @@ async function main() {
     d1WriteEnabled: true,
     larkWriteEnabled: true,
     resumableWorkStore: store,
-    historyStore: infrastructure.getMarketingHistoryStore(),
+    historyStore,
     organicHistoryGateway: null,
     // Lark schema/diff/write runs inside the isolated Customer Preview Worker, where the
     // existing Customer LARK_APP_SECRET is bound. Local execution never reads that Secret.
@@ -148,8 +153,35 @@ async function main() {
     providerReads: 0,
     customerLarkSecretReadLocally: false,
     projection: projection.summary(),
+    reusedConfirmedD1: historyStore instanceof ConfirmedD1HistoryStore,
     replacementGeneration: false,
   }, null, 2));
+}
+
+function resolveHistoryStore(input) {
+  if (!input.confirmation) return input.infrastructure.getMarketingHistoryStore();
+  if (input.confirmation !== D1_REUSE_CONFIRMATION) {
+    throw finalizerError('Exact D1 reuse confirmation is invalid', 'META_K2_LOCAL_D1_REUSE_CONFIRMATION_INVALID');
+  }
+  return new ConfirmedD1HistoryStore();
+}
+
+class ConfirmedD1HistoryStore {
+  async writeMetaD1Operations(operations) {
+    // Two reviewed local executions already completed every deterministic stable-key D1 batch.
+    // Reconcile the exact same write-set locally without issuing a third remote D1 replay.
+    return operations.map(() => Object.freeze({ status: 'skipped' }));
+  }
+
+  async upsertOrganicAccountDailyFact() { throw this.#unexpected(); }
+  async upsertAdsEntityState() { throw this.#unexpected(); }
+  async upsertAdsDailyFact() { throw this.#unexpected(); }
+  async saveCoverageRun() { throw this.#unexpected(); }
+  async saveCoverageEntities() { throw this.#unexpected(); }
+
+  #unexpected() {
+    return finalizerError('Confirmed D1 reuse must use the bounded batch path', 'META_K2_LOCAL_D1_REUSE_PATH_INVALID');
+  }
 }
 
 async function createWorkerLarkProjection(input) {
