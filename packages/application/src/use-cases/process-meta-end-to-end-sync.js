@@ -1012,7 +1012,9 @@ function normalizeLimits(value) {
       source.larkTablesPerInvocation ?? 1,
       'larkTablesPerInvocation',
       1,
-      4,
+      // Meta Ads has six reviewed Lark contracts. The row cap remains the primary write bound;
+      // allowing all contracts lets a short tail continue across table boundaries deterministically.
+      6,
     ),
   });
 }
