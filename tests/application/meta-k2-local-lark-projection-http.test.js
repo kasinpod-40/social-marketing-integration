@@ -181,6 +181,38 @@ test('fails closed for unauthorized or out-of-scope table requests', async () =>
   assert.equal((await invalidTable.json()).code, 'META_K2_LOCAL_LARK_TABLE_INVALID');
 });
 
+test('returns only safe fingerprints when an authenticated batch digest mismatches', async () => {
+  const rows = [{ ads_account_key: 'meta_ads:a:account:1', account_name: 'K2' }];
+  const calculatedDigest = await createStableFingerprint({
+    schemaVersion: 'meta_k2_local_lark_projection_batch_v1',
+    operation: OPERATION,
+    tableKey: 'mktAdsAccounts',
+    keyField: 'ads_account_key',
+    batchSequence: 0,
+    rows,
+  });
+  const suppliedDigest = `${calculatedDigest[0] === '0' ? '1' : '0'}${calculatedDigest.slice(1)}`;
+  const handler = createMetaK2LocalLarkProjectionHttpHandler({
+    digest: async () => TOKEN_DIGEST,
+    createStore: () => ({}),
+  });
+  const response = await handler({
+    request: request({
+      mode: 'write', operation: OPERATION,
+      tableKey: 'mktAdsAccounts', keyField: 'ads_account_key', rows,
+      batchSequence: 0, expectedBatches: 1, expectedRows: 1,
+      manifestDigest: 'b'.repeat(64), batchDigest: suppliedDigest,
+    }),
+    env: env(),
+    url: new URL(`https://preview.example${META_K2_LOCAL_LARK_PROJECTION_PATH}`),
+  });
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.equal(body.code, 'META_K2_LOCAL_LARK_BATCH_DIGEST_MISMATCH');
+  assert.deepEqual(body.diagnostic, { calculatedDigest, suppliedDigest });
+  assert.equal(JSON.stringify(body).includes('account_name'), false);
+});
+
 function request(body, token = 'valid-token') {
   return new Request(`https://preview.example${META_K2_LOCAL_LARK_PROJECTION_PATH}`, {
     method: 'POST',

@@ -34,14 +34,12 @@ const LIMITS = Object.freeze({
   sourceMaxRows: 50_000,
   sourceMaxUnitBytes: 1_048_576,
   postSourceUnitsPerInvocation: 25,
-  // Preflight must use the same row boundary as Lark execution so the frozen projection
-  // manifest contains exactly the batches that will be written and no planning-only batches.
-  preflightRowsPerInvocation: 25,
+  // Local preflight can inspect a large bounded slice. The projection engine registers the
+  // exact 25-row Lark child plans so its frozen manifest never depends on preflight cadence.
+  preflightRowsPerInvocation: 1_000,
   d1RowsPerInvocation: 1_000,
   larkRowsPerInvocation: 25,
-  // Preflight spends its 25-row budget across contract boundaries. Let Lark use the same
-  // cross-table budget so both phases produce an identical frozen projection manifest.
-  larkTablesPerInvocation: TABLE_KEYS.length,
+  larkTablesPerInvocation: 1,
 });
 // Keep the local recovery finite while allowing every contract-bounded phase to exhaust its
 // maximum rows. The previous fixed limit of 100 stopped large K2 inventories during preflight
@@ -228,20 +226,49 @@ class WorkerLarkProjectionSyncEngine {
     // fingerprint differently after fetch serializes them for the Preview Worker.
     const rows = canonicalizeMetaK2ProjectionRows(input.rows ?? []);
     if (rows.length === 0) return Object.freeze({ tableKey, keyField: input.keyField, rows, empty: true });
+    const registered = [];
+    for (let start = 0; start < rows.length; start += LIMITS.larkRowsPerInvocation) {
+      registered.push(await this.#registerPlan({
+        tableKey,
+        keyField: input.keyField,
+        rows: rows.slice(start, start + LIMITS.larkRowsPerInvocation),
+      }));
+    }
+    if (registered.length === 1) return registered[0];
     const digest = await createStableFingerprint({
       schemaVersion: 'meta_k2_local_lark_projection_plan_v1',
       tableKey,
       keyField: input.keyField,
       rows,
     });
+    return Object.freeze({
+      tableKey,
+      keyField: input.keyField,
+      rows: Object.freeze(rows),
+      digest,
+      createRows: Object.freeze(rows),
+      updateRows: Object.freeze([]),
+      skipped: 0,
+      duplicateInputRows: 0,
+      planningOnly: true,
+    });
+  }
+
+  async #registerPlan(input) {
+    const digest = await createStableFingerprint({
+      schemaVersion: 'meta_k2_local_lark_projection_plan_v1',
+      tableKey: input.tableKey,
+      keyField: input.keyField,
+      rows: input.rows,
+    });
     let plan = this.planByDigest.get(digest);
     if (!plan) {
       plan = Object.freeze({
-        tableKey,
+        tableKey: input.tableKey,
         keyField: input.keyField,
-        rows: Object.freeze(rows),
+        rows: Object.freeze(input.rows),
         digest,
-        createRows: Object.freeze(rows),
+        createRows: Object.freeze(input.rows),
         updateRows: Object.freeze([]),
         skipped: 0,
         duplicateInputRows: 0,
@@ -364,6 +391,7 @@ class WorkerLarkProjectionSyncEngine {
         if (response.ok && payload?.ok === true) return payload;
         const error = finalizerError('Customer Preview projection rejected the request', payload?.code ?? 'META_K2_LOCAL_PROJECTION_HTTP_FAILED', {
           status: response.status,
+          diagnostic: payload?.diagnostic ?? null,
         });
         if (response.status < 500) throw error;
         lastError = error;
