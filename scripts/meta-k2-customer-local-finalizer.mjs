@@ -39,7 +39,9 @@ const LIMITS = Object.freeze({
   preflightRowsPerInvocation: 25,
   d1RowsPerInvocation: 1_000,
   larkRowsPerInvocation: 25,
-  larkTablesPerInvocation: 1,
+  // Preflight spends its 25-row budget across contract boundaries. Let Lark use the same
+  // cross-table budget so both phases produce an identical frozen projection manifest.
+  larkTablesPerInvocation: TABLE_KEYS.length,
 });
 // Keep the local recovery finite while allowing every contract-bounded phase to exhaust its
 // maximum rows. The previous fixed limit of 100 stopped large K2 inventories during preflight
