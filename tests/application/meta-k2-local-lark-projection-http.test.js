@@ -213,6 +213,25 @@ test('returns only safe fingerprints when an authenticated batch digest mismatch
   assert.equal(JSON.stringify(body).includes('account_name'), false);
 });
 
+test('identifies only the mismatched exact-target field without returning either identity', async () => {
+  const handler = createMetaK2LocalLarkProjectionHttpHandler({
+    digest: async () => TOKEN_DIGEST,
+  });
+  const response = await handler({
+    request: request({
+      mode: 'identity_probe_only',
+      operation: { ...OPERATION, operationId: `${OPERATION.operationId}-wrong` },
+    }),
+    env: env(),
+    url: new URL(`https://preview.example${META_K2_LOCAL_LARK_PROJECTION_PATH}`),
+  });
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.equal(body.code, 'META_K2_LOCAL_LARK_TARGET_MISMATCH');
+  assert.deepEqual(body.diagnostic, { fieldName: 'operationId' });
+  assert.equal(JSON.stringify(body).includes(OPERATION.operationId), false);
+});
+
 function request(body, token = 'valid-token') {
   return new Request(`https://preview.example${META_K2_LOCAL_LARK_PROJECTION_PATH}`, {
     method: 'POST',
