@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_META_K2_ALIGNED_MANIFEST_RESUME_REVIEW
+TASK_STATUS                              = CUSTOMER_META_K2_CROSS_TABLE_MANIFEST_REPAIR_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 2317432d
-CURRENT_BRANCH                           = codex/meta-k2-aligned-manifest-resume
+BASE_MAIN_SHA                            = 636693e0
+CURRENT_BRANCH                           = codex/meta-k2-cross-table-boundary
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -52,7 +52,7 @@ CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_META_K2_POST_SOURCE_MATERIALIZATION = V1_LIVE_COMPACTION_COMPLETE_V2_CODE_AND_FULL_GATES_PASS
-CUSTOMER_META_K2_LOCAL_CPU_FINALIZER     = D1_CONFIRMED_MANIFEST_ALIGNMENT_REVIEW
+CUSTOMER_META_K2_LOCAL_CPU_FINALIZER     = D1_CONFIRMED_CROSS_TABLE_MANIFEST_REPAIR_REVIEW
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
@@ -757,6 +757,20 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   intended period and exact customer group mapping is read back.
 
 ## Implementation result
+
+### 2026-09-01 — Meta K2 exact local cross-table manifest repair
+
+- PR #781 merged at `main@636693e0`; the exact local finalizer completed source materialization,
+  preflight `19,213/19,213`, and confirmed-D1 reconciliation without Provider reads or D1 replay;
+- the first Lark request was rejected before any Lark row was written and Preview URLs were restored disabled;
+- root cause is now exact: bounded preflight spends one 25-row budget across table boundaries, while Lark was
+  limited to one table per invocation, producing a different first execution plan after a short final table batch;
+- Lark execution now permits all six reviewed table contracts inside the same total 25-row budget, making its
+  cross-table boundary identical to preflight without increasing rows, concurrency, Queue use, or write scope;
+- focused tests `3/3`, `npm run check`, full tests (`3,284` Node / `18` Workers-runtime), Report reliability
+  `106/106`, zero-vulnerability audit, deploy dry-run, and `git diff --check` pass;
+- old Business data remains preserved; exact K2 Work/generation remains terminal and unlocked until the reviewed
+  Preview-only finalizer succeeds.
 
 ### 2026-08-25 — YouTube daily-only schedule and TikTok 06:55 diagnosis
 

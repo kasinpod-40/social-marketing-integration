@@ -26,6 +26,8 @@ test('Customer K2 local finalizer aligns projection manifest and explicitly gate
   assert.match(source, /Two reviewed local executions already completed every deterministic stable-key D1 batch/u);
   assert.match(source, /operations\.map\(\(\) => Object\.freeze\(\{ status: 'skipped' \}\)\)/u);
   assert.match(source, /Preflight must use the same row boundary as Lark execution/u);
+  assert.match(source, /larkTablesPerInvocation:\s*TABLE_KEYS\.length/u);
+  assert.match(source, /Preflight spends its 25-row budget across contract boundaries/u);
 });
 
 test('canonicalizes projection rows before both wire transport and digest', async () => {
