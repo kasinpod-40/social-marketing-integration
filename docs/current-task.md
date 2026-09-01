@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_META_K2_CROSS_TABLE_MANIFEST_REPAIR_REVIEW
+TASK_STATUS                              = CUSTOMER_META_K2_SIX_CONTRACT_BOUNDARY_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 636693e0
-CURRENT_BRANCH                           = codex/meta-k2-cross-table-boundary
+BASE_MAIN_SHA                            = 5f3b662e
+CURRENT_BRANCH                           = codex/meta-lark-six-contract-cap
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -767,6 +767,9 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   limited to one table per invocation, producing a different first execution plan after a short final table batch;
 - Lark execution now permits all six reviewed table contracts inside the same total 25-row budget, making its
   cross-table boundary identical to preflight without increasing rows, concurrency, Queue use, or write scope;
+- the first merged run then failed closed before all processing because the shared validator still capped this
+  setting at four; the validator now permits the exact six Meta contracts while Production's configured value
+  remains unchanged at one and the local finalizer retains the 25-row total cap;
 - focused tests `3/3`, `npm run check`, full tests (`3,284` Node / `18` Workers-runtime), Report reliability
   `106/106`, zero-vulnerability audit, deploy dry-run, and `git diff --check` pass;
 - old Business data remains preserved; exact K2 Work/generation remains terminal and unlocked until the reviewed
