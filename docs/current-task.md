@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_META_K2_SHARED_SIX_CONTRACT_GUARD_REVIEW
+TASK_STATUS                              = CUSTOMER_META_K2_WIRE_DIGEST_DIAGNOSTIC_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 8541bf9e
-CURRENT_BRANCH                           = codex/meta-lark-shared-contract-cap
+BASE_MAIN_SHA                            = 6c3bae21
+CURRENT_BRANCH                           = codex/meta-k2-wire-digest-diagnostic
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -772,6 +772,11 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   remains unchanged at one and the local finalizer retains the 25-row total cap;
 - a second generation-level validator independently retained the old cap and also failed closed before write;
   both entry and generation validation now consume one exported six-contract constant so this limit cannot drift;
+- after both guards were aligned, the first Lark request still failed before write with target mismatch, proving
+  manifest boundary was not the batch-digest cause; the speculative six-contract allowance is therefore reverted;
+- local preflight returns to `1,000` rows for speed while the projection engine registers exact per-table 25-row
+  child plans for the frozen manifest; authenticated digest mismatch now returns only calculated/supplied SHA-256
+  fingerprints (never row content) so the next run proves the exact wire difference instead of guessing.
 - focused tests `3/3`, `npm run check`, full tests (`3,284` Node / `18` Workers-runtime), Report reliability
   `106/106`, zero-vulnerability audit, deploy dry-run, and `git diff --check` pass;
 - old Business data remains preserved; exact K2 Work/generation remains terminal and unlocked until the reviewed

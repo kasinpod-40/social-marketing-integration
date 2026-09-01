@@ -61,7 +61,13 @@ export function createMetaK2LocalLarkProjectionHttpHandler(dependencies = {}) {
           batchSequence: batch.batchSequence,
           rows,
         });
-        requireExact(calculatedDigest, batch.batchDigest, 'batchDigest');
+        if (calculatedDigest !== batch.batchDigest) {
+          throw projectionError(
+            'batchDigest does not match the exact target',
+            'META_K2_LOCAL_LARK_BATCH_DIGEST_MISMATCH',
+            { calculatedDigest, suppliedDigest: batch.batchDigest },
+          );
+        }
 
         await store.assertExactTarget?.(target.operation);
         const existing = await store.findBatch?.({
@@ -165,10 +171,14 @@ export function createMetaK2LocalLarkProjectionHttpHandler(dependencies = {}) {
       const status = operational.code === 'META_K2_LOCAL_LARK_UNAUTHORIZED'
         ? 401
         : error?.retryable === true ? 503 : 400;
+      const diagnostic = operational.code === 'META_K2_LOCAL_LARK_BATCH_DIGEST_MISMATCH'
+        ? sanitizeOperationalValue(error?.details ?? {})
+        : undefined;
       return json({
         ok: false,
         error: status === 401 ? 'Unauthorized' : 'Meta K2 projection failed',
         code: operational.code ?? 'META_K2_LOCAL_LARK_PROJECTION_FAILED',
+        ...(diagnostic ? { diagnostic } : {}),
       }, { status, headers: noStoreHeaders() });
     }
   };
@@ -479,9 +489,10 @@ function integer(value, fieldName, minimum = 0) {
   return number;
 }
 
-function projectionError(message, code) {
+function projectionError(message, code, details = undefined) {
   const error = new Error(message);
   error.code = code;
   error.retryable = false;
+  error.details = details;
   return error;
 }

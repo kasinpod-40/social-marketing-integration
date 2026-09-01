@@ -5,13 +5,11 @@ import { createStableFingerprint } from '../../packages/shared/src/hash/stable-f
 import { canonicalizeMetaK2ProjectionRows } from '../../scripts/lib/meta-k2-local-lark-projection-wire.js';
 
 const FINALIZER = new URL('../../scripts/meta-k2-customer-local-finalizer.mjs', import.meta.url);
-const PROCESS_META = new URL('../../packages/application/src/use-cases/process-meta-end-to-end-sync.js', import.meta.url);
-const PROCESS_GENERATION = new URL('../../packages/application/src/use-cases/process-meta-end-to-end-generation.js', import.meta.url);
 
 test('Customer K2 local finalizer uses local preflight CPU and confirmed bounded D1 commands', async () => {
   const source = await readFile(FINALIZER, 'utf8');
 
-  assert.match(source, /preflightRowsPerInvocation:\s*25/u);
+  assert.match(source, /preflightRowsPerInvocation:\s*1_000/u);
   assert.match(source, /const results = await this\.executeStableKeyCommand\(sql\)/u);
   assert.match(source, /statements\.map\(\(statement\) => statement\.render\(\)\)/u);
   assert.doesNotMatch(source, /executeFile\(|'--file'/u);
@@ -22,20 +20,15 @@ test('Customer K2 local finalizer uses local preflight CPU and confirmed bounded
 
 test('Customer K2 local finalizer aligns projection manifest and explicitly gates confirmed D1 reuse', async () => {
   const source = await readFile(FINALIZER, 'utf8');
-  const processSource = await readFile(PROCESS_META, 'utf8');
-  const generationSource = await readFile(PROCESS_GENERATION, 'utf8');
 
   assert.match(source, /D1_REUSE_CONFIRMATION = 'REUSE_CONFIRMED_EXACT_CUSTOMER_META_K2_D1'/u);
   assert.match(source, /historyStore instanceof ConfirmedD1HistoryStore/u);
   assert.match(source, /Two reviewed local executions already completed every deterministic stable-key D1 batch/u);
   assert.match(source, /operations\.map\(\(\) => Object\.freeze\(\{ status: 'skipped' \}\)\)/u);
-  assert.match(source, /Preflight must use the same row boundary as Lark execution/u);
-  assert.match(source, /larkTablesPerInvocation:\s*TABLE_KEYS\.length/u);
-  assert.match(source, /Preflight spends its 25-row budget across contract boundaries/u);
-  assert.match(processSource, /allowing all contracts lets a short tail continue across table boundaries/u);
-  assert.match(processSource, /'larkTablesPerInvocation',[\s\S]*?MAX_META_LARK_TABLES_PER_INVOCATION/u);
-  assert.match(generationSource, /MAX_META_LARK_TABLES_PER_INVOCATION = 6/u);
-  assert.match(generationSource, /'maxLarkTablesPerInvocation',[\s\S]*?MAX_META_LARK_TABLES_PER_INVOCATION/u);
+  assert.match(source, /registers the[\s\S]*exact 25-row Lark child plans/u);
+  assert.match(source, /start \+= LIMITS\.larkRowsPerInvocation/u);
+  assert.match(source, /planningOnly: true/u);
+  assert.match(source, /larkTablesPerInvocation:\s*1/u);
 });
 
 test('canonicalizes projection rows before both wire transport and digest', async () => {
