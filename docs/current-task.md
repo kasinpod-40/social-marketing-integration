@@ -52,7 +52,7 @@ CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_META_K2_POST_SOURCE_MATERIALIZATION = V1_LIVE_COMPACTION_COMPLETE_V2_CODE_AND_FULL_GATES_PASS
-CUSTOMER_META_K2_LOCAL_CPU_FINALIZER     = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
+CUSTOMER_META_K2_LOCAL_CPU_FINALIZER     = D1_COMPLETE_WIRE_DIGEST_REPAIR_REVIEW_PENDING
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
@@ -1202,3 +1202,9 @@ child identity after reviewed merge/deploy.
   `npm run test:report-reliability`, `npm audit --audit-level=high` and `npm run deploy:dry-run` pass;
 - live completion remains gated on reviewed merge, one exact local finalizer execution, D1/Lark parity and
   `MKT_Accounts.last_sync_at=2026-09-01`. Preview URLs must remain disabled outside the isolated execution window.
+- repeated reviewed local executions have now completed all confirmed D1 commands. An identity-only Preview probe
+  returned `META_K2_LOCAL_LARK_MODE_INVALID`, proving operation/workKey/generation and authorization are exact and
+  narrowing the remaining pre-write rejection to `batchDigest` only;
+- local `structuredClone` preserved Date values while Fetch JSON transport converted them to ISO strings, so the
+  Preview Worker correctly rejected the pre-transport digest. Projection rows are now canonicalized to their exact
+  JSON wire representation before both hashing and transport; the focused transport/digest regression passes.

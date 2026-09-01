@@ -12,6 +12,7 @@ import { InMemoryResumableWorkStore } from '../packages/sync-engine/src/in-memor
 import { createInfrastructure } from '../apps/sync-worker/src/runtime-infrastructure.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
+import { canonicalizeMetaK2ProjectionRows } from './lib/meta-k2-local-lark-projection-wire.js';
 import { createForbiddenMetaPaidDirectAdapter } from './lib/meta-paid-direct-lark-materializer.js';
 import { readWranglerScalarVars } from './lib/wrangler-jsonc-vars.js';
 
@@ -189,7 +190,9 @@ class WorkerLarkProjectionSyncEngine {
   async planByKey(input) {
     const tableKey = this.tableKeyById.get(input.tableId);
     if (!tableKey) throw finalizerError('Projection table ID is outside the exact scope', 'META_K2_LOCAL_PROJECTION_TABLE_INVALID');
-    const rows = structuredClone(input.rows ?? []);
+    // Hash the exact JSON wire representation. Date and other structured-clone values otherwise
+    // fingerprint differently after fetch serializes them for the Preview Worker.
+    const rows = canonicalizeMetaK2ProjectionRows(input.rows ?? []);
     if (rows.length === 0) return Object.freeze({ tableKey, keyField: input.keyField, rows, empty: true });
     const digest = await createStableFingerprint({
       schemaVersion: 'meta_k2_local_lark_projection_plan_v1',

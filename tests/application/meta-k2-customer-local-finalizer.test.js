@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { createStableFingerprint } from '../../packages/shared/src/hash/stable-fingerprint.js';
+import { canonicalizeMetaK2ProjectionRows } from '../../scripts/lib/meta-k2-local-lark-projection-wire.js';
 
 const FINALIZER = new URL('../../scripts/meta-k2-customer-local-finalizer.mjs', import.meta.url);
 
@@ -12,4 +14,16 @@ test('Customer K2 local finalizer uses local preflight CPU and confirmed bounded
   assert.match(source, /statements\.map\(\(statement\) => statement\.render\(\)\)/u);
   assert.doesNotMatch(source, /executeFile\(|'--file'/u);
   assert.match(source, /Replaying every statement is intentional/u);
+});
+
+test('canonicalizes projection rows before both wire transport and digest', async () => {
+  const source = [{ key: 'a', observed_at: new Date('2026-09-01T00:00:00.000Z'), omitted: undefined }];
+  const rows = canonicalizeMetaK2ProjectionRows(source);
+  const wireRows = JSON.parse(JSON.stringify(rows));
+
+  assert.deepEqual(rows, [{ key: 'a', observed_at: '2026-09-01T00:00:00.000Z' }]);
+  assert.equal(
+    await createStableFingerprint({ rows }),
+    await createStableFingerprint({ rows: wireRows }),
+  );
 });
