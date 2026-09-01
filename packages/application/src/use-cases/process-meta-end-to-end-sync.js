@@ -4,7 +4,10 @@ import { normalizeMetaAdsEntityFixture } from './normalize-meta-ads-source.js';
 import {
   collectMetaEndToEndSourceUnit,
 } from './collect-meta-end-to-end-source.js';
-import { processMetaEndToEndGeneration } from './process-meta-end-to-end-generation.js';
+import {
+  MAX_META_LARK_TABLES_PER_INVOCATION,
+  processMetaEndToEndGeneration,
+} from './process-meta-end-to-end-generation.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
@@ -1014,7 +1017,7 @@ function normalizeLimits(value) {
       1,
       // Meta Ads has six reviewed Lark contracts. The row cap remains the primary write bound;
       // allowing all contracts lets a short tail continue across table boundaries deterministically.
-      6,
+      MAX_META_LARK_TABLES_PER_INVOCATION,
     ),
   });
 }

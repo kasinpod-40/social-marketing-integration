@@ -6,6 +6,7 @@ import { createOrganicHistoryWriter } from '../storage/organic-history-writer.js
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const PREFLIGHT_PHASE = 'meta_end_to_end_destination_preflight_v1';
+export const MAX_META_LARK_TABLES_PER_INVOCATION = 6;
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
 const COMPLETION_PHASE = 'meta_end_to_end_completion_v1';
@@ -49,7 +50,12 @@ export async function processMetaEndToEndGeneration(input = {}) {
     1,
     1_000,
   );
-  const maxLarkTables = boundedInteger(input.maxLarkTablesPerInvocation ?? 1, 'maxLarkTablesPerInvocation', 1, 4);
+  const maxLarkTables = boundedInteger(
+    input.maxLarkTablesPerInvocation ?? 1,
+    'maxLarkTablesPerInvocation',
+    1,
+    MAX_META_LARK_TABLES_PER_INVOCATION,
+  );
 
   if (input.d1WriteEnabled !== true) {
     throw permanentError('Meta D1 business gate must be enabled', {
