@@ -171,7 +171,10 @@ export function createMetaK2LocalLarkProjectionHttpHandler(dependencies = {}) {
       const status = operational.code === 'META_K2_LOCAL_LARK_UNAUTHORIZED'
         ? 401
         : error?.retryable === true ? 503 : 400;
-      const diagnostic = operational.code === 'META_K2_LOCAL_LARK_BATCH_DIGEST_MISMATCH'
+      const diagnostic = [
+        'META_K2_LOCAL_LARK_BATCH_DIGEST_MISMATCH',
+        'META_K2_LOCAL_LARK_TARGET_MISMATCH',
+      ].includes(operational.code)
         ? sanitizeOperationalValue(error?.details ?? {})
         : undefined;
       return json({
@@ -449,7 +452,13 @@ function noStoreHeaders() {
 }
 
 function requireExact(value, expected, fieldName) {
-  if (value !== expected) throw projectionError(`${fieldName} does not match the exact target`, 'META_K2_LOCAL_LARK_TARGET_MISMATCH');
+  if (value !== expected) {
+    throw projectionError(
+      `${fieldName} does not match the exact target`,
+      'META_K2_LOCAL_LARK_TARGET_MISMATCH',
+      { fieldName },
+    );
+  }
 }
 
 function requireText(value, fieldName) {
