@@ -6,6 +6,7 @@ import { canonicalizeMetaK2ProjectionRows } from '../../scripts/lib/meta-k2-loca
 
 const FINALIZER = new URL('../../scripts/meta-k2-customer-local-finalizer.mjs', import.meta.url);
 const PROCESS_META = new URL('../../packages/application/src/use-cases/process-meta-end-to-end-sync.js', import.meta.url);
+const PROCESS_GENERATION = new URL('../../packages/application/src/use-cases/process-meta-end-to-end-generation.js', import.meta.url);
 
 test('Customer K2 local finalizer uses local preflight CPU and confirmed bounded D1 commands', async () => {
   const source = await readFile(FINALIZER, 'utf8');
@@ -22,6 +23,7 @@ test('Customer K2 local finalizer uses local preflight CPU and confirmed bounded
 test('Customer K2 local finalizer aligns projection manifest and explicitly gates confirmed D1 reuse', async () => {
   const source = await readFile(FINALIZER, 'utf8');
   const processSource = await readFile(PROCESS_META, 'utf8');
+  const generationSource = await readFile(PROCESS_GENERATION, 'utf8');
 
   assert.match(source, /D1_REUSE_CONFIRMATION = 'REUSE_CONFIRMED_EXACT_CUSTOMER_META_K2_D1'/u);
   assert.match(source, /historyStore instanceof ConfirmedD1HistoryStore/u);
@@ -31,7 +33,9 @@ test('Customer K2 local finalizer aligns projection manifest and explicitly gate
   assert.match(source, /larkTablesPerInvocation:\s*TABLE_KEYS\.length/u);
   assert.match(source, /Preflight spends its 25-row budget across contract boundaries/u);
   assert.match(processSource, /allowing all contracts lets a short tail continue across table boundaries/u);
-  assert.match(processSource, /'larkTablesPerInvocation',[\s\S]*?1,[\s\S]*?6,/u);
+  assert.match(processSource, /'larkTablesPerInvocation',[\s\S]*?MAX_META_LARK_TABLES_PER_INVOCATION/u);
+  assert.match(generationSource, /MAX_META_LARK_TABLES_PER_INVOCATION = 6/u);
+  assert.match(generationSource, /'maxLarkTablesPerInvocation',[\s\S]*?MAX_META_LARK_TABLES_PER_INVOCATION/u);
 });
 
 test('canonicalizes projection rows before both wire transport and digest', async () => {
