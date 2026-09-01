@@ -10,10 +10,12 @@ test('Customer K2 local finalizer uses local preflight CPU and confirmed bounded
   const source = await readFile(FINALIZER, 'utf8');
 
   assert.match(source, /preflightRowsPerInvocation:\s*1_000/u);
-  assert.match(source, /const results = await this\.executeCommand\(sql\)/u);
+  assert.match(source, /const results = await this\.executeStableKeyCommand\(sql\)/u);
   assert.match(source, /statements\.map\(\(statement\) => statement\.render\(\)\)/u);
   assert.doesNotMatch(source, /executeFile\(|'--file'/u);
   assert.match(source, /Replaying every statement is intentional/u);
+  assert.match(source, /error\?\.code !== 'META_K2_LOCAL_D1_JSON_INVALID'/u);
+  assert.match(source, /Never retry SQL, auth or other classified failures/u);
 });
 
 test('canonicalizes projection rows before both wire transport and digest', async () => {
