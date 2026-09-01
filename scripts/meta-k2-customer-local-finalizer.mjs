@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
 import { execFile, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { JOB_TYPES } from '../packages/application/src/jobs/job-catalog.js';
 import { processMetaEndToEndSync } from '../packages/application/src/use-cases/process-meta-end-to-end-sync.js';
@@ -33,7 +32,9 @@ const LIMITS = Object.freeze({
   sourceMaxRows: 50_000,
   sourceMaxUnitBytes: 1_048_576,
   postSourceUnitsPerInvocation: 25,
-  preflightRowsPerInvocation: 25,
+  // Preflight is CPU-bound local work here. Keep it at the application contract maximum so
+  // the exact write set is assembled fewer times without increasing any remote write batch.
+  preflightRowsPerInvocation: 1_000,
   d1RowsPerInvocation: 1_000,
   larkRowsPerInvocation: 25,
   larkTablesPerInvocation: 1,
@@ -533,37 +534,14 @@ class WranglerRemoteD1Binding {
 
   async batch(statements) {
     const sql = statements.map((statement) => statement.render()).join(';\n');
-    await this.executeFile(sql);
-    // Wrangler file import returns one aggregate transaction result. The application already
-    // owns the exact operation count and verifies final D1/Lark parity, so expose one committed
-    // result per prepared statement to preserve the Workers binding contract.
-    return statements.map(() => ({ success: true, results: [], meta: { changes: 1 } }));
-  }
-
-  async executeFile(sql) {
-    const directory = await mkdtemp(join(tmpdir(), 'customer-k2-d1-'));
-    const path = join(directory, 'batch.sql');
-    try {
-      await writeFile(path, `${sql};\n`, { mode: 0o600 });
-      const result = await execFileAsync('npx', [
-        'wrangler', 'd1', 'execute', this.databaseName,
-        '--remote', '--config', this.configPath, '--profile', PROFILE,
-        '--file', path, '--json',
-      ], {
-        cwd: process.cwd(),
-        env: this.env,
-        encoding: 'utf8',
-        timeout: 120_000,
-        maxBuffer: 64 * 1024 * 1024,
-      });
-      const parsed = parseWranglerJsonSuffix(result.stdout);
-      const blocks = Array.isArray(parsed) ? parsed : [parsed];
-      if (blocks.some((block) => block?.success !== true)) {
-        throw finalizerError('Wrangler D1 file batch reported failure', 'META_K2_LOCAL_D1_BATCH_FAILED');
-      }
-    } finally {
-      await rm(directory, { recursive: true, force: true });
+    const results = await this.executeCommand(sql);
+    if (results.length === 0 || results.some((result) => result.success !== true)) {
+      throw finalizerError('Wrangler D1 command batch reported failure', 'META_K2_LOCAL_D1_BATCH_FAILED');
     }
+    // The application bounds this adapter to 100 stable-key statements per batch and verifies
+    // final D1/Lark parity. Replaying every statement is intentional: never infer a resume point
+    // from row counts, and never risk skipping a key after an ambiguous remote response.
+    return statements.map(() => ({ success: true, results: [], meta: { changes: 1 } }));
   }
 
   async executeCommand(sql) {

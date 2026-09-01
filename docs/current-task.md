@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_META_K2_BOUNDED_MATERIALIZATION_REVIEW
+TASK_STATUS                              = CUSTOMER_META_K2_LOCAL_CPU_FINALIZER_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = a5219ef8
-CURRENT_BRANCH                           = codex/meta-k2-bounded-materialization-20260828
+BASE_MAIN_SHA                            = 579fb062
+CURRENT_BRANCH                           = codex/meta-k2-local-confirmed-d1
 CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = 48a519e3-7d72-4411-b604-185227a70d63
+PRODUCTION_WORKER_HEAD                   = add06f21-b539-43e4-a0aa-c926451314b4
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -35,7 +35,7 @@ PRODUCTION_DARK_STATE_RESTORED           = TRUE_VERSION_1dc1ae9c
 PRODUCTION_MAIN_QUEUE_BATCH_SIZE         = 1_FREE_PLAN_SAFE
 PRODUCTION_CRON                          = EVERY_5_MINUTES_PRIMARY_SCHEDULER
 PRODUCTION_FIRST_RUN_WINDOW              = 2026-08-24_0735_TO_0745_ASIA_BANGKOK
-PRODUCTION_MONITOR_AUTOMATION            = customer-production-cutover-monitor_READY_TO_STOP
+PRODUCTION_MONITOR_AUTOMATION            = customer-production-cutover-monitor_ACTIVE
 CURRENT_REPAIR_BRANCH                    = MERGED_PR_695
 REVIEWED_SOURCE_UAT_READY                = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_GOOGLE_ADS_CHATWOOT
 PRODUCTION_SECRET_BLOCKED                = NONE_CONFIRMED
@@ -52,6 +52,7 @@ CUSTOMER_QUEUE_DAILY_WRITE               = RESET_20260826_ACTIVE
 CUSTOMER_META_K2_AD_CHANNEL_REPAIR       = DEPLOYED_VERSION_ac8aa2dc_LIVE
 CUSTOMER_META_K2_BUC_RATE_LIMIT_REPAIR   = LIVE_ROOT_CAUSE_PROVEN_CODE_REVIEW_PENDING
 CUSTOMER_META_K2_POST_SOURCE_MATERIALIZATION = V1_LIVE_COMPACTION_COMPLETE_V2_CODE_AND_FULL_GATES_PASS
+CUSTOMER_META_K2_LOCAL_CPU_FINALIZER     = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
 CUSTOMER_CHATWOOT_FREE_EXECUTION_CAP     = MERGED_PR_750_DEPLOYED_VERSION_d67e7847
 CUSTOMER_POST_SOURCE_FREE_REPAIR         = MERGED_PR_751_DEPLOYED
 CUSTOMER_YOUTUBE_D1_STORAGE_REPAIR       = LIVE_COMPLETE_838_CONTENT_1860_ANALYTICS
@@ -1187,3 +1188,17 @@ child identity after reviewed merge/deploy.
 - one fully blank `MKT_Sync_Log` record (`recvt6mZnhkueH`) was found and left unchanged pending a separate explicit
   hygiene decision. Final visual confirmation requires refreshing Organic Performance while retaining the exact
   Dashboard filter `customer_profile=chemistry_k`.
+
+### 2026-09-01 — Meta K2 Customer local-CPU finalizer repair
+
+- exact Customer K2 `20260831` source and durable materialization are complete `194/194`; Worker preflight reached
+  `450/19,213` before Free CPU retry exhaustion, so no provider reread or replacement generation is required;
+- the first local finalizer attempts safely replayed stable keys and persisted `9,700` exact entity rows, but
+  Wrangler D1 file-import polling returned an ambiguous post-commit result. No delete, old-data replacement or
+  row-count-based skip is permitted;
+- the reviewed repair runs preflight with local CPU at the application maximum `1,000` rows per invocation and
+  sends every stable-key D1 write again through bounded 100-statement `--command` batches with confirmed results;
+- focused tests, `npm run check`, the full `npm test` suite (`3,282` Node tests plus `18` Worker tests),
+  `npm run test:report-reliability`, `npm audit --audit-level=high` and `npm run deploy:dry-run` pass;
+- live completion remains gated on reviewed merge, one exact local finalizer execution, D1/Lark parity and
+  `MKT_Accounts.last_sync_at=2026-09-01`. Preview URLs must remain disabled outside the isolated execution window.
