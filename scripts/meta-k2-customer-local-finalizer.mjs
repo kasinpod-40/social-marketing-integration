@@ -24,6 +24,10 @@ const CONFIG_PATH = resolve(process.env.MKT_CUSTOMER_WRANGLER_CONFIG ?? '.custom
 const PROFILE = 'chemistry-k-prod';
 const execFileAsync = promisify(execFile);
 const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
+const CURSOR_KEY = 'chemistry_k:meta_ads:chemistry_k:scheduled_end_to_end_chemistry_k2';
+const EXACT_OPERATION_DATE = '20260827';
+const EXACT_SOURCE_ITEMS = 194;
+const MAX_CANDIDATES = 32;
 const TABLE_KEYS = Object.freeze([
   'mktAdsAccounts', 'mktAdsCampaigns', 'mktAdsAdGroups',
   'mktAdsAds', 'mktAdsCreatives', 'mktAdsDaily',
@@ -102,7 +106,7 @@ async function main() {
     }),
     syncRunId: `meta:meta_ads:chemistry_k2:${snapshot.operationId}`,
     cursorKey: snapshot.cursorKey,
-    assertLockActive: async () => assertFenceUnchanged(db, snapshot),
+    assertLockActive: async () => assertRetainedTargetStable(db, snapshot),
     adapter: createForbiddenMetaPaidDirectAdapter(),
     sourceAccountId: snapshot.sourceAccountId,
     accountKey: 'chemistry_k',
@@ -141,7 +145,7 @@ async function main() {
   if (!['completed', 'completed_idempotent'].includes(result?.status)) {
     throw finalizerError('Local K2 pipeline exceeded bounded invocation count', 'META_K2_LOCAL_LIMIT');
   }
-  await assertFenceUnchanged(db, snapshot);
+  await assertRetainedTargetStable(db, snapshot);
   await projection.finalize();
   console.log(JSON.stringify({
     ok: true,
@@ -409,20 +413,30 @@ async function readExactSnapshot(db) {
     SELECT r.work_key, r.cursor_key, r.work_type, r.generation, r.requested_at,
            r.lifecycle_status, r.terminal_reason, p.state_json, p.expected_items,
            p.processed_items, p.pages_processed, p.chunks_processed, p.complete
-    FROM sync_generation_fences f
-    JOIN sync_work_runs r ON r.work_key=f.work_key AND r.generation=f.generation
-    JOIN sync_work_phases p ON p.work_key=r.work_key AND p.phase=?
-    WHERE f.cursor_key=?
-  `).bind(SOURCE_PHASE, 'chemistry_k:meta_ads:chemistry_k:scheduled_end_to_end_chemistry_k2').all();
-  const row = rows.results[0];
-  if (!row || row.lifecycle_status !== 'terminal' || row.terminal_reason !== 'QUEUE_RETRY_EXHAUSTED'
-    || Number(row.complete) !== 1 || Number(row.processed_items) !== Number(row.expected_items)) {
-    throw finalizerError('Latest fenced K2 work is not an exact terminal complete-source snapshot', 'META_K2_LOCAL_PREFLIGHT_BLOCKED');
+    FROM sync_work_runs AS r
+    JOIN sync_work_phases AS p ON p.work_key=r.work_key AND p.phase=?
+    WHERE r.cursor_key=?
+    ORDER BY r.generation DESC
+    LIMIT ${MAX_CANDIDATES}
+  `).bind(SOURCE_PHASE, CURSOR_KEY).all();
+  const exact = rows.results.filter((candidate) => {
+    const operationId = typeof candidate?.work_key === 'string' ? candidate.work_key.split(':').at(-1) : '';
+    return operationId?.endsWith(EXACT_OPERATION_DATE) === true
+      && Number(candidate.complete) === 1
+      && Number(candidate.expected_items) === EXACT_SOURCE_ITEMS
+      && Number(candidate.processed_items) === EXACT_SOURCE_ITEMS;
+  });
+  if (exact.length !== 1) {
+    throw finalizerError(
+      'Exact retained K2 20260827 complete-source snapshot is not unique',
+      'META_K2_LOCAL_PREFLIGHT_BLOCKED',
+      { candidateCount: rows.results.length, exactCandidateCount: exact.length },
+    );
   }
-  const lock = await db.prepare(`SELECT COUNT(*) AS count FROM sync_locks WHERE expires_at>unixepoch()*1000`).first();
-  if (Number(lock?.count) !== 0) {
-    throw finalizerError('Customer runtime has an active lock', 'META_K2_LOCAL_ACTIVE_LOCK');
-  }
+  const row = exact[0];
+  assertRetainedLifecycle(row);
+  await assertCursorUnlocked(db, row.cursor_key);
+
   const units = [];
   let sequence = 0;
   while (sequence < Number(row.expected_items)) {
@@ -436,15 +450,17 @@ async function readExactSnapshot(db) {
     }
     sequence = Number(page.results.at(-1).sequence) + 1;
   }
-  if (units.length !== Number(row.expected_items)) {
+  if (units.length !== EXACT_SOURCE_ITEMS) {
     throw finalizerError('Exact K2 source unit inventory is incomplete', 'META_K2_LOCAL_SOURCE_GAP', {
-      expected: Number(row.expected_items), observed: units.length,
+      expected: EXACT_SOURCE_ITEMS, observed: units.length,
     });
   }
   const sourceAccountId = findSourceAccountId(units);
   const operationId = row.work_key.split(':').at(-1);
   const period = operationId.match(/(\d{8})$/u)?.[1];
-  if (!period) throw finalizerError('K2 period could not be resolved', 'META_K2_LOCAL_PERIOD_INVALID');
+  if (period !== EXACT_OPERATION_DATE) {
+    throw finalizerError('K2 period could not be resolved to the exact retained operation', 'META_K2_LOCAL_PERIOD_INVALID');
+  }
   return Object.freeze({
     workKey: row.work_key,
     cursorKey: row.cursor_key,
@@ -501,11 +517,44 @@ async function seedLocalStore(snapshot) {
   return store;
 }
 
-async function assertFenceUnchanged(db, snapshot) {
-  const row = await db.prepare('SELECT generation, work_key FROM sync_generation_fences WHERE cursor_key=?')
-    .bind(snapshot.cursorKey).first();
-  if (Number(row?.generation) !== snapshot.generation || row?.work_key !== snapshot.workKey) {
-    throw finalizerError('K2 generation changed during local finalization', 'META_K2_LOCAL_SUPERSEDED');
+async function assertRetainedTargetStable(db, snapshot) {
+  const rows = await db.prepare(`
+    SELECT r.work_key, r.generation, r.lifecycle_status, r.terminal_reason,
+           p.complete, p.expected_items, p.processed_items
+    FROM sync_work_runs AS r
+    JOIN sync_work_phases AS p ON p.work_key=r.work_key AND p.phase=?
+    WHERE r.work_key=? AND r.generation=? AND r.cursor_key=?
+    LIMIT 2
+  `).bind(SOURCE_PHASE, snapshot.workKey, snapshot.generation, snapshot.cursorKey).all();
+  const row = rows.results[0];
+  if (rows.results.length !== 1
+    || !row
+    || Number(row.complete) !== 1
+    || Number(row.expected_items) !== EXACT_SOURCE_ITEMS
+    || Number(row.processed_items) !== EXACT_SOURCE_ITEMS) {
+    throw finalizerError('Exact retained K2 target changed during local finalization', 'META_K2_LOCAL_TARGET_CHANGED');
+  }
+  assertRetainedLifecycle(row);
+  await assertCursorUnlocked(db, snapshot.cursorKey);
+}
+
+function assertRetainedLifecycle(row) {
+  if (row?.lifecycle_status === 'active') return;
+  if (row?.lifecycle_status === 'terminal' && row?.terminal_reason === 'QUEUE_RETRY_EXHAUSTED') return;
+  throw finalizerError(
+    'Exact retained K2 target is no longer resumable',
+    'META_K2_LOCAL_TARGET_NOT_RESUMABLE',
+    { lifecycleStatus: row?.lifecycle_status ?? null, terminalReason: row?.terminal_reason ?? null },
+  );
+}
+
+async function assertCursorUnlocked(db, cursorKey) {
+  const lock = await db.prepare(`
+    SELECT COUNT(*) AS count FROM sync_locks
+    WHERE lock_key=? AND expires_at>unixepoch()*1000
+  `).bind(cursorKey).first();
+  if (Number(lock?.count) !== 0) {
+    throw finalizerError('Exact retained K2 cursor has an active lock', 'META_K2_LOCAL_ACTIVE_LOCK');
   }
 }
 
@@ -728,11 +777,12 @@ if (!process.argv.includes('--execute')) {
   console.log(JSON.stringify({
     ok: true,
     planOnly: true,
-    source: 'latest fenced complete Customer K2 source snapshot',
+    source: 'exact retained 20260827 complete Customer K2 source snapshot',
     providerReads: 0,
     execution: 'local transform plus parameterized Customer D1 and stable-key Customer Lark writes',
     deletes: 0,
     replacementGeneration: false,
+    generationFenceMutation: false,
   }, null, 2));
 } else {
   await main().catch((error) => {
