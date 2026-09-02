@@ -11,6 +11,14 @@ const CONFIRMATION = 'AUDIT_INTERNAL_RUNTIME_WITH_EXACT_D1_RESOLUTION';
 const TARGET_DATABASE = 'social-mkt-state-dev';
 const TARGET_BINDING = 'MKT_STATE_DB';
 const DEFAULT_CONFIG = 'wrangler.sync.jsonc';
+const EXPECTED_FINGERPRINT_TABLES = Object.freeze([
+  'd1_migrations',
+  'sync_generation_fences',
+  'sync_locks',
+  'sync_runs',
+  'sync_work_phases',
+  'sync_work_runs',
+]);
 
 const execute = process.argv.slice(2).includes('--execute');
 
@@ -24,7 +32,8 @@ try {
       mode: 'plan',
       status: 'INTERNAL_RUNTIME_RESOLVED_READONLY_AUDIT_PLAN',
       targetDatabase: TARGET_DATABASE,
-      resolutionMode: 'wrangler-d1-list-exact-name',
+      resolutionMode: 'exact-name-or-sole-schema-fingerprint',
+      schemaFingerprintTableCount: EXPECTED_FINGERPRINT_TABLES.length,
       localConfigWrites: 0,
       providerReads: 0,
       d1Writes: 0,
@@ -58,19 +67,14 @@ try {
   const env = buildWranglerOAuthEnvironment(Object.freeze({ ...fileEnv, ...process.env }));
   const databases = listDatabases(env, configPath);
   const exact = databases.filter((item) => item?.name === TARGET_DATABASE);
-  if (exact.length !== 1) {
-    throw auditError('Exact internal D1 name is not unique in the Cloudflare account', 'INTERNAL_RESOLVED_AUDIT_D1_NOT_UNIQUE', {
-      exactNameMatchCount: exact.length,
-      listedDatabaseCount: databases.length,
-    });
-  }
-
-  const resolvedId = String(exact[0]?.uuid ?? exact[0]?.id ?? '').trim();
+  const candidate = resolveCandidate(databases, exact);
+  const resolvedId = String(candidate.database?.uuid ?? candidate.database?.id ?? '').trim();
   if (!isUuid(resolvedId)) {
-    throw auditError('Exact internal D1 has no valid database id', 'INTERNAL_RESOLVED_AUDIT_D1_ID_INVALID');
+    throw auditError('Resolved internal D1 has no valid database id', 'INTERNAL_RESOLVED_AUDIT_D1_ID_INVALID');
   }
 
   const configuredId = String(binding.database_id ?? '').trim();
+  const resolvedName = String(candidate.database?.name ?? '').trim();
   const tempConfigPath = resolve(root, `.tmp-internal-runtime-audit-${process.pid}.jsonc`);
   const tempConfig = structuredClone(config);
   tempConfig.d1_databases[bindingIndex] = {
@@ -81,6 +85,19 @@ try {
   try {
     await writeFile(tempConfigPath, `${JSON.stringify(tempConfig, null, 2)}\n`, { mode: 0o600 });
     await chmod(tempConfigPath, 0o600);
+
+    const fingerprint = readSchemaFingerprint(env, tempConfigPath);
+    const matched = EXPECTED_FINGERPRINT_TABLES.filter((name) => fingerprint.has(name));
+    const missing = EXPECTED_FINGERPRINT_TABLES.filter((name) => !fingerprint.has(name));
+    if (missing.length > 0) {
+      throw auditError('Resolved D1 does not match the internal runtime schema fingerprint', 'INTERNAL_RESOLVED_AUDIT_SCHEMA_MISMATCH', {
+        candidateDatabaseName: resolvedName || null,
+        resolutionMode: candidate.mode,
+        requiredTableCount: EXPECTED_FINGERPRINT_TABLES.length,
+        matchedTableCount: matched.length,
+        missingTables: missing,
+      });
+    }
 
     const child = spawnSync(process.execPath, ['scripts/internal-runtime-readonly-audit.mjs', '--execute'], {
       cwd: root,
@@ -107,9 +124,14 @@ try {
     process.stdout.write(`${JSON.stringify({
       ...payload,
       resolution: {
-        mode: 'wrangler-d1-list-exact-name',
+        mode: candidate.mode,
         exactNameMatchCount: exact.length,
+        listedDatabaseCount: databases.length,
+        resolvedDatabaseName: resolvedName || null,
+        databaseNameRenamed: resolvedName !== TARGET_DATABASE,
         configuredDatabaseIdStale: configuredId !== resolvedId,
+        schemaFingerprintMatched: true,
+        schemaFingerprintTableCount: matched.length,
         temporaryConfigUsed: true,
         persistentConfigChanged: false,
       },
@@ -136,6 +158,19 @@ try {
   process.exitCode = 1;
 }
 
+function resolveCandidate(databases, exact) {
+  if (exact.length === 1) {
+    return Object.freeze({ database: exact[0], mode: 'wrangler-d1-list-exact-name' });
+  }
+  if (exact.length === 0 && databases.length === 1) {
+    return Object.freeze({ database: databases[0], mode: 'wrangler-d1-list-sole-schema-fingerprint' });
+  }
+  throw auditError('Internal D1 cannot be resolved uniquely from the Cloudflare account', 'INTERNAL_RESOLVED_AUDIT_D1_NOT_UNIQUE', {
+    exactNameMatchCount: exact.length,
+    listedDatabaseCount: databases.length,
+  });
+}
+
 function listDatabases(env, configPath) {
   const result = spawnSync('npx', ['wrangler', 'd1', 'list', '--json', '--config', configPath], {
     cwd: process.cwd(),
@@ -157,6 +192,35 @@ function listDatabases(env, configPath) {
     throw auditError('Wrangler D1 list output is not an array', 'INTERNAL_RESOLVED_AUDIT_D1_LIST_INVALID');
   }
   return value;
+}
+
+function readSchemaFingerprint(env, configPath) {
+  const quoted = EXPECTED_FINGERPRINT_TABLES.map((name) => `'${name}'`).join(', ');
+  const sql = `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${quoted}) ORDER BY name`;
+  const result = spawnSync('npx', [
+    'wrangler', 'd1', 'execute', TARGET_DATABASE,
+    '--remote', '--json', '--config', configPath, '--command', sql,
+  ], {
+    cwd: process.cwd(),
+    env,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    throw auditError('Wrangler D1 schema fingerprint read failed', 'INTERNAL_RESOLVED_AUDIT_SCHEMA_READ_FAILED', {
+      exitCode: result.status ?? null,
+      signal: result.signal ?? null,
+      spawnError: result.error?.message ?? null,
+      stdout: sanitizeText(result.stdout),
+      stderr: sanitizeText(result.stderr),
+    });
+  }
+  const value = parseJsonSuffix(result.stdout);
+  const envelopes = Array.isArray(value) ? value : [value];
+  if (envelopes.length === 0 || envelopes.some((item) => item?.success === false)) {
+    throw auditError('D1 schema fingerprint query reported failure', 'INTERNAL_RESOLVED_AUDIT_SCHEMA_RESPONSE_FAILED');
+  }
+  return new Set(envelopes.flatMap((item) => item?.results ?? []).map((row) => row?.name).filter(Boolean));
 }
 
 function parseJsonSuffix(output) {
