@@ -196,6 +196,7 @@ class MetaK2ProjectionStore {
   async assertExactTarget(input) {
     const row = await this.db.prepare(`
       SELECT work.work_key, work.generation, work.lifecycle_status, work.terminal_reason,
+             json_extract(phase.state_json, '$.stage') AS source_stage,
              phase.complete AS source_complete,
              phase.expected_items AS source_expected_items,
              phase.processed_items AS source_processed_items,
@@ -330,6 +331,7 @@ export function assertMetaK2RetainedTargetRow(row, input) {
   if (!row
     || row.work_key !== input.workKey
     || Number(row.generation) !== input.generation
+    || row.source_stage !== 'complete'
     || Number(row.source_complete) !== 1
     || !Number.isSafeInteger(sourceExpectedItems)
     || sourceExpectedItems < 1
