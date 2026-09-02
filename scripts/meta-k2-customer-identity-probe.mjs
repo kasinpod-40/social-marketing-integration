@@ -15,6 +15,7 @@ const CONFIG_PATH = resolve(process.env.MKT_CUSTOMER_WRANGLER_CONFIG ?? '.custom
 const PROFILE = 'chemistry-k-prod';
 const CURSOR_KEY = 'chemistry_k:meta_ads:chemistry_k:scheduled_end_to_end_chemistry_k2';
 const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
+const MAX_CANDIDATES = 16;
 const EXPECTED_MODE_INVALID = 'META_K2_LOCAL_LARK_MODE_INVALID';
 const TARGET_MISMATCH = 'META_K2_LOCAL_LARK_TARGET_MISMATCH';
 const execFileAsync = promisify(execFile);
@@ -36,19 +37,6 @@ async function main() {
   requireExact(runtimeEnv.MKT_CUSTOMER_PROFILE, 'chemistry_k', 'MKT_CUSTOMER_PROFILE');
   requireExact(runtimeEnv.LARK_APP_ID, 'cli_aaf9b6ddfcf99ed1', 'LARK_APP_ID');
 
-  const row = await readExactIdentity({
-    runtimeEnv,
-    databaseName: binding.database_name,
-  });
-  const operationId = String(row.work_key).split(':').at(-1);
-  if (!operationId || !/(?:^|-)\d{8}$/u.test(operationId)) {
-    throw probeError('Exact K2 operation identity is invalid', 'META_K2_IDENTITY_PROBE_OPERATION_INVALID');
-  }
-  const generation = Number(row.generation);
-  if (!Number.isSafeInteger(generation) || generation < Date.UTC(2000, 0, 1)) {
-    throw probeError('Exact K2 generation is invalid', 'META_K2_IDENTITY_PROBE_GENERATION_INVALID');
-  }
-
   const projectionUrl = requireHttpsUrl(
     process.env.MKT_META_K2_LARK_PROJECTION_URL,
     'MKT_META_K2_LARK_PROJECTION_URL',
@@ -62,74 +50,107 @@ async function main() {
     throw probeError('Projection token file is invalid', 'META_K2_IDENTITY_PROBE_TOKEN_INVALID');
   }
 
-  const response = await fetch(projectionUrl, {
+  const candidates = await readIdentityCandidates({
+    runtimeEnv,
+    databaseName: binding.database_name,
+  });
+  if (candidates.length === 0) {
+    throw probeError('No retained K2 source Work candidates were found', 'META_K2_IDENTITY_PROBE_CANDIDATES_ABSENT');
+  }
+
+  let closestMismatchField = null;
+  for (const row of candidates) {
+    const operation = operationFromCandidate(row);
+    if (!operation) continue;
+    const result = await probeCandidate({ projectionUrl, token, operation });
+    if (result.kind === 'exact') {
+      console.log(JSON.stringify({
+        ok: true,
+        status: 'CUSTOMER_META_K2_IDENTITY_EXACT',
+        proofCode: EXPECTED_MODE_INVALID,
+        checkedFields: ['operationId', 'workKey', 'generation'],
+        candidatesChecked: result.candidatesChecked ?? undefined,
+        exactTargetState: {
+          sourceComplete: Number(row.complete) === 1
+            && Number(row.processed_items) === Number(row.expected_items),
+          terminal: row.lifecycle_status === 'terminal',
+          retryExhausted: row.terminal_reason === 'QUEUE_RETRY_EXHAUSTED',
+          currentFence: Number(row.is_current_fence) === 1,
+          unlocked: Number(row.active_lock_count) === 0,
+        },
+        sourceUnitPayloadReads: 0,
+        providerReads: 0,
+        d1Writes: 0,
+        larkWrites: 0,
+        queueSends: 0,
+      }, null, 2));
+      return;
+    }
+    if (result.kind === 'mismatch' && result.fieldName !== 'operationId') {
+      closestMismatchField = result.fieldName;
+    }
+  }
+
+  throw probeError('Preview exact K2 identity was not found among retained D1 candidates', 'META_K2_IDENTITY_PROBE_TARGET_NOT_FOUND', {
+    candidateCount: candidates.length,
+    closestMismatchField,
+  });
+}
+
+async function readIdentityCandidates(input) {
+  const sql = `
+    SELECT r.work_key, r.generation, r.lifecycle_status, r.terminal_reason,
+           p.expected_items, p.processed_items, p.complete,
+           CASE WHEN f.work_key=r.work_key AND f.generation=r.generation THEN 1 ELSE 0 END AS is_current_fence,
+           (
+             SELECT COUNT(*) FROM sync_locks AS lock
+             WHERE lock.lock_key=r.cursor_key AND lock.expires_at>unixepoch()*1000
+           ) AS active_lock_count
+    FROM sync_work_runs AS r
+    JOIN sync_work_phases AS p ON p.work_key=r.work_key AND p.phase='${SOURCE_PHASE}'
+    LEFT JOIN sync_generation_fences AS f ON f.cursor_key=r.cursor_key
+    WHERE r.cursor_key='${CURSOR_KEY}'
+    ORDER BY r.generation DESC
+    LIMIT ${MAX_CANDIDATES}
+  `;
+  return executeReadOnlyD1({ ...input, sql });
+}
+
+function operationFromCandidate(row) {
+  const workKey = typeof row?.work_key === 'string' ? row.work_key : '';
+  const operationId = workKey.split(':').at(-1);
+  const generation = Number(row?.generation);
+  if (!operationId || !/(?:^|-)\d{8}$/u.test(operationId)) return null;
+  if (!Number.isSafeInteger(generation) || generation < Date.UTC(2000, 0, 1)) return null;
+  return Object.freeze({ operationId, workKey, generation });
+}
+
+async function probeCandidate(input) {
+  const response = await fetch(input.projectionUrl, {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${token}`,
+      authorization: `Bearer ${input.token}`,
       'content-type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
       mode: 'identity_probe_only',
-      operation: {
-        operationId,
-        workKey: row.work_key,
-        generation,
-      },
+      operation: input.operation,
     }),
   });
   const payload = await response.json().catch(() => ({}));
 
   if (response.status === 400 && payload?.code === EXPECTED_MODE_INVALID) {
-    console.log(JSON.stringify({
-      ok: true,
-      status: 'CUSTOMER_META_K2_IDENTITY_EXACT',
-      proofCode: EXPECTED_MODE_INVALID,
-      checkedFields: ['operationId', 'workKey', 'generation'],
-      sourceUnitPayloadReads: 0,
-      providerReads: 0,
-      d1Writes: 0,
-      larkWrites: 0,
-      queueSends: 0,
-    }, null, 2));
-    return;
+    return Object.freeze({ kind: 'exact' });
   }
-
   if (response.status === 400 && payload?.code === TARGET_MISMATCH) {
-    throw probeError('Customer Preview exact target does not match D1 identity', TARGET_MISMATCH, {
+    return Object.freeze({
+      kind: 'mismatch',
       fieldName: safeFieldName(payload?.diagnostic?.fieldName),
-      status: response.status,
     });
   }
-
   throw probeError('Customer Preview identity probe returned an unexpected response', payload?.code ?? 'META_K2_IDENTITY_PROBE_HTTP_FAILED', {
     status: response.status,
   });
-}
-
-async function readExactIdentity(input) {
-  const sql = `
-    SELECT r.work_key, r.generation, r.lifecycle_status, r.terminal_reason,
-           p.expected_items, p.processed_items, p.complete,
-           (SELECT COUNT(*) FROM sync_locks WHERE expires_at>unixepoch()*1000) AS active_lock_count
-    FROM sync_generation_fences f
-    JOIN sync_work_runs r ON r.work_key=f.work_key AND r.generation=f.generation
-    JOIN sync_work_phases p ON p.work_key=r.work_key AND p.phase='${SOURCE_PHASE}'
-    WHERE f.cursor_key='${CURSOR_KEY}'
-    LIMIT 2
-  `;
-  const rows = await executeReadOnlyD1({ ...input, sql });
-  if (rows.length !== 1) {
-    throw probeError('Exact K2 fenced identity is not unique', 'META_K2_IDENTITY_PROBE_PREFLIGHT_BLOCKED');
-  }
-  const row = rows[0];
-  if (row.lifecycle_status !== 'terminal'
-    || row.terminal_reason !== 'QUEUE_RETRY_EXHAUSTED'
-    || Number(row.complete) !== 1
-    || Number(row.processed_items) !== Number(row.expected_items)
-    || Number(row.active_lock_count) !== 0) {
-    throw probeError('Exact K2 target is not the reviewed unlocked complete-source terminal', 'META_K2_IDENTITY_PROBE_PREFLIGHT_BLOCKED');
-  }
-  return row;
 }
 
 async function executeReadOnlyD1(input) {
@@ -235,7 +256,8 @@ if (!process.argv.includes('--execute')) {
   console.log(JSON.stringify({
     ok: true,
     planOnly: true,
-    scope: 'exact Customer Meta K2 identity only',
+    scope: 'retained Customer Meta K2 identity candidates only',
+    maxCandidates: MAX_CANDIDATES,
     sourceUnitPayloadReads: 0,
     providerReads: 0,
     d1Writes: 0,
