@@ -28,6 +28,7 @@ const TARGETS = Object.freeze([
     key: 'facebook',
     cursorKey: 'chemistry_k:facebook:chemistry_k:scheduled_end_to_end',
     workType: 'facebook.page.organic.sync',
+    jobType: 'facebook.page.organic.sync',
     terminalReason: 'QUEUE_RETRY_EXHAUSTED',
     requiredCompletePhases: Object.freeze([
       'meta_end_to_end_source_staging_v1',
@@ -40,6 +41,7 @@ const TARGETS = Object.freeze([
     key: 'youtube',
     cursorKey: 'chemistry_k:youtube:chemistry_k:organic_sync',
     workType: 'youtube_organic_sync',
+    jobType: 'youtube.channel.organic.sync',
     terminalReason: 'QUEUE_PERMANENT_FAILURE',
     requiredCompletePhases: Object.freeze([
       'youtube_content_inventory',
@@ -97,8 +99,8 @@ try {
   const fileEnv = await readDevVars(process.env.DEV_VARS_FILE ?? resolve(root, '.dev.vars'));
   const runtimeEnv = Object.freeze({ ...fileEnv, ...process.env });
   const runtime = assertInternalIntegrationRuntime(runtimeEnv);
-  const larkIdentity = await verifyInternalLarkTarget(runtimeEnv);
   internalLarkReads += 1;
+  const larkIdentity = await verifyInternalLarkTarget(runtimeEnv);
 
   const configPath = resolve(process.env.WRANGLER_CONFIG ?? resolve(root, DEFAULT_CONFIG));
   const configText = await readFile(configPath, 'utf8');
@@ -150,8 +152,8 @@ try {
     assertSchemaFingerprint(wranglerEnv, tempConfigPath);
     const currentRows = readCurrentTargetRows(wranglerEnv, tempConfigPath);
     const targetReadiness = TARGETS.map((target) => validateTarget(target, currentRows));
+    exactQueueEnvelopeReads += 1;
     const envelopes = readExactQueueEnvelopeIdentities(wranglerEnv, tempConfigPath, targetReadiness);
-    exactQueueEnvelopeReads = 1;
     const queueIdentityByWorkKey = new Map(envelopes.map((item) => [item.work_key, item]));
 
     const targets = targetReadiness.map((target) => {
@@ -390,6 +392,7 @@ function validateTarget(target, rows) {
     cursorKey: target.cursorKey,
     workKey: head.work_key,
     workType: head.work_type,
+    jobType: target.jobType,
     generation: Number(head.generation),
     requestedAt: Number(head.requested_at),
     operationFingerprint: head.operation_fingerprint,
@@ -407,7 +410,7 @@ function validateTarget(target, rows) {
 }
 
 function readExactQueueEnvelopeIdentities(env, configPath, targets) {
-  const jobTypes = TARGETS.map((item) => sqlString(item.workType)).join(', ');
+  const jobTypes = TARGETS.map((item) => sqlString(item.jobType)).join(', ');
   const workKeys = targets.map((item) => sqlString(item.workKey)).join(', ');
   return runReadOnlyQuery(env, configPath, `
     WITH envelopes AS (
