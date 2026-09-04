@@ -195,22 +195,22 @@ class MetaK2ProjectionStore {
 
   async assertExactTarget(input) {
     const row = await this.db.prepare(`
-      SELECT work.work_key, work.generation, work.lifecycle_status,
-             fence.work_key AS fenced_work_key, fence.generation AS fenced_generation,
+      SELECT work.work_key, work.generation, work.lifecycle_status, work.terminal_reason,
+             json_extract(phase.state_json, '$.stage') AS source_stage,
+             phase.complete AS source_complete,
+             phase.expected_items AS source_expected_items,
+             phase.processed_items AS source_processed_items,
              (
                SELECT COUNT(*) FROM sync_locks AS lock
                WHERE lock.lock_key=work.cursor_key AND lock.expires_at>unixepoch()*1000
              ) AS active_lock_count
       FROM sync_work_runs AS work
-      LEFT JOIN sync_generation_fences AS fence ON fence.cursor_key=work.cursor_key
-      WHERE work.work_key=?
+      JOIN sync_work_phases AS phase
+        ON phase.work_key=work.work_key AND phase.phase=?
+      WHERE work.work_key=? AND work.generation=?
       LIMIT 1
-    `).bind(input.workKey).first();
-    if (!row || Number(row.generation) !== input.generation
-      || row.fenced_work_key !== input.workKey || Number(row.fenced_generation) !== input.generation
-      || row.lifecycle_status !== 'terminal' || Number(row.active_lock_count) !== 0) {
-      throw projectionError('Exact K2 target is not a fenced unlocked terminal Work', 'META_K2_LOCAL_LARK_TARGET_NOT_WRITABLE');
-    }
+    `).bind(SOURCE_PHASE, input.workKey, input.generation).first();
+    assertMetaK2RetainedTargetRow(row, input);
   }
 
   async findBatch(input) {
@@ -320,6 +320,30 @@ class MetaK2ProjectionStore {
       maxSequence: integer(row?.max_sequence, 'max_sequence', -1),
     });
   }
+}
+
+export function assertMetaK2RetainedTargetRow(row, input) {
+  const sourceExpectedItems = Number(row?.source_expected_items);
+  const sourceProcessedItems = Number(row?.source_processed_items);
+  const activeLifecycle = row?.lifecycle_status === 'active';
+  const retryableTerminalLifecycle = row?.lifecycle_status === 'terminal'
+    && row?.terminal_reason === 'QUEUE_RETRY_EXHAUSTED';
+  if (!row
+    || row.work_key !== input.workKey
+    || Number(row.generation) !== input.generation
+    || row.source_stage !== 'complete'
+    || Number(row.source_complete) !== 1
+    || !Number.isSafeInteger(sourceExpectedItems)
+    || sourceExpectedItems < 1
+    || sourceProcessedItems !== sourceExpectedItems
+    || (!activeLifecycle && !retryableTerminalLifecycle)
+    || Number(row.active_lock_count) !== 0) {
+    throw projectionError(
+      'Exact retained K2 target is not an unlocked source-complete resumable Work',
+      'META_K2_LOCAL_LARK_TARGET_NOT_WRITABLE',
+    );
+  }
+  return true;
 }
 
 function assertExactRuntime(env) {
