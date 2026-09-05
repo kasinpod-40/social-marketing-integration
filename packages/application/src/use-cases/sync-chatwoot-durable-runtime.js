@@ -344,7 +344,7 @@ async function filterConversationRowsByStoredRevision(context, rows) {
     await context.assertCurrent();
     previousStates.push(...await context.chatwootStore.readConversationStates({
       accountKey: context.accountKey,
-      externalIds: externalIds.slice(index, index + 100),
+      externalConversationIds: externalIds.slice(index, index + 100),
     }));
   }
   const previousById = new Map(

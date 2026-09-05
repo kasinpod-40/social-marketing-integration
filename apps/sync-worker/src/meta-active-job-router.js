@@ -15,6 +15,7 @@ import { isReviewedConnectorRuntime } from '../../../packages/config/src/custome
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { createMetaTokenConnectionRuntime } from '../../../packages/connectors/src/meta/meta-token-connection-runtime.js';
 import { normalizeMetaAdAccountId } from '../../../packages/connectors/src/meta/meta-business-source.helpers.js';
+import { META_ADS_SOURCE_MODES } from '../../../packages/config/src/meta-business-ingestion-contract.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { permanentError, transientError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { createMetaEndToEndJobRouter } from './meta-end-to-end-job-router.js';
@@ -142,6 +143,7 @@ async function processMetaJob(input, connectorKey, metaConfig) {
       customerKey: customerRuntime.customerKey,
       sourceTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
       dateRange,
+      adsSourceMode: connectorKey === 'meta_ads' ? input.job.body?.sourceMode : null,
       sourceReadOnly: input.job.body?.dryRun === true,
       d1WriteEnabled: metaConfig.flags.d1Write === true && input.job.body?.dryRun !== true,
       larkWriteEnabled: larkEnabled,
@@ -215,6 +217,15 @@ function assertMetaJobDefinition(definition, connectorKey, body) {
     && (body?.dryRun === true || body?.d1Only === true)) {
     throw permanentError('Scheduled Meta job cannot reduce into dry-run or D1-only mode', {
       code: 'META_END_TO_END_JOB_INVALID',
+    });
+  }
+  if (connectorKey === 'meta_ads'
+    && body?.trigger === JOB_TRIGGERS.META_ORGANIC_SCHEDULED
+    && body?.sourceMode !== undefined
+    && body.sourceMode !== META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES) {
+    throw permanentError('Scheduled Meta Ads source mode is invalid', {
+      code: 'META_ADS_SOURCE_MODE_INVALID',
+      details: { sourceMode: body.sourceMode ?? null },
     });
   }
 

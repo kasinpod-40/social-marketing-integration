@@ -69,6 +69,10 @@ PASS; Production ยัง blocked. Chatwoot stable-identity pagination fix merg
 legacy in-progress operations ยังคง stable two-pass. PR #643 merge และ deploy แล้วบน Worker version
 `9d768d22-4f96-48aa-87d7-f1dd86c991a6` ที่ traffic 100%; เหลือ fresh scheduled Daily validation โดย
 ไม่ใช้ manual run แทนหลักฐาน.
+Daily contract ปัจจุบันลดงาน Source โดยไม่ลดความครบถ้วน: Chatwoot เก็บ overlap สามวันแต่ hydrate
+เฉพาะ Conversation ที่ยังไม่มีหรือมี `source_updated_at` ใหม่กว่า D1; Meta Ads อ่าน Daily Insights
+ของวันที่ปิดแล้วก่อนและดึง Creative เฉพาะ Ad ที่มี activity ในวันนั้น. ข้อมูลย้อนหลังเดิมไม่ถูกลบ
+และทุกปลายทางยังใช้ stable-key upsert กับ durable checkpoint เหมือนเดิม.
 TikTok Ads ยัง `planned`;
 Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ

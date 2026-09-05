@@ -197,6 +197,7 @@ test('Meta Ads schedule emits one previous-day stable operation per reviewed acc
   assert.equal(jobs[0].workKey, 'meta_ads:chemistry_k2:meta-ads-chemistry_k2-scheduled-20260808');
   assert.equal(jobs[0].periodStart, '2026-08-08');
   assert.equal(jobs[0].periodEnd, '2026-08-08');
+  assert.equal(jobs[0].sourceMode, 'daily_activity_scoped_creatives_v1');
   assert.equal(jobs[0].originalRequestedAt, Date.parse(scheduledAt));
 });
 

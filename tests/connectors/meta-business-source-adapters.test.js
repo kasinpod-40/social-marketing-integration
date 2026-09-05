@@ -210,6 +210,32 @@ test('Meta Ads source adapter keeps Insights reads daily, chunk-bounded and acco
   );
 });
 
+test('Meta Ads activity Creative lookup is one account-verified GET per active ad', async () => {
+  const calls = [];
+  const adapter = new MetaAdsSourceAdapter({
+    client: fakeReadClient({
+      calls,
+      getResult: {
+        id: '301',
+        account_id: '987650001',
+        creative: { id: '401', name: 'Creative 401' },
+      },
+    }),
+  });
+
+  const result = await adapter.fetchActivityCreative({
+    adAccountId: 'act_987650001',
+    adId: '301',
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'get');
+  assert.equal(calls[0].path, '301');
+  assert.equal(calls[0].options.operationName, 'meta_ads.creatives.activity_scoped');
+  assert.match(calls[0].query.fields, /creative\{id,name,object_story_id/u);
+  assert.deepEqual(result.resource, { id: '401', name: 'Creative 401' });
+});
+
 test('Meta Ads source adapter rejects malformed and out-of-scope response dates', async () => {
   const malformed = new MetaAdsSourceAdapter({
     client: fakeReadClient({

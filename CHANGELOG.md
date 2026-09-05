@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-05 — Bounded Chatwoot and Meta Ads Daily source
+
+- corrected Chatwoot's D1 revision lookup contract so the three-day Daily overlap hydrates only missing or
+  strictly newer Conversations instead of treating every candidate as changed;
+- made new scheduled Meta Ads generations read Daily Insights first and fetch Creative metadata only for unique
+  active Ads, avoiding a full historical Creative inventory scan on every daily run;
+- preserved all existing Business history, legacy/in-flight generation fingerprints, stable keys and bounded
+  D1/Lark checkpoint semantics.
+
 ## 2026-08-31 — Chatwoot revision-aware Daily continuation
 
 - skip Chatwoot Daily candidates whose provider revision is already present in D1, while retaining missing and
