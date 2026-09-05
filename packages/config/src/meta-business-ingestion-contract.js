@@ -6,6 +6,11 @@ export const META_BUSINESS_CONNECTOR_KEYS = Object.freeze({
   META_ADS: 'meta_ads',
 });
 
+export const META_ADS_SOURCE_MODES = Object.freeze({
+  LEGACY_FULL_CREATIVE_INVENTORY: 'legacy_full_creative_inventory_v1',
+  DAILY_ACTIVITY_SCOPED_CREATIVES: 'daily_activity_scoped_creatives_v1',
+});
+
 export const META_BUSINESS_SHARED_RAW_TABLES = deepFreeze({
   ORGANIC_ACCOUNTS: 'RAW_Meta_Organic_Accounts',
   ORGANIC_CONTENT: 'RAW_Meta_Organic_Content',
@@ -330,6 +335,16 @@ export const META_BUSINESS_INGESTION_CONTRACT = deepFreeze({
             'url_tags',
           ],
           paginated: true,
+        }),
+        adsEntityDataset({
+          key: 'meta_ads.creatives.activity_scoped',
+          pathTemplate: '{ad_id}',
+          entityType: 'creative',
+          fields: [
+            'id',
+            'account_id',
+            'creative{id,name,object_story_id,object_type,thumbnail_url,url_tags}',
+          ],
         }),
         dataset({
           key: 'meta_ads.performance.daily',

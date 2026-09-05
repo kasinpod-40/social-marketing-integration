@@ -7,6 +7,7 @@ import {
 import { processMetaEndToEndGeneration } from './process-meta-end-to-end-generation.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import { META_ADS_SOURCE_MODES } from '../../../config/src/meta-business-ingestion-contract.js';
 
 const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
 const ADS_MATERIALIZATION_PHASE = 'meta_ads_post_source_materialization_v2';
@@ -26,6 +27,12 @@ const ADS_STAGES = Object.freeze([
   'account',
   'creatives',
   'daily',
+  'complete',
+]);
+const ADS_ACTIVITY_SCOPED_STAGES = Object.freeze([
+  'account',
+  'daily',
+  'activity_creatives',
   'complete',
 ]);
 
@@ -48,6 +55,7 @@ export async function processMetaEndToEndSync(input = {}) {
   const syncRunId = requireText(input.syncRunId, 'syncRunId');
   const sourceTimezone = requireText(input.sourceTimezone ?? 'Asia/Bangkok', 'sourceTimezone');
   const dateRange = normalizeDateRange(input.dateRange, connectorKey === ADS_CONNECTOR);
+  const adsSourceMode = normalizeAdsSourceMode(input.adsSourceMode, connectorKey);
   const limits = normalizeLimits(input.limits);
   const assertLockActive = typeof input.assertLockActive === 'function'
     ? input.assertLockActive
@@ -63,6 +71,9 @@ export async function processMetaEndToEndSync(input = {}) {
     customerProfile,
     customerKey,
     dateRange,
+    ...(adsSourceMode === META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES
+      ? { adsSourceMode }
+      : {}),
     generation: operation.generation,
   });
   const begun = await workStore.beginWork({
@@ -96,7 +107,7 @@ export async function processMetaEndToEndSync(input = {}) {
     workKey: operation.workKey,
     phase: SOURCE_PHASE,
   });
-  let state = normalizeSourceState(existing?.state, connectorKey);
+  let state = normalizeSourceState(existing?.state, connectorKey, adsSourceMode);
   state = prepareFacebookDailyContentResume({ connectorKey, dateRange, state });
 
   if (state.stage !== 'complete') {
@@ -323,8 +334,41 @@ async function advanceState(input) {
       }
     }
   } else {
-    const index = ADS_STAGES.indexOf(next.stage);
-    next.stage = ADS_STAGES[index + 1] ?? 'complete';
+    if (next.adsSourceMode === META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES) {
+      if (next.stage === 'account') {
+        next.stage = 'daily';
+      } else if (next.stage === 'daily') {
+        const staged = await readAllStagedUnits({
+          workStore: input.workStore,
+          workKey: input.workKey,
+          expectedUnits: input.state.unitCount,
+          maximum: input.limits.sourceMaxUnits,
+        });
+        const currentPayload = stagedPayloadWithSequence(input.payload, input.state.unitCount);
+        next.activityAdIds = Object.freeze([...uniqueText([...staged, currentPayload]
+          .filter((entry) => entry.datasetKey === 'meta_ads.performance.daily')
+          .flatMap((entry) => entry.rows)
+          .map((row) => row?.ad_id))].sort((left, right) => left.localeCompare(right)));
+        next.activityAdIndex = 0;
+        next.stage = next.activityAdIds.length > 0 ? 'activity_creatives' : 'complete';
+        next.pageState = next.activityAdIds.length > 0
+          ? { entityId: next.activityAdIds[0], pageNumber: 1 }
+          : null;
+      } else if (next.stage === 'activity_creatives') {
+        next.activityAdIndex += 1;
+        if (next.activityAdIndex >= next.activityAdIds.length) {
+          next.stage = 'complete';
+        } else {
+          next.pageState = {
+            entityId: next.activityAdIds[next.activityAdIndex],
+            pageNumber: 1,
+          };
+        }
+      }
+    } else {
+      const index = ADS_STAGES.indexOf(next.stage);
+      next.stage = ADS_STAGES[index + 1] ?? 'complete';
+    }
   }
   return freezeState(next);
 }
@@ -385,6 +429,7 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
   const adsDatasets = {
     account: 'meta_ads.account.latest',
     creatives: 'meta_ads.creatives.inventory',
+    activity_creatives: 'meta_ads.creatives.activity_scoped',
     daily: 'meta_ads.performance.daily',
   };
   return {
@@ -439,11 +484,13 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
       code: 'META_END_TO_END_SOURCE_ACCOUNT_INVALID',
     });
   }
-  const hasCreativeInventoryUnit = staged.some(
-    (entry) => entry.datasetKey === 'meta_ads.creatives.inventory',
+  const hasCreativeUnit = staged.some(
+    (entry) => ['meta_ads.creatives.inventory', 'meta_ads.creatives.activity_scoped']
+      .includes(entry.datasetKey),
   );
   const creatives = staged
-    .filter((entry) => entry.datasetKey === 'meta_ads.creatives.inventory')
+    .filter((entry) => ['meta_ads.creatives.inventory', 'meta_ads.creatives.activity_scoped']
+      .includes(entry.datasetKey))
     .flatMap((entry) => entry.rows);
   const dailyInsights = staged
     .filter((entry) => entry.datasetKey === 'meta_ads.performance.daily')
@@ -459,7 +506,10 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
     creatives,
     dailyInsights,
     entityScopeMode: 'report_range',
-    larkProjectionMode: hasCreativeInventoryUnit ? 'curated_reports' : 'detailed',
+    larkProjectionMode: (hasCreativeUnit
+      || state.adsSourceMode === META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES)
+      ? 'curated_reports'
+      : 'detailed',
     sourceWatermark: state.sourceWatermark,
   });
 }
@@ -785,7 +835,8 @@ async function compactAdsSourceRow(datasetKey, value, context) {
     });
     return Object.freeze(compact);
   }
-  if (datasetKey === 'meta_ads.creatives.inventory') {
+  if (datasetKey === 'meta_ads.creatives.inventory'
+    || datasetKey === 'meta_ads.creatives.activity_scoped') {
     const compact = pickSourceFields(row, [
       'id', 'name', 'status', 'effective_status', 'updated_time', 'campaign_id', 'adset_id',
       'ad_id', 'creative_id', 'landing_page_url', 'effective_object_story_id', 'object_type',
@@ -918,9 +969,16 @@ function summarizeSnapshot(snapshot) {
   });
 }
 
-function normalizeSourceState(value, connectorKey) {
+function normalizeSourceState(value, connectorKey, requestedAdsSourceMode) {
   const source = value && typeof value === 'object' ? value : {};
-  const allowedStages = ORGANIC_CONNECTORS.has(connectorKey) ? ORGANIC_STAGES : ADS_STAGES;
+  const adsSourceMode = connectorKey === ADS_CONNECTOR
+    ? normalizePersistedAdsSourceMode(source, requestedAdsSourceMode)
+    : null;
+  const allowedStages = ORGANIC_CONNECTORS.has(connectorKey)
+    ? ORGANIC_STAGES
+    : adsSourceMode === META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES
+      ? ADS_ACTIVITY_SCOPED_STAGES
+      : ADS_STAGES;
   const stage = source.stage ?? 'account';
   if (!allowedStages.includes(stage)) {
     throw permanentError('Meta durable source stage is invalid', {
@@ -955,9 +1013,41 @@ function normalizeSourceState(value, connectorKey) {
     unitCount: nonNegativeInteger(source.unitCount ?? 0, 'unitCount'),
     rowCount: nonNegativeInteger(source.rowCount ?? 0, 'rowCount'),
     sourceWatermark: optionalText(source.sourceWatermark),
+    adsSourceMode,
+    activityAdIds: uniqueText(source.activityAdIds ?? []),
+    activityAdIndex: nonNegativeInteger(source.activityAdIndex ?? 0, 'activityAdIndex'),
     contentInventoryScope,
     contentInventoryStartSequence,
   });
+}
+
+function normalizePersistedAdsSourceMode(source, requestedMode) {
+  const stored = optionalText(source.adsSourceMode);
+  if (stored === null) {
+    const hasProgress = nonNegativeInteger(source.unitCount ?? 0, 'unitCount') > 0;
+    return hasProgress
+      ? META_ADS_SOURCE_MODES.LEGACY_FULL_CREATIVE_INVENTORY
+      : requestedMode;
+  }
+  if (stored !== requestedMode) {
+    throw permanentError('Meta Ads source mode changed inside one durable generation', {
+      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
+      details: { storedMode: stored, requestedMode },
+    });
+  }
+  return stored;
+}
+
+function normalizeAdsSourceMode(value, connectorKey) {
+  if (connectorKey !== ADS_CONNECTOR) return null;
+  const mode = optionalText(value) ?? META_ADS_SOURCE_MODES.LEGACY_FULL_CREATIVE_INVENTORY;
+  if (!Object.values(META_ADS_SOURCE_MODES).includes(mode)) {
+    throw permanentError('Meta Ads source mode is invalid', {
+      code: 'META_ADS_SOURCE_MODE_INVALID',
+      details: { sourceMode: mode },
+    });
+  }
+  return mode;
 }
 
 function normalizePageState(value) {
@@ -1103,6 +1193,9 @@ function cloneState(value) {
     unitCount: value.unitCount,
     rowCount: value.rowCount,
     sourceWatermark: value.sourceWatermark,
+    adsSourceMode: value.adsSourceMode,
+    activityAdIds: [...value.activityAdIds],
+    activityAdIndex: value.activityAdIndex,
     contentInventoryScope: value.contentInventoryScope,
     contentInventoryStartSequence: value.contentInventoryStartSequence,
   };
@@ -1112,6 +1205,7 @@ function freezeState(value) {
   return deepFreeze({
     ...value,
     contentIds: [...value.contentIds],
+    activityAdIds: [...value.activityAdIds],
   });
 }
 

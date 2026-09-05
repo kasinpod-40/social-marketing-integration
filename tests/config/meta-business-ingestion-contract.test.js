@@ -7,6 +7,7 @@ import {
   META_BUSINESS_CONNECTOR_KEYS,
   META_BUSINESS_INGESTION_CONTRACT,
   META_BUSINESS_SHARED_RAW_TABLES,
+  META_ADS_SOURCE_MODES,
 } from '../../packages/config/src/meta-business-ingestion-contract.js';
 
 const connectors = META_BUSINESS_INGESTION_CONTRACT.connectors;
@@ -120,6 +121,19 @@ test('Meta Ads daily contract preserves breakdown, action arrays and revision gr
     META_BUSINESS_INGESTION_CONTRACT.safeguards.conversionMappingStatus,
     'approval_required',
   );
+});
+
+test('Meta Ads scheduled source contract supports activity-scoped Creative reads', () => {
+  const ads = connectors[META_BUSINESS_CONNECTOR_KEYS.META_ADS];
+  const activityCreative = ads.datasets.find(
+    (dataset) => dataset.key === 'meta_ads.creatives.activity_scoped',
+  );
+
+  assert.equal(META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES,
+    'daily_activity_scoped_creatives_v1');
+  assert.equal(activityCreative.pathTemplate, '{ad_id}');
+  assert.equal(activityCreative.paginated, false);
+  assert.ok(activityCreative.fields.includes('account_id'));
 });
 
 test('all Meta business transport limits are finite and bounded', () => {

@@ -3,11 +3,11 @@
 ## Status
 
 ```text
-TASK_STATUS                              = CUSTOMER_META_K2_WIRE_DIGEST_DIAGNOSTIC_REVIEW
+TASK_STATUS                              = BOUNDED_DAILY_INCREMENTAL_SOURCE_REVIEW
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 6c3bae21
-CURRENT_BRANCH                           = codex/meta-k2-wire-digest-diagnostic
-CUSTOMER_WORKERS_PLAN                    = FREE_UPGRADE_NOT_CURRENTLY_AVAILABLE
+BASE_MAIN_SHA                            = 17eea757
+CURRENT_BRANCH                           = codex/bounded-daily-incremental-source
+CUSTOMER_WORKERS_PLAN                    = PAID_BASE_PLAN_NO_ADD_ON
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
@@ -757,6 +757,22 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   intended period and exact customer group mapping is read back.
 
 ## Implementation result
+
+### 2026-09-05 — Chatwoot revision filter and Meta K2 activity-scoped Daily source
+
+- fixed the exact Chatwoot Daily defect: the runtime passed `externalIds`, while the D1 store reads
+  `externalConversationIds`; prior states were therefore always empty and every candidate in the immutable
+  three-day overlap was hydrated as changed;
+- retained the one-shot server-side `updated_within` discovery and overlap safety, but now compares the stored
+  `source_updated_at` correctly and hydrates only missing or strictly newer Conversations;
+- changed only new scheduled Meta Ads generations to read the completed Daily Insights period first, derive the
+  unique active Ad IDs, then fetch one Creative projection per active Ad instead of paging the full historical
+  `/adcreatives` inventory every day;
+- preserved legacy/in-flight generations byte-for-byte through the stored source mode and unchanged legacy
+  fingerprint; historical Business rows are never deleted, and all new/changed rows continue through stable-key
+  upsert, bounded preflight, D1 and Lark checkpoints;
+- focused regression passes `61/61`; `npm run check`, full `npm test` (`3,319` Node / `18` Workers-runtime),
+  Report reliability `106/106`, zero-vulnerability audit, deploy dry-run and `git diff --check` pass.
 
 ### 2026-09-01 — Meta K2 exact local cross-table manifest repair
 

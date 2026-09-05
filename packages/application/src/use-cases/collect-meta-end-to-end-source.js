@@ -174,6 +174,11 @@ async function invokeDataset(input) {
       return page(await input.adapter.fetchAdsPage({ adAccountId: accountId, ...commonPage }));
     case 'meta_ads.creatives.inventory':
       return page(await input.adapter.fetchCreativesPage({ adAccountId: accountId, ...commonPage }));
+    case 'meta_ads.creatives.activity_scoped':
+      return optionalNode(await input.adapter.fetchActivityCreative({
+        adAccountId: accountId,
+        adId: requireText(input.state.entityId, 'state.entityId'),
+      }));
     case 'meta_ads.performance.daily':
       return page(await input.adapter.fetchDailyInsightsPage({
         adAccountId: accountId,
@@ -190,6 +195,13 @@ async function invokeDataset(input) {
 function node(value) {
   const resource = requireObject(value?.resource, 'node resource');
   return Object.freeze({ rows: Object.freeze([resource]), hasMore: false, nextCursor: null });
+}
+
+function optionalNode(value) {
+  if (value?.resource === null || value?.resource === undefined) {
+    return Object.freeze({ rows: Object.freeze([]), hasMore: false, nextCursor: null });
+  }
+  return node(value);
 }
 
 function page(value) {

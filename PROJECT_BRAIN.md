@@ -1,5 +1,18 @@
 # Project Brain — Social Marketing Data Integration
 
+## Bounded Daily source contract — 2026-09-05
+
+Chatwoot Daily keeps its immutable three-day `updated_within` overlap, but the persisted revision lookup must use
+the D1 store contract field `externalConversationIds`. Passing the former `externalIds` alias returned no stored
+state and made every candidate appear changed. The corrected path hydrates only missing or strictly newer
+Conversations; stable-key upserts still preserve late updates and all historical Business data.
+
+New scheduled Meta Ads generations use `daily_activity_scoped_creatives_v1`: read the completed Daily Insights
+period first, derive unique active Ad IDs, then retrieve the Creative attached to each active Ad. They no longer
+page the full historical Creative inventory every day. Existing persisted generations without the new source mode
+remain on the legacy inventory contract and retain their original operation fingerprint. Full historical rows are
+preserved; destination writes remain bounded and idempotent.
+
 ## Meta K2 bounded post-source materialization — 2026-08-28
 
 A completed large Meta source snapshot must not be reassembled from every staged source unit in one Workers Free

@@ -64,6 +64,29 @@ export class MetaAdsSourceAdapter {
     return this.#fetchEntityPage('creatives', input);
   }
 
+  async fetchActivityCreative(input = {}) {
+    const accountId = normalizeMetaAdAccountId(input.adAccountId);
+    const adId = requireNumericId(input.adId, 'adId');
+    const dataset = contract('meta_ads.creatives.activity_scoped');
+    const resource = await this.client.get(
+      adId,
+      { fields: fieldsQuery(dataset) },
+      { operationName: dataset.key },
+    );
+    assertMetaIdentity(requireNumericId(resource?.id, 'providerAdId'), adId, 'META_AD_IDENTITY_MISMATCH');
+    assertMetaIdentity(
+      normalizeMetaAdAccountId(resource?.account_id, 'providerAdAccountId'),
+      accountId,
+      'META_AD_ACCOUNT_IDENTITY_MISMATCH',
+    );
+    const creative = resource?.creative;
+    return deepFreeze({
+      datasetKey: dataset.key,
+      sourceAccountId: accountId,
+      resource: creative && typeof creative === 'object' ? { ...creative } : null,
+    });
+  }
+
   async fetchDailyInsightsPage(input = {}) {
     const accountId = normalizeMetaAdAccountId(input.adAccountId);
     const requestedRange = normalizeMetaDateRange(input, ADS_MAX_HISTORY_DAYS);
@@ -160,6 +183,12 @@ export class MetaAdsSourceAdapter {
       page,
     });
   }
+}
+
+function requireNumericId(value, fieldName) {
+  const text = String(value ?? '').trim();
+  if (!/^\d+$/u.test(text)) throw new TypeError(`${fieldName} must be numeric`);
+  return text;
 }
 
 export function encodeAdsHistoryCursor(input = {}) {

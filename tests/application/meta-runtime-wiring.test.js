@@ -685,6 +685,89 @@ test('Meta Ads stages account then creatives then July insights and derives only
   assert.equal(calls[0].until, '2026-07-25');
 });
 
+test('Meta Ads scheduled source reads Daily first and fetches creatives only for active ads', async () => {
+  const workStore = createWorkStore();
+  const fullInventoryCalls = [];
+  const activityCreativeCalls = [];
+  const adapter = createAdapter();
+  adapter.fetchCreativesPage = async (input) => {
+    fullInventoryCalls.push(input);
+    throw new Error('scheduled incremental source must not enumerate full Creative inventory');
+  };
+  adapter.fetchDailyInsightsPage = async () => ({
+    rows: [
+      {
+        account_id: '123456',
+        campaign_id: '100',
+        campaign_name: 'Campaign',
+        adset_id: '200',
+        adset_name: 'Ad Set',
+        ad_id: '301',
+        ad_name: 'Ad 301',
+        date_start: '2026-07-25',
+        date_stop: '2026-07-25',
+        publisher_platform: 'facebook',
+        spend: '1',
+        impressions: '10',
+        reach: '8',
+        clicks: '2',
+      },
+      {
+        account_id: '123456',
+        campaign_id: '100',
+        campaign_name: 'Campaign',
+        adset_id: '200',
+        adset_name: 'Ad Set',
+        ad_id: '301',
+        ad_name: 'Ad 301',
+        date_start: '2026-07-25',
+        date_stop: '2026-07-25',
+        publisher_platform: 'instagram',
+        spend: '2',
+        impressions: '20',
+        reach: '16',
+        clicks: '4',
+      },
+    ],
+    hasMore: false,
+    nextCursor: null,
+  });
+  adapter.fetchActivityCreative = async ({ adId }) => {
+    activityCreativeCalls.push(adId);
+    return {
+      resource: {
+        id: '401',
+        name: 'Creative 401',
+        object_type: 'VIDEO',
+      },
+    };
+  };
+  const input = baseInput({
+    adapter,
+    adsSourceMode: 'daily_activity_scoped_creatives_v1',
+    resumableWorkStore: workStore,
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+  });
+
+  assert.equal((await processMetaEndToEndSync(input)).continuationPhase, 'daily');
+  assert.equal((await processMetaEndToEndSync(input)).continuationPhase, 'activity_creatives');
+  const result = await processMetaEndToEndSync(input);
+
+  assert.equal(result.status, 'source_validated');
+  assert.equal(fullInventoryCalls.length, 0);
+  assert.deepEqual(activityCreativeCalls, ['301']);
+  assert.deepEqual(result.sourceSummary, {
+    accountRows: 1,
+    campaignRows: 1,
+    adSetRows: 1,
+    adRows: 1,
+    creativeRows: 1,
+    dailyRows: 2,
+  });
+});
+
 test('Meta Ads rejects more than 31 inclusive days before Provider access', async () => {
   let calls = 0;
   const adapter = createAdapter();

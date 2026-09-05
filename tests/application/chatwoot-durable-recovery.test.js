@@ -257,11 +257,17 @@ test('resumed Daily discovery prunes unchanged revisions before Provider hydrati
     conversationRowsScanned: 2,
   };
   let detailReads = 0;
+  let revisionFilterReads = 0;
   const store = noOpStore();
-  store.readConversationStates = async () => [
+  store.readConversationStates = async (request) => {
+    revisionFilterReads += 1;
+    assert.equal(request.externalIds, undefined);
+    if (revisionFilterReads === 1) assert.deepEqual(request.externalConversationIds, [91, 92]);
+    return [
     { externalConversationId: '91', sourceUpdatedAt: REQUESTED_AT - DAY_MS },
     { externalConversationId: '92', sourceUpdatedAt: REQUESTED_AT - (2 * DAY_MS) },
-  ];
+    ];
+  };
   const input = runtimeInput({
     continuationSequence: 2,
     now: () => REQUESTED_AT + 60_000,
@@ -290,6 +296,7 @@ test('resumed Daily discovery prunes unchanged revisions before Provider hydrati
 
   const filtered = await syncChatwootDurableRuntime(input);
   assert.equal(filtered.nextSequence, 3);
+  assert.equal(revisionFilterReads, 1);
   assert.equal(detailReads, 0);
   assert.deepEqual(durableState.conversationPendingIds, [92]);
   assert.equal(durableState.conversationStateFilterApplied, true);

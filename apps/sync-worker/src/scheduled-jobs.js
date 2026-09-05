@@ -9,6 +9,7 @@ import { createStableQueueOperationBody } from '../../../packages/application/sr
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import { readMetaAdAccounts } from '../../../packages/config/src/meta-token-connection-config.js';
+import { META_ADS_SOURCE_MODES } from '../../../packages/config/src/meta-business-ingestion-contract.js';
 import { createDashboardReportSettingKey } from '../../../packages/config/src/report-settings.seed.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import {
@@ -254,6 +255,7 @@ export function buildScheduledJobs(input = {}) {
           type: JOB_TYPES.META_ADS_SYNC,
           trigger: JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
           sourceAccountKey: account.key,
+          sourceMode: META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES,
           dryRun: false,
           d1Only: false,
           periodStart: completedPeriodEnd,
