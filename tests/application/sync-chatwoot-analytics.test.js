@@ -177,8 +177,8 @@ test('Chatwoot sync omits an orphan label reference without fabricating a label 
   assert.equal(order.includes('d1:conversation-label'), false);
 });
 
-test('Chatwoot sync batches D1 state and label reads above 500 conversations', async () => {
-  const rows = Array.from({ length: 501 }, (_, index) => conversation(index + 1));
+test('Chatwoot sync keeps D1 state and label reads within the 100-parameter limit', async () => {
+  const rows = Array.from({ length: 199 }, (_, index) => conversation(index + 1));
   const stateBatches = [];
   const labelBatches = [];
   const store = makeStore({
@@ -209,9 +209,9 @@ test('Chatwoot sync batches D1 state and label reads above 500 conversations', a
     coverageStore: coverageStore(),
     incrementalStateStore: checkpointStore([]),
   });
-  assert.equal(result.source.conversationsSelected, 501);
-  assert.deepEqual(stateBatches, [500, 1]);
-  assert.deepEqual(labelBatches, [500, 1]);
+  assert.equal(result.source.conversationsSelected, 199);
+  assert.deepEqual(stateBatches, [99, 99, 1]);
+  assert.deepEqual(labelBatches, [99, 99, 1]);
 });
 
 test('Chatwoot Lark failure leaves only partial coverage and does not checkpoint', async () => {

@@ -309,6 +309,71 @@ test('resumed Daily discovery prunes unchanged revisions before Provider hydrati
   assert.deepEqual(durableState.conversationPendingIds, []);
 });
 
+test('resumed Daily revision filtering keeps D1 reads within the 100-parameter limit', async () => {
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    id: index + 1,
+    account_id: 1,
+    inbox_id: 3,
+    status: 'open',
+    created_at: REQUESTED_AT - DAY_MS,
+    updated_at: REQUESTED_AT - DAY_MS,
+    last_activity_at: REQUESTED_AT - DAY_MS,
+  }));
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'conversations',
+    mastersComplete: true,
+    nextSequence: 2,
+    conversationPage: 2,
+    conversationSeenIds: rows.map((row) => row.id),
+    conversationPendingIds: rows.map((row) => row.id),
+    conversationDiscoveryComplete: true,
+    conversationUpdatedWithinSeconds: 259_500,
+    conversationStateFilterApplied: true,
+    conversationPagesProcessed: 1,
+    conversationRowsScanned: rows.length,
+  };
+  const batches = [];
+  const store = noOpStore();
+  store.readConversationStates = async (request) => {
+    batches.push(request.externalConversationIds.length);
+    return request.externalConversationIds.map((id) => ({
+      externalConversationId: String(id),
+      sourceUpdatedAt: REQUESTED_AT - DAY_MS,
+    }));
+  };
+
+  await syncChatwootDurableRuntime(runtimeInput({
+    continuationSequence: 2,
+    now: () => REQUESTED_AT + 60_000,
+    client: requiredClient({
+      listConversationsPage: async () => ({
+        page: 1, rows, totalCount: rows.length, hasMore: false,
+      }),
+    }),
+    chatwootStore: store,
+    coverageStore: {
+      saveCoverageRun: async (row) => row,
+      saveCoverageEntities: async (values) => values,
+    },
+    workStore: {
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (value) => {
+        durableState = value.state;
+        return { state: value.state };
+      },
+    },
+  }));
+
+  assert.deepEqual(batches, [99, 1]);
+  assert.deepEqual(durableState.conversationPendingIds, []);
+  assert.equal(durableState.conversationsSkippedUnchanged, 100);
+  assert.equal(durableState.conversationStateFilterVersion, 1);
+});
+
 test('retryable Conversation hydration moves only the failed identity behind healthy pending work', async () => {
   const rows = [91, 92].map((id) => ({
     id,

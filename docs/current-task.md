@@ -1261,3 +1261,17 @@ child identity after reviewed merge/deploy.
   batches from contaminating the frozen projection manifest. A separate exact confirmation can reuse the two
   fully confirmed D1 executions through a local reconciliation-only store; it issues zero additional remote D1
   writes and fails closed for any other confirmation value.
+
+### 2026-09-06 — Chatwoot daily revision-filter D1 parameter bound
+
+- Production evidence on exact work `chatwoot:chemistry_k:chatwoot-daily-20260905` proved that the first
+  versioned unchanged-revision refresh stopped at unit `65` with `CHATWOOT_D1_READ_FAILED` before any new
+  Conversation hydration. The durable candidate snapshot and all prior Business data remain retained;
+- Cloudflare D1 allows at most `100` bound parameters per statement. Each state read also binds `accountKey`, so
+  the shared application read boundary is now `99` Conversation identities instead of the prior unsafe `100`
+  (durable refresh) or `500` (non-durable compatibility path);
+- both Chatwoot paths now reuse the same explicit boundary. Regression tests prove `100` retained identities are
+  read as `99 + 1`, and `199` compatibility identities are read as `99 + 99 + 1` for both state and label reads;
+- focused Chatwoot tests, `npm run check`, full `npm test`, Report reliability `106/106`, audit with zero
+  vulnerabilities, deploy dry-run and `git diff --check` pass. Reviewed merge/deploy and one guarded exact
+  same-generation recovery after `lock=0` remain required before declaring current Chatwoot freshness complete.
