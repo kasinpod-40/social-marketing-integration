@@ -6,6 +6,7 @@ import { syncChatwootAnalytics } from './sync-chatwoot-analytics.js';
 import {
   assertChatwootDurableState,
   CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES,
+  CHATWOOT_CONVERSATION_REVISION_FILTER_VERSION,
   CHATWOOT_RUNTIME_MODES,
   CHATWOOT_RUNTIME_PHASE,
   createInitialChatwootDurableState,
@@ -121,7 +122,7 @@ async function processConversationUnit(context, state) {
   if (next.conversationDiscoveryStrategy
       === CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES.UPDATED_WITHIN_ONCE
       && next.conversationDiscoveryComplete
-      && !next.conversationStateFilterApplied) {
+      && next.conversationStateFilterVersion !== CHATWOOT_CONVERSATION_REVISION_FILTER_VERSION) {
     await refreshRecentlyUpdatedConversationCandidates(context, next);
     next.nextSequence += 1;
     return Object.freeze(next);
@@ -289,6 +290,7 @@ async function discoverRecentlyUpdatedConversations(context, next) {
     .map((row) => requirePositiveId(row?.id, 'conversation.id'));
   next.conversationsSkippedUnchanged += candidateRows.length - pendingRows.length;
   next.conversationStateFilterApplied = true;
+  next.conversationStateFilterVersion = CHATWOOT_CONVERSATION_REVISION_FILTER_VERSION;
   next.conversationNewIdsInPass = boundaryRows.length;
   next.conversationRowsScanned += uniqueRows.length;
   next.conversationPagesProcessed += 1;
@@ -333,6 +335,7 @@ async function refreshRecentlyUpdatedConversationCandidates(context, next) {
   });
   next.conversationsSkippedUnchanged += previousCount - next.conversationPendingIds.length;
   next.conversationStateFilterApplied = true;
+  next.conversationStateFilterVersion = CHATWOOT_CONVERSATION_REVISION_FILTER_VERSION;
   next.conversationUpdatedWithinSeconds = updatedWithinSeconds;
 }
 
@@ -919,6 +922,7 @@ function reconciliation(state) {
     conversationDiscoveryComplete: state.conversationDiscoveryComplete,
     conversationUpdatedWithinSeconds: state.conversationUpdatedWithinSeconds,
     conversationStateFilterApplied: state.conversationStateFilterApplied,
+    conversationStateFilterVersion: state.conversationStateFilterVersion,
     conversationsSkippedUnchanged: state.conversationsSkippedUnchanged,
     conversationPagesProcessed: state.conversationPagesProcessed,
     conversationRowsScanned: state.conversationRowsScanned,

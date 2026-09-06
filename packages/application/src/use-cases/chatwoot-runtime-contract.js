@@ -14,6 +14,8 @@ export const CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES = Object.freeze({
   UPDATED_WITHIN_ONCE: 'updated_within_once',
 });
 
+export const CHATWOOT_CONVERSATION_REVISION_FILTER_VERSION = 1;
+
 export const CHATWOOT_RUNTIME_CONTRACT = Object.freeze({
   initialBackfillDays: 30,
   incrementalOverlapDays: 3,
@@ -135,6 +137,7 @@ export function createInitialChatwootDurableState(input = {}) {
     conversationDiscoveryComplete: false,
     conversationUpdatedWithinSeconds: null,
     conversationStateFilterApplied: false,
+    conversationStateFilterVersion: null,
     conversationsSkippedUnchanged: 0,
     conversationLegacyDriftRecovered: false,
     conversationPagesProcessed: 0,
@@ -242,6 +245,10 @@ export function assertChatwootDurableState(value, expected = {}) {
     conversationDiscoveryComplete,
     conversationUpdatedWithinSeconds,
     conversationStateFilterApplied: value.conversationStateFilterApplied === true,
+    conversationStateFilterVersion: nullablePositiveInteger(
+      value.conversationStateFilterVersion,
+      'conversationStateFilterVersion',
+    ),
     conversationsSkippedUnchanged: nonNegativeInteger(
       value.conversationsSkippedUnchanged ?? 0,
       'conversationsSkippedUnchanged',

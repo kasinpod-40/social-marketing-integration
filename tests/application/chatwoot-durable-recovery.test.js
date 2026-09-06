@@ -253,6 +253,7 @@ test('resumed Daily discovery prunes unchanged revisions before Provider hydrati
     conversationPendingIds: [91, 92],
     conversationDiscoveryComplete: true,
     conversationUpdatedWithinSeconds: 259_500,
+    conversationStateFilterApplied: true,
     conversationPagesProcessed: 1,
     conversationRowsScanned: 2,
   };
@@ -300,6 +301,7 @@ test('resumed Daily discovery prunes unchanged revisions before Provider hydrati
   assert.equal(detailReads, 0);
   assert.deepEqual(durableState.conversationPendingIds, [92]);
   assert.equal(durableState.conversationStateFilterApplied, true);
+  assert.equal(durableState.conversationStateFilterVersion, 1);
   assert.equal(durableState.conversationsSkippedUnchanged, 1);
 
   await syncChatwootDurableRuntime({ ...input, continuationSequence: 3 });
@@ -331,6 +333,7 @@ test('retryable Conversation hydration moves only the failed identity behind hea
     conversationDiscoveryComplete: true,
     conversationUpdatedWithinSeconds: 259_500,
     conversationStateFilterApplied: true,
+    conversationStateFilterVersion: 1,
   };
   const written = [];
   const store = noOpStore();

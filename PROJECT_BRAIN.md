@@ -5,7 +5,8 @@
 Chatwoot Daily keeps its immutable three-day `updated_within` overlap, but the persisted revision lookup must use
 the D1 store contract field `externalConversationIds`. Passing the former `externalIds` alias returned no stored
 state and made every candidate appear changed. The corrected path hydrates only missing or strictly newer
-Conversations; stable-key upserts still preserve late updates and all historical Business data.
+Conversations. A versioned durable marker makes an in-flight generation refresh and prune once when its prior
+filter used the defective contract; stable-key upserts still preserve late updates and all historical Business data.
 
 New scheduled Meta Ads generations use `daily_activity_scoped_creatives_v1`: read the completed Daily Insights
 period first, derive unique active Ad IDs, then retrieve the Creative attached to each active Ad. They no longer

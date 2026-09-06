@@ -4,6 +4,8 @@
 
 - corrected Chatwoot's D1 revision lookup contract so the three-day Daily overlap hydrates only missing or
   strictly newer Conversations instead of treating every candidate as changed;
+- versioned the persisted revision-filter marker so an in-flight generation filtered by the defective contract
+  refreshes and prunes its retained identities exactly once without replaying the generation;
 - made new scheduled Meta Ads generations read Daily Insights first and fetch Creative metadata only for unique
   active Ads, avoiding a full historical Creative inventory scan on every daily run;
 - preserved all existing Business history, legacy/in-flight generation fingerprints, stable keys and bounded
