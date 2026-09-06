@@ -68,6 +68,13 @@ MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED=false
 MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED=false
 MKT_GOOGLE_ADS_LARK_WRITE_ENABLED=false
 MKT_GOOGLE_ADS_D1_ROWS_PER_INVOCATION=250
+# Shared paid-Ads post-sync maintenance remains dark until Campaign Summary schema and D1/Lark readback are approved.
+MKT_ADS_CAMPAIGN_SUMMARY_ENABLED=false
+MKT_ADS_DAILY_RETENTION_ENABLED=false
+MKT_ADS_DAILY_RETENTION_DAYS=90
+MKT_ADS_DAILY_SOFT_LIMIT=17000
+MKT_ADS_DAILY_TARGET_LIMIT=15000
+MKT_ADS_DAILY_MAX_DELETE_ROWS=500
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
 # YouTube End-to-End และ Lark delivery เป็น Gate อิสระ; ค่า Default false รักษา Legacy route เดิม
 MKT_YOUTUBE_END_TO_END_ENABLED=false
@@ -226,6 +233,7 @@ LARK_TABLE_MKT_CONTENT_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ACCOUNT_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ADS_ACCOUNTS=replace-with-table-id
 LARK_TABLE_MKT_ADS_CAMPAIGNS=replace-with-table-id
+LARK_TABLE_MKT_ADS_CAMPAIGN_SUMMARY=replace-with-table-id
 LARK_TABLE_MKT_ADS_ASSET_GROUPS=replace-with-table-id
 LARK_TABLE_MKT_ADS_ADGROUPS=replace-with-table-id
 LARK_TABLE_MKT_ADS_ADS=replace-with-table-id
