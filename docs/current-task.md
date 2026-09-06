@@ -763,6 +763,8 @@ reviewed repair makes the same logical read proceed successfully. The retained f
 - fixed the exact Chatwoot Daily defect: the runtime passed `externalIds`, while the D1 store reads
   `externalConversationIds`; prior states were therefore always empty and every candidate in the immutable
   three-day overlap was hydrated as changed;
+- versioned the persisted revision-filter marker so the active pre-fix Daily generation refreshes its retained
+  identity snapshot once and prunes unchanged Conversations without replay or a replacement generation;
 - retained the one-shot server-side `updated_within` discovery and overlap safety, but now compares the stored
   `source_updated_at` correctly and hydrates only missing or strictly newer Conversations;
 - changed only new scheduled Meta Ads generations to read the completed Daily Insights period first, derive the
