@@ -20,6 +20,7 @@ import {
   isRetryableError,
   permanentError,
 } from '../../../shared/src/errors/runtime-error.js';
+import { CHATWOOT_STORE_READ_BATCH_SIZE } from './chatwoot-runtime-contract.js';
 
 const DEFAULT_INCREMENTAL_OVERLAP_HOURS = 48;
 const DEFAULT_MAX_CONVERSATIONS = 5_000;
@@ -27,7 +28,6 @@ const DEFAULT_MAX_CONTACTS = 5_000;
 const DEFAULT_MAX_REPORTING_EVENTS = 10_000;
 const DEFAULT_MAX_MESSAGE_PAGES_PER_CONVERSATION = 50;
 const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 1_000;
-const STORE_READ_BATCH_SIZE = 500;
 const CHATWOOT_CONVERSATION_HYDRATION_CONCURRENCY = 1;
 
 const CHATWOOT_STORE_METHODS = Object.freeze([
@@ -463,10 +463,10 @@ async function readStoreInBatches(readMethod, accountKey, externalConversationId
     'externalConversationId',
   )))];
   const result = [];
-  for (let index = 0; index < ids.length; index += STORE_READ_BATCH_SIZE) {
+  for (let index = 0; index < ids.length; index += CHATWOOT_STORE_READ_BATCH_SIZE) {
     const rows = await readMethod({
       accountKey,
-      externalConversationIds: ids.slice(index, index + STORE_READ_BATCH_SIZE),
+      externalConversationIds: ids.slice(index, index + CHATWOOT_STORE_READ_BATCH_SIZE),
     });
     result.push(...requireArray(rows, 'store read rows'));
   }

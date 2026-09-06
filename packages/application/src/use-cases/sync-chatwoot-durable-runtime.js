@@ -7,6 +7,7 @@ import {
   assertChatwootDurableState,
   CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES,
   CHATWOOT_CONVERSATION_REVISION_FILTER_VERSION,
+  CHATWOOT_STORE_READ_BATCH_SIZE,
   CHATWOOT_RUNTIME_MODES,
   CHATWOOT_RUNTIME_PHASE,
   createInitialChatwootDurableState,
@@ -343,11 +344,11 @@ async function filterConversationRowsByStoredRevision(context, rows) {
   if (rows.length === 0) return Object.freeze([]);
   const externalIds = rows.map((row) => requirePositiveId(row?.id, 'conversation.id'));
   const previousStates = [];
-  for (let index = 0; index < externalIds.length; index += 100) {
+  for (let index = 0; index < externalIds.length; index += CHATWOOT_STORE_READ_BATCH_SIZE) {
     await context.assertCurrent();
     previousStates.push(...await context.chatwootStore.readConversationStates({
       accountKey: context.accountKey,
-      externalConversationIds: externalIds.slice(index, index + 100),
+      externalConversationIds: externalIds.slice(index, index + CHATWOOT_STORE_READ_BATCH_SIZE),
     }));
   }
   const previousById = new Map(

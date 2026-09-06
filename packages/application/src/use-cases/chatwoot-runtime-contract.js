@@ -15,6 +15,9 @@ export const CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES = Object.freeze({
 });
 
 export const CHATWOOT_CONVERSATION_REVISION_FILTER_VERSION = 1;
+// D1 accepts at most 100 bound parameters. Conversation-state reads also bind accountKey,
+// leaving room for at most 99 conversation identities per statement.
+export const CHATWOOT_STORE_READ_BATCH_SIZE = 99;
 
 export const CHATWOOT_RUNTIME_CONTRACT = Object.freeze({
   initialBackfillDays: 30,
