@@ -72,7 +72,9 @@ legacy in-progress operations ยังคง stable two-pass. PR #643 merge แ
 Daily contract ปัจจุบันลดงาน Source โดยไม่ลดความครบถ้วน: Chatwoot เก็บ overlap สามวันแต่ hydrate
 เฉพาะ Conversation ที่ยังไม่มีหรือมี `source_updated_at` ใหม่กว่า D1; Meta Ads อ่าน Daily Insights
 ของวันที่ปิดแล้วก่อนและดึง Creative เฉพาะ Ad ที่มี activity ในวันนั้น. ข้อมูลย้อนหลังเดิมไม่ถูกลบ
-และทุกปลายทางยังใช้ stable-key upsert กับ durable checkpoint เหมือนเดิม.
+และทุกปลายทางยังใช้ stable-key upsert กับ durable checkpoint เหมือนเดิม. Queue ของ Chatwoot ยังคง
+ประมวลผลทีละ delivery แต่สามารถ hydrate ภายใน delivery พร้อมกันได้สูงสุดสอง Conversation ผ่าน
+execution-only cap โดยไม่เปลี่ยน Work fingerprint.
 TikTok Ads ยัง `planned`;
 Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ

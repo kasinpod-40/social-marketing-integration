@@ -1,5 +1,13 @@
 # Project Brain — Social Marketing Data Integration
 
+## Chatwoot bounded hydration concurrency — 2026-09-07
+
+Chatwoot keeps serial Queue delivery, the same Daily generation and the same ten-Conversation execution unit.
+Only the heavy message/reporting hydration inside that unit may use an execution-only concurrency of two. The
+default remains one and the application hard cap is two. Ordered results, retryable Conversation deferral,
+stable-key writes, D1-first persistence and Lark reconciliation are unchanged, so a deploy can accelerate future
+continuations without restarting or reinterpreting the retained Work.
+
 ## Bounded Daily source contract — 2026-09-05
 
 Chatwoot Daily keeps its immutable three-day `updated_within` overlap, but the persisted revision lookup must use

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-07 — Chatwoot bounded hydration concurrency
+
+- kept Queue batch/concurrency at one while allowing at most two Conversation message/event hydrations inside
+  the same bounded delivery;
+- made the speed control execution-only and default-safe at one, preserving the active Work fingerprint,
+  deterministic output order, retryable deferral, stable-key upserts and all historical Business data.
+
 ## 2026-09-05 — Bounded Chatwoot and Meta Ads Daily source
 
 - corrected Chatwoot's D1 revision lookup contract so the three-day Daily overlap hydrates only missing or
