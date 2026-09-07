@@ -186,3 +186,29 @@ test('July activity scope keeps detailed daily facts in D1 and emits one bounded
       && row.period_end === '2026-07-31'
     )), true);
 });
+
+test('curated activity scope collapses one Creative reused by multiple Ads before D1 and Lark planning', async () => {
+  const writeSet = await buildMetaAdsWriteSet({
+    ...baseInput(),
+    entityScopeMode: 'report_range',
+    larkProjectionMode: 'curated_reports',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-07-31',
+    campaigns: [],
+    adSets: [],
+    ads: [],
+    creatives: [
+      { id: 'creative_shared', name: 'Shared Creative', object_type: 'VIDEO' },
+      { id: 'creative_shared', effective_status: 'ACTIVE' },
+    ],
+    dailyInsights: [],
+  });
+
+  assert.equal(writeSet.canonical.adsCreatives.length, 1);
+  assert.equal(writeSet.canonical.adsCreatives[0].ads_creative_key,
+    'meta_ads:987650001:creative:creative_shared');
+  assert.equal(writeSet.canonical.adsCreatives[0].creative_name, 'Shared Creative');
+  assert.equal(writeSet.canonical.adsCreatives[0].creative_type, 'video');
+  assert.equal(writeSet.d1.adsEntities.filter((row) => row.entity_type === 'creative').length, 1);
+  assert.equal(writeSet.d1.coverageEntities.filter((row) => row.entity_type === 'creative').length, 1);
+});
