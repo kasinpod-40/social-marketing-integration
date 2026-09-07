@@ -102,8 +102,11 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   unchanged;
 - focused Chatwoot regression passes `44/44`; `npm run check` passes with `829` source files, `2,513`
   dependencies and zero cycles; full tests pass `3,322` Node plus `18` Workers-runtime tests; Report reliability
-  passes `106/106`; npm audit has zero vulnerabilities; deploy dry-run and diff-check pass. Reviewed PR, Customer
-  deploy with execution cap `2` and live next-unit throughput proof remain required.
+  passes `106/106`; npm audit has zero vulnerabilities; deploy dry-run and diff-check pass;
+- PR `#803` merged as `main@94cbde19`. Customer Worker version
+  `5f46e22c-183a-4649-ba7a-be7e288aeb79` is active with read-back execution caps `10` Conversations and hydration
+  concurrency `2`; Queue batch/concurrency remains `1`. The retained `20260906` Work advanced through successful
+  unit `151` and admitted unit `152` without restart, replacement generation or new error.
 
 ## Current authorized schedule and newer-only parity scope — 2026-08-27
 
