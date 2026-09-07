@@ -93,6 +93,18 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   Report reliability passes `106/106`; npm audit has zero vulnerabilities; deploy dry-run and diff-check pass.
   Reviewed PR, Customer deploy and guarded recovery of the exact retained generation remain required.
 
+### Implementation result — Chatwoot bounded hydration concurrency (2026-09-07)
+
+- the current Daily Work remains the same generation and durable checkpoint; Queue batch/concurrency remains
+  `1`, while only the message/event hydration inside one delivery may run two Conversations concurrently;
+- the execution-only cap defaults to `1`, is hard-limited to `2`, preserves source order and keeps the existing
+  per-Conversation retryable deferral. Stable keys, D1-first writes, Lark reconciliation and historical rows are
+  unchanged;
+- focused Chatwoot regression passes `44/44`; `npm run check` passes with `829` source files, `2,513`
+  dependencies and zero cycles; full tests pass `3,322` Node plus `18` Workers-runtime tests; Report reliability
+  passes `106/106`; npm audit has zero vulnerabilities; deploy dry-run and diff-check pass. Reviewed PR, Customer
+  deploy with execution cap `2` and live next-unit throughput proof remain required.
+
 ## Current authorized schedule and newer-only parity scope — 2026-08-27
 
 - Customer source admissions are staggered at least one hour apart on the serial Queue: Meta Ads `00:30`,

@@ -118,6 +118,45 @@ test('Chatwoot sync defers one retryable Conversation while committing the healt
   assert.deepEqual(captured.map((row) => row.external_conversation_id), ['72']);
 });
 
+test('Chatwoot sync hydrates at most two Conversations concurrently and preserves source order', async () => {
+  let active = 0;
+  let maximumActive = 0;
+  let releaseFirst;
+  const firstBlocked = new Promise((resolve) => { releaseFirst = resolve; });
+  const fallback = setTimeout(releaseFirst, 100);
+  const captured = [];
+  const client = clientWithConversations([conversation(71), conversation(72)], {
+    async listMessagesPage(input) {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      if (String(input.conversationId) === '71') await firstBlocked;
+      else releaseFirst();
+      active -= 1;
+      return { rows: [], hasMore: false, nextBefore: null };
+    },
+    async listConversationReportingEvents() { return []; },
+  });
+  const result = await syncChatwootAnalytics({
+    ...baseInput(),
+    connectorEnabled: true,
+    d1WriteEnabled: true,
+    larkWriteEnabled: false,
+    reportWriteEnabled: false,
+    checkpointWriteEnabled: true,
+    fullSnapshot: true,
+    conversationHydrationConcurrency: 2,
+    client,
+    chatwootStore: makeStore({ capturedConversations: captured }),
+    coverageStore: coverageStore(),
+    incrementalStateStore: checkpointStore([]),
+  });
+  clearTimeout(fallback);
+
+  assert.equal(result.source.conversationsSelected, 2);
+  assert.equal(maximumActive, 2);
+  assert.deepEqual(captured.map((row) => row.external_conversation_id), ['71', '72']);
+});
+
 test('Chatwoot sync rethrows when every selected Conversation is retryable', async () => {
   const client = clientWithConversations([conversation(71)], {
     async listMessagesPage() {

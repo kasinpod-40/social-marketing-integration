@@ -109,17 +109,23 @@ test('Chatwoot execution caps shrink a deployed unit without expanding reviewed 
     conversationPagesPerInvocation: 1,
   });
   assert.deepEqual(resolveChatwootExecutionLimits(limits, {
+    MKT_CHATWOOT_EXECUTION_HYDRATION_CONCURRENCY: '2',
     MKT_CHATWOOT_EXECUTION_CONVERSATION_ROWS_PER_INVOCATION: '1',
     MKT_CHATWOOT_EXECUTION_REPORTING_PAGES_PER_INVOCATION: '1',
   }), {
+    conversationHydrationConcurrency: 2,
     conversationRowsPerInvocation: 1,
     reportingPagesPerInvocation: 1,
     conversationPagesPerInvocation: 1,
   });
   assert.deepEqual(resolveChatwootExecutionLimits(limits, {
+    MKT_CHATWOOT_EXECUTION_HYDRATION_CONCURRENCY: '100',
     MKT_CHATWOOT_EXECUTION_CONVERSATION_ROWS_PER_INVOCATION: '100',
     MKT_CHATWOOT_EXECUTION_REPORTING_PAGES_PER_INVOCATION: '100',
-  }), limits);
+  }), {
+    ...limits,
+    conversationHydrationConcurrency: 2,
+  });
 });
 
 test('all Chatwoot Lark logical keys are centrally registered and unique', () => {

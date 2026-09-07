@@ -728,6 +728,7 @@ function baseSyncInput(context, syncRunId) {
     maxReportingEvents: context.limits.maxReportingEvents,
     maxMessagePagesPerConversation: context.limits.maxMessagePagesPerConversation,
     maxMessagesPerConversation: context.limits.maxMessagesPerConversation,
+    conversationHydrationConcurrency: context.limits.conversationHydrationConcurrency,
     chatwootStore: context.chatwootStore,
     coverageStore: context.coverageStore,
     repository: context.repository,
@@ -788,6 +789,12 @@ function readContext(input) {
     maxMessagesPerConversation: positiveInteger(
       sourceLimits.maxMessagesPerConversation,
       'limits.maxMessagesPerConversation',
+    ),
+    conversationHydrationConcurrency: boundedInteger(
+      sourceLimits.conversationHydrationConcurrency ?? 1,
+      'limits.conversationHydrationConcurrency',
+      1,
+      2,
     ),
   });
   const flags = Object.freeze({
@@ -997,6 +1004,15 @@ function positiveInteger(value, fieldName) {
   if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
   return number;
 }
+
+function boundedInteger(value, fieldName, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < minimum || number > maximum) {
+    throw new TypeError(`${fieldName} must be between ${minimum} and ${maximum}`);
+  }
+  return number;
+}
+
 function requirePositiveId(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
