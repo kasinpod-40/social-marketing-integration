@@ -79,6 +79,20 @@ therefore a runtime cutover to the customer-owned Cloudflare resources and custo
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
+### Implementation result — Meta K2 Daily activity Creative deduplication (2026-09-07)
+
+- Current K2 generation `meta-ads-chemistry_k2-scheduled-20260906` completed source and bounded
+  materialization, then stopped before any D1/Lark write with `LARK_PREFLIGHT_FAILED`. Persisted safe
+  diagnostics prove one exact cause: `MKT_Ads_Creatives.ads_creative_key` had nine duplicate input rows;
+- read-only D1 aggregation proves the activity-scoped snapshot contains `34` Creative observations but only
+  `25` distinct Creative IDs. This is valid Provider behavior because several active Ads reuse one Creative;
+- curated report-range projection now collapses repeated Creative observations by Provider Creative ID before
+  creating D1, Coverage and Lark stable-key rows. Legacy full-inventory/detailed generations are unchanged;
+- focused Meta write-set/runtime/preflight regression passes `22/22`; `npm run check` passes with `829` source
+  files, `2,513` dependencies and zero cycles; full tests pass `3,321` Node plus `18` Workers-runtime tests;
+  Report reliability passes `106/106`; npm audit has zero vulnerabilities; deploy dry-run and diff-check pass.
+  Reviewed PR, Customer deploy and guarded recovery of the exact retained generation remain required.
+
 ## Current authorized schedule and newer-only parity scope — 2026-08-27
 
 - Customer source admissions are staggered at least one hour apart on the serial Queue: Meta Ads `00:30`,

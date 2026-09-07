@@ -62,7 +62,9 @@ export async function buildMetaAdsWriteSet(input = {}) {
     campaigns: requireArray(input.campaigns ?? [], 'campaigns'),
     adSets: requireArray(input.adSets ?? [], 'adSets'),
     ads: requireArray(input.ads ?? [], 'ads'),
-    creatives: requireArray(input.creatives ?? [], 'creatives'),
+    creatives: curatedLark && entityScopeMode === 'report_range'
+      ? deduplicateActivityCreatives(requireArray(input.creatives ?? [], 'creatives'))
+      : requireArray(input.creatives ?? [], 'creatives'),
   };
 
   const rawEntities = [];
@@ -315,6 +317,30 @@ export async function buildMetaAdsWriteSet(input = {}) {
       spendStatus: dailyInputs.length === 0 ? 'no_data_confirmed' : 'revisable',
     },
   });
+}
+
+/**
+ * Daily activity ค้น Creative ผ่าน Ad ที่มีการเคลื่อนไหว จึงพบ Creative เดียวกันซ้ำได้ตามปกติ
+ * ตัดซ้ำก่อนสร้าง Stable key ของ D1/Lark และเก็บค่าที่ไม่ว่างล่าสุดตามลำดับ Ad ที่คงที่
+ * เพื่อไม่ให้ Response บางส่วนลบ Metadata ที่พบแล้วใน Snapshot เดียวกัน
+ */
+function deduplicateActivityCreatives(rows) {
+  const byId = new Map();
+  for (const source of rows) {
+    const row = requireObject(source, 'creative');
+    const id = requireText(row.id ?? row.creative_id, 'creative.id');
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, { ...row });
+      continue;
+    }
+    const merged = { ...existing };
+    for (const [field, value] of Object.entries(row)) {
+      if (value !== null && value !== undefined && value !== '') merged[field] = value;
+    }
+    byId.set(id, merged);
+  }
+  return Object.freeze([...byId.values()].map((row) => Object.freeze(row)));
 }
 
 /**
