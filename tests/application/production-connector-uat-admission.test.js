@@ -61,13 +61,21 @@ test('standard Production execution admits a verified connector', () => {
   assert.equal(connector.accountKey, 'chemistry_k');
 });
 
-test('controlled Production UAT admits a dev_ready connector missing only liveAccountUat', () => {
-  const connector = assertConnectorRunnable(productionRuntime(), 'woocommerce', {
-    runMode: CONNECTOR_RUN_MODES.CONTROLLED_PRODUCTION_UAT,
-  });
-
+test('standard Production execution admits WooCommerce after exact live UAT promotion', () => {
+  const connector = assertConnectorRunnable(productionRuntime(), 'woocommerce');
   assert.equal(connector.enabled, true);
   assert.equal(connector.accountKey, 'chemistry_k');
+});
+
+test('controlled Production UAT does not replace normal admission for verified WooCommerce', () => {
+  assert.throws(
+    () => assertConnectorRunnable(productionRuntime(), 'woocommerce', {
+      runMode: CONNECTOR_RUN_MODES.CONTROLLED_PRODUCTION_UAT,
+    }),
+    (error) => error.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING'
+      && error.details?.largeAccountStatus === 'verified'
+      && error.details?.controlledProductionUatEligible === false,
+  );
 });
 
 test('controlled Production UAT does not replace normal admission for an already verified connector', () => {

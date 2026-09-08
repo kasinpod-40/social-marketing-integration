@@ -94,7 +94,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
-    largeAccount: devReadyLargeAccount('orders', 5000),
+    largeAccount: verifiedLargeAccount('orders', 5000),
   }),
   [CONNECTOR_KEYS.CHATWOOT]: freezeDefinition({
     key: CONNECTOR_KEYS.CHATWOOT,
@@ -117,18 +117,6 @@ function verifiedLargeAccount(primaryEntity, minimumFixtureItems) {
     primaryEntity,
     minimumFixtureItems,
     gates: Object.fromEntries(LARGE_ACCOUNT_REQUIRED_GATES.map((gate) => [gate, true])),
-  });
-}
-
-function devReadyLargeAccount(primaryEntity, minimumFixtureItems) {
-  return createLargeAccountReadiness({
-    status: LARGE_ACCOUNT_STATUS.DEV_READY,
-    primaryEntity,
-    minimumFixtureItems,
-    gates: Object.fromEntries(LARGE_ACCOUNT_REQUIRED_GATES.map((gate) => [
-      gate,
-      gate !== 'liveAccountUat',
-    ])),
   });
 }
 

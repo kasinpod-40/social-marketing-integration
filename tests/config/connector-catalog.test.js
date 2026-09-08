@@ -47,6 +47,7 @@ test('customer-source live evidence promotes reviewed connectors after exact Pro
   const facebook = getConnectorCatalogEntry('facebook');
   const metaAds = getConnectorCatalogEntry('meta_ads');
   const googleAds = getConnectorCatalogEntry('google_ads');
+  const woocommerce = getConnectorCatalogEntry('woocommerce');
   const chatwoot = getConnectorCatalogEntry('chatwoot');
 
   assert.equal(youtube.largeAccount.status, 'verified');
@@ -66,7 +67,7 @@ test('customer-source live evidence promotes reviewed connectors after exact Pro
   assert.equal(chatwoot.implementationStatus, 'active');
   assert.equal(metaAds.capability, 'paid_ads');
   assert.equal(instagram.largeAccount.minimumFixtureItems, 2000);
-  for (const connector of [facebook, instagram, metaAds, googleAds, chatwoot]) {
+  for (const connector of [facebook, instagram, metaAds, googleAds, woocommerce, chatwoot]) {
     assert.equal(connector.largeAccount.status, 'verified');
     assert.deepEqual(connector.largeAccount.missingGates, []);
     assert.equal(connector.largeAccount.productionReady, true);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-08 — WooCommerce Production readiness promotion
+
+- promoted WooCommerce from `dev_ready` to `verified` using the retained 2026-08-31 Customer Production
+  source/D1/Lark and idempotent incremental reconciliation evidence;
+- restored normal `04:30` Production incremental admission through the existing central readiness gate;
+- added a scheduler regression that proves the exact WooCommerce job and Reliability wake-up are enqueued,
+  without enabling full reconciliation or changing historical Business data.
+
 ## 2026-09-08 — Customer Weekly AI neutral-context quality repair
 
 - retained the evidence-backed positive channel/metric requirements for Weekly Executive strengths;
