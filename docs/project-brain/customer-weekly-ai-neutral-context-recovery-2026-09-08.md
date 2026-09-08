@@ -34,3 +34,9 @@ After reviewed merge and Customer deploy, recover only exact operation `weekly-e
 retained Work/generation after confirming lock zero and no existing delivery. Completion requires one D1 delivery
 with `status=sent`, `claim_count=1`, `mirror_status=mirrored`, exactly one Lark group message and zero duplicate.
 Do not create a replacement Weekly identity and do not use generic DLQ redrive.
+
+The first guarded same-generation replay after deploy proved another independent recovery boundary: normal source
+collection intentionally chose the newest available Weekly period, which had advanced beyond `2026-09-06`.
+Automatic Weekly processing now passes its retained `periodEnd` into source collection. This selects the exact
+historical snapshot set for a reviewed retry while all callers without an explicit target retain newest-period
+behavior. The failed attempt created no Notification delivery or group message and must not be replayed again.

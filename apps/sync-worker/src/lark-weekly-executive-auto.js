@@ -96,6 +96,7 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
     const collected = await collectSource({
       client,
       customerProfile: jobInput.config.customerProfile,
+      targetPeriodEnd: periodEnd,
     });
     const observedPeriodEnd = requireDateOnly(
       collected?.targetPeriod?.periodEnd,

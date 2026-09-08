@@ -91,6 +91,9 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   longer rejects a neutral metric merely because it is mentioned as context in the same evidence-backed text;
 - focused Weekly regression passes. Reviewed merge/deploy and guarded same-identity recovery remain required;
   success requires exactly one sent/mirrored delivery with `claim_count=1`, one group message and zero duplicate.
+- live same-generation recovery then exposed a second fail-closed boundary: the source collector selected the newest
+  available Weekly period instead of the operation's retained `periodEnd`. The collector now accepts an exact
+  period end for automatic Weekly jobs while preserving newest-period selection for ordinary callers.
 
 ### Implementation result — Meta K2 Daily activity Creative deduplication (2026-09-07)
 
