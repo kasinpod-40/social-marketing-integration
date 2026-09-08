@@ -348,7 +348,14 @@ test('full-channel AI quality still requires positive metric strength and negati
   }, built.evidence);
   assert.equal(neutralStrength.passed, false);
   assert.ok(neutralStrength.violations.includes('strengths_missing_positive_metric'));
-  assert.ok(neutralStrength.violations.includes('strengths_contains_neutral_metric'));
+
+  const contextualNeutralMetric = validateLarkWeeklyExecutiveFullChannelAiOutputs({
+    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้',
+    strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน แม้ค่าใช้จ่ายทรงตัว',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ ใช้ [TEST] ทดลอง Paid\n[KEEP] Creative B คงไว้ดูผล\n[NO-SCALE] การแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง',
+  }, built.evidence);
+  assert.equal(contextualNeutralMetric.violations.includes('strengths_contains_neutral_metric'), false);
 
   const stale = validateLarkWeeklyExecutiveFullChannelAiOutputs({
     insight_summary: 'Meta Ads ใช้งบ 17,742.8 ในสัปดาห์นี้',
