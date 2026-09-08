@@ -31,7 +31,7 @@ function snapshot(periodEnd, generatedAt) {
   };
 }
 
-function client() {
+function client(searches = []) {
   const ids = Object.fromEntries(Object.keys(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)
     .map((key) => [key, `tbl_${key}`]));
   return {
@@ -50,30 +50,42 @@ function client() {
         account_id: 'youtube:chemistry_k',
       } }],
     }),
-    searchRecordsByFieldValues: async ({ tableId }) => {
-      if (tableId === ids.snapshots) return [
-        snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z')),
-        snapshot('2026-09-07', Date.parse('2026-09-08T02:15:00Z')),
-      ];
+    searchRecordsByFieldValues: async (input) => {
+      const { tableId } = input;
+      searches.push(input);
+      if (tableId === ids.snapshots && input.fieldName === 'period_end') {
+        return [snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z'))];
+      }
+      if (tableId === ids.snapshots) {
+        return [
+          snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z')),
+          snapshot('2026-09-07', Date.parse('2026-09-08T02:15:00Z')),
+        ];
+      }
       return [];
     },
   };
 }
 
 test('exact period selection keeps a retained Weekly recovery on its scheduled period', async () => {
+  const exactSearches = [];
   const exact = await collectLarkNativeAiWeekly7dControlledUatSource({
-    client: client(),
+    client: client(exactSearches),
     customerProfile: 'chemistry_k',
     targetPeriodEnd: '2026-09-06',
   });
   assert.equal(exact.targetPeriod.periodEnd, '2026-09-06');
   assert.deepEqual(exact.sourceReportIds, ['report:2026-09-06']);
   assert.equal(exact.selectionPolicy, 'exact_period_end_with_maximum_channel_coverage');
+  assert.equal(exactSearches[0].fieldName, 'period_end');
+  assert.deepEqual(exactSearches[0].values, [String(atBangkokDay('2026-09-06'))]);
 
+  const latestSearches = [];
   const latest = await collectLarkNativeAiWeekly7dControlledUatSource({
-    client: client(),
+    client: client(latestSearches),
     customerProfile: 'chemistry_k',
   });
   assert.equal(latest.targetPeriod.periodEnd, '2026-09-07');
   assert.equal(latest.selectionPolicy, 'newest_7d_period_with_maximum_channel_coverage');
+  assert.equal(latestSearches[0].fieldName, 'report_setting_key');
 });

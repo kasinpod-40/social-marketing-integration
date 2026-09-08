@@ -40,3 +40,9 @@ collection intentionally chose the newest available Weekly period, which had adv
 Automatic Weekly processing now passes its retained `periodEnd` into source collection. This selects the exact
 historical snapshot set for a reviewed retry while all callers without an explicit target retain newest-period
 behavior. The failed attempt created no Notification delivery or group message and must not be replayed again.
+
+The following guarded replay proved one more bounded-read condition: the broad `report_setting_key` search no
+longer returned the older target because newer snapshots filled its result window. When `periodEnd` is explicit,
+the collector must therefore query `MKT_Report_Snapshots.period_end` at Bangkok midnight server-side and only
+then validate Customer profile, enabled setting, Report type and seven-day window. This changes no ordinary
+newest-period caller and does not create a new report or Notification identity.

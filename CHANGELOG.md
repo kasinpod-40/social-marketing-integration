@@ -6,6 +6,8 @@
 - stopped treating a neutral metric mentioned only as context as an independent quality failure;
 - bound automatic Weekly source collection to the job's exact period end so reviewed retrospective recovery does
   not drift to a newer materialized week;
+- query an explicit Weekly `period_end` at the Lark server boundary so bounded newer snapshot history cannot hide
+  the retained retrospective period;
 - preserved all other cross-channel, candidate, decision-action and exactly-once Notification gates.
 
 ## 2026-09-07 — Chatwoot bounded hydration concurrency
