@@ -46,3 +46,8 @@ longer returned the older target because newer snapshots filled its result windo
 the collector must therefore query `MKT_Report_Snapshots.period_end` at Bangkok midnight server-side and only
 then validate Customer profile, enabled setting, Report type and seven-day window. This changes no ordinary
 newest-period caller and does not create a new report or Notification identity.
+
+The first direct query used the generic text-field equality helper and live Lark rejected it with
+`1254018 InvalidFilter`; no delivery or message was created. The valid exact-DateTime contract is the same range
+form already used by production report sources: `period_end >= Bangkok midnight` and `period_end < next Bangkok
+midnight`, bounded to at most 500 returned rows before the existing authority filters run.

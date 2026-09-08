@@ -42,19 +42,13 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
   );
   assertUniqueChannelSettings(settings);
 
-  const snapshotSearch = targetPeriodEnd
-    ? {
-      fieldName: 'period_end',
-      values: [String(dateOnlyToEpochMilliseconds(targetPeriodEnd, { utcOffset: '+07:00' }))],
-    }
-    : {
+  const snapshots = targetPeriodEnd
+    ? await searchSnapshotsForBangkokDay(client, tables.snapshots, targetPeriodEnd)
+    : await client.searchRecordsByFieldValues({
+      tableId: tables.snapshots,
       fieldName: 'report_setting_key',
       values: settings.map(({ reportSettingKey }) => reportSettingKey),
-    };
-  const snapshots = await client.searchRecordsByFieldValues({
-    tableId: tables.snapshots,
-    ...snapshotSearch,
-  });
+    });
   if (snapshots.length > LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSnapshotRows) {
     throw sourceError(
       '7D Snapshot candidates exceeded the bounded weekly UAT inventory',
@@ -118,6 +112,27 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     selectionPolicy: targetPeriodEnd
       ? 'exact_period_end_with_maximum_channel_coverage'
       : 'newest_7d_period_with_maximum_channel_coverage',
+  });
+}
+
+function searchSnapshotsForBangkokDay(client, tableId, targetPeriodEnd) {
+  if (typeof client.searchRecords !== 'function') {
+    throw new TypeError('client.searchRecords is required for exact-period Weekly source');
+  }
+  const start = dateOnlyToEpochMilliseconds(targetPeriodEnd, { utcOffset: '+07:00' });
+  const endExclusive = start + 86_400_000;
+  return client.searchRecords({
+    tableId,
+    filter: {
+      conjunction: 'and',
+      conditions: [
+        { fieldName: 'period_end', operator: 'isGreaterEqual', value: [start] },
+        { fieldName: 'period_end', operator: 'isLess', value: [endExclusive] },
+      ],
+    },
+    pageSize: LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSnapshotRows,
+    maxPages: 2,
+    maxItems: LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSnapshotRows,
   });
 }
 

@@ -7,7 +7,8 @@
 - bound automatic Weekly source collection to the job's exact period end so reviewed retrospective recovery does
   not drift to a newer materialized week;
 - query an explicit Weekly `period_end` at the Lark server boundary so bounded newer snapshot history cannot hide
-  the retained retrospective period;
+  the retained retrospective period, using the validated DateTime day-range operators rather than invalid text
+  equality;
 - preserved all other cross-channel, candidate, decision-action and exactly-once Notification gates.
 
 ## 2026-09-07 — Chatwoot bounded hydration concurrency

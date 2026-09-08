@@ -14,7 +14,9 @@ Retrospective recovery must select snapshots by the operation's exact `periodEnd
 period would incorrectly reject a valid retained operation after a newer Weekly Report has materialized.
 For an explicit target, the Lark snapshot query itself must filter `period_end` server-side. A broad bounded
 `report_setting_key` query followed by client filtering can omit older snapshots once newer history fills the
-result window. Callers without an explicit target keep the existing newest-period query and ranking.
+result window. Lark DateTime equality through the text-field helper is invalid (`1254018`), so the exact day uses
+the established DateTime range contract: `>=` Bangkok midnight and `<` the next midnight. Callers without an
+explicit target keep the existing newest-period query and ranking.
 
 ## Chatwoot bounded hydration concurrency — 2026-09-07
 
