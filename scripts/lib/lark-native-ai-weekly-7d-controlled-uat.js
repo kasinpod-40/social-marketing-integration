@@ -19,6 +19,7 @@ const REPORT_TYPE = 'dashboard_performance_report';
 
 export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {}) {
   const client = requireClient(input.client);
+  const targetPeriodEnd = optionalDateOnly(input.targetPeriodEnd, 'targetPeriodEnd');
   const customerProfile = requireText(
     input.customerProfile ?? 'integration_workspace',
     'customerProfile',
@@ -52,7 +53,12 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
       { count: snapshots.length },
     );
   }
-  const selected = selectTargetSnapshotSet(snapshots, settings, customerProfile);
+  const selected = selectTargetSnapshotSet(
+    snapshots,
+    settings,
+    customerProfile,
+    targetPeriodEnd,
+  );
   const reportIds = selected.map(({ snapshot }) => snapshot.report_id);
   if (reportIds.length === 0) throw sourceError(
     'No validated 7D Report snapshot is available for weekly AI UAT',
@@ -100,7 +106,9 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     sourceReportIds: [...reportIds].sort(),
     customerProfile,
     tableNames: Object.keys(tables).sort(),
-    selectionPolicy: 'newest_7d_period_with_maximum_channel_coverage',
+    selectionPolicy: targetPeriodEnd
+      ? 'exact_period_end_with_maximum_channel_coverage'
+      : 'newest_7d_period_with_maximum_channel_coverage',
   });
 }
 
@@ -237,7 +245,7 @@ function assertUniqueChannelSettings(settings) {
   );
 }
 
-function selectTargetSnapshotSet(records, settings, customerProfile) {
+function selectTargetSnapshotSet(records, settings, customerProfile, targetPeriodEnd = null) {
   const settingsByKey = new Map(settings.map((setting) => [setting.reportSettingKey, setting]));
   const normalized = records.map((record) => normalizeSnapshotFields(record.fields))
     .filter((snapshot) => (
@@ -249,9 +257,12 @@ function selectTargetSnapshotSet(records, settings, customerProfile) {
       && snapshot.period_end !== null
       && snapshot.generated_at !== null
     ));
+  const eligible = targetPeriodEnd
+    ? normalized.filter((snapshot) => dateOnlyInBangkok(snapshot.period_end) === targetPeriodEnd)
+    : normalized;
   const latestPerSetting = [];
   for (const setting of settings) {
-    const candidates = normalized
+    const candidates = eligible
       .filter((snapshot) => snapshot.report_setting_key === setting.reportSettingKey)
       .sort(compareSnapshotNewest);
     if (candidates.length > 0) latestPerSetting.push({ setting, snapshot: candidates[0] });
@@ -276,7 +287,7 @@ function selectTargetSnapshotSet(records, settings, customerProfile) {
   const periodKey = stableStringify(target.period);
   const selected = [];
   for (const setting of settings) {
-    const candidates = normalized.filter((snapshot) => (
+    const candidates = eligible.filter((snapshot) => (
       snapshot.report_setting_key === setting.reportSettingKey
       && stableStringify(snapshotPeriod(snapshot)) === periodKey
     )).sort(compareSnapshotNewest);
@@ -549,6 +560,14 @@ function dateOnlyInBangkok(value) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(epoch));
   const byType = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
   return `${byType.year}-${byType.month}-${byType.day}`;
+}
+function optionalDateOnly(value, label) {
+  if (value === null || value === undefined || value === '') return null;
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00.000Z`))) {
+    throw new TypeError(`${label} must be YYYY-MM-DD`);
+  }
+  return text;
 }
 function larkMultiText(value) {
   if (Array.isArray(value)) return value.map(larkText).filter(Boolean);

@@ -10,6 +10,8 @@ channel and metric, but a contextual neutral metric is not independently a quali
 identity remains authoritative and may be recovered once after reviewed deploy; replacement identity and
 duplicate send remain forbidden. See
 `docs/project-brain/customer-weekly-ai-neutral-context-recovery-2026-09-08.md`.
+Retrospective recovery must select snapshots by the operation's exact `periodEnd`; selecting the newest available
+period would incorrectly reject a valid retained operation after a newer Weekly Report has materialized.
 
 ## Chatwoot bounded hydration concurrency — 2026-09-07
 
