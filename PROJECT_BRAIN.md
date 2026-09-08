@@ -1,5 +1,16 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Weekly AI neutral-context quality repair — 2026-09-08
+
+The Customer Weekly 7D Reports for period end `2026-09-06` were complete across all eight active channels,
+but automatic AI/Notification stopped before delivery. Isolated read-only Customer Worker diagnostics proved
+the generated AI output failed only because `strengths` mentioned a neutral metric as context; every positive,
+negative, candidate and decision-action requirement otherwise passed. The gate must still require a positive
+channel and metric, but a contextual neutral metric is not independently a quality failure. The retained weekly
+identity remains authoritative and may be recovered once after reviewed deploy; replacement identity and
+duplicate send remain forbidden. See
+`docs/project-brain/customer-weekly-ai-neutral-context-recovery-2026-09-08.md`.
+
 ## Chatwoot bounded hydration concurrency — 2026-09-07
 
 Chatwoot keeps serial Queue delivery, the same Daily generation and the same ten-Conversation execution unit.

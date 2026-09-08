@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-08 — Customer Weekly AI neutral-context quality repair
+
+- retained the evidence-backed positive channel/metric requirements for Weekly Executive strengths;
+- stopped treating a neutral metric mentioned only as context as an independent quality failure;
+- preserved all other cross-channel, candidate, decision-action and exactly-once Notification gates.
+
 ## 2026-09-07 — Chatwoot bounded hydration concurrency
 
 - kept Queue batch/concurrency at one while allowing at most two Conversation message/event hydrations inside

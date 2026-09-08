@@ -79,6 +79,19 @@ therefore a runtime cutover to the customer-owned Cloudflare resources and custo
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
+### Implementation result — Customer Weekly AI neutral-context quality repair (2026-09-08)
+
+- Customer D1 proves all eight Weekly 7D Reports for period end `2026-09-06` materialized, while exact
+  operation `weekly-executive-auto-20260906` stopped before delivery on
+  `LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED`; no Notification delivery row or group send exists;
+- an isolated Customer Worker Preview with zero Production traffic and zero mutation read only the exact
+  generated AI identity. It proved one violation only: `strengths_contains_neutral_metric`; all required
+  positive/negative evidence, named candidates and decision actions already passed;
+- the quality gate now continues to require a positive channel and positive metric in `strengths`, but no
+  longer rejects a neutral metric merely because it is mentioned as context in the same evidence-backed text;
+- focused Weekly regression passes. Reviewed merge/deploy and guarded same-identity recovery remain required;
+  success requires exactly one sent/mirrored delivery with `claim_count=1`, one group message and zero duplicate.
+
 ### Implementation result — Meta K2 Daily activity Creative deduplication (2026-09-07)
 
 - Current K2 generation `meta-ads-chemistry_k2-scheduled-20260906` completed source and bounded

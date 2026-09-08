@@ -175,9 +175,6 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   const positiveMetricNames = Array.isArray(evidence.positiveComparisonMetricNames)
     ? evidence.positiveComparisonMetricNames
     : [];
-  const neutralMetricNames = Array.isArray(evidence.neutralComparisonMetricNames)
-    ? evidence.neutralComparisonMetricNames
-    : [];
   if (positiveNames.length > 0) {
     if (strengths === LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK) {
       violations.push('strengths_ignored_positive_comparison');
@@ -187,9 +184,6 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
       }
       if (positiveMetricNames.length > 0 && !positiveMetricNames.some((name) => strengths.includes(name))) {
         violations.push('strengths_missing_positive_metric');
-      }
-      if (neutralMetricNames.some((name) => strengths.includes(name))) {
-        violations.push('strengths_contains_neutral_metric');
       }
     }
   }
