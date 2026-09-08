@@ -4,9 +4,11 @@ import {
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS,
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES,
 } from '../../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
+import { addDaysDateOnly } from '../../packages/application/src/reports/report-period.js';
+import { createReportId } from '../../packages/application/src/storage/marketing-history-contract.js';
+import { getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
 import { stableStringify } from '../../packages/application/src/use-cases/build-report-snapshot.js';
 import { weekly7dControlledUatError } from '../../packages/application/src/reports/build-lark-native-ai-weekly-7d-controlled-uat.js';
-import { dateOnlyToEpochMilliseconds } from '../../packages/shared/src/date/date-only.js';
 
 const AUTH_PATH = '/open-apis/auth/v3/tenant_access_token/internal';
 const TABLES_PATH = /^\/open-apis\/bitable\/v1\/apps\/[^/]+\/tables$/u;
@@ -43,7 +45,11 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
   assertUniqueChannelSettings(settings);
 
   const snapshots = targetPeriodEnd
-    ? await searchSnapshotsForBangkokDay(client, tables.snapshots, targetPeriodEnd)
+    ? await client.searchRecordsByFieldValues({
+      tableId: tables.snapshots,
+      fieldName: 'report_id',
+      values: buildExactWeeklyReportIds(settings, customerProfile, targetPeriodEnd),
+    })
     : await client.searchRecordsByFieldValues({
       tableId: tables.snapshots,
       fieldName: 'report_setting_key',
@@ -115,24 +121,18 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
   });
 }
 
-function searchSnapshotsForBangkokDay(client, tableId, targetPeriodEnd) {
-  if (typeof client.searchRecords !== 'function') {
-    throw new TypeError('client.searchRecords is required for exact-period Weekly source');
-  }
-  const start = dateOnlyToEpochMilliseconds(targetPeriodEnd, { utcOffset: '+07:00' });
-  const endExclusive = start + 86_400_000;
-  return client.searchRecords({
-    tableId,
-    filter: {
-      conjunction: 'and',
-      conditions: [
-        { fieldName: 'period_end', operator: 'isGreaterEqual', value: [start] },
-        { fieldName: 'period_end', operator: 'isLess', value: [endExclusive] },
-      ],
-    },
-    pageSize: LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSnapshotRows,
-    maxPages: 2,
-    maxItems: LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSnapshotRows,
+function buildExactWeeklyReportIds(settings, customerProfile, periodEnd) {
+  const periodStart = addDaysDateOnly(periodEnd, -6);
+  return settings.map((setting) => {
+    const contract = getReportPlatformContract(setting.platform);
+    return createReportId({
+      report_setting_key: setting.reportSettingKey,
+      account_key: customerProfile,
+      period_kind: 'rolling_days',
+      period_start: periodStart,
+      period_end: periodEnd,
+      formula_version: contract.formulaVersion,
+    });
   });
 }
 

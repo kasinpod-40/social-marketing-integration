@@ -50,13 +50,12 @@ function client(searches = []) {
         account_id: 'youtube:chemistry_k',
       } }],
     }),
-    searchRecords: async (input) => {
-      searches.push(input);
-      return [snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z'))];
-    },
     searchRecordsByFieldValues: async (input) => {
       const { tableId } = input;
       searches.push(input);
+      if (tableId === ids.snapshots && input.fieldName === 'report_id') {
+        return [snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z'))];
+      }
       if (tableId === ids.snapshots) {
         return [
           snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z')),
@@ -80,24 +79,10 @@ test('exact period selection keeps a retained Weekly recovery on its scheduled p
   assert.equal(exact.selectionPolicy, 'exact_period_end_with_maximum_channel_coverage');
   assert.deepEqual(exactSearches[0], {
     tableId: 'tbl_snapshots',
-    filter: {
-      conjunction: 'and',
-      conditions: [
-        {
-          fieldName: 'period_end',
-          operator: 'isGreaterEqual',
-          value: [atBangkokDay('2026-09-06')],
-        },
-        {
-          fieldName: 'period_end',
-          operator: 'isLess',
-          value: [atBangkokDay('2026-09-06') + DAY],
-        },
-      ],
-    },
-    pageSize: 500,
-    maxPages: 2,
-    maxItems: 500,
+    fieldName: 'report_id',
+    values: [
+      'chemistry_k:youtube:rolling:7d:chemistry_k:rolling_days:2026-08-31:2026-09-06:youtube-organic-v1',
+    ],
   });
 
   const latestSearches = [];

@@ -14,9 +14,14 @@ Retrospective recovery must select snapshots by the operation's exact `periodEnd
 period would incorrectly reject a valid retained operation after a newer Weekly Report has materialized.
 For an explicit target, the Lark snapshot query itself must filter `period_end` server-side. A broad bounded
 `report_setting_key` query followed by client filtering can omit older snapshots once newer history fills the
-result window. Lark DateTime equality through the text-field helper is invalid (`1254018`), so the exact day uses
-the established DateTime range contract: `>=` Bangkok midnight and `<` the next midnight. Callers without an
-explicit target keep the existing newest-period query and ranking.
+result window. Live Lark rejected both equality and range filters on this DateTime field with `1254018`. Fresh
+exact-period collection therefore derives each canonical storage `report_id` and queries those text identities.
+`MKT_Report_Snapshots` is a current-slot table, so a completed AI-generation checkpoint may outlive those source
+rows. In that retained state, retry must load the one generated Executive AI row whose key hash equals both durable
+create/trigger checkpoints and rebuild the exact seven-day business evidence from the eight checksum-validated D1
+Report materializations. Admission is allowed only when the rebuilt prompt evidence equals the generated row and
+the unchanged Writer quality gate passes. Delivery then continues exactly once without recollecting current slots,
+regenerating AI or creating replacement Work. Callers without an explicit target keep the newest-period query.
 
 ## Chatwoot bounded hydration concurrency — 2026-09-07
 
