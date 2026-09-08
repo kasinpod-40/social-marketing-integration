@@ -6,6 +6,7 @@ import {
 } from '../../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
 import { stableStringify } from '../../packages/application/src/use-cases/build-report-snapshot.js';
 import { weekly7dControlledUatError } from '../../packages/application/src/reports/build-lark-native-ai-weekly-7d-controlled-uat.js';
+import { dateOnlyToEpochMilliseconds } from '../../packages/shared/src/date/date-only.js';
 
 const AUTH_PATH = '/open-apis/auth/v3/tenant_access_token/internal';
 const TABLES_PATH = /^\/open-apis\/bitable\/v1\/apps\/[^/]+\/tables$/u;
@@ -41,10 +42,18 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
   );
   assertUniqueChannelSettings(settings);
 
+  const snapshotSearch = targetPeriodEnd
+    ? {
+      fieldName: 'period_end',
+      values: [String(dateOnlyToEpochMilliseconds(targetPeriodEnd, { utcOffset: '+07:00' }))],
+    }
+    : {
+      fieldName: 'report_setting_key',
+      values: settings.map(({ reportSettingKey }) => reportSettingKey),
+    };
   const snapshots = await client.searchRecordsByFieldValues({
     tableId: tables.snapshots,
-    fieldName: 'report_setting_key',
-    values: settings.map(({ reportSettingKey }) => reportSettingKey),
+    ...snapshotSearch,
   });
   if (snapshots.length > LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSnapshotRows) {
     throw sourceError(

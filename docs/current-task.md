@@ -94,6 +94,10 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - live same-generation recovery then exposed a second fail-closed boundary: the source collector selected the newest
   available Weekly period instead of the operation's retained `periodEnd`. The collector now accepts an exact
   period end for automatic Weekly jobs while preserving newest-period selection for ordinary callers.
+- the next retained replay proved that filtering the result after a broad `report_setting_key` search is not enough:
+  newer snapshots can fill the bounded Lark result before the historical period is returned. Exact-period recovery
+  now queries `MKT_Report_Snapshots.period_end` at Bangkok midnight server-side, then applies the existing
+  customer/setting/report-type guards. Ordinary newest-period reads remain unchanged.
 
 ### Implementation result — Meta K2 Daily activity Creative deduplication (2026-09-07)
 

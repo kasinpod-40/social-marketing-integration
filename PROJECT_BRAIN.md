@@ -12,6 +12,9 @@ duplicate send remain forbidden. See
 `docs/project-brain/customer-weekly-ai-neutral-context-recovery-2026-09-08.md`.
 Retrospective recovery must select snapshots by the operation's exact `periodEnd`; selecting the newest available
 period would incorrectly reject a valid retained operation after a newer Weekly Report has materialized.
+For an explicit target, the Lark snapshot query itself must filter `period_end` server-side. A broad bounded
+`report_setting_key` query followed by client filtering can omit older snapshots once newer history fills the
+result window. Callers without an explicit target keep the existing newest-period query and ranking.
 
 ## Chatwoot bounded hydration concurrency — 2026-09-07
 
