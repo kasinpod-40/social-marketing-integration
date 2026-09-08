@@ -95,12 +95,20 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   available Weekly period instead of the operation's retained `periodEnd`. The collector now accepts an exact
   period end for automatic Weekly jobs while preserving newest-period selection for ordinary callers.
 - the next retained replay proved that filtering the result after a broad `report_setting_key` search is not enough:
-  newer snapshots can fill the bounded Lark result before the historical period is returned. Exact-period recovery
-  now queries `MKT_Report_Snapshots.period_end` at Bangkok midnight server-side, then applies the existing
-  customer/setting/report-type guards. Ordinary newest-period reads remain unchanged.
-- live Lark rejected the generic equality helper on the DateTime field with `1254018 InvalidFilter`. The reviewed
-  query therefore uses the already-live-proven DateTime range operators (`>=` Bangkok midnight and `<` the next
-  midnight), retaining the same exact day and the existing 500-row fail-closed bound.
+  newer snapshots can fill the bounded Lark result before the historical period is returned. Fresh exact-period
+  collection now derives canonical storage `report_id` keys, then applies the existing customer/setting/report-type
+  guards. Ordinary newest-period reads remain unchanged.
+- live Lark rejected both equality and range filters on this DateTime field with `1254018 InvalidFilter`; neither
+  attempt reached Notification delivery. Exact historical recovery now derives the canonical Weekly `report_id`
+  for every enabled setting from the immutable seven-day period contract and searches those text stable keys.
+- read-only Production proof found the eight Lark Snapshot current slots had advanced to `2026-09-07`, while the
+  exact `2026-09-06` operation already retained completed AI create/trigger checkpoints. The bounded continuation
+  now resolves exactly one Executive AI row whose key hash matches both checkpoints and rebuilds its seven-day
+  evidence from all eight checksum-validated D1 Report materializations. Preview proof confirmed eight Reports,
+  exact generated-row prompt evidence, passed Writer quality gate and eligible deterministic admission with zero
+  Lark writes. It can continue delivery without AI regeneration, replacement Work, or duplicate send.
+- implementation gates passed: focused retained/exact-period tests `3/3`, repository check, full tests
+  `3325 + 18`, Report reliability `106`, deploy dry-run, `git diff --check`, and npm audit `0` vulnerabilities.
 
 ### Implementation result — Meta K2 Daily activity Creative deduplication (2026-09-07)
 

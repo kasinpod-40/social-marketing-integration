@@ -47,7 +47,17 @@ the collector must therefore query `MKT_Report_Snapshots.period_end` at Bangkok 
 then validate Customer profile, enabled setting, Report type and seven-day window. This changes no ordinary
 newest-period caller and does not create a new report or Notification identity.
 
-The first direct query used the generic text-field equality helper and live Lark rejected it with
-`1254018 InvalidFilter`; no delivery or message was created. The valid exact-DateTime contract is the same range
-form already used by production report sources: `period_end >= Bangkok midnight` and `period_end < next Bangkok
-midnight`, bounded to at most 500 returned rows before the existing authority filters run.
+Live Lark rejected both direct DateTime equality and range filters on this field with `1254018 InvalidFilter`;
+neither attempt created a delivery or group message. The exact recovery path therefore avoids DateTime filtering:
+it derives each canonical storage `report_id` from Customer profile, enabled setting, platform and period
+`2026-08-31..2026-09-06`, then searches those text stable keys directly.
+
+Read-only live proof then established the table's eight current slots had already advanced to `2026-09-07`; the
+historical `2026-09-06` rows no longer exist in Lark even though D1 has all eight immutable Report materializations
+and this exact Work has completed AI-create and AI-trigger checkpoints. The recovery path therefore loads the one
+generated Executive AI row whose `ai_run_key` hash equals both durable checkpoints, then rebuilds Lark-equivalent
+metrics, rankings and nine-channel evidence from the checksum-validated D1 Reports. A Production-binding Preview
+proved all eight Reports present, the rebuilt prompt evidence byte-identical to the generated row, the Writer quality
+gate passed and deterministic Notification admission eligible, with zero record writes and Preview URLs restored
+disabled. The exact Work may then create/reuse admission and queue delivery without recollecting current slots,
+regenerating AI, or changing operation identity.
