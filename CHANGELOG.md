@@ -11,6 +11,8 @@
 - resume a retained Weekly operation from its already-generated, hash-bound AI row and eight checksum-validated
   D1 Report materializations when the Lark current-slot snapshots have advanced; the rebuilt prompt evidence must
   match the generated row exactly before admission, without regenerating AI or creating a replacement operation;
+- closed the missed 2026-09-06 Customer Weekly delivery in Production with one sent and mirrored notification,
+  claim count one, resolved Alert and retained DLQ marked redriven;
 - preserved all other cross-channel, candidate, decision-action and exactly-once Notification gates.
 
 ## 2026-09-07 — Chatwoot bounded hydration concurrency
