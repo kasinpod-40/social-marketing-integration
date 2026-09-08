@@ -98,6 +98,9 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   newer snapshots can fill the bounded Lark result before the historical period is returned. Exact-period recovery
   now queries `MKT_Report_Snapshots.period_end` at Bangkok midnight server-side, then applies the existing
   customer/setting/report-type guards. Ordinary newest-period reads remain unchanged.
+- live Lark rejected the generic equality helper on the DateTime field with `1254018 InvalidFilter`. The reviewed
+  query therefore uses the already-live-proven DateTime range operators (`>=` Bangkok midnight and `<` the next
+  midnight), retaining the same exact day and the existing 500-row fail-closed bound.
 
 ### Implementation result — Meta K2 Daily activity Creative deduplication (2026-09-07)
 
