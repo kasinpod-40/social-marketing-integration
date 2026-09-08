@@ -43,9 +43,9 @@ MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
 ```
 
-สถานะปัจจุบัน: TikTok, Facebook, Instagram, Meta Ads, Google Ads และ Chatwoot เป็น `verified` จาก
-retained customer-source Live UAT; YouTube และ WooCommerce เป็น `dev_ready` และยังต้องใช้ controlled
-Customer Production UAT หลังตั้ง Secret ที่ขาด. Connector ที่เป็น `planned` ในอนาคตห้ามเปิดเป็น `true`.
+สถานะปัจจุบัน: TikTok, Facebook, Instagram, Meta Ads, Google Ads, YouTube, WooCommerce และ
+Chatwoot เป็น `verified` จาก retained customer-source Live UAT และ exact Customer Production
+reconciliation. Connector ที่เป็น `planned` ในอนาคตห้ามเปิดเป็น `true`.
 
 Identity ที่ขึ้นกับบัญชีจริงเปลี่ยนผ่าน Environment ได้ เช่น:
 
@@ -85,6 +85,11 @@ source/preflight/write 82/82 units, final reconciliation, checkpoint `2026-08-23
 alert/DLQ/lock และ same-identity replay ที่ไม่เปลี่ยน Business state. ดังนั้น TikTok ถูก promote เป็น
 `verified` ผ่าน reviewed change แยก; UAT flags ถูกปิดก่อน promotion และกฎ lane ข้างต้นยังใช้กับ
 Connector อื่นโดยไม่เปลี่ยนแปลง.
+
+WooCommerce ผ่าน Customer Production UAT และ incremental reconciliation แล้วเมื่อ
+2026-08-31: source/D1/Lark จบครบ, stable-key replay เป็น idempotent, UAT selector ถูกปิด
+และ normal incremental schedule ถูกเปิด. ดังนั้น catalog ต้องเป็น `verified`; การคง
+`dev_ready` ไว้ทำให้ scheduler fail closed ก่อน Queue admission แม้ runtime flag จะเปิดถูกต้อง.
 
 Retained Integration Workspace evidence ของ Facebook, Instagram, Meta Ads, Google Ads และ Chatwoot
 เป็น customer-source Live UAT จริง ไม่ใช่ developer dummy data. Reviewed multichannel promotion จึงทำให้

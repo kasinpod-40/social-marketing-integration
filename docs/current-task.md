@@ -79,6 +79,24 @@ therefore a runtime cutover to the customer-owned Cloudflare resources and custo
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
+### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
+
+- read-only Customer D1 proof found no WooCommerce Business admission after `scheduled-20260830-0430`, while
+  the deployed Worker still had the normal WooCommerce connector, write and `04:30` schedule flags enabled;
+- exact local replay of the deployed schedule contract reproduced the blocker before Queue mutation:
+  `MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING`, because the catalog still declared WooCommerce `dev_ready`;
+- retained Customer Production evidence already proves the missing gate: the 2026-08-31 full and incremental
+  runs completed source/D1/Lark reconciliation, preserved the larger Customer history, and restored the UAT
+  selector disabled with the normal incremental schedule enabled;
+- promote only WooCommerce from `dev_ready` to `verified`. Normal Production admission continues through
+  `assertConnectorRunnable()`; controlled-UAT, ownership, feature/write flags and full-reconciliation guards
+  remain unchanged;
+- a Production-scheduler regression now proves the exact `scheduled-20260908-0430` incremental job and
+  Reliability wake-up are enqueued. Focused tests pass `46/46`; `npm run check`, all `3,328` Node tests plus
+  `18` Workers-runtime tests, Report reliability `106/106`, npm audit with zero vulnerabilities, deploy dry-run
+  and `git diff --check` pass. Reviewed merge/deploy, one current incremental admission and D1/Lark freshness
+  proof remain required before this repair is complete.
+
 ### Implementation result — Customer Weekly AI neutral-context quality repair (2026-09-08)
 
 - Customer D1 proves all eight Weekly 7D Reports for period end `2026-09-06` materialized, while exact

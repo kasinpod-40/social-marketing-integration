@@ -59,14 +59,41 @@ test('WooCommerce catalog and Queue job are active with exact trigger allowlist'
   assert.deepEqual(job.allowedTriggers, ['manual_uat', 'scheduled', 'production_connector_uat']);
 });
 
-test('Customer Production WooCommerce uses only the dedicated controlled-UAT lane', async () => {
+test('Customer Production WooCommerce uses normal scheduled admission after live UAT promotion', async () => {
+  const env = protectedEnv({
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'true',
+  });
+  const sentinel = new Error('WOOCOMMERCE_SCHEDULED_ADMITTED');
+  await assert.rejects(processWooCommerceCommerceJob({
+    job: {
+      body: {
+        type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
+        trigger: JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED,
+        fullReconciliation: false,
+      },
+    },
+    operation: {
+      stable: true,
+      operationId: OPERATION_ID,
+      workKey: `woocommerce:${OPERATION_ID}`,
+      generation: REQUESTED_AT,
+      originalRequestedAt: REQUESTED_AT,
+    },
+    env,
+    getRuntimeConfig: () => loadCustomerRuntimeConfig(env),
+    getInfrastructure: () => { throw sentinel; },
+  }), (error) => error === sentinel);
+});
+
+test('verified Customer Production WooCommerce cannot reuse the controlled-UAT lane', async () => {
   const env = protectedEnv({
     MKT_ENV: 'production',
     MKT_CUSTOMER_PROFILE: 'chemistry_k',
     MKT_PRODUCTION_CONNECTOR_UAT_ENABLED: 'true',
     MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR: 'woocommerce',
   });
-  const sentinel = new Error('WOOCOMMERCE_CONTROLLED_UAT_ADMITTED');
   await assert.rejects(processWooCommerceCommerceJob({
     job: {
       body: {
@@ -84,8 +111,8 @@ test('Customer Production WooCommerce uses only the dedicated controlled-UAT lan
     },
     env,
     getRuntimeConfig: () => loadCustomerRuntimeConfig(env),
-    getInfrastructure: () => { throw sentinel; },
-  }), (error) => error === sentinel);
+    getInfrastructure: () => { throw new Error('unreachable'); },
+  }), (error) => error?.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING');
 });
 
 test('Integration Workspace supports explicit Manual UAT and Scheduled gate windows', () => {

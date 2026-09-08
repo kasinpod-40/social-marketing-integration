@@ -1349,6 +1349,15 @@ stale and was not copied. The temporary Customer importer mode is disabled after
 - Secrets stay in Environment/Secret Manager;
 - Production resources must be customer-owned.
 
+## WooCommerce Production readiness promotion — 2026-09-08
+
+WooCommerce Customer Production UAT and its incremental reconciliation completed on 2026-08-31, but the central
+Connector catalog still retained the earlier `dev_ready` state. Consequently the every-five-minute scheduler
+correctly constructed each `04:30` incremental operation, then failed closed before Queue admission with
+`MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING`. The reviewed correction promotes only WooCommerce to `verified` from
+that retained live evidence. It does not bypass central admission, enable full reconciliation, alter historical
+Business rows, or change the exact Customer ownership tuple.
+
 ## Customer Production cutover completion — 2026-08-24
 
 Customer Social MKT Data Hub Production is complete for the reviewed scope. Chatwoot and WooCommerce canonical
