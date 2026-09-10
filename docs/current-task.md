@@ -109,6 +109,10 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   propagation. Preview URLs were again restored disabled and Production traffic stayed unchanged. The bounded
   transport repair now waits through a GET-only `405/METHOD_NOT_ALLOWED` route attestation before sending the
   operator POST exactly once; the potentially mutating execute request is never automatically retried.
+- The first exact execute reached the isolated handler and stopped fail-closed on a Lark permanent API response;
+  Preview URLs were restored disabled and Production traffic remained unchanged. The handler now returns only the
+  existing sanitized operational message/status/Lark code so the exact schema stage can be repaired without
+  exposing credentials, record data, or customer identities.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 

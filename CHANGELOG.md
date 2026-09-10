@@ -14,6 +14,8 @@
   identity was correctly rejected before the first Preview version upload.
 - added a bounded, GET-only Preview-route readiness probe for fresh alias propagation; schema/materialization/
   retention execution remains a single non-retried POST.
+- exposed redacted operational status/Lark codes from the isolated operator so live schema failures remain
+  diagnosable without logging credentials, record values, or customer identities.
 
 ## 2026-09-08 — WooCommerce Production readiness promotion
 
