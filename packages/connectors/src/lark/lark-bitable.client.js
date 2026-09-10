@@ -330,6 +330,61 @@ export class LarkBitableClient {
     }
   }
 
+  /** อ่าน/ตั้ง Group ของ Grid View ผ่าน Base v3 property endpoint โดยไม่แก้ Filter หรือ Record */
+  async getViewGroup(input) {
+    return this.getViewPresentationProperty(input, 'group', normalizeViewGroupResponse);
+  }
+
+  async setViewGroup(input) {
+    const groupConfig = serializeViewOrderConfig(input?.groupConfig, 'groupConfig', 3);
+    await this.setViewPresentationProperty(input, 'group', { group_config: groupConfig });
+    return this.getViewGroup(input);
+  }
+
+  /** อ่าน/ตั้ง Sort ของ Grid View; ลำดับ Array คือ Sort priority */
+  async getViewSort(input) {
+    return this.getViewPresentationProperty(input, 'sort', normalizeViewSortResponse);
+  }
+
+  async setViewSort(input) {
+    const sortConfig = serializeViewOrderConfig(input?.sortConfig, 'sortConfig', 10);
+    await this.setViewPresentationProperty(input, 'sort', { sort_config: sortConfig });
+    return this.getViewSort(input);
+  }
+
+  /** visible_fields ควบคุมทั้งการซ่อนและลำดับ Field; Primary อาจถูก Lark บังคับไว้หน้าแรก */
+  async getViewVisibleFields(input) {
+    return this.getViewPresentationProperty(input, 'visible_fields', normalizeVisibleFieldsResponse);
+  }
+
+  async setViewVisibleFields(input) {
+    const visibleFields = normalizeUniqueTextArray(input?.visibleFields);
+    if (visibleFields.length === 0) {
+      throw new TypeError('Lark View visibleFields requires at least one field');
+    }
+    await this.setViewPresentationProperty(input, 'visible_fields', { visible_fields: visibleFields });
+    return this.getViewVisibleFields(input);
+  }
+
+  async getViewPresentationProperty(input, segment, normalize) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    const response = await this.requestBitableJson(
+      `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}/${segment}`,
+      { method: 'GET' },
+    );
+    return normalize(response?.data ?? response);
+  }
+
+  async setViewPresentationProperty(input, segment, body) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    return this.requestBitableJson(
+      `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}/${segment}`,
+      { method: 'PUT', body },
+    );
+  }
+
   /** อ่าน Record หนึ่งหน้าเพื่อให้ Connector ที่รองรับ Durable resume เป็นผู้ถือ Cursor เอง */
   async listRecordsPage(input) {
     const tableId = requireText(input?.tableId, 'tableId');
@@ -1023,6 +1078,38 @@ function normalizeView(view) {
     }),
     publicLevel: view?.view_public_level ?? view?.viewPublicLevel ?? null,
   });
+}
+
+function normalizeViewGroupResponse(value) {
+  const source = value?.group_config ?? value?.groupConfig ?? value?.group ?? value ?? [];
+  return Object.freeze({ groupConfig: Object.freeze(normalizeViewOrderConfig(source)) });
+}
+
+function normalizeViewSortResponse(value) {
+  const source = value?.sort_config ?? value?.sortConfig ?? value?.sort ?? value ?? [];
+  return Object.freeze({ sortConfig: Object.freeze(normalizeViewOrderConfig(source)) });
+}
+
+function normalizeVisibleFieldsResponse(value) {
+  const source = value?.visible_fields ?? value?.visibleFields ?? value ?? [];
+  return Object.freeze({ visibleFields: Object.freeze(normalizeUniqueTextArray(source)) });
+}
+
+function normalizeViewOrderConfig(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => Object.freeze({
+    field: requireText(entry?.field ?? entry?.field_name ?? entry?.fieldName, 'View presentation field'),
+    desc: entry?.desc === true,
+  }));
+}
+
+function serializeViewOrderConfig(value, name, maximum) {
+  const source = requireArray(value, name);
+  if (source.length > maximum) throw new TypeError(`Lark View ${name} supports at most ${maximum} fields`);
+  return source.map((entry) => ({
+    field: requireText(entry?.field ?? entry?.fieldName, `${name}.field`),
+    desc: entry?.desc === true,
+  }));
 }
 
 /** แปลง Contract ภายในเป็น PATCH body ของ View OpenAPI */

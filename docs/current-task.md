@@ -163,9 +163,20 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   aliases while renaming only the same bound physical table ID;
 - the reviewed presentation contract groups all four Views by `period_month_th` descending and puts campaign name,
   platform, status and business metrics before technical/audit fields (subject to Lark keeping Primary first);
-- focused Paid/schema/operator regression passes `32/32`; repository check, full Node and Workers-runtime tests,
-  Report reliability, dependency audit, deploy dry-run and `git diff --check` pass. Reviewed PR/merge, controlled
-  Customer PROD backfill/readback, View presentation apply and runtime deployment remain required.
+- PR `#817` merged the history/presentation contract as `main@ef6287af`; Branch Verification runs
+  `34467095324` / job `102838102657` and `34467089851` / job `102838084937` passed. Isolated Preview version
+  `4f8dd720-252b-4570-a1b8-8e1e74b7d43d` then created 140 historical rows and retained 45 current rows across
+  four monthly buckets (`185/185` reconciled), with an immediate zero-change `0/0/185` rerun. Table ID
+  `tbl7YIG4sbcUbJOV` was preserved and renamed, all 22 exact fields and Thai descriptions read back with zero
+  drift, Daily retention remained `5,209→5,209` with zero deletes/D1 mutations, and Worker version
+  `55a26e13-92b2-4a29-a6b6-bbf058ad4bcd` is active at 100%; Preview URLs were restored disabled and Production
+  traffic did not move during the operator;
+- the final View-layout closeout uses Lark Base v3's dedicated `group`, `sort`, and `visible_fields` endpoints,
+  matching the official Lark CLI contract. Operator v3 reads each property first, mutates only drift, and reads
+  all four exact Views back before any materialization. Focused regression passes `57/57`; repository check,
+  full `3,347` Node tests plus `18` Workers-runtime tests, Report reliability `106/106`, dependency audit,
+  deploy dry-run and `git diff --check` pass. Reviewed merge and controlled Customer PROD View apply/readback
+  remain required before this extension is complete.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 
