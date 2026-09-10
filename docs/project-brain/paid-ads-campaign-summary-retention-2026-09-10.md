@@ -116,3 +116,25 @@ period, metrics, currency and technical/audit fields. These mutations cannot alt
 readback established that this Customer tenant canonicalizes independent Sort to an empty array after Group is
 active. The final contract therefore keeps Sort empty and lets the descending Thai month Group alone own month
 order, rather than repeatedly issuing a no-op Sort mutation.
+
+### Live View closeout
+
+PRs `#818`, `#819`, and `#820` merged as final `main@d62eb477` after all six Branch Verification runs passed:
+`34494824546/102930472273`, `34494860603/102930589987`, `34495512219/102932826328`,
+`34495537179/102932912403`, `34496123232/102934896341`, and `34496155933/102935008315`.
+
+Controlled operator v3 completed on Preview version `7c4c539e-1ecc-4cef-a8ec-0b8e7133b8c2`; Preview URLs were
+restored disabled and Production traffic did not move. Live readback proved:
+
+- `📊 Overview=vewz07Cg0X`, `🔵 Meta=vewDXGKATQ`, `🔴 Google=vewH1VRlhC`, and
+  `⚫ TikTok=vewLdLkOuY`;
+- all four group by `period_month_th` descending, return canonical empty Sort, and expose the same exact 22-field
+  order with Primary first and business fields before technical/audit fields;
+- current MTD is zero-change and reconciled `45/45`; all four historical buckets are zero-change and reconciled
+  `185/185` twice with zero duplicate stable keys;
+- Daily remains `5,209` rows, below retention pressure, with zero deletes and zero D1 mutations.
+
+Production deployment `c6aecb4b-0a1a-4e91-b28d-299426095d8f` now serves Worker version
+`8dc08bc8-fbe0-4ea7-aee7-e944d3f0233c` at 100% from `main@d62eb477`. Main Queue batch/concurrency is still
+`1/1`; generic redrive and automatic recovery remain disabled. Normal Paid sync recalculates only current MTD;
+historical month buckets remain stable unless the controlled history operator is explicitly run.
