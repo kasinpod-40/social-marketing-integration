@@ -21,6 +21,7 @@ function aggregateRow() {
     clicks: 50,
     conversions: 4,
     conversion_value_micros: 8_000_000,
+    source_fetched_at: Date.parse('2026-09-06T00:30:00.000Z'),
   };
 }
 
@@ -43,15 +44,19 @@ function summaryDb(rows = [aggregateRow()]) {
 
 test('campaign summary materializes one MTD row from D1 aggregate totals', async () => {
   let plannedRows = null;
+  let planCalls = 0;
   const result = await materializeCampaignSummary({
     db: summaryDb(),
     repository: {},
     syncEngine: {
       async planByKey(input) {
+        planCalls += 1;
         assert.equal(input.tableId, 'campaign-summary');
         assert.equal(input.keyField, 'campaign_summary_key');
         plannedRows = input.rows;
-        return { duplicateInputRows: 0 };
+        return planCalls === 1
+          ? { duplicateInputRows: 0 }
+          : { duplicateInputRows: 0, createRows: [], updateRows: [], skipped: input.rows.length };
       },
       async executePlan() {
         return { created: 1, updated: 0, skipped: 0, duplicateInputRows: 0 };
@@ -65,6 +70,8 @@ test('campaign summary materializes one MTD row from D1 aggregate totals', async
 
   assert.equal(result.campaigns, 1);
   assert.equal(result.created, 1);
+  assert.equal(result.readback.reconciled, true);
+  assert.equal(planCalls, 2);
   assert.equal(plannedRows[0].campaign_summary_key, 'google_ads:3328797186:cmp-1:mtd:2026-09');
   assert.equal(plannedRows[0].spend, 2);
   assert.equal(plannedRows[0].ctr, 0.05);
@@ -73,6 +80,7 @@ test('campaign summary materializes one MTD row from D1 aggregate totals', async
   assert.equal(plannedRows[0].cpa, 0.5);
   assert.equal(plannedRows[0].conversion_value, 8);
   assert.equal(plannedRows[0].roas, 4);
+  assert.equal(plannedRows[0].last_synced_at, Date.parse('2026-09-06T00:30:00.000Z'));
 });
 
 function retentionDb({ verified = true, activeLocks = 0 } = {}) {
@@ -185,6 +193,28 @@ test('Ads Daily retention preserves a candidate when D1 history proof is missing
   assert.equal(client.deleteCalls, 0);
 });
 
+test('Ads Daily retention preserves a row when metric_date disagrees with the stable key', async () => {
+  const client = retentionClient({ total: 12000 });
+  client.searchRecords = async () => [{
+    ...oldDailyRecord(),
+    fields: {
+      ...oldDailyRecord().fields,
+      metric_date: Date.parse('2026-05-01T17:00:00.000Z'),
+    },
+  }];
+  const result = await retainAdsDailyCache({
+    db: retentionDb(),
+    client,
+    tableId: 'ads-daily',
+    customerKey: 'chemistry_k',
+    timezone: 'Asia/Bangkok',
+    now: NOW,
+  });
+  assert.equal(result.deleted, 0);
+  assert.equal(result.safetyBlocked, 1);
+  assert.equal(client.deleteCalls, 0);
+});
+
 test('Ads Daily retention fails before any delete while another sync lock is active', async () => {
   const client = retentionClient();
   await assert.rejects(() => retainAdsDailyCache({
@@ -194,5 +224,18 @@ test('Ads Daily retention fails before any delete while another sync lock is act
     customerKey: 'chemistry_k',
     now: NOW,
   }), (error) => error?.code === 'MKT_ADS_DAILY_RETENTION_ACTIVE_LOCK');
+  assert.equal(client.deleteCalls, 0);
+});
+
+test('Ads Daily retention rejects a delete cap above the reviewed 500-row maximum', async () => {
+  const client = retentionClient();
+  await assert.rejects(() => retainAdsDailyCache({
+    db: retentionDb(),
+    client,
+    tableId: 'ads-daily',
+    customerKey: 'chemistry_k',
+    now: NOW,
+    maxDeleteRows: 501,
+  }), /maxDeleteRows cannot exceed 500/u);
   assert.equal(client.deleteCalls, 0);
 });

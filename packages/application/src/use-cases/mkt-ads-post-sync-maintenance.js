@@ -1,5 +1,6 @@
 import { calculateAdsDerivedMetrics } from '../../../domain/src/entities/ads.js';
 import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
+import { createExplicitNullUpdateRepository } from '../../../sync-engine/src/explicit-null-update-repository.js';
 
 export const MKT_ADS_MAINTENANCE_VERSION = 'mkt-ads-post-sync-maintenance-v1';
 export const MKT_ADS_DAILY_RETENTION_DAYS = 90;
@@ -11,6 +12,10 @@ export const MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND = 'mtd';
 const MAX_CAMPAIGN_SUMMARY_ROWS = 1_000;
 const D1_IDENTITY_BATCH_SIZE = 40;
 const TERMINAL_MAINTENANCE_PLATFORMS = new Set(['meta_ads', 'google_ads', 'tiktok_ads']);
+const CAMPAIGN_SUMMARY_NULLABLE_FIELDS = Object.freeze([
+  'campaign_name', 'status', 'currency', 'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm',
+  'conversions', 'cpa', 'conversion_value', 'roas',
+]);
 
 /**
  * Shared paid-Ads post-sync maintenance.
@@ -101,8 +106,12 @@ export async function materializeCampaignSummary(input = {}) {
     periodEnd: period.periodEnd,
   });
   const larkRows = rows.map((row) => campaignSummaryRow(row, period, timezone, now));
-  const plan = await syncEngine.planByKey({
+  const exactRepository = createExplicitNullUpdateRepository({
     repository,
+    fieldNames: CAMPAIGN_SUMMARY_NULLABLE_FIELDS,
+  });
+  const plan = await syncEngine.planByKey({
+    repository: exactRepository,
     tableId,
     keyField: 'campaign_summary_key',
     rows: larkRows,
@@ -121,6 +130,21 @@ export async function materializeCampaignSummary(input = {}) {
       'MKT_ADS_CAMPAIGN_SUMMARY_RECONCILIATION_FAILED',
     );
   }
+  const readbackPlan = await syncEngine.planByKey({
+    repository: exactRepository,
+    tableId,
+    keyField: 'campaign_summary_key',
+    rows: larkRows,
+  });
+  if (Number(readbackPlan?.duplicateInputRows ?? 0) !== 0
+    || Number(readbackPlan?.createRows?.length ?? -1) !== 0
+    || Number(readbackPlan?.updateRows?.length ?? -1) !== 0
+    || Number(readbackPlan?.skipped ?? -1) !== larkRows.length) {
+    throw maintenanceError(
+      'Ads Campaign Summary live readback does not match the exact D1 projection',
+      'MKT_ADS_CAMPAIGN_SUMMARY_READBACK_FAILED',
+    );
+  }
   return Object.freeze({
     periodKind: MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND,
     periodStart: period.periodStart,
@@ -129,6 +153,12 @@ export async function materializeCampaignSummary(input = {}) {
     created: Number(result?.created ?? 0),
     updated: Number(result?.updated ?? 0),
     skipped: Number(result?.skipped ?? 0),
+    readback: Object.freeze({
+      reconciled: true,
+      identities: larkRows.length,
+      values: larkRows.length,
+      duplicateStableKeys: 0,
+    }),
   });
 }
 
@@ -184,10 +214,10 @@ export async function retainAdsDailyCache(input = {}) {
     });
   }
 
-  const normalized = candidates.map(normalizeDailyCandidate).filter(Boolean);
+  const normalized = candidates.map((record) => normalizeDailyCandidate(record, timezone)).filter(Boolean);
   const verified = await verifyD1DailyIdentities({ db, customerKey, candidates: normalized });
   const safeDeletes = normalized.filter((row) => verified.has(row.identityKey)).slice(0, maxDeleteRows);
-  const safetyBlocked = normalized.length - safeDeletes.length;
+  const safetyBlocked = candidates.length - safeDeletes.length;
 
   let deleted = 0;
   if (safeDeletes.length > 0) {
@@ -235,6 +265,11 @@ export async function retainAdsDailyCache(input = {}) {
   });
 }
 
+/** Read-only gate shared by the controlled operator before any schema or business mutation. */
+export async function assertMktAdsMaintenanceIdle(input = {}) {
+  return assertNoActiveSyncLocks(requireDb(input.db), normalizeNow(input.now ?? Date.now()));
+}
+
 async function readCampaignMtdRows({ db, customerKey, periodStart, periodEnd }) {
   const result = await db.prepare(`
     SELECT
@@ -242,14 +277,15 @@ async function readCampaignMtdRows({ db, customerKey, periodStart, periodEnd }) 
       f.account_key,
       f.source_account_id,
       f.external_campaign_id,
-      f.currency,
+      MAX(f.currency) AS currency,
       MAX(c.entity_name) AS campaign_name,
       MAX(c.status) AS status,
       SUM(f.spend_micros) AS spend_micros,
       SUM(f.impressions) AS impressions,
       SUM(f.clicks) AS clicks,
       SUM(f.conversions) AS conversions,
-      SUM(f.conversion_value_micros) AS conversion_value_micros
+      SUM(f.conversion_value_micros) AS conversion_value_micros,
+      MAX(f.fetched_at) AS source_fetched_at
     FROM ads_daily_facts f
     LEFT JOIN ads_entity_state c
       ON c.customer_key = f.customer_key
@@ -259,6 +295,7 @@ async function readCampaignMtdRows({ db, customerKey, periodStart, periodEnd }) 
       AND c.external_entity_id = f.external_campaign_id
     WHERE f.customer_key = ?
       AND f.external_campaign_id IS NOT NULL
+      AND f.platform IN ('meta_ads', 'google_ads', 'tiktok_ads')
       AND f.metric_date >= ?
       AND f.metric_date <= ?
       AND (
@@ -267,7 +304,7 @@ async function readCampaignMtdRows({ db, customerKey, periodStart, periodEnd }) 
         OR (f.platform NOT IN ('meta_ads', 'google_ads') AND f.report_level = 'campaign')
       )
     GROUP BY
-      f.platform, f.account_key, f.source_account_id, f.external_campaign_id, f.currency
+      f.platform, f.account_key, f.source_account_id, f.external_campaign_id
     ORDER BY f.platform, f.source_account_id, f.external_campaign_id
     LIMIT ?
   `).bind(customerKey, periodStart, periodEnd, MAX_CAMPAIGN_SUMMARY_ROWS + 1).all();
@@ -293,7 +330,8 @@ function campaignSummaryRow(row, period, timezone, now) {
     conversion_value_micros: nullableNumber(row.conversion_value_micros),
   };
   const derived = calculateAdsDerivedMetrics(metrics);
-  return compact({
+  const sourceFetchedAt = nullableNumber(row.source_fetched_at);
+  return Object.freeze({
     campaign_summary_key: `${platform}:${accountId}:${campaignId}:mtd:${period.periodStart.slice(0, 7)}`,
     period_kind: MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND,
     period_start: dateOnlyInTimeZoneToEpochMilliseconds(period.periodStart, timezone, {
@@ -320,7 +358,7 @@ function campaignSummaryRow(row, period, timezone, now) {
       ? null
       : metrics.conversion_value_micros / 1_000_000,
     roas: derived.actual_roas,
-    last_synced_at: now,
+    last_synced_at: sourceFetchedAt === null ? now : Math.trunc(sourceFetchedAt),
   });
 }
 
@@ -347,7 +385,7 @@ async function appendCandidates(input) {
   }
 }
 
-function normalizeDailyCandidate(record) {
+function normalizeDailyCandidate(record, timezone) {
   const recordId = optionalText(record?.recordId ?? record?.record_id);
   const fields = record?.fields && typeof record.fields === 'object' ? record.fields : {};
   const stableKey = readLarkText(fields.ads_daily_key);
@@ -362,6 +400,11 @@ function normalizeDailyCandidate(record) {
   if (!TERMINAL_MAINTENANCE_PLATFORMS.has(platform)) return null;
   const expectedPrefix = `${platform}:${accountId}:${entityType}:${externalEntityId}:`;
   if (!stableKey.startsWith(expectedPrefix)) return null;
+  const expectedMetricDateEpoch = dateOnlyInTimeZoneToEpochMilliseconds(metricDate, timezone, {
+    label: 'Ads Daily stable-key metric date',
+  });
+  const larkMetricDateEpoch = readLarkEpoch(fields.metric_date);
+  if (larkMetricDateEpoch !== expectedMetricDateEpoch) return null;
   return Object.freeze({
     recordId,
     stableKey,
@@ -489,15 +532,20 @@ function readLarkText(value) {
   return null;
 }
 
+function readLarkEpoch(value) {
+  if (Array.isArray(value) && value.length === 1) return readLarkEpoch(value[0]);
+  if (value && typeof value === 'object') {
+    return readLarkEpoch(value.value ?? value.timestamp ?? value.date ?? null);
+  }
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
 function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   return number;
-}
-
-function compact(value) {
-  return Object.freeze(Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null && item !== undefined)));
 }
 
 function requireClient(value) {

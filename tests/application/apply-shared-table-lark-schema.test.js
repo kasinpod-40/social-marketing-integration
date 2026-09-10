@@ -49,9 +49,10 @@ test('applies the exact Shared-table plan and verifies zero drift without touchi
 
   assert.equal(result.ok, true);
   assert.equal(result.summary.renamedTables, 0);
-  assert.equal(result.summary.createdTables, 2);
+  assert.equal(result.summary.createdTables, 3);
   assert.equal(result.summary.updatedPrimaryFields, 0);
-  assert.equal(result.summary.createdViews, 0);
+  assert.equal(result.summary.createdViews, 3);
+  assert.equal(result.summary.updatedViews, 1);
   assert.equal(result.summary.remainingActions, 0);
   assert.equal(result.summary.conflicts, 0);
   assert.equal(result.summary.warnings, 0);
@@ -63,7 +64,8 @@ test('applies the exact Shared-table plan and verifies zero drift without touchi
   assert.equal(state.writes.some((write) => write.kind === 'record_write'), false);
   assert.ok(state.tables.some((table) => table.name === 'MKT_Account_Daily'));
   assert.ok(state.tables.some((table) => table.name === 'MKT_Ads_Ads'));
-  assert.equal(Object.keys(result.environmentUpdates).length, 2);
+  assert.ok(state.tables.some((table) => table.name === 'MKT_Ads_Campaign_Summary'));
+  assert.equal(Object.keys(result.environmentUpdates).length, 3);
 });
 
 test('is idempotent after a successful Apply', async () => {
@@ -85,7 +87,7 @@ test('legacy RAW records do not block customer-facing canonical table creation',
   const state = createState({ nonEmptyTableId: 'tblAds' });
   const result = await applySharedTableLarkSchema({ client: statefulClient(state), env: {}, schema, views });
   assert.equal(result.ok, true);
-  assert.equal(result.summary.createdTables, 2);
+  assert.equal(result.summary.createdTables, 3);
   assert.equal(state.writes.some((write) => write.kind === 'rename_table'), false);
 });
 
@@ -102,21 +104,22 @@ test('fails closed when the protected TikTok source is missing but ignores a mis
   const missingReuse = createState({ omitTableId: 'tblGoogleLists' });
   const result = await applySharedTableLarkSchema({ client: statefulClient(missingReuse), env: {}, schema, views });
   assert.equal(result.ok, true);
-  assert.equal(result.summary.createdTables, 2);
+  assert.equal(result.summary.createdTables, 3);
 });
 
 
 
-test('does not invoke the legacy RAW View installer', async () => {
+test('wraps a Campaign Summary View apply failure without invoking legacy RAW Views', async () => {
   const { schema, views } = await loadContract();
   const state = createState({ failFirstViewUpdate: true });
   const client = statefulClient(state);
 
-  const result = await applySharedTableLarkSchema({ client, env: {}, schema, views });
-  assert.equal(result.ok, true);
-  assert.equal(result.summary.createdViews, 0);
+  await assert.rejects(
+    applySharedTableLarkSchema({ client, env: {}, schema, views }),
+    (error) => error?.code === 'TEST_VIEW_UPDATE_FAILED'
+      && error?.details?.stage === 'shared_view_apply',
+  );
   assert.equal(state.writes.some((write) => write.kind === 'create_view'), false);
-  assert.equal(state.writes.some((write) => write.kind === 'update_view'), false);
 });
 
 test('reports zero standalone Field creates for create-new canonical tables', async () => {
@@ -127,7 +130,7 @@ test('reports zero standalone Field creates for create-new canonical tables', as
   assert.equal(result.summary.createdFields, 0);
   assert.equal(state.writes.filter((write) => write.kind === 'rename_table').length, 0);
   assert.equal(state.writes.filter((write) => write.kind === 'update_field').length, 0);
-  assert.equal(state.writes.some((write) => write.kind === 'create_view'), false);
+  assert.equal(state.writes.some((write) => write.kind === 'create_view'), true);
 });
 
 function createState(input = {}) {

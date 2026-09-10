@@ -79,6 +79,28 @@ therefore a runtime cutover to the customer-owned Cloudflare resources and custo
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
+### Implementation result — Paid Ads Campaign Summary and bounded Daily retention (2026-09-10)
+
+- PR `#801` continues on `feat/ads-campaign-summary-retention`; the implementation is intentionally scoped to
+  Customer PROD Paid tables `MKT_Ads_Campaign_Summary` and `MKT_Ads_Daily` only;
+- the new summary schema has an exact 21-field contract whose primary key is `campaign_summary_key`, plus four
+  exact Views: `📊 Overview`, `🔵 Meta`, `🔴 Google`, and `⚫ TikTok` using canonical platform values
+  `meta_ads`, `google_ads`, and `tiktok_ads`;
+- the materializer reads current-month campaign facts from PROD D1 and upserts Lark by stable key, then performs a
+  second live plan/readback that must contain zero creates/updates and zero duplicate keys;
+- Lark `MKT_Ads_Daily` retention is a bounded cache policy only: 90-day target, soft limit `17,000`, trim target
+  `15,000`, and hard maximum `500` deletes per run, oldest first. A record may be deleted only when its Lark
+  record ID, stable key, platform/account/entity/date fields, and exact Customer PROD D1 identity all agree;
+- D1 is read-only throughout retention and remains the complete historical source. Organic tables, unrelated Ads
+  tables, schedules, Queue/DLQ state, and the protected TikTok incident are outside this operator;
+- the one-command operator runs `schema → Views → MTD materialization → retention → readback → idempotency rerun`
+  against an isolated Preview Worker version with zero Production traffic and exact Customer authority checks;
+- focused regression passes `34/34`; `npm run check` passes with `834` source files, `2,545` local dependencies
+  and zero cycles; full tests pass `3,340` Node tests plus `18` Workers-runtime tests; Report reliability passes
+  `106/106`; dependency audit has zero vulnerabilities; deploy dry-run and `git diff --check` pass. Reviewed merge,
+  controlled Customer PROD execution, Lark/D1 reconciliation, idempotent rerun, runtime enablement, and exact live
+  evidence remain required before this item is complete.
+
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 
 - read-only Customer D1 proof found no WooCommerce Business admission after `scheduled-20260830-0430`, while

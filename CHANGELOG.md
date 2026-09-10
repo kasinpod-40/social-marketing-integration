@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-10 — Paid Ads Campaign Summary and bounded Daily retention
+
+- added the exact 21-field `MKT_Ads_Campaign_Summary` schema with `campaign_summary_key` as primary key and four
+  canonical Overview/Meta/Google/TikTok Views;
+- materialize current-month campaign metrics from PROD D1 into Lark using stable-key upsert, exact readback
+  reconciliation, and a zero-change idempotency rerun;
+- bounded `MKT_Ads_Daily` Lark retention to 90 days, soft limit 17,000, target 15,000 and at most 500 oldest-first
+  deletes per run, with exact Customer PROD D1 identity proof for every deletable record;
+- added a single fail-closed operator that provisions schema/Views, materializes MTD, applies retention and verifies
+  live state without mutating D1, Organic tables, unrelated Ads tables or Production traffic during Preview.
+
 ## 2026-09-08 — WooCommerce Production readiness promotion
 
 - promoted WooCommerce from `dev_ready` to `verified` using the retained 2026-08-31 Customer Production

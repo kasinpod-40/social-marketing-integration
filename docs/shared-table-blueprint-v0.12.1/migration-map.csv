@@ -7,3 +7,4 @@ RAW_Google_Campaigns,0,RAW_Ads_Entities,Rename/reuse empty slot,Yes,None,One sha
 RAW_Google_Customer_Lists,0,RAW_Ads_Daily,Rename/reuse empty slot,Yes,None,Audience remains entity_type=audience; daily table uses freed slot,Confirm live record count remains 0
 ,0,MKT_Account_Daily,Create new,No,None,Account×Date is not Content×Date,Preview must show exactly one create
 ,0,MKT_Ads_Ads,Create new,No,None,Ad and Creative are different identities,Preview must show exactly one create
+,0,MKT_Ads_Campaign_Summary,Create new,No,None,Bounded MTD campaign serving table,Preview must show exactly one create and no unrelated action

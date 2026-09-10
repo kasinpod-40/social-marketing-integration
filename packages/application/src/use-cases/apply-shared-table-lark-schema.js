@@ -74,7 +74,7 @@ export async function applySharedTableLarkSchema(input = {}) {
     if (tableId) postSchemaEnv[tableContract.envName] = tableId;
   }
 
-  const viewContract = buildSharedTableViewInstallerContract({ schema, views });
+  const viewContract = buildSharedTableViewInstallerContract({ schema, views, validateSchema });
   let viewApply = emptyViewApplyResult();
   if (viewContract.length > 0) {
     try {
