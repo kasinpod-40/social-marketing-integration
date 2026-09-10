@@ -12,6 +12,8 @@
   live state without mutating D1, Organic tables, unrelated Ads tables or Production traffic during Preview.
 - pinned the operator's Wrangler auth/upload/status boundary to profile `chemistry-k-prod` after the default OAuth
   identity was correctly rejected before the first Preview version upload.
+- added a bounded, GET-only Preview-route readiness probe for fresh alias propagation; schema/materialization/
+  retention execution remains a single non-retried POST.
 
 ## 2026-09-08 — WooCommerce Production readiness promotion
 

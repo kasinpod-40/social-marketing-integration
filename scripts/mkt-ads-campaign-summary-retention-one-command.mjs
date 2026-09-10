@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 import { loadSharedTableSchemaContract } from './lib/shared-table-schema-contract.js';
+import { waitForMktAdsPreviewRoute } from './lib/mkt-ads-preview-readiness.js';
 import { resolveCloudflareBearerAuth } from './lib/woocommerce-final-one-command.js';
 import { parseWooCommerceDiagnosticsPreviewUpload } from './lib/woocommerce-diagnostics-preview-upload.js';
 import {
@@ -134,7 +135,12 @@ async function main() {
   );
   await assertProductionVersionUnchanged();
 
-  const response = await fetch(new URL(PREVIEW_PATH, `${upload.previewOrigin}/`), {
+  const operatorUrl = new URL(PREVIEW_PATH, `${upload.previewOrigin}/`);
+  const readiness = await waitForMktAdsPreviewRoute({ fetchImpl: fetch, url: operatorUrl.toString() });
+  await assertProductionVersionUnchanged();
+
+  // Send the potentially mutating operator request exactly once. Only the GET readiness probe retries.
+  const response = await fetch(operatorUrl, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${token}`,
@@ -163,6 +169,7 @@ async function main() {
     productionDeploymentUnchanged: true,
     productionTrafficChanged: false,
     previewVersion: upload.versionId,
+    previewReadiness: readiness,
     result: body.result,
   }, null, 2));
 }
