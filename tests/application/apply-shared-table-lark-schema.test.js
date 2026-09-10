@@ -64,7 +64,7 @@ test('applies the exact Shared-table plan and verifies zero drift without touchi
   assert.equal(state.writes.some((write) => write.kind === 'record_write'), false);
   assert.ok(state.tables.some((table) => table.name === 'MKT_Account_Daily'));
   assert.ok(state.tables.some((table) => table.name === 'MKT_Ads_Ads'));
-  assert.ok(state.tables.some((table) => table.name === 'MKT_Ads_Campaign_Summary'));
+  assert.ok(state.tables.some((table) => table.name === '📊 MKT_Ads_Campaign_Summary'));
   assert.equal(Object.keys(result.environmentUpdates).length, 3);
 });
 

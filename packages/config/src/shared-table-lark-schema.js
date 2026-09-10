@@ -2,15 +2,24 @@ import { LARK_TABLE_ENV } from './lark-table-config.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 import { parseCsvRecords } from '../../shared/src/text/csv.js';
 
-export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'customer-shared-table-lark-schema-v0.14.0';
+export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'customer-shared-table-lark-schema-v0.15.0';
 export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT = 3;
-export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT = 50;
+export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT = 51;
 export const MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME = 'MKT_Ads_Campaign_Summary';
-export const MKT_ADS_CAMPAIGN_SUMMARY_EXPECTED_FIELD_COUNT = 21;
+export const MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME = '📊 MKT_Ads_Campaign_Summary';
+export const MKT_ADS_CAMPAIGN_SUMMARY_EXPECTED_FIELD_COUNT = 22;
+export const MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD = 'period_month_th';
+export const MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS = deepFreeze([
+  'campaign_summary_key',
+  'campaign_name', 'platform', 'status', 'period_month_th', 'period_start', 'period_end',
+  'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'conversions', 'conversion_value', 'cpa', 'roas',
+  'currency', 'account_id', 'campaign_id', 'last_synced_at', 'period_kind',
+]);
 
 const MKT_ADS_CAMPAIGN_SUMMARY_FIELD_CONTRACT = deepFreeze([
   ['campaign_summary_key', 1, true, true, false, []],
   ['period_kind', 3, false, true, false, ['mtd']],
+  ['period_month_th', 1, false, true, false, []],
   ['period_start', 5, false, true, false, []],
   ['period_end', 5, false, true, false, []],
   ['platform', 3, false, true, false, ['meta_ads', 'google_ads', 'tiktok_ads']],
@@ -111,8 +120,16 @@ export function buildSharedTableLarkSchemaFromCsv(input) {
     schema.push(Object.freeze({
       key: contract.key,
       logicalName,
-      createName: logicalName,
-      aliases: Object.freeze([logicalName, ...(currentSourceTable ? [currentSourceTable] : [])]),
+      createName: logicalName === MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME
+        ? MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME
+        : logicalName,
+      aliases: Object.freeze([
+        logicalName,
+        ...(logicalName === MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME
+          ? [MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME]
+          : []),
+        ...(currentSourceTable ? [currentSourceTable] : []),
+      ]),
       defaultViewName: contract.defaultViewName,
       envName,
       fields: Object.freeze(rows.map((row) => toInstallerField(logicalName, row))),
@@ -290,6 +307,9 @@ export function validateMktAdsCampaignSummaryLarkSchema(schema) {
   if (tableContract.logicalName !== MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME
     || tableContract.key !== 'mktAdsCampaignSummary'
     || tableContract.envName !== 'LARK_TABLE_MKT_ADS_CAMPAIGN_SUMMARY'
+    || tableContract.createName !== MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME
+    || !tableContract.aliases?.includes(MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME)
+    || !tableContract.aliases?.includes(MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME)
     || tableContract.sharedTable?.physicalAction !== 'create_new') {
     throw invalid('Ads Campaign Summary table identity is invalid');
   }
@@ -320,9 +340,17 @@ export function validateMktAdsCampaignSummaryLarkSchema(schema) {
         && (field?.property?.date_formatter !== expectedDateFormatter
           || field?.property?.auto_fill !== false))
       || actualOptions.length !== optionNames.length
-      || actualOptions.some((name, optionIndex) => name !== optionNames[optionIndex])) {
+      || actualOptions.some((name, optionIndex) => name !== optionNames[optionIndex])
+      || field?.manageDescription !== true
+      || !/[ก-๙]/u.test(field?.description ?? '')) {
       throw invalid(`Ads Campaign Summary field contract is invalid: ${fieldName}`);
     }
+  }
+  const fieldNames = new Set(tableContract.fields.map((field) => field.fieldName));
+  if (MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD !== 'period_month_th'
+    || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.length !== fieldNames.size
+    || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.some((fieldName) => !fieldNames.has(fieldName))) {
+    throw invalid('Ads Campaign Summary presentation field contract is invalid');
   }
   return true;
 }
@@ -363,11 +391,16 @@ function buildProperty(typeName, relationOrOptions) {
 }
 
 function buildDescription(row) {
+  const thai = row.Table?.trim() === MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME;
   return [
     row.Definition,
-    row['Source path / metric'] ? `Source: ${row['Source path / metric']}` : null,
-    row['Time / zero / null semantics'] ? `Semantics: ${row['Time / zero / null semantics']}` : null,
-    row['Import note'] ? `Import: ${row['Import note']}` : null,
+    row['Source path / metric']
+      ? `${thai ? 'แหล่งข้อมูล' : 'Source'}: ${row['Source path / metric']}`
+      : null,
+    row['Time / zero / null semantics']
+      ? `${thai ? 'ความหมาย' : 'Semantics'}: ${row['Time / zero / null semantics']}`
+      : null,
+    row['Import note'] ? `${thai ? 'หมายเหตุ' : 'Import'}: ${row['Import note']}` : null,
   ].map((value) => value?.trim()).filter(Boolean).join(' | ').slice(0, 900);
 }
 

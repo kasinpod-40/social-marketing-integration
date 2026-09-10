@@ -1,21 +1,24 @@
 import { applySharedTableLarkSchema } from './apply-shared-table-lark-schema.js';
 import {
   assertMktAdsMaintenanceIdle,
-  materializeCampaignSummary,
+  materializeCampaignSummaryHistory,
   runMktAdsPostSyncMaintenance,
 } from './mkt-ads-post-sync-maintenance.js';
 import { previewSharedTableLarkSchema } from './preview-shared-table-lark-schema.js';
 import {
   SHARED_TABLE_LARK_SCHEMA_VERSION,
+  MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME,
+  MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD,
+  MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS,
   selectMktAdsCampaignSummaryLarkContract,
   validateMktAdsCampaignSummaryLarkSchema,
 } from '../../../config/src/shared-table-lark-schema.js';
 
-export const MKT_ADS_PROD_OPERATOR_VERSION = 'mkt-ads-campaign-summary-retention-operator-v1';
+export const MKT_ADS_PROD_OPERATOR_VERSION = 'mkt-ads-campaign-summary-retention-operator-v2';
 
 /**
  * One ordered, bounded Paid-only flow:
- * schema -> four Views -> current MTD materialization -> Ads Daily retention -> live verification.
+ * schema -> table presentation -> current MTD/retention -> bounded history -> live verification.
  */
 export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
   const client = requireObject(input.client, 'client');
@@ -27,7 +30,8 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
   const previewSchema = input.previewSchema ?? previewSharedTableLarkSchema;
   const applySchema = input.applySchema ?? applySharedTableLarkSchema;
   const runMaintenance = input.runMaintenance ?? runMktAdsPostSyncMaintenance;
-  const rerunMaterialization = input.rerunMaterialization ?? materializeCampaignSummary;
+  const materializeHistory = input.materializeHistory ?? materializeCampaignSummaryHistory;
+  const rerunHistory = input.rerunHistory ?? materializeCampaignSummaryHistory;
   const preview = await previewSchema({
     client,
     env,
@@ -42,6 +46,7 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
       status: 'ready',
       operatorVersion: MKT_ADS_PROD_OPERATOR_VERSION,
       preview,
+      presentation: presentationContract(),
       safety: paidOnlySafety(),
     });
   }
@@ -62,6 +67,7 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
     'LARK_TABLE_MKT_ADS_CAMPAIGN_SUMMARY',
   );
   const dailyTableId = requiredText(env.LARK_TABLE_MKT_ADS_DAILY, 'LARK_TABLE_MKT_ADS_DAILY');
+  const tablePresentation = await ensureCampaignSummaryTableName({ client, tableId: summaryTableId });
   const common = {
     db,
     client,
@@ -84,17 +90,24 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
     summaryEnabled: true,
     retentionEnabled: true,
   });
-  const idempotencyRerun = await rerunMaterialization({
+  const history = await materializeHistory({
     ...common,
     tableId: summaryTableId,
     now,
+    historyStart: input.historyStart,
   });
-  if (idempotencyRerun.created !== 0 || idempotencyRerun.updated !== 0
-    || idempotencyRerun.skipped !== idempotencyRerun.campaigns
-    || idempotencyRerun.readback?.reconciled !== true) {
+  const historyIdempotencyRerun = await rerunHistory({
+    ...common,
+    tableId: summaryTableId,
+    now,
+    historyStart: input.historyStart,
+  });
+  if (historyIdempotencyRerun.created !== 0 || historyIdempotencyRerun.updated !== 0
+    || historyIdempotencyRerun.skipped !== historyIdempotencyRerun.campaigns
+    || historyIdempotencyRerun.readback?.reconciled !== true) {
     throw operatorError(
-      'Ads Campaign Summary idempotency rerun changed live records',
-      'MKT_ADS_PROD_OPERATOR_IDEMPOTENCY_FAILED',
+      'Ads Campaign Summary history idempotency rerun changed live records',
+      'MKT_ADS_PROD_OPERATOR_HISTORY_IDEMPOTENCY_FAILED',
     );
   }
   const verification = await previewSchema({
@@ -118,10 +131,54 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
     operatorVersion: MKT_ADS_PROD_OPERATOR_VERSION,
     tableIds: { mktAdsCampaignSummary: summaryTableId, mktAdsDaily: dailyTableId },
     schemaApply,
+    tablePresentation,
     maintenance,
-    idempotencyRerun,
+    history,
+    historyIdempotencyRerun,
+    presentation: presentationContract(),
     verification,
     safety: paidOnlySafety(),
+  });
+}
+
+async function ensureCampaignSummaryTableName({ client, tableId }) {
+  if (typeof client.listTables !== 'function' || typeof client.renameTable !== 'function') {
+    throw new TypeError('Ads Campaign Summary presentation requires listTables/renameTable');
+  }
+  const before = await client.listTables();
+  const table = before.find((candidate) => candidate?.tableId === tableId);
+  if (!table) {
+    throw operatorError(
+      'Ads Campaign Summary table ID is absent from the Customer Base',
+      'MKT_ADS_PROD_OPERATOR_TABLE_READBACK_FAILED',
+    );
+  }
+  if (table.name !== MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME) {
+    await client.renameTable({ tableId, name: MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME });
+  }
+  const after = await client.listTables();
+  const readback = after.find((candidate) => candidate?.tableId === tableId);
+  if (readback?.name !== MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME) {
+    throw operatorError(
+      'Ads Campaign Summary table rename readback failed',
+      'MKT_ADS_PROD_OPERATOR_TABLE_RENAME_FAILED',
+    );
+  }
+  return freeze({
+    tableId,
+    name: readback.name,
+    renamed: table.name !== MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME,
+    preservedTableId: true,
+  });
+}
+
+function presentationContract() {
+  return freeze({
+    tableName: MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME,
+    groupBy: MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD,
+    groupNewestFirst: true,
+    visibleFields: [...MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS],
+    views: ['📊 Overview', '🔵 Meta', '🔴 Google', '⚫ TikTok'],
   });
 }
 

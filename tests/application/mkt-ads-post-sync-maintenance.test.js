@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   materializeCampaignSummary,
+  materializeCampaignSummaryHistory,
   retainAdsDailyCache,
 } from '../../packages/application/src/use-cases/mkt-ads-post-sync-maintenance.js';
 
@@ -73,6 +74,7 @@ test('campaign summary materializes one MTD row from D1 aggregate totals', async
   assert.equal(result.readback.reconciled, true);
   assert.equal(planCalls, 2);
   assert.equal(plannedRows[0].campaign_summary_key, 'google_ads:3328797186:cmp-1:mtd:2026-09');
+  assert.equal(plannedRows[0].period_month_th, '2569-09 · กันยายน');
   assert.equal(plannedRows[0].spend, 2);
   assert.equal(plannedRows[0].ctr, 0.05);
   assert.equal(plannedRows[0].cpc, 0.04);
@@ -81,6 +83,67 @@ test('campaign summary materializes one MTD row from D1 aggregate totals', async
   assert.equal(plannedRows[0].conversion_value, 8);
   assert.equal(plannedRows[0].roas, 4);
   assert.equal(plannedRows[0].last_synced_at, Date.parse('2026-09-06T00:30:00.000Z'));
+});
+
+test('campaign summary history materializes one bounded row per campaign and calendar month', async () => {
+  const expectedPeriods = [
+    ['2026-06-19', '2026-06-30'],
+    ['2026-07-01', '2026-07-31'],
+    ['2026-08-01', '2026-08-31'],
+    ['2026-09-01', '2026-09-06'],
+  ];
+  let query = 0;
+  let plannedRows = [];
+  let planCalls = 0;
+  const result = await materializeCampaignSummaryHistory({
+    db: {
+      prepare(sql) {
+        assert.match(sql, /FROM ads_daily_facts f/u);
+        return {
+          bind(customerKey, periodStart, periodEnd, limit) {
+            assert.equal(customerKey, 'chemistry_k');
+            assert.deepEqual([periodStart, periodEnd], expectedPeriods[query]);
+            assert.equal(limit, 1001);
+            query += 1;
+            return { async all() { return { results: [aggregateRow()] }; } };
+          },
+        };
+      },
+    },
+    repository: {},
+    syncEngine: {
+      async planByKey(input) {
+        planCalls += 1;
+        plannedRows = input.rows;
+        return planCalls === 1
+          ? { duplicateInputRows: 0 }
+          : { duplicateInputRows: 0, createRows: [], updateRows: [], skipped: input.rows.length };
+      },
+      async executePlan() {
+        return { created: 4, updated: 0, skipped: 0, duplicateInputRows: 0 };
+      },
+    },
+    tableId: 'campaign-summary',
+    customerKey: 'chemistry_k',
+    timezone: 'Asia/Bangkok',
+    historyStart: '2026-06-19',
+    now: NOW,
+  });
+
+  assert.equal(query, 4);
+  assert.equal(result.months, 4);
+  assert.equal(result.campaigns, 4);
+  assert.equal(result.created, 4);
+  assert.deepEqual(result.periods, expectedPeriods.map(([periodStart, periodEnd]) => ({ periodStart, periodEnd })));
+  assert.deepEqual(plannedRows.map((row) => row.period_month_th), [
+    '2569-06 · มิถุนายน', '2569-07 · กรกฎาคม', '2569-08 · สิงหาคม', '2569-09 · กันยายน',
+  ]);
+  assert.deepEqual(plannedRows.map((row) => row.campaign_summary_key), [
+    'google_ads:3328797186:cmp-1:mtd:2026-06',
+    'google_ads:3328797186:cmp-1:mtd:2026-07',
+    'google_ads:3328797186:cmp-1:mtd:2026-08',
+    'google_ads:3328797186:cmp-1:mtd:2026-09',
+  ]);
 });
 
 function retentionDb({ verified = true, activeLocks = 0 } = {}) {

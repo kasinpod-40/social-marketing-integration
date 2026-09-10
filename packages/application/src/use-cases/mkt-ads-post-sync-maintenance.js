@@ -2,12 +2,13 @@ import { calculateAdsDerivedMetrics } from '../../../domain/src/entities/ads.js'
 import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 import { createExplicitNullUpdateRepository } from '../../../sync-engine/src/explicit-null-update-repository.js';
 
-export const MKT_ADS_MAINTENANCE_VERSION = 'mkt-ads-post-sync-maintenance-v1';
+export const MKT_ADS_MAINTENANCE_VERSION = 'mkt-ads-post-sync-maintenance-v2';
 export const MKT_ADS_DAILY_RETENTION_DAYS = 90;
 export const MKT_ADS_DAILY_SOFT_LIMIT = 17_000;
 export const MKT_ADS_DAILY_TARGET_LIMIT = 15_000;
 export const MKT_ADS_DAILY_MAX_DELETE_ROWS = 500;
 export const MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND = 'mtd';
+export const MKT_ADS_CAMPAIGN_SUMMARY_HISTORY_START = '2026-06-19';
 
 const MAX_CAMPAIGN_SUMMARY_ROWS = 1_000;
 const D1_IDENTITY_BATCH_SIZE = 40;
@@ -99,20 +100,88 @@ export async function materializeCampaignSummary(input = {}) {
   const timezone = requiredText(input.timezone ?? 'Asia/Bangkok', 'timezone');
   const now = normalizeNow(input.now ?? Date.now());
   const period = monthToDatePeriod(now, timezone);
-  const rows = await readCampaignMtdRows({
+  const materialized = await materializeCampaignSummaryPeriods({
     db,
+    repository,
+    syncEngine,
+    tableId,
     customerKey,
+    timezone,
+    now,
+    periods: [period],
+  });
+  return Object.freeze({
+    periodKind: MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
+    ...materialized,
   });
-  const larkRows = rows.map((row) => campaignSummaryRow(row, period, timezone, now));
-  const exactRepository = createExplicitNullUpdateRepository({
+}
+
+/**
+ * Controlled historical materialization. This is deliberately separate from the normal daily
+ * maintenance path so scheduled syncs continue to rebuild only the current MTD bucket.
+ */
+export async function materializeCampaignSummaryHistory(input = {}) {
+  const db = requireDb(input.db);
+  const repository = requireObject(input.repository, 'repository');
+  const syncEngine = requireSyncEngine(input.syncEngine);
+  const tableId = requiredText(input.tableId, 'tableId');
+  const customerKey = requiredText(input.customerKey, 'customerKey');
+  const timezone = requiredText(input.timezone ?? 'Asia/Bangkok', 'timezone');
+  const now = normalizeNow(input.now ?? Date.now());
+  const historyStart = dateOnly(input.historyStart ?? MKT_ADS_CAMPAIGN_SUMMARY_HISTORY_START, 'historyStart');
+  const periods = calendarMonthPeriods(historyStart, now, timezone);
+  const materialized = await materializeCampaignSummaryPeriods({
+    db,
     repository,
+    syncEngine,
+    tableId,
+    customerKey,
+    timezone,
+    now,
+    periods,
+  });
+  return Object.freeze({
+    periodKind: MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND,
+    historyStart,
+    periodStart: periods[0].periodStart,
+    periodEnd: periods.at(-1).periodEnd,
+    months: periods.length,
+    periods: Object.freeze(periods.map((period) => Object.freeze({ ...period }))),
+    ...materialized,
+  });
+}
+
+async function materializeCampaignSummaryPeriods(input) {
+  const larkRows = [];
+  for (const period of input.periods) {
+    const rows = await readCampaignPeriodRows({
+      db: input.db,
+      customerKey: input.customerKey,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+    });
+    larkRows.push(...rows.map((row) => campaignSummaryRow(
+      row,
+      period,
+      input.timezone,
+      input.now,
+    )));
+    if (larkRows.length > MAX_CAMPAIGN_SUMMARY_ROWS) {
+      throw maintenanceError(
+        `Ads Campaign Summary exceeds bounded materialization limit ${MAX_CAMPAIGN_SUMMARY_ROWS}`,
+        'MKT_ADS_CAMPAIGN_SUMMARY_BOUND_EXCEEDED',
+      );
+    }
+  }
+  const exactRepository = createExplicitNullUpdateRepository({
+    repository: input.repository,
     fieldNames: CAMPAIGN_SUMMARY_NULLABLE_FIELDS,
   });
-  const plan = await syncEngine.planByKey({
+  const plan = await input.syncEngine.planByKey({
     repository: exactRepository,
-    tableId,
+    tableId: input.tableId,
     keyField: 'campaign_summary_key',
     rows: larkRows,
   });
@@ -122,7 +191,7 @@ export async function materializeCampaignSummary(input = {}) {
       'MKT_ADS_CAMPAIGN_SUMMARY_DUPLICATE_KEY',
     );
   }
-  const result = await syncEngine.executePlan(plan);
+  const result = await input.syncEngine.executePlan(plan);
   const accounted = Number(result?.created ?? 0) + Number(result?.updated ?? 0) + Number(result?.skipped ?? 0);
   if (accounted !== larkRows.length || Number(result?.duplicateInputRows ?? 0) !== 0) {
     throw maintenanceError(
@@ -130,9 +199,9 @@ export async function materializeCampaignSummary(input = {}) {
       'MKT_ADS_CAMPAIGN_SUMMARY_RECONCILIATION_FAILED',
     );
   }
-  const readbackPlan = await syncEngine.planByKey({
+  const readbackPlan = await input.syncEngine.planByKey({
     repository: exactRepository,
-    tableId,
+    tableId: input.tableId,
     keyField: 'campaign_summary_key',
     rows: larkRows,
   });
@@ -146,9 +215,6 @@ export async function materializeCampaignSummary(input = {}) {
     );
   }
   return Object.freeze({
-    periodKind: MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND,
-    periodStart: period.periodStart,
-    periodEnd: period.periodEnd,
     campaigns: larkRows.length,
     created: Number(result?.created ?? 0),
     updated: Number(result?.updated ?? 0),
@@ -275,7 +341,7 @@ export async function assertMktAdsMaintenanceIdle(input = {}) {
   return assertNoActiveSyncLocks(requireDb(input.db), normalizeNow(input.now ?? Date.now()));
 }
 
-async function readCampaignMtdRows({ db, customerKey, periodStart, periodEnd }) {
+async function readCampaignPeriodRows({ db, customerKey, periodStart, periodEnd }) {
   const result = await db.prepare(`
     SELECT
       f.platform,
@@ -339,6 +405,7 @@ function campaignSummaryRow(row, period, timezone, now) {
   return Object.freeze({
     campaign_summary_key: `${platform}:${accountId}:${campaignId}:mtd:${period.periodStart.slice(0, 7)}`,
     period_kind: MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND,
+    period_month_th: thaiMonthLabel(period.periodStart),
     period_start: dateOnlyInTimeZoneToEpochMilliseconds(period.periodStart, timezone, {
       label: 'Ads Campaign Summary period start',
     }),
@@ -488,6 +555,63 @@ function monthToDatePeriod(now, timezone) {
     periodStart: `${parts.year}-${month}-01`,
     periodEnd: `${parts.year}-${month}-${day}`,
   });
+}
+
+function calendarMonthPeriods(historyStart, now, timezone) {
+  const current = monthToDatePeriod(now, timezone);
+  if (historyStart > current.periodEnd) {
+    throw new TypeError('historyStart cannot be later than the current local date');
+  }
+  const [startYear, startMonth] = historyStart.split('-').map(Number);
+  const [endYear, endMonth] = current.periodEnd.split('-').map(Number);
+  const periods = [];
+  for (let year = startYear, month = startMonth;
+    year < endYear || (year === endYear && month <= endMonth);
+    month += 1) {
+    if (month > 12) {
+      year += 1;
+      month = 1;
+    }
+    const monthText = String(month).padStart(2, '0');
+    const monthStart = `${year}-${monthText}-01`;
+    const periodStart = periods.length === 0 ? historyStart : monthStart;
+    const periodEnd = year === endYear && month === endMonth
+      ? current.periodEnd
+      : lastDayOfMonth(year, month);
+    periods.push(Object.freeze({ periodStart, periodEnd }));
+  }
+  return Object.freeze(periods);
+}
+
+function lastDayOfMonth(year, month) {
+  const date = new Date(Date.UTC(year, month, 0));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function thaiMonthLabel(periodStart) {
+  const [year, month] = periodStart.slice(0, 7).split('-').map(Number);
+  const monthNames = [
+    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+  ];
+  if (!Number.isSafeInteger(year) || !Number.isSafeInteger(month) || !monthNames[month - 1]) {
+    throw new TypeError('periodStart must contain a valid calendar month');
+  }
+  return `${year + 543}-${String(month).padStart(2, '0')} · ${monthNames[month - 1]}`;
+}
+
+function dateOnly(value, fieldName) {
+  const text = requiredText(value, fieldName);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(text);
+  if (!match) throw new TypeError(`${fieldName} must use YYYY-MM-DD`);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) {
+    throw new TypeError(`${fieldName} must be a valid calendar date`);
+  }
+  return text;
 }
 
 function retentionCutoffDate(now, timezone, retentionDays) {
