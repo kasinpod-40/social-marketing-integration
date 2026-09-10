@@ -50,7 +50,9 @@ test('does not provision legacy RAW aliases in the customer-facing schema', asyn
   assert.equal(byName.has('RAW_Ads_Daily'), false);
   assert.deepEqual(byName.get('MKT_Account_Daily').aliases, ['MKT_Account_Daily']);
   assert.equal(byName.get('MKT_Ads_Ads').sharedTable.preserveTableId, false);
-  assert.deepEqual(byName.get('MKT_Ads_Campaign_Summary').aliases, ['MKT_Ads_Campaign_Summary']);
+  assert.deepEqual(byName.get('MKT_Ads_Campaign_Summary').aliases, [
+    'MKT_Ads_Campaign_Summary', '📊 MKT_Ads_Campaign_Summary',
+  ]);
 });
 
 test('preserves customer-facing field types, options, dates and reference metadata', async () => {
@@ -68,6 +70,9 @@ test('preserves customer-facing field types, options, dates and reference metada
   assert.equal(ads.get('organic_content_id').relationTarget, 'MKT_Content');
   const summary = byName.get('MKT_Ads_Campaign_Summary');
   assert.equal(summary.get('campaign_summary_key').primary, true);
+  assert.equal(summary.get('period_month_th').required, true);
+  assert.match(summary.get('period_month_th').description, /เดือนภาษาไทย/u);
+  assert.ok([...summary.values()].every((field) => /[ก-๙]/u.test(field.description)));
   assert.deepEqual(summary.get('platform').property.options.map((option) => option.name), [
     'meta_ads', 'google_ads', 'tiktok_ads',
   ]);

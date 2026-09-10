@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-10 — Campaign Summary Thai monthly history
+
+- extended the same Paid-only Campaign Summary table with a sortable Thai Buddhist-year month label and Thai
+  managed-field descriptions, while retaining `campaign_summary_key` as the Primary stable key;
+- added a controlled D1-derived monthly backfill from `2026-06-19` and kept normal daily runtime bounded to the
+  current month only;
+- defined the customer presentation contract for all four Views: group newest month first and show campaign/
+  metric fields before technical fields, without touching Organic data or immutable D1 facts.
+
 ## 2026-09-10 — Paid Ads Campaign Summary and bounded Daily retention
 
 - added the exact 21-field `MKT_Ads_Campaign_Summary` schema with `campaign_summary_key` as primary key and four

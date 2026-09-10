@@ -127,24 +127,25 @@ MKT_Ads_Ads,11,landing_page_url,URL,No,Yes,Attribute,destination URL,Landing pag
 MKT_Ads_Ads,12,organic_content_id,Text,No,Yes,Relationship,object story/post/video linkage,Linked Organic content ID,Null valid,,MKT_Content,
 MKT_Ads_Ads,13,source_updated_at,DateTime,No,Yes,Source time,updated_time,Source update instant,Null valid,,,
 MKT_Ads_Ads,14,last_sync_at,DateTime,Yes,No,Audit,runtime,Latest successful sync instant,Exact instant,,,
-MKT_Ads_Campaign_Summary,1,campaign_summary_key,Text,Yes,No,Primary + Stable,formula,Platform account campaign and month stable key,Never null,meta_ads:ACCOUNT_ID:CAMPAIGN_ID:mtd:2026-09,,Primary field
-MKT_Ads_Campaign_Summary,2,period_kind,SingleSelect,Yes,No,Grain,constant,Summary period kind,Exact controlled value,mtd,mtd,
-MKT_Ads_Campaign_Summary,3,period_start,Date,Yes,No,Grain,derived local month start,MTD period start,Asia/Bangkok local midnight,2026-09-01,,
-MKT_Ads_Campaign_Summary,4,period_end,Date,Yes,No,Grain,derived local current date,MTD period end,Asia/Bangkok local midnight,2026-09-10,,
-MKT_Ads_Campaign_Summary,5,platform,SingleSelect,Yes,No,Partition,ads_daily_facts.platform,Canonical paid Ads platform,Exact controlled value,meta_ads,meta_ads|google_ads|tiktok_ads,Use Views by platform
-MKT_Ads_Campaign_Summary,6,account_id,Text,Yes,No,Parent identity,ads_daily_facts.source_account_id,External Ads account ID,Text,ACCOUNT_ID,MKT_Ads_Accounts,
-MKT_Ads_Campaign_Summary,7,campaign_id,Text,Yes,No,Identity,ads_daily_facts.external_campaign_id,External campaign ID,Text,CAMPAIGN_ID,MKT_Ads_Campaigns,
-MKT_Ads_Campaign_Summary,8,campaign_name,Text,No,Yes,Attribute,ads_entity_state.entity_name,Current campaign name,Null valid,Campaign name,,
-MKT_Ads_Campaign_Summary,9,status,Text,No,Yes,State,ads_entity_state.status,Current source status,Unknown remains raw text,ACTIVE,,
-MKT_Ads_Campaign_Summary,10,currency,Text,No,Yes,Metric dimension,ads_daily_facts.currency,Currency code,Null valid,THB,,
-MKT_Ads_Campaign_Summary,11,spend,Number,No,Yes,Metric,SUM(spend_micros)/1000000,MTD spend in currency units,Observed zero remains zero; missing null,123.45,,
-MKT_Ads_Campaign_Summary,12,impressions,Number,No,Yes,Metric,SUM(impressions),MTD impressions,Observed zero remains zero; missing null,1000,,Whole number
-MKT_Ads_Campaign_Summary,13,clicks,Number,No,Yes,Metric,SUM(clicks),MTD clicks,Observed zero remains zero; missing null,25,,Whole number
-MKT_Ads_Campaign_Summary,14,ctr,Number,No,Yes,Derived metric,clicks/impressions,MTD click-through rate,Missing denominator null,0.025,,Ratio 0-1
-MKT_Ads_Campaign_Summary,15,cpc,Number,No,Yes,Derived metric,spend/clicks,MTD cost per click,Missing or zero clicks null,4.938,,
-MKT_Ads_Campaign_Summary,16,cpm,Number,No,Yes,Derived metric,spend*1000/impressions,MTD cost per thousand impressions,Missing or zero impressions null,123.45,,
-MKT_Ads_Campaign_Summary,17,conversions,Number,No,Yes,Metric,SUM(conversions),Approved MTD conversions,Unmapped means null not zero,3,,
-MKT_Ads_Campaign_Summary,18,cpa,Number,No,Yes,Derived metric,spend/conversions,MTD cost per conversion,Missing or zero conversions null,41.15,,
-MKT_Ads_Campaign_Summary,19,conversion_value,Number,No,Yes,Metric,SUM(conversion_value_micros)/1000000,Approved MTD conversion value,Unmapped means null not zero,3000,,
-MKT_Ads_Campaign_Summary,20,roas,Number,No,Yes,Derived metric,conversion_value/spend,MTD return on ad spend,Missing or zero spend null,24.3,,
-MKT_Ads_Campaign_Summary,21,last_synced_at,DateTime,Yes,No,Audit,MAX(ads_daily_facts.fetched_at),Latest contributing D1 fact fetch instant,Exact instant,,,
+MKT_Ads_Campaign_Summary,1,campaign_summary_key,Text,Yes,No,Primary + Stable,สูตรคีย์,คีย์คงที่ของแพลตฟอร์ม บัญชี แคมเปญ และเดือน,ต้องมีค่าเสมอ,meta_ads:ACCOUNT_ID:CAMPAIGN_ID:mtd:2026-09,,ฟิลด์หลักของตาราง
+MKT_Ads_Campaign_Summary,2,period_kind,SingleSelect,Yes,No,Grain,ค่าคงที่,ชนิดช่วงเวลาของข้อมูลสรุป,ใช้ค่าที่ระบบกำหนดเท่านั้น,mtd,mtd,
+MKT_Ads_Campaign_Summary,3,period_month_th,Text,Yes,No,Display grain,คำนวณจาก period_start,ปีและเดือนภาษาไทยสำหรับจัดกลุ่มและเรียงเวลา,หนึ่งค่าต่อเดือน,2569-09 · กันยายน,,ใช้จัดกลุ่มในทุกมุมมอง
+MKT_Ads_Campaign_Summary,4,period_start,Date,Yes,No,Grain,วันเริ่มช่วงตามเวลาท้องถิ่น,วันเริ่มต้นของช่วงสรุปรายเดือน,เวลาเที่ยงคืนตาม Asia/Bangkok,2026-09-01,,
+MKT_Ads_Campaign_Summary,5,period_end,Date,Yes,No,Grain,วันสิ้นสุดช่วงตามเวลาท้องถิ่น,วันสิ้นสุดของช่วงสรุปรายเดือน,เวลาเที่ยงคืนตาม Asia/Bangkok,2026-09-10,,
+MKT_Ads_Campaign_Summary,6,platform,SingleSelect,Yes,No,Partition,ads_daily_facts.platform,แพลตฟอร์มโฆษณาแบบมาตรฐาน,ใช้ค่าที่ระบบกำหนดเท่านั้น,meta_ads,meta_ads|google_ads|tiktok_ads,ใช้แยกมุมมองตามแพลตฟอร์ม
+MKT_Ads_Campaign_Summary,7,account_id,Text,Yes,No,Parent identity,ads_daily_facts.source_account_id,รหัสบัญชีโฆษณาจากแพลตฟอร์ม,ข้อความ,ACCOUNT_ID,MKT_Ads_Accounts,
+MKT_Ads_Campaign_Summary,8,campaign_id,Text,Yes,No,Identity,ads_daily_facts.external_campaign_id,รหัสแคมเปญจากแพลตฟอร์ม,ข้อความ,CAMPAIGN_ID,MKT_Ads_Campaigns,
+MKT_Ads_Campaign_Summary,9,campaign_name,Text,No,Yes,Attribute,ads_entity_state.entity_name,ชื่อแคมเปญล่าสุด,เว้นว่างได้,ชื่อแคมเปญ,,
+MKT_Ads_Campaign_Summary,10,status,Text,No,Yes,State,ads_entity_state.status,สถานะล่าสุดจากแพลตฟอร์ม,ค่าที่ไม่รู้จักเก็บเป็นข้อความเดิม,ACTIVE,,
+MKT_Ads_Campaign_Summary,11,currency,Text,No,Yes,Metric dimension,ads_daily_facts.currency,รหัสสกุลเงิน,เว้นว่างได้,THB,,
+MKT_Ads_Campaign_Summary,12,spend,Number,No,Yes,Metric,SUM(spend_micros)/1000000,ยอดใช้จ่ายสะสมในช่วงเดือน,ค่าศูนย์จริงคงเป็นศูนย์และข้อมูลขาดเป็นค่าว่าง,123.45,,
+MKT_Ads_Campaign_Summary,13,impressions,Number,No,Yes,Metric,SUM(impressions),จำนวนการแสดงผลสะสมในช่วงเดือน,ค่าศูนย์จริงคงเป็นศูนย์และข้อมูลขาดเป็นค่าว่าง,1000,,จำนวนเต็ม
+MKT_Ads_Campaign_Summary,14,clicks,Number,No,Yes,Metric,SUM(clicks),จำนวนคลิกสะสมในช่วงเดือน,ค่าศูนย์จริงคงเป็นศูนย์และข้อมูลขาดเป็นค่าว่าง,25,,จำนวนเต็ม
+MKT_Ads_Campaign_Summary,15,ctr,Number,No,Yes,Derived metric,clicks/impressions,อัตราคลิกต่อการแสดงผลในช่วงเดือน,ตัวหารขาดหรือเป็นศูนย์ให้เป็นค่าว่าง,0.025,,อัตราส่วน 0 ถึง 1
+MKT_Ads_Campaign_Summary,16,cpc,Number,No,Yes,Derived metric,spend/clicks,ค่าใช้จ่ายต่อคลิกในช่วงเดือน,จำนวนคลิกขาดหรือเป็นศูนย์ให้เป็นค่าว่าง,4.938,,
+MKT_Ads_Campaign_Summary,17,cpm,Number,No,Yes,Derived metric,spend*1000/impressions,ค่าใช้จ่ายต่อหนึ่งพันการแสดงผลในช่วงเดือน,จำนวนการแสดงผลขาดหรือเป็นศูนย์ให้เป็นค่าว่าง,123.45,,
+MKT_Ads_Campaign_Summary,18,conversions,Number,No,Yes,Metric,SUM(conversions),จำนวนคอนเวอร์ชันที่ผ่านการแมปในช่วงเดือน,ข้อมูลที่ยังไม่แมปให้เป็นค่าว่างไม่ใช่ศูนย์,3,,
+MKT_Ads_Campaign_Summary,19,cpa,Number,No,Yes,Derived metric,spend/conversions,ค่าใช้จ่ายต่อคอนเวอร์ชันในช่วงเดือน,จำนวนคอนเวอร์ชันขาดหรือเป็นศูนย์ให้เป็นค่าว่าง,41.15,,
+MKT_Ads_Campaign_Summary,20,conversion_value,Number,No,Yes,Metric,SUM(conversion_value_micros)/1000000,มูลค่าคอนเวอร์ชันที่ผ่านการแมปในช่วงเดือน,ข้อมูลที่ยังไม่แมปให้เป็นค่าว่างไม่ใช่ศูนย์,3000,,
+MKT_Ads_Campaign_Summary,21,roas,Number,No,Yes,Derived metric,conversion_value/spend,ผลตอบแทนจากค่าโฆษณาในช่วงเดือน,ยอดใช้จ่ายขาดหรือเป็นศูนย์ให้เป็นค่าว่าง,24.3,,
+MKT_Ads_Campaign_Summary,22,last_synced_at,DateTime,Yes,No,Audit,MAX(ads_daily_facts.fetched_at),เวลาที่ดึงข้อมูล D1 ล่าสุดซึ่งร่วมคำนวณแถวนี้,เก็บเวลาจริงแบบละเอียด,,,

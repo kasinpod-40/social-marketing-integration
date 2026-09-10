@@ -26,9 +26,21 @@ async function contract() {
 test('one-command operator runs the exact Paid-only stages in order', async () => {
   const calls = [];
   let previews = 0;
+  let tableName = 'MKT_Ads_Campaign_Summary';
   const result = await runMktAdsCampaignSummaryRetentionOperator({
     execute: true,
-    client: {},
+    client: {
+      async listTables() {
+        calls.push('list_tables');
+        return [{ tableId: 'tblSummary', name: tableName }];
+      },
+      async renameTable({ tableId, name }) {
+        calls.push('rename_table');
+        assert.equal(tableId, 'tblSummary');
+        tableName = name;
+        return { tableId, name };
+      },
+    },
     db: {
       prepare(sql) {
         assert.match(sql, /FROM sync_locks/u);
@@ -62,18 +74,31 @@ test('one-command operator runs the exact Paid-only stages in order', async () =
       });
       return { status: 'completed' };
     },
-    async rerunMaterialization() {
-      calls.push('idempotency_rerun');
+    async materializeHistory(input) {
+      calls.push('history');
+      assert.equal(input.historyStart, undefined);
       return {
-        campaigns: 45, created: 0, updated: 0, skipped: 45,
+        months: 4, campaigns: 185, created: 140, updated: 0, skipped: 45,
+        readback: { reconciled: true },
+      };
+    },
+    async rerunHistory() {
+      calls.push('history_idempotency_rerun');
+      return {
+        months: 4, campaigns: 185, created: 0, updated: 0, skipped: 185,
         readback: { reconciled: true },
       };
     },
   });
   assert.equal(result.status, 'completed');
   assert.deepEqual(calls, [
-    'preview', 'lock', 'schema_views', 'materialize_retention', 'idempotency_rerun', 'verify',
+    'preview', 'lock', 'schema_views', 'list_tables', 'rename_table', 'list_tables',
+    'materialize_retention', 'history', 'history_idempotency_rerun', 'verify',
   ]);
+  assert.deepEqual(result.tablePresentation, {
+    tableId: 'tblSummary', name: '📊 MKT_Ads_Campaign_Summary', renamed: true, preservedTableId: true,
+  });
+  assert.equal(result.presentation.groupBy, 'period_month_th');
   assert.deepEqual(result.safety.allowedTables, ['MKT_Ads_Campaign_Summary', 'MKT_Ads_Daily']);
   assert.equal(result.safety.d1Mutations, 0);
   assert.equal(result.safety.organicMutations, 0);

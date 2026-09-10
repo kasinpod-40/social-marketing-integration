@@ -137,6 +137,36 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   batch/concurrency `1/1`, generic DLQ redrive and automatic recovery remain disabled, and no Organic or unrelated
   table was mutated. This implementation item is complete.
 
+### Active extension — Campaign Summary history and Thai client presentation (2026-09-10)
+
+- preserve live table ID `tbl7YIG4sbcUbJOV`, primary `campaign_summary_key`, all existing Summary records, the
+  Paid-only runtime boundary, and immutable PROD D1 source facts;
+- add one deterministic display field `period_month_th` whose value is a Thai month and Buddhist year, while
+  machine-readable `period_start`, `period_end`, and `period_kind` remain authoritative;
+- backfill one campaign summary per calendar-month bucket from `2026-06-19`: June covers `19..30`, closed later
+  months cover their complete available month, and the current month remains MTD. The current daily runtime must
+  continue recalculating only its current-month bucket, never all history;
+- rename the same physical table to `📊 MKT_Ads_Campaign_Summary`, convert every managed field description to Thai,
+  and configure all four existing Views to group by the Thai month label, newest first, with business identity and
+  metrics before technical/audit fields. Lark may keep the primary field first; it must not be replaced or hidden
+  through an unsafe schema conversion;
+- controlled execution must reconcile the exact PROD D1 month/campaign identities, prove a zero-change rerun,
+  retain the same 90/17,000/15,000/500 Daily policy, and read back the table name, field descriptions, View layout,
+  group/sort configuration, and all historical rows;
+- out of scope: Organic data, unrelated Ads tables, source/provider reads, D1 writes/deletes, Queue/DLQ recovery,
+  protected incidents, schedule changes, and any new paid product or Cloudflare add-on.
+- implementation keeps the normal runtime on one current-month query and adds a separate controlled historical
+  materializer for four calendar buckets from `2026-06-19`; stable keys remain unchanged and the full-history
+  rerun must be zero-change;
+- schema contract v0.15.0 adds required Text `period_month_th` (for example `2569-09 · กันยายน`), raises the exact
+  field count to 22, localizes every managed Summary field description to Thai, and retains both plain/emoji table
+  aliases while renaming only the same bound physical table ID;
+- the reviewed presentation contract groups all four Views by `period_month_th` descending and puts campaign name,
+  platform, status and business metrics before technical/audit fields (subject to Lark keeping Primary first);
+- focused Paid/schema/operator regression passes `32/32`; repository check, full Node and Workers-runtime tests,
+  Report reliability, dependency audit, deploy dry-run and `git diff --check` pass. Reviewed PR/merge, controlled
+  Customer PROD backfill/readback, View presentation apply and runtime deployment remain required.
+
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 
 - read-only Customer D1 proof found no WooCommerce Business admission after `scheduled-20260830-0430`, while
