@@ -5,6 +5,7 @@ import {
   createMktAdsCampaignSummaryRetentionPreviewHttpHandler,
   MKT_ADS_CAMPAIGN_SUMMARY_RETENTION_PREVIEW_PATH,
 } from '../../apps/sync-worker/src/mkt-ads-campaign-summary-retention-preview-http.js';
+import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 const TOKEN = 'reviewed-preview-token';
 const TOKEN_DIGEST = 'a'.repeat(64);
@@ -103,4 +104,36 @@ test('Preview handler rejects a non-customer or wrong-Base runtime before author
     assert.equal(response.status, 400);
     assert.equal((await response.json()).ok, false);
   }
+});
+
+test('Preview handler returns only sanitized operational diagnostics for an apply failure', async () => {
+  const handler = createMktAdsCampaignSummaryRetentionPreviewHttpHandler({
+    async digest() { return TOKEN_DIGEST; },
+    createInfrastructure() {
+      return {
+        getLarkBitableClient: () => ({}),
+        getStateDb: () => environment().MKT_STATE_DB,
+        repository: {},
+        syncEngine: {},
+      };
+    },
+    async runOperator() {
+      throw permanentError('Lark API error 1254001: WrongRequestBody', {
+        code: 'LARK_PERMANENT_API_ERROR',
+        details: { status: 200, larkCode: 1254001, appSecret: 'must-not-leak' },
+      });
+    },
+  });
+  const response = await handler({
+    request: request(),
+    env: environment(),
+    url: new URL(`https://preview.invalid${MKT_ADS_CAMPAIGN_SUMMARY_RETENTION_PREVIEW_PATH}`),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    code: 'LARK_PERMANENT_API_ERROR',
+    error: 'Lark API error 1254001: WrongRequestBody',
+    details: { status: 200, larkCode: 1254001, appSecret: '[REDACTED]' },
+  });
 });

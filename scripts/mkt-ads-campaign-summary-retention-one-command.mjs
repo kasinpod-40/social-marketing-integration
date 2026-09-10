@@ -65,6 +65,7 @@ if (primaryError || restoreError) {
     ok: false,
     code: error?.code ?? 'MKT_ADS_PROD_OPERATOR_FAILED',
     message: error?.message ?? String(error),
+    details: error?.details ?? {},
     previewUrlsRestored: restoreError === null && previewWindowOpened,
     productionTrafficChanged: false,
   }));
@@ -157,8 +158,9 @@ async function main() {
   const body = await response.json().catch(() => null);
   if (!response.ok || body?.ok !== true) {
     throw operatorError(
-      `Preview operator failed with HTTP ${response.status}: ${body?.code ?? 'UNKNOWN'}`,
+      `Preview operator failed with HTTP ${response.status}: ${body?.code ?? 'UNKNOWN'}: ${body?.error ?? 'Unknown error'}`,
       body?.code ?? 'MKT_ADS_PREVIEW_HTTP_FAILED',
+      { status: response.status, operational: body?.details ?? {} },
     );
   }
   await assertProductionVersionUnchanged();
@@ -303,4 +305,9 @@ function requireText(value, label) {
   }
   return value.trim();
 }
-function operatorError(message, code) { const error = new Error(message); error.code = code; return error; }
+function operatorError(message, code, details = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.details = details;
+  return error;
+}

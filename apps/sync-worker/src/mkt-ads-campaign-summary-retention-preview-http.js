@@ -61,6 +61,7 @@ export function createMktAdsCampaignSummaryRetentionPreviewHttpHandler(dependenc
         ok: false,
         code: operational.code ?? 'MKT_ADS_PREVIEW_OPERATOR_FAILED',
         error: status === 401 ? 'Unauthorized' : operational.message,
+        details: status === 401 ? {} : operational.details,
       }, { status, headers: noStoreHeaders() });
     }
   };
