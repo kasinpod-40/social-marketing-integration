@@ -8,8 +8,10 @@
   current month only;
 - defined the customer presentation contract for all four Views: group newest month first and show campaign/
   metric fields before technical fields, without touching Organic data or immutable D1 facts.
-- added guarded Base v3 View-property read/apply/readback for monthly Group, deterministic Sort, and readable
-  visible-field order across the four exact Summary Views; unchanged properties are not rewritten.
+- added guarded Base v3 View-property read/apply/readback for monthly Group, Sort state, and readable visible-field
+  order across the four exact Summary Views; unchanged properties are not rewritten.
+- follow the Customer Lark canonical grouped-Grid response by leaving independent Sort empty; descending Thai
+  month Group remains the sole newest-first ordering source and avoids a repeated no-op Sort write.
 
 ## 2026-09-10 — Paid Ads Campaign Summary and bounded Daily retention
 

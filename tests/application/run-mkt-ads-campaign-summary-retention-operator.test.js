@@ -28,11 +28,7 @@ test('one-command operator runs the exact Paid-only stages in order', async () =
   let previews = 0;
   let tableName = 'MKT_Ads_Campaign_Summary';
   const targetGroup = [{ field: 'period_month_th', desc: true }];
-  const targetSort = [
-    { field: 'period_start', desc: true },
-    { field: 'platform', desc: false },
-    { field: 'campaign_name', desc: false },
-  ];
+  const targetSort = [];
   const targetVisible = [
     'campaign_summary_key',
     'campaign_name', 'platform', 'status', 'period_month_th', 'period_start', 'period_end',
