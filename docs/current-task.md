@@ -118,6 +118,24 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   `1254018 InvalidFilter`: DateTime record filters require `value=["ExactDate","<epoch-ms>"]`, not a bare epoch.
   The bounded candidate read now uses that official wire shape; delete ownership/D1 proof and the 500-row cap are
   unchanged.
+- PR `#815` merged the DateTime repair as code-release `main@9d97ad0d`; its Branch Verification runs
+  `34461982572` / job `102821699707` and `34462011703` / job `102821790412` both passed. Controlled Customer PROD
+  execution on isolated Preview version `13141e4c-4b32-4e88-bc83-e292cb876c74` then completed the entire ordered
+  operator with Preview URLs restored disabled and Production traffic unchanged during execution.
+- Final Lark readback proves table `tbl7YIG4sbcUbJOV`, Paid Daily table `tblTjWaxgSCwSj1P`, all 21 exact fields,
+  and all four exact Views with zero schema/View actions or conflicts. The `2026-09-01..2026-09-10` MTD projection
+  contains 45 campaigns (37 Meta and 8 Google; no TikTok Ads facts), reconciles all 45 identities and values, and
+  has zero duplicate stable keys. Both the execution readback and the required immediate rerun were zero-change:
+  `created=0`, `updated=0`, `skipped=45`.
+- Bounded Daily retention completed safely with `recordsBefore=5,209`, `recordsAfter=5,209`, cutoff `2026-06-13`,
+  no pressure, zero candidates/deletes, and zero D1 mutations. PROD D1 independently remains at 19,509 source facts
+  over `2026-06-19..2026-09-09`; the post-deploy MTD query returned Meta 2,483 facts / 37 campaigns and Google 33
+  facts / 8 campaigns, with `changed_db=false`, `rows_written=0`, and zero active locks.
+- Customer Production runtime now explicitly enables Campaign Summary and bounded Daily retention with the reviewed
+  `90 / 17,000 / 15,000 / 500` limits and live table ID. Worker version
+  `2f3322d2-fb44-411d-8bc1-6857f7d4e40b` is active at 100% from code-release `main@9d97ad0d`; main Queue remains
+  batch/concurrency `1/1`, generic DLQ redrive and automatic recovery remain disabled, and no Organic or unrelated
+  table was mutated. This implementation item is complete.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 
