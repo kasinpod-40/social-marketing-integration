@@ -27,6 +27,28 @@ test('one-command operator runs the exact Paid-only stages in order', async () =
   const calls = [];
   let previews = 0;
   let tableName = 'MKT_Ads_Campaign_Summary';
+  const targetGroup = [{ field: 'period_month_th', desc: true }];
+  const targetSort = [
+    { field: 'period_start', desc: true },
+    { field: 'platform', desc: false },
+    { field: 'campaign_name', desc: false },
+  ];
+  const targetVisible = [
+    'campaign_summary_key',
+    'campaign_name', 'platform', 'status', 'period_month_th', 'period_start', 'period_end',
+    'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'conversions', 'conversion_value', 'cpa', 'roas',
+    'currency', 'account_id', 'campaign_id', 'last_synced_at', 'period_kind',
+  ];
+  const viewState = new Map(['📊 Overview', '🔵 Meta', '🔴 Google', '⚫ TikTok'].map((name, index) => [
+    `viw${index}`,
+    {
+      viewId: `viw${index}`,
+      viewName: name,
+      groupConfig: index === 0 ? [] : structuredClone(targetGroup),
+      sortConfig: structuredClone(targetSort),
+      visibleFields: structuredClone(targetVisible),
+    },
+  ]));
   const result = await runMktAdsCampaignSummaryRetentionOperator({
     execute: true,
     client: {
@@ -40,6 +62,22 @@ test('one-command operator runs the exact Paid-only stages in order', async () =
         tableName = name;
         return { tableId, name };
       },
+      async listViews({ tableId }) {
+        calls.push('view_presentation');
+        assert.equal(tableId, 'tblSummary');
+        return [...viewState.values()].map(({ viewId, viewName }) => ({ viewId, viewName }));
+      },
+      async getViewGroup({ viewId }) { return { groupConfig: structuredClone(viewState.get(viewId).groupConfig) }; },
+      async setViewGroup({ viewId, groupConfig }) {
+        calls.push('set_group');
+        viewState.get(viewId).groupConfig = structuredClone(groupConfig);
+      },
+      async getViewSort({ viewId }) { return { sortConfig: structuredClone(viewState.get(viewId).sortConfig) }; },
+      async setViewSort() { throw new Error('unchanged sort must not be rewritten'); },
+      async getViewVisibleFields({ viewId }) {
+        return { visibleFields: structuredClone(viewState.get(viewId).visibleFields) };
+      },
+      async setViewVisibleFields() { throw new Error('unchanged visible fields must not be rewritten'); },
     },
     db: {
       prepare(sql) {
@@ -93,12 +131,14 @@ test('one-command operator runs the exact Paid-only stages in order', async () =
   assert.equal(result.status, 'completed');
   assert.deepEqual(calls, [
     'preview', 'lock', 'schema_views', 'list_tables', 'rename_table', 'list_tables',
-    'materialize_retention', 'history', 'history_idempotency_rerun', 'verify',
+    'view_presentation', 'set_group', 'materialize_retention', 'history', 'history_idempotency_rerun', 'verify',
   ]);
   assert.deepEqual(result.tablePresentation, {
     tableId: 'tblSummary', name: '📊 MKT_Ads_Campaign_Summary', renamed: true, preservedTableId: true,
   });
   assert.equal(result.presentation.groupBy, 'period_month_th');
+  assert.equal(result.viewPresentation.mutatedViews, 1);
+  assert.deepEqual(result.viewPresentation.views[0].actions, ['group']);
   assert.deepEqual(result.safety.allowedTables, ['MKT_Ads_Campaign_Summary', 'MKT_Ads_Daily']);
   assert.equal(result.safety.d1Mutations, 0);
   assert.equal(result.safety.organicMutations, 0);

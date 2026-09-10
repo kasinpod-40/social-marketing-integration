@@ -96,3 +96,20 @@ Customer Worker version `2f3322d2-fb44-411d-8bc1-6857f7d4e40b` is active at 100%
 `90 / 17,000 / 15,000 / 500`. Main Queue batch/concurrency remains `1/1`; generic DLQ redrive and automatic
 recovery remain disabled. The runtime hook remains Paid-only and runs after a completed supported Paid Ads sync;
 it does not mutate Organic data, unrelated Ads tables, or D1 source facts.
+
+## Thai monthly history and View presentation extension
+
+PR `#817` merged the 22-field Thai presentation contract as `main@ef6287af`. Isolated Preview version
+`4f8dd720-252b-4570-a1b8-8e1e74b7d43d` retained the same Summary table ID, localized all managed descriptions,
+and materialized four calendar buckets from `2026-06-19`: 185 campaign-month identities total, 140 created and
+45 existing rows updated only for the new display field. Exact D1/Lark reconciliation passed `185/185`; the
+immediate full-history rerun returned `created=0`, `updated=0`, `skipped=185`. Daily retention remained below
+pressure at `5,209` rows with zero deletes and D1 mutations. Worker version
+`55a26e13-92b2-4a29-a6b6-bbf058ad4bcd` is active at 100% and normal Paid sync continues to recalculate only the
+current-month bucket.
+
+The remaining layout is implemented through Lark Base v3's dedicated View-property endpoints: `group`, `sort`,
+and `visible_fields`. The operator reads every property before mutation, writes only drift, then reads back all
+four exact Views. Group is `period_month_th` descending; sort priority is `period_start` descending, `platform`
+ascending, then `campaign_name` ascending; visible field order keeps the Primary first, then business identity,
+period, metrics, currency and technical/audit fields. These mutations cannot alter filters or records.

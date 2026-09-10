@@ -8,6 +8,8 @@
   current month only;
 - defined the customer presentation contract for all four Views: group newest month first and show campaign/
   metric fields before technical fields, without touching Organic data or immutable D1 facts.
+- added guarded Base v3 View-property read/apply/readback for monthly Group, deterministic Sort, and readable
+  visible-field order across the four exact Summary Views; unchanged properties are not rewritten.
 
 ## 2026-09-10 — Paid Ads Campaign Summary and bounded Daily retention
 

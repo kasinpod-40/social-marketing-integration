@@ -1301,6 +1301,48 @@ test('view PATCH error includes the exact request-only safe body', async () => {
   );
 });
 
+test('gets and idempotently sets Base v3 View group, sort and visible field presentation', async () => {
+  const requests = [];
+  const state = {
+    group: { group_config: [] },
+    sort: { sort_config: [] },
+    visible_fields: { visible_fields: ['campaign_summary_key'] },
+  };
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      const segment = String(url).split('/').at(-1);
+      const body = options.body ? JSON.parse(options.body) : null;
+      requests.push({ url: String(url), method: options.method, body });
+      if (options.method === 'PUT') state[segment] = structuredClone(body);
+      return new Response(JSON.stringify({ code: 0, data: structuredClone(state[segment]) }), { status: 200 });
+    },
+  });
+  const target = { tableId: 'tblSummary', viewId: 'viwOverview' };
+  const groupConfig = [{ field: 'period_month_th', desc: true }];
+  const sortConfig = [
+    { field: 'period_start', desc: true },
+    { field: 'campaign_name', desc: false },
+  ];
+  const visibleFields = ['campaign_summary_key', 'campaign_name', 'period_month_th'];
+
+  assert.deepEqual(await client.getViewGroup(target), { groupConfig: [] });
+  assert.deepEqual(await client.setViewGroup({ ...target, groupConfig }), { groupConfig });
+  assert.deepEqual(await client.setViewSort({ ...target, sortConfig }), { sortConfig });
+  assert.deepEqual(await client.setViewVisibleFields({ ...target, visibleFields }), { visibleFields });
+
+  const writes = requests.filter((request) => request.method === 'PUT');
+  assert.deepEqual(writes.map((request) => request.body), [
+    { group_config: groupConfig },
+    { sort_config: sortConfig },
+    { visible_fields: visibleFields },
+  ]);
+  assert.ok(requests.every((request) => request.url.includes('/open-apis/base/v3/bases/app-token/tables/tblSummary/views/viwOverview/')));
+});
+
 test('reads exactly one records page so the caller can persist and resume the cursor', async () => {
   const collectionUrls = [];
   const client = new LarkBitableClient({

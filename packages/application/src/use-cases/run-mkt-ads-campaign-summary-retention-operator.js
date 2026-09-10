@@ -9,12 +9,13 @@ import {
   SHARED_TABLE_LARK_SCHEMA_VERSION,
   MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME,
   MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD,
+  MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT,
   MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS,
   selectMktAdsCampaignSummaryLarkContract,
   validateMktAdsCampaignSummaryLarkSchema,
 } from '../../../config/src/shared-table-lark-schema.js';
 
-export const MKT_ADS_PROD_OPERATOR_VERSION = 'mkt-ads-campaign-summary-retention-operator-v2';
+export const MKT_ADS_PROD_OPERATOR_VERSION = 'mkt-ads-campaign-summary-retention-operator-v3';
 
 /**
  * One ordered, bounded Paid-only flow:
@@ -68,6 +69,10 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
   );
   const dailyTableId = requiredText(env.LARK_TABLE_MKT_ADS_DAILY, 'LARK_TABLE_MKT_ADS_DAILY');
   const tablePresentation = await ensureCampaignSummaryTableName({ client, tableId: summaryTableId });
+  const viewPresentation = await ensureCampaignSummaryViewPresentation({
+    client,
+    tableId: summaryTableId,
+  });
   const common = {
     db,
     client,
@@ -132,6 +137,7 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
     tableIds: { mktAdsCampaignSummary: summaryTableId, mktAdsDaily: dailyTableId },
     schemaApply,
     tablePresentation,
+    viewPresentation,
     maintenance,
     history,
     historyIdempotencyRerun,
@@ -139,6 +145,78 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
     verification,
     safety: paidOnlySafety(),
   });
+}
+
+async function ensureCampaignSummaryViewPresentation({ client, tableId }) {
+  const methods = [
+    'listViews', 'getViewGroup', 'setViewGroup', 'getViewSort', 'setViewSort',
+    'getViewVisibleFields', 'setViewVisibleFields',
+  ];
+  for (const method of methods) {
+    if (typeof client?.[method] !== 'function') {
+      throw new TypeError(`Ads Campaign Summary View presentation requires ${method}`);
+    }
+  }
+  const viewNames = ['📊 Overview', '🔵 Meta', '🔴 Google', '⚫ TikTok'];
+  const listed = await client.listViews({ tableId });
+  const byName = new Map(listed.map((view) => [view?.viewName, view]));
+  const groupConfig = [{ field: MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD, desc: true }];
+  const sortConfig = MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT.map((entry) => ({ ...entry }));
+  const visibleFields = [...MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS];
+  const results = [];
+
+  for (const viewName of viewNames) {
+    const view = byName.get(viewName);
+    if (!view?.viewId) {
+      throw operatorError(
+        `Ads Campaign Summary View is absent: ${viewName}`,
+        'MKT_ADS_PROD_OPERATOR_VIEW_READBACK_FAILED',
+      );
+    }
+    const target = { tableId, viewId: view.viewId };
+    const before = await readViewPresentation(client, target);
+    const actions = [];
+    if (!sameValue(before.groupConfig, groupConfig)) {
+      await client.setViewGroup({ ...target, groupConfig });
+      actions.push('group');
+    }
+    if (!sameValue(before.sortConfig, sortConfig)) {
+      await client.setViewSort({ ...target, sortConfig });
+      actions.push('sort');
+    }
+    if (!sameValue(before.visibleFields, visibleFields)) {
+      await client.setViewVisibleFields({ ...target, visibleFields });
+      actions.push('visible_fields');
+    }
+    const after = await readViewPresentation(client, target);
+    if (!sameValue(after.groupConfig, groupConfig)
+      || !sameValue(after.sortConfig, sortConfig)
+      || !sameValue(after.visibleFields, visibleFields)) {
+      throw operatorError(
+        `Ads Campaign Summary View presentation readback failed: ${viewName}`,
+        'MKT_ADS_PROD_OPERATOR_VIEW_PRESENTATION_FAILED',
+      );
+    }
+    results.push(freeze({ viewId: view.viewId, viewName, actions, ...after }));
+  }
+  return freeze({ views: results, mutatedViews: results.filter((view) => view.actions.length > 0).length });
+}
+
+async function readViewPresentation(client, target) {
+  const [group, sort, visible] = await Promise.all([
+    client.getViewGroup(target),
+    client.getViewSort(target),
+    client.getViewVisibleFields(target),
+  ]);
+  return {
+    groupConfig: group.groupConfig,
+    sortConfig: sort.sortConfig,
+    visibleFields: visible.visibleFields,
+  };
+}
+
+function sameValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 async function ensureCampaignSummaryTableName({ client, tableId }) {
@@ -177,6 +255,7 @@ function presentationContract() {
     tableName: MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME,
     groupBy: MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD,
     groupNewestFirst: true,
+    sort: MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT.map((entry) => ({ ...entry })),
     visibleFields: [...MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS],
     views: ['📊 Overview', '🔵 Meta', '🔴 Google', '⚫ TikTok'],
   });
