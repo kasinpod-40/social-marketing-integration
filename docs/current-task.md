@@ -113,6 +113,11 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   Preview URLs were restored disabled and Production traffic remained unchanged. The handler now returns only the
   existing sanitized operational message/status/Lark code so the exact schema stage can be repaired without
   exposing credentials, record data, or customer identities.
+- Live readback proved that execute created `MKT_Ads_Campaign_Summary` as `tbl7YIG4sbcUbJOV` with the exact fields
+  and four Views and materialized the summary before retention stopped. The exact retained failure was Lark
+  `1254018 InvalidFilter`: DateTime record filters require `value=["ExactDate","<epoch-ms>"]`, not a bare epoch.
+  The bounded candidate read now uses that official wire shape; delete ownership/D1 proof and the 500-row cap are
+  unchanged.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 

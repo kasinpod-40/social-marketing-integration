@@ -56,3 +56,9 @@ propagating. No operator request reached the handler, Preview URLs were restored
 remained unchanged. Before any business POST, the operator must therefore poll only the exact route with GET and
 accept only the dedicated `405/METHOD_NOT_ALLOWED` response. The business POST is sent exactly once, including in
 execute mode, so an uncertain mutation response cannot trigger a second retention batch.
+
+The first exact execute created live table `tbl7YIG4sbcUbJOV`; the following read-only plan found all 21 fields and
+four Views with zero drift. Execution then stopped before retention mutation on Lark code `1254018 InvalidFilter`.
+The official record-filter contract requires a DateTime target as `["ExactDate","<epoch-ms>"]` for `isLess`;
+the original request sent only the epoch. The repaired candidate query uses the official shape while preserving
+the exact D1 identity proof, oldest-first order, active-lock gate, and maximum 500 deletes.

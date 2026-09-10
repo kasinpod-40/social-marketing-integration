@@ -16,6 +16,8 @@
   retention execution remains a single non-retried POST.
 - exposed redacted operational status/Lark codes from the isolated operator so live schema failures remain
   diagnosable without logging credentials, record values, or customer identities.
+- corrected the Ads Daily retention DateTime filter to Lark's required `ExactDate` wire shape after live code
+  `1254018 InvalidFilter`, without changing retention eligibility or delete bounds.
 
 ## 2026-09-08 — WooCommerce Production readiness promotion
 

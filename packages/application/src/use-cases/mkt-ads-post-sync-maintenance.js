@@ -201,7 +201,12 @@ export async function retainAdsDailyCache(input = {}) {
     limit: maxDeleteRows,
     filter: {
       conjunction: 'and',
-      conditions: [{ fieldName: 'metric_date', operator: 'isLess', value: cutoffEpoch }],
+      // Lark DateTime record filters require the explicit ExactDate discriminator.
+      conditions: [{
+        fieldName: 'metric_date',
+        operator: 'isLess',
+        value: ['ExactDate', String(cutoffEpoch)],
+      }],
     },
   });
   if (requestedForPressure > candidates.length && candidates.length < maxDeleteRows) {
