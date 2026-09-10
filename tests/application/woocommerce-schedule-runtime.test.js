@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import { buildScheduledJobs, PRIMARY_SCHEDULE_CRON } from '../../apps/sync-worker/src/scheduled-jobs.js';
+import { produceScheduledJobs } from '../../apps/sync-worker/src/scheduled-producer.js';
 import { createWooCommerceActiveJobRouter } from '../../apps/sync-worker/src/woocommerce-active-job-router.js';
 import { readWooCommerceIncrementalWatermark } from '../../packages/connectors/src/woocommerce/d1-woocommerce-incremental-watermark.js';
 
@@ -30,6 +31,33 @@ test('WooCommerce schedule emits no Business job outside configured time', () =>
     env: { DEFAULT_TIMEZONE: 'Asia/Bangkok', MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'true', MKT_WOOCOMMERCE_SYNC_TIME: '01:30' },
   });
   assert.deepEqual(jobs.map((item) => item.type), [JOB_TYPES.RELIABILITY_MIRROR_DELIVER]);
+});
+
+test('Production scheduler admits verified WooCommerce and enqueues the exact incremental job', async () => {
+  const batches = [];
+  await produceScheduledJobs({
+    cron: PRIMARY_SCHEDULE_CRON,
+    scheduledTime: Date.parse('2026-09-07T21:30:00.000Z'),
+  }, {
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+    DEFAULT_TIMEZONE: 'Asia/Bangkok',
+    MKT_CONNECTOR_WOOCOMMERCE_ENABLED: 'true',
+    MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'true',
+    MKT_WOOCOMMERCE_SYNC_TIME: '04:30',
+    MKT_SYNC_QUEUE: {
+      sendBatch: async (items) => batches.push(...items),
+    },
+  });
+
+  assert.deepEqual(batches.map((item) => item.body.type), [
+    JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
+    JOB_TYPES.RELIABILITY_MIRROR_DELIVER,
+  ]);
+  assert.equal(batches[0].body.operationId, 'scheduled-20260908-0430');
+  assert.equal(batches[0].body.workKey, 'woocommerce:scheduled-20260908-0430');
+  assert.equal(batches[0].body.fullReconciliation, false);
 });
 
 test('active router injects D1 watermark only for scheduled WooCommerce operation', async () => {

@@ -4,6 +4,9 @@ import {
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS,
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES,
 } from '../../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
+import { addDaysDateOnly } from '../../packages/application/src/reports/report-period.js';
+import { createReportId } from '../../packages/application/src/storage/marketing-history-contract.js';
+import { getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
 import { stableStringify } from '../../packages/application/src/use-cases/build-report-snapshot.js';
 import { weekly7dControlledUatError } from '../../packages/application/src/reports/build-lark-native-ai-weekly-7d-controlled-uat.js';
 
@@ -19,6 +22,7 @@ const REPORT_TYPE = 'dashboard_performance_report';
 
 export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {}) {
   const client = requireClient(input.client);
+  const targetPeriodEnd = optionalDateOnly(input.targetPeriodEnd, 'targetPeriodEnd');
   const customerProfile = requireText(
     input.customerProfile ?? 'integration_workspace',
     'customerProfile',
@@ -40,11 +44,17 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
   );
   assertUniqueChannelSettings(settings);
 
-  const snapshots = await client.searchRecordsByFieldValues({
-    tableId: tables.snapshots,
-    fieldName: 'report_setting_key',
-    values: settings.map(({ reportSettingKey }) => reportSettingKey),
-  });
+  const snapshots = targetPeriodEnd
+    ? await client.searchRecordsByFieldValues({
+      tableId: tables.snapshots,
+      fieldName: 'report_id',
+      values: buildExactWeeklyReportIds(settings, customerProfile, targetPeriodEnd),
+    })
+    : await client.searchRecordsByFieldValues({
+      tableId: tables.snapshots,
+      fieldName: 'report_setting_key',
+      values: settings.map(({ reportSettingKey }) => reportSettingKey),
+    });
   if (snapshots.length > LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSnapshotRows) {
     throw sourceError(
       '7D Snapshot candidates exceeded the bounded weekly UAT inventory',
@@ -52,7 +62,12 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
       { count: snapshots.length },
     );
   }
-  const selected = selectTargetSnapshotSet(snapshots, settings, customerProfile);
+  const selected = selectTargetSnapshotSet(
+    snapshots,
+    settings,
+    customerProfile,
+    targetPeriodEnd,
+  );
   const reportIds = selected.map(({ snapshot }) => snapshot.report_id);
   if (reportIds.length === 0) throw sourceError(
     'No validated 7D Report snapshot is available for weekly AI UAT',
@@ -100,7 +115,24 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     sourceReportIds: [...reportIds].sort(),
     customerProfile,
     tableNames: Object.keys(tables).sort(),
-    selectionPolicy: 'newest_7d_period_with_maximum_channel_coverage',
+    selectionPolicy: targetPeriodEnd
+      ? 'exact_period_end_with_maximum_channel_coverage'
+      : 'newest_7d_period_with_maximum_channel_coverage',
+  });
+}
+
+function buildExactWeeklyReportIds(settings, customerProfile, periodEnd) {
+  const periodStart = addDaysDateOnly(periodEnd, -6);
+  return settings.map((setting) => {
+    const contract = getReportPlatformContract(setting.platform);
+    return createReportId({
+      report_setting_key: setting.reportSettingKey,
+      account_key: customerProfile,
+      period_kind: 'rolling_days',
+      period_start: periodStart,
+      period_end: periodEnd,
+      formula_version: contract.formulaVersion,
+    });
   });
 }
 
@@ -237,7 +269,7 @@ function assertUniqueChannelSettings(settings) {
   );
 }
 
-function selectTargetSnapshotSet(records, settings, customerProfile) {
+function selectTargetSnapshotSet(records, settings, customerProfile, targetPeriodEnd = null) {
   const settingsByKey = new Map(settings.map((setting) => [setting.reportSettingKey, setting]));
   const normalized = records.map((record) => normalizeSnapshotFields(record.fields))
     .filter((snapshot) => (
@@ -249,9 +281,12 @@ function selectTargetSnapshotSet(records, settings, customerProfile) {
       && snapshot.period_end !== null
       && snapshot.generated_at !== null
     ));
+  const eligible = targetPeriodEnd
+    ? normalized.filter((snapshot) => dateOnlyInBangkok(snapshot.period_end) === targetPeriodEnd)
+    : normalized;
   const latestPerSetting = [];
   for (const setting of settings) {
-    const candidates = normalized
+    const candidates = eligible
       .filter((snapshot) => snapshot.report_setting_key === setting.reportSettingKey)
       .sort(compareSnapshotNewest);
     if (candidates.length > 0) latestPerSetting.push({ setting, snapshot: candidates[0] });
@@ -276,7 +311,7 @@ function selectTargetSnapshotSet(records, settings, customerProfile) {
   const periodKey = stableStringify(target.period);
   const selected = [];
   for (const setting of settings) {
-    const candidates = normalized.filter((snapshot) => (
+    const candidates = eligible.filter((snapshot) => (
       snapshot.report_setting_key === setting.reportSettingKey
       && stableStringify(snapshotPeriod(snapshot)) === periodKey
     )).sort(compareSnapshotNewest);
@@ -549,6 +584,14 @@ function dateOnlyInBangkok(value) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(epoch));
   const byType = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
   return `${byType.year}-${byType.month}-${byType.day}`;
+}
+function optionalDateOnly(value, label) {
+  if (value === null || value === undefined || value === '') return null;
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00.000Z`))) {
+    throw new TypeError(`${label} must be YYYY-MM-DD`);
+  }
+  return text;
 }
 function larkMultiText(value) {
   if (Array.isArray(value)) return value.map(larkText).filter(Boolean);

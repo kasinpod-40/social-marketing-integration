@@ -1,5 +1,36 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Weekly AI neutral-context quality repair — 2026-09-08
+
+The Customer Weekly 7D Reports for period end `2026-09-06` were complete across all eight active channels,
+but automatic AI/Notification stopped before delivery. Isolated read-only Customer Worker diagnostics proved
+the generated AI output failed only because `strengths` mentioned a neutral metric as context; every positive,
+negative, candidate and decision-action requirement otherwise passed. The gate must still require a positive
+channel and metric, but a contextual neutral metric is not independently a quality failure. The retained weekly
+identity remains authoritative and may be recovered once after reviewed deploy; replacement identity and
+duplicate send remain forbidden. See
+`docs/project-brain/customer-weekly-ai-neutral-context-recovery-2026-09-08.md`.
+Retrospective recovery must select snapshots by the operation's exact `periodEnd`; selecting the newest available
+period would incorrectly reject a valid retained operation after a newer Weekly Report has materialized.
+For an explicit target, the Lark snapshot query itself must filter `period_end` server-side. A broad bounded
+`report_setting_key` query followed by client filtering can omit older snapshots once newer history fills the
+result window. Live Lark rejected both equality and range filters on this DateTime field with `1254018`. Fresh
+exact-period collection therefore derives each canonical storage `report_id` and queries those text identities.
+`MKT_Report_Snapshots` is a current-slot table, so a completed AI-generation checkpoint may outlive those source
+rows. In that retained state, retry must load the one generated Executive AI row whose key hash equals both durable
+create/trigger checkpoints and rebuild the exact seven-day business evidence from the eight checksum-validated D1
+Report materializations. Admission is allowed only when the rebuilt prompt evidence equals the generated row and
+the unchanged Writer quality gate passes. Delivery then continues exactly once without recollecting current slots,
+regenerating AI or creating replacement Work. Callers without an explicit target keep the newest-period query.
+
+## Chatwoot bounded hydration concurrency — 2026-09-07
+
+Chatwoot keeps serial Queue delivery, the same Daily generation and the same ten-Conversation execution unit.
+Only the heavy message/reporting hydration inside that unit may use an execution-only concurrency of two. The
+default remains one and the application hard cap is two. Ordered results, retryable Conversation deferral,
+stable-key writes, D1-first persistence and Lark reconciliation are unchanged, so a deploy can accelerate future
+continuations without restarting or reinterpreting the retained Work.
+
 ## Bounded Daily source contract — 2026-09-05
 
 Chatwoot Daily keeps its immutable three-day `updated_within` overlap, but the persisted revision lookup must use
@@ -1317,6 +1348,15 @@ stale and was not copied. The temporary Customer importer mode is disabled after
 - Connector flags and schedules disabled by default;
 - Secrets stay in Environment/Secret Manager;
 - Production resources must be customer-owned.
+
+## WooCommerce Production readiness promotion — 2026-09-08
+
+WooCommerce Customer Production UAT and its incremental reconciliation completed on 2026-08-31, but the central
+Connector catalog still retained the earlier `dev_ready` state. Consequently the every-five-minute scheduler
+correctly constructed each `04:30` incremental operation, then failed closed before Queue admission with
+`MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING`. The reviewed correction promotes only WooCommerce to `verified` from
+that retained live evidence. It does not bypass central admission, enable full reconciliation, alter historical
+Business rows, or change the exact Customer ownership tuple.
 
 ## Customer Production cutover completion — 2026-08-24
 

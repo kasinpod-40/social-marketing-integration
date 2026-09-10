@@ -255,6 +255,14 @@ export function resolveChatwootExecutionLimits(limits = {}, env = {}) {
   const configuredReportingPages = readPositiveInteger(limits.reportingPagesPerInvocation, 1);
   return Object.freeze({
     ...limits,
+    // Execution-only: preserve the durable fingerprint while allowing a reviewed low-risk speed cap.
+    conversationHydrationConcurrency: Math.min(
+      2,
+      readPositiveInteger(
+        env.MKT_CHATWOOT_EXECUTION_HYDRATION_CONCURRENCY,
+        1,
+      ),
+    ),
     conversationRowsPerInvocation: Math.min(
       configuredRows,
       readPositiveInteger(

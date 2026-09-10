@@ -1,0 +1,74 @@
+# Customer Weekly AI Neutral-context Recovery — 2026-09-08
+
+## Verified incident
+
+Customer Weekly 7D Report materialization for period end `2026-09-06` completed for all eight active channels.
+The automatic Weekly operation stopped before Notification admission with
+`LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED`. D1 contains no delivery row for this period, so no Lark group
+message was sent.
+
+An isolated Customer Worker Preview read only the exact generated AI row and returned hashes, lengths and quality
+codes without returning business text. It used zero D1/Lark writes, zero Queue messages, zero Notification sends
+and zero Production traffic. Preview URLs were restored disabled after each read.
+
+```text
+period_end                = 2026-09-06
+source_report_count       = 8
+generation_status         = generated
+quality_violation_count   = 1
+quality_violation         = strengths_contains_neutral_metric
+```
+
+All other quality checks passed, including required positive/negative evidence, cross-channel coverage, named
+Content/Paid candidates and labeled decision actions. The defect is therefore an over-broad validator rule: it
+rejected any neutral metric name inside `strengths`, even when the same text contained the required positive
+channel and metric and used the neutral value only as context.
+
+## Reviewed repair and recovery boundary
+
+The quality gate continues to require an evidence-backed positive channel and positive metric in `strengths`.
+It no longer creates an independent failure merely because a neutral metric is also mentioned. Every other
+quality rule remains unchanged.
+
+After reviewed merge and Customer deploy, recover only exact operation `weekly-executive-auto-20260906` with its
+retained Work/generation after confirming lock zero and no existing delivery. Completion requires one D1 delivery
+with `status=sent`, `claim_count=1`, `mirror_status=mirrored`, exactly one Lark group message and zero duplicate.
+Do not create a replacement Weekly identity and do not use generic DLQ redrive.
+
+The first guarded same-generation replay after deploy proved another independent recovery boundary: normal source
+collection intentionally chose the newest available Weekly period, which had advanced beyond `2026-09-06`.
+Automatic Weekly processing now passes its retained `periodEnd` into source collection. This selects the exact
+historical snapshot set for a reviewed retry while all callers without an explicit target retain newest-period
+behavior. The failed attempt created no Notification delivery or group message and must not be replayed again.
+
+The following guarded replay proved one more bounded-read condition: the broad `report_setting_key` search no
+longer returned the older target because newer snapshots filled its result window. When `periodEnd` is explicit,
+the collector must therefore query `MKT_Report_Snapshots.period_end` at Bangkok midnight server-side and only
+then validate Customer profile, enabled setting, Report type and seven-day window. This changes no ordinary
+newest-period caller and does not create a new report or Notification identity.
+
+Live Lark rejected both direct DateTime equality and range filters on this field with `1254018 InvalidFilter`;
+neither attempt created a delivery or group message. The exact recovery path therefore avoids DateTime filtering:
+it derives each canonical storage `report_id` from Customer profile, enabled setting, platform and period
+`2026-08-31..2026-09-06`, then searches those text stable keys directly.
+
+Read-only live proof then established the table's eight current slots had already advanced to `2026-09-07`; the
+historical `2026-09-06` rows no longer exist in Lark even though D1 has all eight immutable Report materializations
+and this exact Work has completed AI-create and AI-trigger checkpoints. The recovery path therefore loads the one
+generated Executive AI row whose `ai_run_key` hash equals both durable checkpoints, then rebuilds Lark-equivalent
+metrics, rankings and nine-channel evidence from the checksum-validated D1 Reports. A Production-binding Preview
+proved all eight Reports present, the rebuilt prompt evidence byte-identical to the generated row, the Writer quality
+gate passed and deterministic Notification admission eligible, with zero record writes and Preview URLs restored
+disabled. The exact Work may then create/reuse admission and queue delivery without recollecting current slots,
+regenerating AI, or changing operation identity.
+
+## Production closeout
+
+- reviewed PR `#809` merged at `main@d7068a1b`;
+- Customer Worker version `bc5d2b15-06a7-4c37-82bd-ca64ebdd7ccd` deployed at 100%;
+- one guarded Queue send resumed only Work `lark_notification:weekly-executive-auto-20260906`, generation
+  `1788748251000`;
+- Work completed with `notification_queued` and `qualityGatePassed=true`;
+- exactly one delivery reached `sent` plus `mirrored`, claim count `1`, with no error;
+- retained DLQ is `redriven` and its exact System Alert is resolved;
+- no replacement generation or duplicate delivery was created.

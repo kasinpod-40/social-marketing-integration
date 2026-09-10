@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-09-08 — WooCommerce Production readiness promotion
+
+- promoted WooCommerce from `dev_ready` to `verified` using the retained 2026-08-31 Customer Production
+  source/D1/Lark and idempotent incremental reconciliation evidence;
+- restored normal `04:30` Production incremental admission through the existing central readiness gate;
+- added a scheduler regression that proves the exact WooCommerce job and Reliability wake-up are enqueued,
+  without enabling full reconciliation or changing historical Business data.
+
+## 2026-09-08 — Customer Weekly AI neutral-context quality repair
+
+- retained the evidence-backed positive channel/metric requirements for Weekly Executive strengths;
+- stopped treating a neutral metric mentioned only as context as an independent quality failure;
+- bound automatic Weekly source collection to the job's exact period end so reviewed retrospective recovery does
+  not drift to a newer materialized week;
+- derive and query explicit Weekly `report_id` stable keys for fresh exact-period reads, avoiding unsupported
+  Lark DateTime filters;
+- resume a retained Weekly operation from its already-generated, hash-bound AI row and eight checksum-validated
+  D1 Report materializations when the Lark current-slot snapshots have advanced; the rebuilt prompt evidence must
+  match the generated row exactly before admission, without regenerating AI or creating a replacement operation;
+- closed the missed 2026-09-06 Customer Weekly delivery in Production with one sent and mirrored notification,
+  claim count one, resolved Alert and retained DLQ marked redriven;
+- preserved all other cross-channel, candidate, decision-action and exactly-once Notification gates.
+
+## 2026-09-07 — Chatwoot bounded hydration concurrency
+
+- kept Queue batch/concurrency at one while allowing at most two Conversation message/event hydrations inside
+  the same bounded delivery;
+- made the speed control execution-only and default-safe at one, preserving the active Work fingerprint,
+  deterministic output order, retryable deferral, stable-key upserts and all historical Business data.
+
 ## 2026-09-05 — Bounded Chatwoot and Meta Ads Daily source
 
 - corrected Chatwoot's D1 revision lookup contract so the three-day Daily overlap hydrates only missing or

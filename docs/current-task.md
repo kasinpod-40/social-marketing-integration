@@ -79,6 +79,89 @@ therefore a runtime cutover to the customer-owned Cloudflare resources and custo
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
+### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
+
+- read-only Customer D1 proof found no WooCommerce Business admission after `scheduled-20260830-0430`, while
+  the deployed Worker still had the normal WooCommerce connector, write and `04:30` schedule flags enabled;
+- exact local replay of the deployed schedule contract reproduced the blocker before Queue mutation:
+  `MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING`, because the catalog still declared WooCommerce `dev_ready`;
+- retained Customer Production evidence already proves the missing gate: the 2026-08-31 full and incremental
+  runs completed source/D1/Lark reconciliation, preserved the larger Customer history, and restored the UAT
+  selector disabled with the normal incremental schedule enabled;
+- promote only WooCommerce from `dev_ready` to `verified`. Normal Production admission continues through
+  `assertConnectorRunnable()`; controlled-UAT, ownership, feature/write flags and full-reconciliation guards
+  remain unchanged;
+- a Production-scheduler regression now proves the exact `scheduled-20260908-0430` incremental job and
+  Reliability wake-up are enqueued. Focused tests pass `46/46`; `npm run check`, all `3,328` Node tests plus
+  `18` Workers-runtime tests, Report reliability `106/106`, npm audit with zero vulnerabilities, deploy dry-run
+  and `git diff --check` pass. Reviewed merge/deploy, one current incremental admission and D1/Lark freshness
+  proof remain required before this repair is complete.
+
+### Implementation result — Customer Weekly AI neutral-context quality repair (2026-09-08)
+
+- Customer D1 proves all eight Weekly 7D Reports for period end `2026-09-06` materialized, while exact
+  operation `weekly-executive-auto-20260906` stopped before delivery on
+  `LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED`; no Notification delivery row or group send exists;
+- an isolated Customer Worker Preview with zero Production traffic and zero mutation read only the exact
+  generated AI identity. It proved one violation only: `strengths_contains_neutral_metric`; all required
+  positive/negative evidence, named candidates and decision actions already passed;
+- the quality gate now continues to require a positive channel and positive metric in `strengths`, but no
+  longer rejects a neutral metric merely because it is mentioned as context in the same evidence-backed text;
+- focused Weekly regression passes. Reviewed merge/deploy and guarded same-identity recovery remain required;
+  success requires exactly one sent/mirrored delivery with `claim_count=1`, one group message and zero duplicate.
+- live same-generation recovery then exposed a second fail-closed boundary: the source collector selected the newest
+  available Weekly period instead of the operation's retained `periodEnd`. The collector now accepts an exact
+  period end for automatic Weekly jobs while preserving newest-period selection for ordinary callers.
+- the next retained replay proved that filtering the result after a broad `report_setting_key` search is not enough:
+  newer snapshots can fill the bounded Lark result before the historical period is returned. Fresh exact-period
+  collection now derives canonical storage `report_id` keys, then applies the existing customer/setting/report-type
+  guards. Ordinary newest-period reads remain unchanged.
+- live Lark rejected both equality and range filters on this DateTime field with `1254018 InvalidFilter`; neither
+  attempt reached Notification delivery. Exact historical recovery now derives the canonical Weekly `report_id`
+  for every enabled setting from the immutable seven-day period contract and searches those text stable keys.
+- read-only Production proof found the eight Lark Snapshot current slots had advanced to `2026-09-07`, while the
+  exact `2026-09-06` operation already retained completed AI create/trigger checkpoints. The bounded continuation
+  now resolves exactly one Executive AI row whose key hash matches both checkpoints and rebuilds its seven-day
+  evidence from all eight checksum-validated D1 Report materializations. Preview proof confirmed eight Reports,
+  exact generated-row prompt evidence, passed Writer quality gate and eligible deterministic admission with zero
+  Lark writes. It can continue delivery without AI regeneration, replacement Work, or duplicate send.
+- implementation gates passed: focused retained/exact-period tests `3/3`, repository check, full tests
+  `3325 + 18`, Report reliability `106`, deploy dry-run, `git diff --check`, and npm audit `0` vulnerabilities.
+- PR `#809` merged as `main@d7068a1b`; Customer Production Worker version
+  `bc5d2b15-06a7-4c37-82bd-ca64ebdd7ccd` deployed successfully. Guarded recovery sent one Queue message for
+  the same Work/generation only. Live closeout proves Work `completed` with `qualityGatePassed=true`, exactly one
+  delivery `sent` and `mirrored` on claim `1`, no delivery error, terminal DLQ `redriven`, and zero open incident
+  Alerts. The missed Weekly 2026-09-06 Report/AI/Notification is complete without a replacement generation.
+
+### Implementation result — Meta K2 Daily activity Creative deduplication (2026-09-07)
+
+- Current K2 generation `meta-ads-chemistry_k2-scheduled-20260906` completed source and bounded
+  materialization, then stopped before any D1/Lark write with `LARK_PREFLIGHT_FAILED`. Persisted safe
+  diagnostics prove one exact cause: `MKT_Ads_Creatives.ads_creative_key` had nine duplicate input rows;
+- read-only D1 aggregation proves the activity-scoped snapshot contains `34` Creative observations but only
+  `25` distinct Creative IDs. This is valid Provider behavior because several active Ads reuse one Creative;
+- curated report-range projection now collapses repeated Creative observations by Provider Creative ID before
+  creating D1, Coverage and Lark stable-key rows. Legacy full-inventory/detailed generations are unchanged;
+- focused Meta write-set/runtime/preflight regression passes `22/22`; `npm run check` passes with `829` source
+  files, `2,513` dependencies and zero cycles; full tests pass `3,321` Node plus `18` Workers-runtime tests;
+  Report reliability passes `106/106`; npm audit has zero vulnerabilities; deploy dry-run and diff-check pass.
+  Reviewed PR, Customer deploy and guarded recovery of the exact retained generation remain required.
+
+### Implementation result — Chatwoot bounded hydration concurrency (2026-09-07)
+
+- the current Daily Work remains the same generation and durable checkpoint; Queue batch/concurrency remains
+  `1`, while only the message/event hydration inside one delivery may run two Conversations concurrently;
+- the execution-only cap defaults to `1`, is hard-limited to `2`, preserves source order and keeps the existing
+  per-Conversation retryable deferral. Stable keys, D1-first writes, Lark reconciliation and historical rows are
+  unchanged;
+- focused Chatwoot regression passes `44/44`; `npm run check` passes with `829` source files, `2,513`
+  dependencies and zero cycles; full tests pass `3,322` Node plus `18` Workers-runtime tests; Report reliability
+  passes `106/106`; npm audit has zero vulnerabilities; deploy dry-run and diff-check pass;
+- PR `#803` merged as `main@94cbde19`. Customer Worker version
+  `5f46e22c-183a-4649-ba7a-be7e288aeb79` is active with read-back execution caps `10` Conversations and hydration
+  concurrency `2`; Queue batch/concurrency remains `1`. The retained `20260906` Work advanced through successful
+  unit `151` and admitted unit `152` without restart, replacement generation or new error.
+
 ## Current authorized schedule and newer-only parity scope — 2026-08-27
 
 - Customer source admissions are staggered at least one hour apart on the serial Queue: Meta Ads `00:30`,
