@@ -24,6 +24,7 @@ const ACCOUNT_ID = '154f6bf72740d29d7453cec7fb800d32';
 const WORKER = 'social-mkt-sync-worker';
 const DATABASE = 'social-mkt-state-prod';
 const DATABASE_ID = 'f03ab092-a1aa-4478-8ba2-c20d7b54851f';
+const CLOUDFLARE_PROFILE = 'chemistry-k-prod';
 const CUSTOMER_PROFILE = 'chemistry_k';
 const APP_TOKEN = 'Tcm4bYRL4acuQysp6AwlmXBKgbe';
 const ADS_DAILY_TABLE_ID = 'tblTjWaxgSCwSj1P';
@@ -94,7 +95,9 @@ async function main() {
   const commandEnv = { ...process.env, ...privateEnv };
   const authOutput = commandEnv.CLOUDFLARE_API_TOKEN
     ? null
-    : runText('npx', ['wrangler', 'auth', 'token', '--json'], commandEnv);
+    : runText('npx', [
+      'wrangler', 'auth', 'token', '--json', '--profile', CLOUDFLARE_PROFILE,
+    ], commandEnv);
   const auth = resolveCloudflareBearerAuth({
     explicitApiToken: commandEnv.CLOUDFLARE_API_TOKEN,
     authOutput,
@@ -120,6 +123,7 @@ async function main() {
   const stdout = runText('npx', [
     '--no-install', 'wrangler', 'versions', 'upload',
     '--config', runtimeConfigPath,
+    '--profile', CLOUDFLARE_PROFILE,
     '--preview-alias', previewAlias,
     '--message', `Paid summary/retention operator git=${git(['rev-parse', 'HEAD'])}`,
   ], { ...commandEnv, WRANGLER_OUTPUT_FILE_PATH: outputPath });
@@ -240,6 +244,7 @@ function readActiveVersion(env, configPath) {
   const parsed = JSON.parse(runText('npx', [
     '--no-install', 'wrangler', 'deployments', 'status',
     '--name', WORKER, '--config', configPath, '--json',
+    '--profile', CLOUDFLARE_PROFILE,
   ], env));
   const status = Array.isArray(parsed) ? parsed[0] : parsed;
   const active = (status?.versions ?? []).filter((version) => Number(version?.percentage) === 100);
