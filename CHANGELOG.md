@@ -12,6 +12,9 @@
   order across the four exact Summary Views; unchanged properties are not rewritten.
 - follow the Customer Lark canonical grouped-Grid response by leaving independent Sort empty; descending Thai
   month Group remains the sole newest-first ordering source and avoids a repeated no-op Sort write.
+- completed live Customer PROD View readback across Overview/Meta/Google/TikTok, proving the exact Thai month
+  Group and 22-field order; the final history rerun remained zero-change at 185 rows and Production Worker
+  version `8dc08bc8-fbe0-4ea7-aee7-e944d3f0233c` is active from `main@d62eb477`.
 
 ## 2026-09-10 — Paid Ads Campaign Summary and bounded Daily retention
 

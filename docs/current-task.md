@@ -181,6 +181,21 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   canonicalizes independent Sort to `[]` after a Grid View is grouped. The reviewed contract therefore leaves
   Sort empty and lets descending `period_month_th` grouping own newest-first month order; this removes only an
   unsupported presentation preference and does not weaken Group, field order, filters, identities, or data.
+- PRs `#818`, `#819`, and `#820` merged the Base v3 layout operator, safe canonical diagnostics, and grouped-Grid
+  canonical repair as final `main@d62eb477`. Their six Branch Verification runs/jobs all passed:
+  `34494824546/102930472273`, `34494860603/102930589987`, `34495512219/102932826328`,
+  `34495537179/102932912403`, `34496123232/102934896341`, and `34496155933/102935008315`;
+- controlled Customer PROD operator v3 completed on isolated Preview version
+  `7c4c539e-1ecc-4cef-a8ec-0b8e7133b8c2`, with Preview URLs restored disabled and Production traffic unchanged.
+  Exact readback proves all four View IDs (`vewz07Cg0X`, `vewDXGKATQ`, `vewH1VRlhC`, `vewLdLkOuY`) group by
+  `period_month_th` descending, retain canonical empty Sort, and expose the same exact readable 22-field order.
+  The final run reconciled current MTD `45/45` and full history `185/185`; both history passes were zero-change
+  `created=0/updated=0/skipped=185`, with zero duplicate keys. Daily retention remained `5,209→5,209`, zero
+  deletes and zero D1 mutations;
+- final Worker version `8dc08bc8-fbe0-4ea7-aee7-e944d3f0233c` is active at 100% in deployment
+  `c6aecb4b-0a1a-4e91-b28d-299426095d8f` from `main@d62eb477`. Main Queue config remains batch/concurrency
+  `1/1`, generic DLQ redrive and automatic recovery remain disabled, and normal Paid daily sync updates only
+  the current-month Summary bucket. The Thai history/View presentation extension is complete.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 
