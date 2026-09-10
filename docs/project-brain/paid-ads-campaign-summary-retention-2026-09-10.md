@@ -62,3 +62,31 @@ four Views with zero drift. Execution then stopped before retention mutation on 
 The official record-filter contract requires a DateTime target as `["ExactDate","<epoch-ms>"]` for `isLess`;
 the original request sent only the epoch. The repaired candidate query uses the official shape while preserving
 the exact D1 identity proof, oldest-first order, active-lock gate, and maximum 500 deletes.
+
+## Live closeout
+
+PR `#815` merged the filter repair as code-release `main@9d97ad0d` after Branch Verification runs
+`34461982572` / job `102821699707` and `34462011703` / job `102821790412` passed. Isolated Preview version
+`13141e4c-4b32-4e88-bc83-e292cb876c74` then completed the exact operator and restored Preview URLs disabled;
+Production traffic did not move during the controlled operator.
+
+The final live result proves:
+
+- `MKT_Ads_Campaign_Summary=tbl7YIG4sbcUbJOV` and `MKT_Ads_Daily=tblTjWaxgSCwSj1P`;
+- 21 exact Summary fields and four exact Views with zero remaining actions, conflicts, warnings, manual actions,
+  protected-field actions, deletes, or schema record writes;
+- MTD `2026-09-01..2026-09-10` has 45 campaigns: 37 `meta_ads`, 8 `google_ads`, and zero legitimate
+  `tiktok_ads` rows because PROD D1 has no TikTok Ads facts for the period;
+- all 45 Summary identities and values reconcile to D1 with zero duplicate stable keys. The final execution and
+  the immediate idempotency rerun both returned `created=0`, `updated=0`, `skipped=45`;
+- Daily retention returned `recordsBefore=5,209`, `recordsAfter=5,209`, cutoff `2026-06-13`, pressure false,
+  candidates/verified/deleted all zero, and D1 mutations zero. The live Lark table is already below the soft limit;
+- the independent post-deploy D1 proof returned 2,483 Meta facts / 37 campaigns and 33 Google facts / 8 campaigns,
+  while the full source remains 19,509 facts over `2026-06-19..2026-09-09`. All checks were read-only with
+  `changed_db=false`, `rows_written=0`, and zero active locks.
+
+Customer Worker version `2f3322d2-fb44-411d-8bc1-6857f7d4e40b` is active at 100% from code-release
+`main@9d97ad0d` with Summary and retention enabled, live table mapping installed, and limits fixed at
+`90 / 17,000 / 15,000 / 500`. Main Queue batch/concurrency remains `1/1`; generic DLQ redrive and automatic
+recovery remain disabled. The runtime hook remains Paid-only and runs after a completed supported Paid Ads sync;
+it does not mutate Organic data, unrelated Ads tables, or D1 source facts.

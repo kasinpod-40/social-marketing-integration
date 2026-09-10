@@ -18,6 +18,12 @@
   diagnosable without logging credentials, record values, or customer identities.
 - corrected the Ads Daily retention DateTime filter to Lark's required `ExactDate` wire shape after live code
   `1254018 InvalidFilter`, without changing retention eligibility or delete bounds.
+- completed the controlled Customer PROD operator and exact D1/Lark readback: 45 current-MTD campaign summaries,
+  zero duplicate stable keys, a zero-change rerun, and no Daily deletion because the live 5,209-row table is below
+  the 17,000-row soft limit;
+- enabled the reviewed Paid-only runtime on Customer Worker version
+  `2f3322d2-fb44-411d-8bc1-6857f7d4e40b`, preserving Queue batch/concurrency `1/1`, disabled generic recovery,
+  all Organic data, unrelated tables, and immutable D1 source facts.
 
 ## 2026-09-08 — WooCommerce Production readiness promotion
 
