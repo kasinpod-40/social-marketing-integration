@@ -177,6 +177,10 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   full `3,347` Node tests plus `18` Workers-runtime tests, Report reliability `106/106`, dependency audit,
   deploy dry-run and `git diff --check` pass. Reviewed merge and controlled Customer PROD View apply/readback
   remain required before this extension is complete.
+- the first controlled layout readback proved Group and all 22 visible fields exact, but this Customer Lark
+  canonicalizes independent Sort to `[]` after a Grid View is grouped. The reviewed contract therefore leaves
+  Sort empty and lets descending `period_month_th` grouping own newest-first month order; this removes only an
+  unsupported presentation preference and does not weaken Group, field order, filters, identities, or data.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 

@@ -112,4 +112,7 @@ The remaining layout is implemented through Lark Base v3's dedicated View-proper
 and `visible_fields`. The operator reads every property before mutation, writes only drift, then reads back all
 four exact Views. Group is `period_month_th` descending; sort priority is `period_start` descending, `platform`
 ascending, then `campaign_name` ascending; visible field order keeps the Primary first, then business identity,
-period, metrics, currency and technical/audit fields. These mutations cannot alter filters or records.
+period, metrics, currency and technical/audit fields. These mutations cannot alter filters or records. Live
+readback established that this Customer tenant canonicalizes independent Sort to an empty array after Group is
+active. The final contract therefore keeps Sort empty and lets the descending Thai month Group alone own month
+order, rather than repeatedly issuing a no-op Sort mutation.

@@ -9,11 +9,9 @@ export const MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME = 'MKT_Ads_Campaign_Summary';
 export const MKT_ADS_CAMPAIGN_SUMMARY_DISPLAY_NAME = '📊 MKT_Ads_Campaign_Summary';
 export const MKT_ADS_CAMPAIGN_SUMMARY_EXPECTED_FIELD_COUNT = 22;
 export const MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD = 'period_month_th';
-export const MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT = deepFreeze([
-  { field: 'period_start', desc: true },
-  { field: 'platform', desc: false },
-  { field: 'campaign_name', desc: false },
-]);
+// Lark canonicalizes independent Sort to [] once this Grid View is grouped.
+// Month order is therefore owned only by the descending group configuration.
+export const MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT = deepFreeze([]);
 export const MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS = deepFreeze([
   'campaign_summary_key',
   'campaign_name', 'platform', 'status', 'period_month_th', 'period_start', 'period_end',
@@ -353,7 +351,7 @@ export function validateMktAdsCampaignSummaryLarkSchema(schema) {
   }
   const fieldNames = new Set(tableContract.fields.map((field) => field.fieldName));
   if (MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD !== 'period_month_th'
-    || MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT.length !== 3
+    || MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT.length !== 0
     || MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT.some((entry) => !fieldNames.has(entry?.field))
     || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.length !== fieldNames.size
     || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.some((fieldName) => !fieldNames.has(fieldName))) {
