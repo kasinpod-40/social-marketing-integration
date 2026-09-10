@@ -100,6 +100,10 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   `106/106`; dependency audit has zero vulnerabilities; deploy dry-run and `git diff --check` pass. Reviewed merge,
   controlled Customer PROD execution, Lark/D1 reconciliation, idempotent rerun, runtime enablement, and exact live
   evidence remain required before this item is complete.
+- PR `#801` merged as `main@9b1bebd2`. The first isolated Preview upload restored Preview URLs disabled and left
+  Production traffic unchanged, but Wrangler used its default OAuth identity and received Cloudflare API
+  `403/10000` at version upload. The operator now pins profile `chemistry-k-prod` for auth, upload, and deployment
+  status; this focused repair must pass review before the live Preview is retried.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 

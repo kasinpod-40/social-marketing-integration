@@ -42,3 +42,9 @@ routes, schedules, assets or Queues, confirms Production traffic remains on the 
 Preview URLs disabled in `finally`. Execution order is schema, Views, MTD materialization, retention, readback,
 and idempotency rerun. Runtime flags remain default-off until live reconciliation succeeds and the reviewed
 Production deployment explicitly enables them.
+
+The first post-merge Preview attempt failed before Lark access because the generated-config Wrangler subprocess
+fell back to the default OAuth identity, which could read deployment state but received Cloudflare `403/10000`
+when uploading a Worker version. Preview URLs were restored disabled and Production traffic stayed unchanged. All
+Wrangler auth, version-upload, and deployment-status commands in this operator must explicitly use the reviewed
+`chemistry-k-prod` profile.

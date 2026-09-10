@@ -10,6 +10,8 @@
   deletes per run, with exact Customer PROD D1 identity proof for every deletable record;
 - added a single fail-closed operator that provisions schema/Views, materializes MTD, applies retention and verifies
   live state without mutating D1, Organic tables, unrelated Ads tables or Production traffic during Preview.
+- pinned the operator's Wrangler auth/upload/status boundary to profile `chemistry-k-prod` after the default OAuth
+  identity was correctly rejected before the first Preview version upload.
 
 ## 2026-09-08 — WooCommerce Production readiness promotion
 
