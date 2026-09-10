@@ -195,6 +195,11 @@ async function ensureCampaignSummaryViewPresentation({ client, tableId }) {
       throw operatorError(
         `Ads Campaign Summary View presentation readback failed: ${viewName}`,
         'MKT_ADS_PROD_OPERATOR_VIEW_PRESENTATION_FAILED',
+        {
+          viewName,
+          expected: { groupConfig, sortConfig, visibleFields },
+          actual: after,
+        },
       );
     }
     results.push(freeze({ viewId: view.viewId, viewName, actions, ...after }));
@@ -286,9 +291,10 @@ function requiredText(value, name) {
   return value.trim();
 }
 
-function operatorError(message, code) {
+function operatorError(message, code, details = {}) {
   const error = new Error(message);
   error.code = code;
+  error.details = freeze(details);
   return error;
 }
 
