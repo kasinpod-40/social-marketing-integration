@@ -7,6 +7,11 @@ Storage direction ปัจจุบันคือ API Provider → D1 source/h
 `RAW_TikTok_Creator_Videos` เป็น protected Lark Native source แบบ read-only. Exact retirement scope
 และ safe deletion gate อยู่ที่ `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
 
+Paid Ads ใช้ PROD D1 เป็นแหล่งประวัติถาวร และมี `MKT_Ads_Campaign_Summary` เป็น Lark MTD projection ระดับ
+Campaign พร้อม Views แยก Meta/Google/TikTok. `MKT_Ads_Daily` เป็น bounded Lark cache เท่านั้น: retention
+ลบได้สูงสุด 500 แถวต่อรอบและต้องพิสูจน์ exact identity กับ D1 ก่อนทุกแถว โดยไม่ลบ D1 หรือแตะ Organic.
+ดู `docs/project-brain/paid-ads-campaign-summary-retention-2026-09-10.md`.
+
 `MKT_Accounts` ใน Integration Workspace มี Organic master ครบ 4 ช่องทางแล้ว: Facebook, Instagram,
 TikTok และ YouTube. TikTok ใช้ stable key `tiktok:${accountId}` และ permanent sync implementation
 เขียน Account หลัง Content/Daily สำเร็จเท่านั้น; Live exact backfill เสร็จแล้ว ส่วน scheduled maintenance

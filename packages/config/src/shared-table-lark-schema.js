@@ -2,9 +2,42 @@ import { LARK_TABLE_ENV } from './lark-table-config.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 import { parseCsvRecords } from '../../shared/src/text/csv.js';
 
-export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'customer-shared-table-lark-schema-v0.13.0';
-export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT = 2;
-export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT = 29;
+export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'customer-shared-table-lark-schema-v0.14.0';
+export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT = 3;
+export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT = 50;
+export const MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME = 'MKT_Ads_Campaign_Summary';
+export const MKT_ADS_CAMPAIGN_SUMMARY_EXPECTED_FIELD_COUNT = 21;
+
+const MKT_ADS_CAMPAIGN_SUMMARY_FIELD_CONTRACT = deepFreeze([
+  ['campaign_summary_key', 1, true, true, false, []],
+  ['period_kind', 3, false, true, false, ['mtd']],
+  ['period_start', 5, false, true, false, []],
+  ['period_end', 5, false, true, false, []],
+  ['platform', 3, false, true, false, ['meta_ads', 'google_ads', 'tiktok_ads']],
+  ['account_id', 1, false, true, false, []],
+  ['campaign_id', 1, false, true, false, []],
+  ['campaign_name', 1, false, false, true, []],
+  ['status', 1, false, false, true, []],
+  ['currency', 1, false, false, true, []],
+  ['spend', 2, false, false, true, []],
+  ['impressions', 2, false, false, true, []],
+  ['clicks', 2, false, false, true, []],
+  ['ctr', 2, false, false, true, []],
+  ['cpc', 2, false, false, true, []],
+  ['cpm', 2, false, false, true, []],
+  ['conversions', 2, false, false, true, []],
+  ['cpa', 2, false, false, true, []],
+  ['conversion_value', 2, false, false, true, []],
+  ['roas', 2, false, false, true, []],
+  ['last_synced_at', 5, false, true, false, []],
+]);
+
+const MKT_ADS_CAMPAIGN_SUMMARY_VIEW_CONTRACT = deepFreeze([
+  ['📊 Overview', 'platform IS NOT EMPTY'],
+  ['🔵 Meta', 'platform=meta_ads'],
+  ['🔴 Google', 'platform=google_ads'],
+  ['⚫ TikTok', 'platform=tiktok_ads'],
+]);
 
 const FIELD_TYPE_MAP = Object.freeze({
   Text: Object.freeze({ type: 1, uiType: 'Text' }),
@@ -20,6 +53,11 @@ const FIELD_TYPE_MAP = Object.freeze({
 const TABLE_CONTRACTS = deepFreeze({
   MKT_Account_Daily: table('mktAccountDaily', 'LARK_TABLE_MKT_ACCOUNT_DAILY', '📋 All Account Daily'),
   MKT_Ads_Ads: table('mktAdsAds', 'LARK_TABLE_MKT_ADS_ADS', '📋 All Ads'),
+  [MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME]: table(
+    'mktAdsCampaignSummary',
+    'LARK_TABLE_MKT_ADS_CAMPAIGN_SUMMARY',
+    '📊 Overview',
+  ),
 });
 
 const RETIRED_RAW_TABLES = new Set([
@@ -120,7 +158,8 @@ export function buildSharedTableViewContractFromCsv(input) {
 export function buildSharedTableViewInstallerContract(input) {
   const views = Array.isArray(input?.views) ? input.views : [];
   const schema = Array.isArray(input?.schema) ? input.schema : [];
-  validateSharedTableLarkSchema(schema);
+  const validateSchema = input?.validateSchema ?? validateSharedTableLarkSchema;
+  validateSchema(schema);
   const schemaByName = new Map(schema.map((tableContract) => [tableContract.logicalName, tableContract]));
   const grouped = new Map();
 
@@ -165,13 +204,16 @@ function parseSharedTableViewFilter(value, tableContract) {
   const text = requireText(value, `${tableContract.logicalName}.filter`);
   const fieldsByName = new Set(tableContract.fields.map((field) => field.fieldName));
   const conditions = text.split(/\s+AND\s+/iu).map((expression) => {
-    const match = /^([A-Za-z][A-Za-z0-9_]*)=([A-Za-z0-9_]+)$/u.exec(expression.trim());
-    if (!match) throw invalid(`Unsupported Shared-table View filter: ${text}`);
-    const [, fieldName, filterValue] = match;
+    const trimmed = expression.trim();
+    const equality = /^([A-Za-z][A-Za-z0-9_]*)=([A-Za-z0-9_]+)$/u.exec(trimmed);
+    const notEmpty = /^([A-Za-z][A-Za-z0-9_]*)\s+IS\s+NOT\s+EMPTY$/iu.exec(trimmed);
+    if (!equality && !notEmpty) throw invalid(`Unsupported Shared-table View filter: ${text}`);
+    const fieldName = (equality ?? notEmpty)[1];
     if (!fieldsByName.has(fieldName)) {
       throw invalid(`Shared-table View filter references unknown field ${tableContract.logicalName}.${fieldName}`);
     }
-    return Object.freeze({ fieldName, operator: 'is', value: filterValue });
+    if (notEmpty) return Object.freeze({ fieldName, operator: 'isNotEmpty', value: null });
+    return Object.freeze({ fieldName, operator: 'is', value: equality[2] });
   });
   if (conditions.length === 0) throw invalid(`Shared-table View filter is empty: ${text}`);
   return Object.freeze({ conjunction: 'and', conditions: Object.freeze(conditions) });
@@ -208,8 +250,79 @@ export function validateSharedTableLarkSchema(schema) {
   if (fieldCount !== SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT) {
     throw invalid(`Shared-table schema must contain exactly ${SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT} fields`);
   }
-  if (reuseCount !== 0 || createCount !== 2) {
-    throw invalid(`Customer shared-table schema must create two tables; got reuse=${reuseCount}, create=${createCount}`);
+  if (reuseCount !== 0 || createCount !== 3) {
+    throw invalid(`Customer shared-table schema must create three tables; got reuse=${reuseCount}, create=${createCount}`);
+  }
+  return true;
+}
+
+/**
+ * จำกัด Apply/Preview ของ Paid maintenance ให้แตะเฉพาะ Campaign Summary ตารางเดียว
+ * แม้ CSV SSOT จะประกาศ Shared tables อื่นไว้ด้วยก็ตาม.
+ */
+export function selectMktAdsCampaignSummaryLarkContract(input = {}) {
+  validateSharedTableLarkSchema(input.schema);
+  const schema = input.schema.filter(
+    (tableContract) => tableContract.logicalName === MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME,
+  );
+  const views = (Array.isArray(input.views) ? input.views : []).filter(
+    (view) => view.table === MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME,
+  );
+  validateMktAdsCampaignSummaryLarkSchema(schema);
+  if (views.length !== MKT_ADS_CAMPAIGN_SUMMARY_VIEW_CONTRACT.length) {
+    throw invalid('Ads Campaign Summary contract must contain exactly four Views');
+  }
+  for (let index = 0; index < MKT_ADS_CAMPAIGN_SUMMARY_VIEW_CONTRACT.length; index += 1) {
+    const view = views[index];
+    const [viewName, filter] = MKT_ADS_CAMPAIGN_SUMMARY_VIEW_CONTRACT[index];
+    if (view?.viewName !== viewName || view?.filter !== filter) {
+      throw invalid(`Ads Campaign Summary View contract is invalid at index ${index}`);
+    }
+  }
+  return deepFreeze({ schema, views });
+}
+
+export function validateMktAdsCampaignSummaryLarkSchema(schema) {
+  if (!Array.isArray(schema) || schema.length !== 1) {
+    throw invalid('Ads Campaign Summary schema must contain exactly one table');
+  }
+  const [tableContract] = schema;
+  if (tableContract.logicalName !== MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME
+    || tableContract.key !== 'mktAdsCampaignSummary'
+    || tableContract.envName !== 'LARK_TABLE_MKT_ADS_CAMPAIGN_SUMMARY'
+    || tableContract.sharedTable?.physicalAction !== 'create_new') {
+    throw invalid('Ads Campaign Summary table identity is invalid');
+  }
+  if (tableContract.defaultViewName !== '📊 Overview'
+    || tableContract.sharedTable?.currentSourceTable !== null
+    || tableContract.sharedTable?.preserveTableId !== false
+    || tableContract.fields.length !== MKT_ADS_CAMPAIGN_SUMMARY_EXPECTED_FIELD_COUNT) {
+    throw invalid('Ads Campaign Summary field/primary-key contract is invalid');
+  }
+  for (let index = 0; index < MKT_ADS_CAMPAIGN_SUMMARY_FIELD_CONTRACT.length; index += 1) {
+    const field = tableContract.fields[index];
+    const [fieldName, type, primary, required, nullable, optionNames] =
+      MKT_ADS_CAMPAIGN_SUMMARY_FIELD_CONTRACT[index];
+    const actualOptions = Array.isArray(field?.property?.options)
+      ? field.property.options.map((option) => option?.name)
+      : [];
+    const expectedUiType = type === 1 ? 'Text' : type === 2 ? 'Number' : type === 3 ? 'SingleSelect' : 'DateTime';
+    const expectedDateFormatter = fieldName === 'last_synced_at'
+      ? 'yyyy/MM/dd HH:mm'
+      : (type === 5 ? 'yyyy/MM/dd' : null);
+    if (field?.fieldName !== fieldName
+      || field?.type !== type
+      || field?.uiType !== expectedUiType
+      || field?.primary !== primary
+      || field?.required !== required
+      || field?.nullable !== nullable
+      || (expectedDateFormatter !== null
+        && (field?.property?.date_formatter !== expectedDateFormatter
+          || field?.property?.auto_fill !== false))
+      || actualOptions.length !== optionNames.length
+      || actualOptions.some((name, optionIndex) => name !== optionNames[optionIndex])) {
+      throw invalid(`Ads Campaign Summary field contract is invalid: ${fieldName}`);
+    }
   }
   return true;
 }

@@ -16,3 +16,7 @@ RAW_Ads_Entities,All Creatives,entity_type=creative,Cross-platform creative inve
 RAW_Ads_Daily,Meta Ads Daily,platform=meta_ads,Meta performance
 RAW_Ads_Daily,TikTok Ads Daily,platform=tiktok_ads,TikTok performance
 RAW_Ads_Daily,Google Ads Daily,platform=google_ads,Google performance
+MKT_Ads_Campaign_Summary,📊 Overview,platform IS NOT EMPTY,All canonical paid Ads campaign MTD rows
+MKT_Ads_Campaign_Summary,🔵 Meta,platform=meta_ads,Meta Ads campaign MTD
+MKT_Ads_Campaign_Summary,🔴 Google,platform=google_ads,Google Ads campaign MTD
+MKT_Ads_Campaign_Summary,⚫ TikTok,platform=tiktok_ads,TikTok Ads campaign MTD

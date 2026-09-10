@@ -34,7 +34,7 @@ function read(name) {
   return readFile(new URL(`${DIR}${name}`, ROOT), 'utf8');
 }
 
-test('customer-facing preview plans only two canonical tables while protecting TikTok Native', async () => {
+test('customer-facing preview plans three canonical tables while protecting TikTok Native', async () => {
   const { schema, views } = await loadContract();
   const calls = [];
   const client = createPreviewClient({ calls });
@@ -50,11 +50,11 @@ test('customer-facing preview plans only two canonical tables while protecting T
   assert.equal(result.requiresManualSchemaResolution, false);
   assert.equal(result.applyImplemented, false);
   assert.equal(result.summary.renameTables, 0);
-  assert.equal(result.summary.createTables, 2);
+  assert.equal(result.summary.createTables, 3);
   assert.equal(result.summary.createFields, 0);
   assert.equal(result.summary.updateFields, 0);
   assert.equal(result.summary.updatePrimaryFields, 0);
-  assert.equal(result.summary.createViews, 0);
+  assert.equal(result.summary.createViews, 4);
   assert.equal(result.summary.protectedActions, 0);
   assert.equal(result.summary.deleteActions, 0);
   assert.equal(result.summary.recordWrites, 0);
@@ -100,7 +100,7 @@ test('legacy RAW names do not create duplicate-target conflicts', async () => {
   const result = await previewSharedTableLarkSchema({ client, env: {}, schema, views });
   assert.equal(result.readyForApplyAuthorization, true);
   assert.equal(result.conflicts.length, 0);
-  assert.equal(result.summary.createTables, 2);
+  assert.equal(result.summary.createTables, 3);
 });
 
 test('generic schema preview now accepts a truly read-only planning client while apply still requires write methods', async () => {

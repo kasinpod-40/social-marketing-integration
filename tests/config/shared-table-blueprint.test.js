@@ -12,13 +12,13 @@ async function csv(name) {
   return parseCsvRecords(await readFile(new URL(`${DIR}${name}`, ROOT), 'utf8'));
 }
 
-test('shared-table revision adds only two justified tables and reuses five empty planned slots', async () => {
+test('shared-table revision adds three justified tables and reuses five empty planned slots', async () => {
   const [inventory, migration, current] = await Promise.all([
     csv('table-inventory.csv'), csv('migration-map.csv'), csv('current-base-inventory.csv'),
   ]);
-  assert.equal(inventory.length, 7);
+  assert.equal(inventory.length, 8);
   assert.deepEqual(inventory.filter((row) => row['Physical action'] === 'Create new').map((row) => row.Table), [
-    'MKT_Account_Daily', 'MKT_Ads_Ads',
+    'MKT_Account_Daily', 'MKT_Ads_Ads', 'MKT_Ads_Campaign_Summary',
   ]);
   assert.equal(inventory.filter((row) => row['Physical action'] === 'Rename/reuse in place').length, 5);
   assert.equal(migration.filter((row) => row.Action === 'Rename/reuse empty slot').length, 5);
@@ -54,6 +54,7 @@ test('field contract separates platform by views and preserves distinct grains',
   assert.deepEqual([...byTable.keys()], [
     'RAW_Meta_Organic_Accounts', 'RAW_Meta_Organic_Content', 'RAW_Meta_Organic_Metrics',
     'RAW_Ads_Entities', 'RAW_Ads_Daily', 'MKT_Account_Daily', 'MKT_Ads_Ads',
+    'MKT_Ads_Campaign_Summary',
   ]);
   for (const [table, rows] of byTable) {
     assert.equal(rows[0].Order, '1', `${table} first field`);
@@ -65,6 +66,11 @@ test('field contract separates platform by views and preserves distinct grains',
   assert.ok(views.some((row) => row.Table === 'RAW_Ads_Entities' && row.Filter === 'platform=google_ads AND entity_type=campaign'));
   assert.ok(byTable.get('MKT_Account_Daily').some((row) => row.Field === 'metric_date'));
   assert.ok(byTable.get('MKT_Ads_Ads').some((row) => row.Field === 'external_creative_id'));
+  assert.equal(byTable.get('MKT_Ads_Campaign_Summary')[0].Field, 'campaign_summary_key');
+  assert.deepEqual(
+    views.filter((row) => row.Table === 'MKT_Ads_Campaign_Summary').map((row) => row.Filter),
+    ['platform IS NOT EMPTY', 'platform=meta_ads', 'platform=google_ads', 'platform=tiktok_ads'],
+  );
 });
 
 test('protected table contract exactly matches repository governance', async () => {

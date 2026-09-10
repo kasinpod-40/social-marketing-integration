@@ -149,16 +149,18 @@
     "preview:shared-table-schema": "node scripts/preview-shared-table-schema.mjs",
     "setup:shared-table-schema": "node scripts/setup-shared-table-schema.mjs",
     "setup:shared-table-schema:apply": "node scripts/setup-shared-table-schema.mjs --apply",
+    "prod:mkt-ads-summary-retention": "node scripts/mkt-ads-campaign-summary-retention-one-command.mjs",
+    "prod:mkt-ads-summary-retention:apply": "node scripts/mkt-ads-campaign-summary-retention-one-command.mjs --execute",
     "setup:google-ads-view-filters": "node scripts/setup-google-ads-view-filters.mjs",
     "setup:google-ads-view-filters:apply": "node scripts/setup-google-ads-view-filters.mjs --apply"
   },
   "overrides": {
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "undici": "7.29.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",
-    "vitest": "4.1.10",
-    "wrangler": "4.110.0"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.130.0"
   }
 }

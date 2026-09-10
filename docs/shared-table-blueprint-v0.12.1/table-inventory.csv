@@ -6,3 +6,4 @@ RAW_Ads_Entities,Raw,Meta + TikTok + Google Ads,Account/Campaign/AdGroup/Ad/Crea
 RAW_Ads_Daily,Raw,Meta + TikTok + Google Ads,Entity×Date×Breakdown,Upsert,raw_ads_daily_key,Rename/reuse in place,RAW_Google_Customer_Lists,0,Shared performance fact table
 MKT_Account_Daily,Canonical,Organic,Account×Date,Upsert,account_daily_key,Create new,,+1,Required distinct grain
 MKT_Ads_Ads,Canonical,Paid Ads,Ad latest state,Upsert,ads_ad_key,Create new,,+1,Required to keep Ad and Creative identities separate
+MKT_Ads_Campaign_Summary,Canonical,Paid Ads,Platform×Account×Campaign×MTD,Upsert,campaign_summary_key,Create new,,+1,Bounded MTD serving table derived only from PROD D1

@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## Paid Ads Campaign Summary and bounded Daily retention — 2026-09-10
+
+Customer Lark gains a current-month campaign projection in `MKT_Ads_Campaign_Summary`; PROD D1 remains the
+historical authority. The projection is stable-key upserted and exact-readback reconciled, with separate Views for
+all Paid campaigns, Meta, Google and TikTok. `MKT_Ads_Daily` is a bounded Lark cache: retention may delete at most
+500 oldest records per invocation and only after exact identity/provenance proof against Customer PROD D1. It never
+deletes D1 source facts and never touches Organic or unrelated Ads tables. Provisioning, materialization, retention,
+verification and an idempotency rerun are one ordered fail-closed operator. See
+`docs/project-brain/paid-ads-campaign-summary-retention-2026-09-10.md`.
+
 ## Customer Weekly AI neutral-context quality repair — 2026-09-08
 
 The Customer Weekly 7D Reports for period end `2026-09-06` were complete across all eight active channels,
