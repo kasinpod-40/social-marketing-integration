@@ -103,7 +103,12 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - PR `#801` merged as `main@9b1bebd2`. The first isolated Preview upload restored Preview URLs disabled and left
   Production traffic unchanged, but Wrangler used its default OAuth identity and received Cloudflare API
   `403/10000` at version upload. The operator now pins profile `chemistry-k-prod` for auth, upload, and deployment
-  status; this focused repair must pass review before the live Preview is retried.
+  status; PR `#812` merged that repair as `main@3977e14d` after Branch Verification runs `34437649026` and
+  `34437667371` passed. The next Preview version upload succeeded as version
+  `84235de8-f73d-41a9-9bdf-f563cb477f2c`, while its fresh random alias transiently returned HTTP `404` before
+  propagation. Preview URLs were again restored disabled and Production traffic stayed unchanged. The bounded
+  transport repair now waits through a GET-only `405/METHOD_NOT_ALLOWED` route attestation before sending the
+  operator POST exactly once; the potentially mutating execute request is never automatically retried.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 

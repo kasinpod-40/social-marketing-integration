@@ -48,3 +48,11 @@ fell back to the default OAuth identity, which could read deployment state but r
 when uploading a Worker version. Preview URLs were restored disabled and Production traffic stayed unchanged. All
 Wrangler auth, version-upload, and deployment-status commands in this operator must explicitly use the reviewed
 `chemistry-k-prod` profile.
+
+PR `#812` merged the exact profile repair at `main@3977e14d`; both Branch Verification runs `34437649026` and
+`34437667371` passed. The subsequent isolated upload created Preview version
+`84235de8-f73d-41a9-9bdf-f563cb477f2c`, but the newly generated alias initially returned HTTP `404` while it was
+propagating. No operator request reached the handler, Preview URLs were restored disabled, and Production traffic
+remained unchanged. Before any business POST, the operator must therefore poll only the exact route with GET and
+accept only the dedicated `405/METHOD_NOT_ALLOWED` response. The business POST is sent exactly once, including in
+execute mode, so an uncertain mutation response cannot trigger a second retention batch.
