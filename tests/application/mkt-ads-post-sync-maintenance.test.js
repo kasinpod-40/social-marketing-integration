@@ -130,14 +130,16 @@ function oldDailyRecord() {
 function retentionClient({ total = 17000, verifiedReadback = true } = {}) {
   let countCalls = 0;
   let deleteCalls = 0;
+  const searchInputs = [];
   return {
     appToken: 'app-token',
     get deleteCalls() { return deleteCalls; },
+    get searchInputs() { return searchInputs; },
     async requestBitableJson() {
       countCalls += 1;
       return { data: { total: countCalls === 1 ? total : total - deleteCalls } };
     },
-    async searchRecords() { return [oldDailyRecord()]; },
+    async searchRecords(input) { searchInputs.push(input); return [oldDailyRecord()]; },
     async batchDeleteRecords(input) {
       deleteCalls += input.recordIds.length;
       await input.beforeChunk();
@@ -171,6 +173,14 @@ test('Ads Daily retention deletes only D1-proven exact identities in bounded bat
   assert.equal(result.recordsAfter, 16999);
   assert.equal(result.d1Mutations, 0);
   assert.equal(client.deleteCalls, 1);
+  assert.deepEqual(client.searchInputs[0].filter, {
+    conjunction: 'and',
+    conditions: [{
+      fieldName: 'metric_date',
+      operator: 'isLess',
+      value: ['ExactDate', String(Date.parse('2026-06-08T17:00:00.000Z'))],
+    }],
+  });
 });
 
 test('Ads Daily retention preserves a candidate when D1 history proof is missing', async () => {
