@@ -22,7 +22,7 @@ account_name       = @${sourceHandle}
 account_type       = profile
 connection_status  = connected
 timezone           = reporting timezone (default Asia/Bangkok)
-last_sync_at       = deterministic metric-date instant
+last_sync_at       = stable requestedAt ของ Work ที่เขียนหลัง Content/Daily สำเร็จ
 ```
 
 - Source-handle identity guard ต้องผ่านก่อน Account plan.
@@ -30,6 +30,8 @@ last_sync_at       = deterministic metric-date instant
 - Legacy path เขียน Account หลัง Content และ Daily สำเร็จ.
 - Staged/D1-first path preflight Account ครั้งเดียว แล้วเขียนครั้งเดียวหลังทุก source unit สำเร็จ.
 - หาก Content/Daily ล้ม ระบบไม่เขียน Account เป็น `connected`.
+- `last_sync_at` เป็นเวลา freshness ของ successful destination run และไม่ใช่ `metric_date`; `requestedAt`
+  คงที่ตลอด retry ของ Work เดิม จึงยัง deterministic และ idempotent.
 - Partial-result และ durable retry state นับ Account writes แยกจาก Content/Daily.
 
 ## Live exact backfill evidence

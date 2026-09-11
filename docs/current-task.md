@@ -197,6 +197,25 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   `1/1`, generic DLQ redrive and automatic recovery remain disabled, and normal Paid daily sync updates only
   the current-month Summary bucket. The Thai history/View presentation extension is complete.
 
+### Active repair — Organic reporting date and account freshness semantics (2026-09-11)
+
+- align every scheduled Organic `MKT_Content_Daily.metric_date` to the latest completed Bangkok reporting day;
+  the scheduled operation identity and actual fetch timestamp remain the current run date/time;
+- correct YouTube schedule generation from current local date to `completedPeriodEnd`, matching Facebook,
+  Instagram and TikTok without changing the dedicated YouTube cron, source range, Queue settings or history;
+- make TikTok `MKT_Accounts.last_sync_at` use the stable Work `requestedAt` written only after Content/Daily
+  destination completion, rather than the prior reporting date;
+- repair only exact Customer PROD YouTube history run
+  `history:youtube:f04ed8d2d644bd5de24b0a8f0298687be97f2be6a395fef2f9e87d774db6da66`:
+  merge its 50 Lark rows from `2026-09-11` into stable keys for `2026-09-10`, preserve all 50 D1 observations,
+  reconcile the one Account Daily fact and two complete Coverage rows to `2026-09-10`, and update only
+  `tiktok:chemistry_k.last_sync_at` from the latest successful `tiktok-post-lark:*` completion;
+- exact read-only evidence before implementation found 36 existing target identities plus 14 new identities,
+  zero duplicate source-date groups and zero active Production locks. The repair must be isolated Preview-only,
+  fail closed on any authority drift, read back both D1/Lark, and prove a zero-change rerun;
+- out of scope: source/provider replay, Queue/DLQ mutation, protected incidents, unrelated Organic/Paid/Commerce/
+  Chatwoot tables, schedule timing, and deletion of any D1 observation.
+
 ### Active extension — Campaign Summary color month groups (2026-09-11)
 
 - keep the same Customer PROD Summary table, Primary key, 185 historical identities, four existing Views, immutable

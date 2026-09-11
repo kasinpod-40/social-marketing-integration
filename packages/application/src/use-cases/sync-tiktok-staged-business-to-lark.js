@@ -189,7 +189,9 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
     accountId,
     sourceHandle,
     metricDate,
-    accountSyncedAt: metricDate,
+    // Account freshness คือเวลาของ successful run ไม่ใช่ reporting metric date.
+    // requestedAt คงที่ข้าม Durable retry จึงรักษา idempotency ของ Work เดิม.
+    accountSyncedAt: context.requestedAt,
     reportingTimezone: input.reportingTimezone ?? 'Asia/Bangkok',
     dictionaryAnalysis,
     incrementalPlan: plan,

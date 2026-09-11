@@ -21,6 +21,7 @@ import {
 } from './lib/woocommerce-preview-url-window.js';
 
 const CONFIRMATION = 'APPLY_CUSTOMER_PROD_ADS_SUMMARY_RETENTION';
+const ORGANIC_DATE_CONFIRMATION = 'APPLY_CUSTOMER_PROD_ORGANIC_DATE_REPAIR';
 const ACCOUNT_ID = '154f6bf72740d29d7453cec7fb800d32';
 const WORKER = 'social-mkt-sync-worker';
 const DATABASE = 'social-mkt-state-prod';
@@ -31,10 +32,12 @@ const APP_TOKEN = 'Tcm4bYRL4acuQysp6AwlmXBKgbe';
 const ADS_DAILY_TABLE_ID = 'tblTjWaxgSCwSj1P';
 const PREVIEW_ENTRYPOINT = resolve('apps/sync-worker/src/mkt-ads-campaign-summary-retention-preview-entry.js');
 const PREVIEW_PATH = '/__codex/mkt-ads-campaign-summary-retention-v1';
+const ORGANIC_DATE_PREVIEW_PATH = '/__codex/organic-reporting-date-repair-v1';
 const CONFIG_PATH = resolve(
   process.env.MKT_CUSTOMER_WRANGLER_CONFIG ?? '.customer-youtube-uat.wrangler.jsonc',
 );
 const execute = process.argv.includes('--execute');
+const organicDateRepair = process.argv.includes('--organic-date-repair');
 
 let runtimeRoot = null;
 let target = null;
@@ -73,7 +76,8 @@ if (primaryError || restoreError) {
 }
 
 async function main() {
-  if (execute && process.env.CONFIRM_MKT_ADS_PROD_OPERATOR !== CONFIRMATION) {
+  const confirmation = organicDateRepair ? ORGANIC_DATE_CONFIRMATION : CONFIRMATION;
+  if (execute && process.env.CONFIRM_MKT_ADS_PROD_OPERATOR !== confirmation) {
     throw operatorError('Exact PROD confirmation is required', 'MKT_ADS_PROD_CONFIRMATION_REQUIRED');
   }
   assertReviewedMain();
@@ -107,7 +111,7 @@ async function main() {
   const accountSubdomain = await readAccountSubdomain(auth.token);
   const productionBaselineVersion = readActiveVersion(commandEnv, CONFIG_PATH);
   const token = randomBytes(48).toString('base64url');
-  const previewAlias = `ads-summary-${randomBytes(4).toString('hex')}`;
+  const previewAlias = `${organicDateRepair ? 'organic-date' : 'ads-summary'}-${randomBytes(4).toString('hex')}`;
 
   runtimeRoot = await mkdtemp(join(tmpdir(), 'mkt-ads-summary-retention-'));
   const runtimeConfigPath = join(runtimeRoot, 'wrangler.preview.json');
@@ -136,7 +140,10 @@ async function main() {
   );
   await assertProductionVersionUnchanged();
 
-  const operatorUrl = new URL(PREVIEW_PATH, `${upload.previewOrigin}/`);
+  const operatorUrl = new URL(
+    organicDateRepair ? ORGANIC_DATE_PREVIEW_PATH : PREVIEW_PATH,
+    `${upload.previewOrigin}/`,
+  );
   const readiness = await waitForMktAdsPreviewRoute({ fetchImpl: fetch, url: operatorUrl.toString() });
   await assertProductionVersionUnchanged();
 
@@ -148,10 +155,12 @@ async function main() {
       'content-type': 'application/json',
       'cache-control': 'no-store',
     },
-    body: JSON.stringify({
-      mode: execute ? 'execute' : 'preview',
-      contract: await loadSharedTableSchemaContract(),
-    }),
+    body: JSON.stringify(organicDateRepair
+      ? { mode: execute ? 'execute' : 'preview' }
+      : {
+        mode: execute ? 'execute' : 'preview',
+        contract: await loadSharedTableSchemaContract(),
+      }),
     redirect: 'error',
     signal: AbortSignal.timeout(execute ? 600_000 : 120_000),
   });
@@ -181,7 +190,12 @@ function buildPreviewConfig(configInput, tokenSha256) {
   config.main = PREVIEW_ENTRYPOINT;
   config.workers_dev = false;
   config.preview_urls = true;
-  config.vars = { ...config.vars, MKT_ADS_PROD_OPERATOR_TOKEN_SHA256: tokenSha256 };
+  config.vars = {
+    ...config.vars,
+    [organicDateRepair
+      ? 'MKT_ORGANIC_DATE_REPAIR_TOKEN_SHA256'
+      : 'MKT_ADS_PROD_OPERATOR_TOKEN_SHA256']: tokenSha256,
+  };
   for (const [name] of Object.entries(config.vars)) {
     if (/^MKT_[A-Z0-9_]+_ENABLED$/u.test(name)) config.vars[name] = 'false';
   }

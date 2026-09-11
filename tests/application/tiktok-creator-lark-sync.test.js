@@ -4,6 +4,8 @@ import { syncTikTokCreatorNativeToLark } from '../../packages/application/src/us
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import { InMemoryResumableWorkStore } from '../../packages/sync-engine/src/in-memory-resumable-work-store.js';
 
+const REQUESTED_AT = Date.parse('2026-07-21T00:30:00.000Z');
+
 test('preflights both tables before writing and then creates content plus daily snapshots', async () => {
   const writes = [];
   const repository = createRepository({
@@ -21,6 +23,7 @@ test('preflights both tables before writing and then creates content plus daily 
     accountId: 'tt_account_1',
     sourceHandle: 'tt_account_1',
     metricDate: '2026-07-07',
+    requestedAt: REQUESTED_AT,
     tables: tableIds(),
   });
 
@@ -33,6 +36,7 @@ test('preflights both tables before writing and then creates content plus daily 
   assert.equal(writes[1].tableId, 'tbl_mkt_content_daily');
   assert.equal(writes[1].rows[0].completion_rate, 0.5);
   assert.equal(writes[2].tableId, 'tbl_mkt_accounts');
+  assert.equal(writes[2].rows[0].last_sync_at, REQUESTED_AT);
   assert.deepEqual(writes[2].rows[0], {
     account_key: 'tiktok:tt_account_1',
     platform: 'tiktok',
@@ -565,8 +569,8 @@ test('resumes a 1,000-video RAW backfill from the failed second page without ref
     fullSyncIntervalMs: 86_400_000,
     resumableWorkStore: workStore,
     workKey: 'tiktok:message-large-1',
-    requestedAt: 1_000,
-    generation: 1_000,
+    requestedAt: REQUESTED_AT,
+    generation: REQUESTED_AT,
     sourcePageSize: 500,
     sourceMaxPages: 10,
   };
@@ -658,8 +662,8 @@ test('retry after checkpoint success and transient completeWork failure finishes
     fullSyncIntervalMs: 86_400_000,
     resumableWorkStore: workStore,
     workKey: 'tiktok:message-complete-retry',
-    requestedAt: 5_000,
-    generation: 5_000,
+    requestedAt: REQUESTED_AT + 5_000,
+    generation: REQUESTED_AT + 5_000,
     sourcePageSize: 500,
     sourceMaxPages: 10,
   };

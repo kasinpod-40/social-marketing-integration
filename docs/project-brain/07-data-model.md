@@ -46,6 +46,8 @@ must target the Shared names and must not recreate provider-specific Raw tables.
 - TikTok and YouTube reuse this identity/row contract; each adapter retains its own source parsing and account-identity guard.
 - YouTube Phase 1 maps every canonical item as `content_type=video`; Shorts classification requires a separately approved contract.
 - YouTube `MKT_Content_Daily` remains a cumulative Data API snapshot. Owner Analytics period rows have no canonical destination in Phase 1.
+- Scheduled Organic snapshots use the latest completed Bangkok reporting day for `metric_date`; actual execution
+  freshness remains separate in `fetched_at` and `MKT_Accounts.last_sync_at`.
 
 ## Canonical Ads keys and metrics
 
