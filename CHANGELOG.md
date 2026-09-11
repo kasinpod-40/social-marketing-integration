@@ -9,6 +9,8 @@
   TikTok account freshness field, with D1/Lark authority gates, readback and idempotent rerun.
 - normalized the repair's live Lark rich-text key/identity readback through the shared cell parser so exact
   duplicate detection compares canonical values instead of array object strings.
+- completed the exact Customer PROD repair with `50/50` YouTube identities reconciled to `2026-09-10`, TikTok
+  freshness advanced to the successful post-Lark completion, zero D1 observation deletes, and a zero-change rerun.
 
 ## 2026-09-11 — Campaign Summary color month groups
 
