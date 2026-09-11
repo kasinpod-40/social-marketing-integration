@@ -15,7 +15,7 @@ import {
   validateMktAdsCampaignSummaryLarkSchema,
 } from '../../../config/src/shared-table-lark-schema.js';
 
-export const MKT_ADS_PROD_OPERATOR_VERSION = 'mkt-ads-campaign-summary-retention-operator-v3';
+export const MKT_ADS_PROD_OPERATOR_VERSION = 'mkt-ads-campaign-summary-retention-operator-v4';
 
 /**
  * One ordered, bounded Paid-only flow:
@@ -33,6 +33,38 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
   const runMaintenance = input.runMaintenance ?? runMktAdsPostSyncMaintenance;
   const materializeHistory = input.materializeHistory ?? materializeCampaignSummaryHistory;
   const rerunHistory = input.rerunHistory ?? materializeCampaignSummaryHistory;
+  const now = normalizeNow(input.now?.() ?? Date.now());
+  const configuredSummaryTableId = optionalText(env.LARK_TABLE_MKT_ADS_CAMPAIGN_SUMMARY);
+  let monthFieldMigration = freeze({ status: 'not_required', mutated: false });
+  let maintenanceIdleChecked = false;
+
+  if (input.execute === true && configuredSummaryTableId) {
+    const monthField = await inspectCampaignSummaryMonthField({
+      client,
+      tableId: configuredSummaryTableId,
+      contract,
+    });
+    if (monthField.status === 'legacy_text') {
+      await assertMktAdsMaintenanceIdle({ db, now });
+      maintenanceIdleChecked = true;
+      monthFieldMigration = await migrateCampaignSummaryMonthField({
+        client,
+        db,
+        repository: requireObject(input.repository, 'repository'),
+        syncEngine: requireObject(input.syncEngine, 'syncEngine'),
+        customerKey: requiredText(input.customerKey, 'customerKey'),
+        timezone: requiredText(input.timezone ?? 'Asia/Bangkok', 'timezone'),
+        now,
+        tableId: configuredSummaryTableId,
+        desiredField: monthField.desiredField,
+        liveField: monthField.liveField,
+        historyStart: input.historyStart,
+        materializeHistory,
+      });
+    } else {
+      monthFieldMigration = monthField;
+    }
+  }
   const preview = await previewSchema({
     client,
     env,
@@ -47,13 +79,19 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
       status: 'ready',
       operatorVersion: MKT_ADS_PROD_OPERATOR_VERSION,
       preview,
+      monthFieldMigration: configuredSummaryTableId
+        ? await inspectCampaignSummaryMonthField({
+          client,
+          tableId: configuredSummaryTableId,
+          contract,
+        })
+        : monthFieldMigration,
       presentation: presentationContract(),
       safety: paidOnlySafety(),
     });
   }
 
-  const now = normalizeNow(input.now?.() ?? Date.now());
-  await assertMktAdsMaintenanceIdle({ db, now });
+  if (!maintenanceIdleChecked) await assertMktAdsMaintenanceIdle({ db, now });
   const schemaApply = await applySchema({
     client,
     env,
@@ -138,6 +176,7 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
     schemaApply,
     tablePresentation,
     viewPresentation,
+    monthFieldMigration,
     maintenance,
     history,
     historyIdempotencyRerun,
@@ -145,6 +184,135 @@ export async function runMktAdsCampaignSummaryRetentionOperator(input = {}) {
     verification,
     safety: paidOnlySafety(),
   });
+}
+
+async function inspectCampaignSummaryMonthField({ client, tableId, contract }) {
+  if (typeof client?.listFields !== 'function') {
+    throw new TypeError('Ads Campaign Summary month migration requires listFields');
+  }
+  const desiredField = contract.schema[0].fields.find((field) => field.fieldName === 'period_month_th');
+  if (!desiredField || Number(desiredField.type) !== 3) {
+    throw operatorError(
+      'Ads Campaign Summary month contract must be Single Select',
+      'MKT_ADS_PROD_OPERATOR_MONTH_CONTRACT_INVALID',
+    );
+  }
+  const matches = (await client.listFields({ tableId }))
+    .filter((field) => field?.fieldName === desiredField.fieldName);
+  if (matches.length !== 1) {
+    throw operatorError(
+      'Ads Campaign Summary month field is missing or ambiguous',
+      'MKT_ADS_PROD_OPERATOR_MONTH_FIELD_INVALID',
+    );
+  }
+  const liveField = matches[0];
+  if (Number(liveField.type) === 1) {
+    return freeze({ status: 'legacy_text', mutated: false, desiredField, liveField });
+  }
+  if (Number(liveField.type) !== 3) {
+    throw operatorError(
+      'Ads Campaign Summary month field has an unsupported type',
+      'MKT_ADS_PROD_OPERATOR_MONTH_FIELD_TYPE_INVALID',
+    );
+  }
+  const desiredOptions = desiredField.property?.options?.map((option) => option.name) ?? [];
+  const liveOptions = new Set(liveField.property?.options?.map((option) => option?.name) ?? []);
+  return freeze({
+    status: desiredOptions.every((name) => liveOptions.has(name)) ? 'ready' : 'schema_option_update_required',
+    mutated: false,
+    desiredField,
+    liveField,
+  });
+}
+
+export async function migrateCampaignSummaryMonthField(input) {
+  if (typeof input.client.searchRecords !== 'function' || typeof input.client.updateField !== 'function') {
+    throw new TypeError('Ads Campaign Summary month migration requires searchRecords/updateField');
+  }
+  const prepared = await input.materializeHistory({
+    db: input.db,
+    client: input.client,
+    repository: input.repository,
+    syncEngine: input.syncEngine,
+    customerKey: input.customerKey,
+    timezone: input.timezone,
+    now: input.now,
+    tableId: input.tableId,
+    historyStart: input.historyStart,
+  });
+  if (prepared.readback?.reconciled !== true) {
+    throw operatorError(
+      'Ads Campaign Summary month labels were not reconciled before type conversion',
+      'MKT_ADS_PROD_OPERATOR_MONTH_VALUE_PREP_FAILED',
+    );
+  }
+  const allowed = new Set(input.desiredField.property?.options?.map((option) => option.name) ?? []);
+  const before = await readAndVerifyMonthValues({
+    client: input.client,
+    tableId: input.tableId,
+    expectedCount: prepared.campaigns,
+    allowed,
+  });
+  await input.client.updateField({
+    tableId: input.tableId,
+    fieldId: requiredText(input.liveField.fieldId, 'period_month_th.fieldId'),
+    field: input.desiredField,
+  });
+  const readback = await inspectCampaignSummaryMonthField({
+    client: input.client,
+    tableId: input.tableId,
+    contract: { schema: [{ fields: [input.desiredField] }] },
+  });
+  if (readback.status !== 'ready') {
+    throw operatorError(
+      'Ads Campaign Summary month field conversion readback failed',
+      'MKT_ADS_PROD_OPERATOR_MONTH_FIELD_READBACK_FAILED',
+    );
+  }
+  const after = await readAndVerifyMonthValues({
+    client: input.client,
+    tableId: input.tableId,
+    expectedCount: prepared.campaigns,
+    allowed,
+  });
+  return freeze({
+    status: 'converted',
+    mutated: true,
+    fieldId: input.liveField.fieldId,
+    typeBefore: 1,
+    typeAfter: 3,
+    recordsVerifiedBefore: before,
+    recordsVerifiedAfter: after,
+  });
+}
+
+async function readAndVerifyMonthValues({ client, tableId, expectedCount, allowed }) {
+  const records = await client.searchRecords({
+    tableId,
+    fieldNames: ['campaign_summary_key', 'period_month_th'],
+    pageSize: 500,
+    maxPages: 3,
+  });
+  if (records.length !== expectedCount) {
+    throw operatorError(
+      'Ads Campaign Summary month migration record count is not exact',
+      'MKT_ADS_PROD_OPERATOR_MONTH_RECORD_COUNT_MISMATCH',
+      { expectedCount, actualCount: records.length },
+    );
+  }
+  const keys = new Set();
+  for (const record of records) {
+    const key = readLarkText(record?.fields?.campaign_summary_key);
+    const label = readLarkText(record?.fields?.period_month_th);
+    if (!key || keys.has(key) || !label || !allowed.has(label)) {
+      throw operatorError(
+        'Ads Campaign Summary month migration found an unsafe record value',
+        'MKT_ADS_PROD_OPERATOR_MONTH_RECORD_INVALID',
+      );
+    }
+    keys.add(key);
+  }
+  return records.length;
 }
 
 async function ensureCampaignSummaryViewPresentation({ client, tableId }) {
@@ -289,6 +457,17 @@ function requireObject(value, name) {
 function requiredText(value, name) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name} is required`);
   return value.trim();
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function readLarkText(value) {
+  if (typeof value === 'string') return value.trim() || null;
+  if (Array.isArray(value) && value.length === 1) return readLarkText(value[0]);
+  if (value && typeof value === 'object') return readLarkText(value.text ?? value.name ?? value.value);
+  return null;
 }
 
 function operatorError(message, code, details = {}) {

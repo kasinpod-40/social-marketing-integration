@@ -10,6 +10,10 @@ deletes D1 source facts and never touches Organic or unrelated Ads tables. Provi
 verification and an idempotency rerun are one ordered fail-closed operator. See
 `docs/project-brain/paid-ads-campaign-summary-retention-2026-09-10.md`.
 
+The Summary month presentation is a colored Single Select label such as `กันยายน 2569`. All four Views group by
+that field newest-first while hiding its repeated column. Daily Paid maintenance creates only a missing current-month
+option before the stable-key MTD upsert; historical rows remain unchanged unless the controlled history operator runs.
+
 ## Customer Weekly AI neutral-context quality repair — 2026-09-08
 
 The Customer Weekly 7D Reports for period end `2026-09-06` were complete across all eight active channels,

@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { runMktAdsCampaignSummaryRetentionOperator } from '../../packages/application/src/use-cases/run-mkt-ads-campaign-summary-retention-operator.js';
+import {
+  migrateCampaignSummaryMonthField,
+  runMktAdsCampaignSummaryRetentionOperator,
+} from '../../packages/application/src/use-cases/run-mkt-ads-campaign-summary-retention-operator.js';
 import {
   buildSharedTableLarkSchemaFromCsv,
   buildSharedTableViewContractFromCsv,
@@ -31,7 +34,7 @@ test('one-command operator runs the exact Paid-only stages in order', async () =
   const targetSort = [];
   const targetVisible = [
     'campaign_summary_key',
-    'campaign_name', 'platform', 'status', 'period_month_th', 'period_start', 'period_end',
+    'campaign_name', 'platform', 'status', 'period_start', 'period_end',
     'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'conversions', 'conversion_value', 'cpa', 'roas',
     'currency', 'account_id', 'campaign_id', 'last_synced_at', 'period_kind',
   ];
@@ -138,4 +141,45 @@ test('one-command operator runs the exact Paid-only stages in order', async () =
   assert.deepEqual(result.safety.allowedTables, ['MKT_Ads_Campaign_Summary', 'MKT_Ads_Daily']);
   assert.equal(result.safety.d1Mutations, 0);
   assert.equal(result.safety.organicMutations, 0);
+});
+
+test('month migration rewrites every Text value before the value-preserving Single Select conversion', async () => {
+  const fullContract = await contract();
+  const desiredField = fullContract.schema
+    .find((table) => table.logicalName === 'MKT_Ads_Campaign_Summary')
+    .fields.find((field) => field.fieldName === 'period_month_th');
+  let liveField = {
+    fieldId: 'fldMonth', fieldName: 'period_month_th', type: 1, uiType: 'Text', property: null,
+  };
+  const records = [
+    { recordId: 'rec1', fields: { campaign_summary_key: 'key-jun', period_month_th: '2569-06 · มิถุนายน' } },
+    { recordId: 'rec2', fields: { campaign_summary_key: 'key-jul', period_month_th: '2569-07 · กรกฎาคม' } },
+  ];
+  let conversionSawPreparedValues = false;
+  const result = await migrateCampaignSummaryMonthField({
+    client: {
+      async searchRecords() { return structuredClone(records); },
+      async listFields() { return [structuredClone(liveField)]; },
+      async updateField({ fieldId, field }) {
+        assert.equal(fieldId, 'fldMonth');
+        conversionSawPreparedValues = records.every((record) => (
+          ['มิถุนายน 2569', 'กรกฎาคม 2569'].includes(record.fields.period_month_th)
+        ));
+        liveField = { ...field, fieldId, isPrimary: false };
+      },
+    },
+    db: {}, repository: {}, syncEngine: {}, customerKey: 'chemistry_k',
+    timezone: 'Asia/Bangkok', now: Date.parse('2026-09-10T01:00:00.000Z'),
+    tableId: 'tblSummary', desiredField, liveField,
+    async materializeHistory() {
+      records[0].fields.period_month_th = 'มิถุนายน 2569';
+      records[1].fields.period_month_th = 'กรกฎาคม 2569';
+      return { campaigns: 2, readback: { reconciled: true } };
+    },
+  });
+  assert.equal(conversionSawPreparedValues, true);
+  assert.equal(result.status, 'converted');
+  assert.equal(result.recordsVerifiedBefore, 2);
+  assert.equal(result.recordsVerifiedAfter, 2);
+  assert.equal(liveField.type, 3);
 });

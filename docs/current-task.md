@@ -197,6 +197,23 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   `1/1`, generic DLQ redrive and automatic recovery remain disabled, and normal Paid daily sync updates only
   the current-month Summary bucket. The Thai history/View presentation extension is complete.
 
+### Active extension — Campaign Summary color month groups (2026-09-11)
+
+- keep the same Customer PROD Summary table, Primary key, 185 historical identities, four existing Views, immutable
+  D1 source facts, and Paid-only scope;
+- change `period_month_th` from Text to Single Select so Lark renders each month group as a colored pill, using only
+  Thai month and Buddhist year such as `กันยายน 2569`; remove the former sortable prefix `2569-09 ·`;
+- hide `period_month_th` from the visible columns in all four Views while retaining it as the descending group field;
+- the controlled migration must first rewrite and reconcile every existing Text value, prove every value is one of
+  the exact target options, convert the same Field ID, then read every row back again. No record may lose its month;
+- normal Paid daily maintenance must add the next Thai-month option idempotently before writing that month's MTD
+  summary, so future daily runs require no manual schema work and still update only the current-month bucket;
+- implementation is contract/runtime/operator only and does not alter Organic data, unrelated Ads tables, Queue/DLQ,
+  schedules, retention limits, or D1. Focused tests pass `66/66`; `npm run check`, full `3,349` Node tests plus `18`
+  Workers-runtime tests, Report reliability `106/106`, dependency audit with zero vulnerabilities, deploy dry-run,
+  and `git diff --check` pass. Reviewed merge, Production runtime deployment, controlled migration, exact Lark
+  readback, four-View verification, and idempotent rerun remain required for completion.
+
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 
 - read-only Customer D1 proof found no WooCommerce Business admission after `scheduled-20260830-0430`, while
