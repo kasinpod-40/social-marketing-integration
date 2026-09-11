@@ -7,6 +7,8 @@
 - changed TikTok `MKT_Accounts.last_sync_at` to the stable successful Work time written after Content/Daily;
 - added an exact, isolated Customer PROD repair for the 50-row YouTube 2026-09-11 misdated set and the single
   TikTok account freshness field, with D1/Lark authority gates, readback and idempotent rerun.
+- normalized the repair's live Lark rich-text key/identity readback through the shared cell parser so exact
+  duplicate detection compares canonical values instead of array object strings.
 
 ## 2026-09-11 — Campaign Summary color month groups
 
