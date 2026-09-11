@@ -221,6 +221,21 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   Live Lark Text cells return rich-text arrays, while the repair key index handled only primitive/object cells;
   the follow-up must use the shared recursive Lark cell reader and cover the live rich-text readback shape before
   any execute run;
+- PR `#825` fixed the live rich-text readback and merged as `main@3abb2e8a`; Branch Verification runs/jobs
+  `34577144779/103192085664` and `34577160260/103192134013` passed. Production Worker version
+  `dda7dc3d-d83e-4dd1-a28f-1e31514440c7` is active at `100%` with both schedules and Queue producer/consumers
+  preserved;
+- the post-fix Preview version `cd37b500-d619-4c08-b036-4800254e5681` proved the exact 50-row authority,
+  `50` stale source-date rows, `47` existing target-date rows and the TikTok freshness transition
+  `1788973200000→1789079890599`, with zero provider reads, Queue messages or unrelated-table activity;
+- controlled execute on Preview version `f7d8e3bd-b1ca-4886-83d1-430b13b47d3f` created `3`, updated `47`
+  and deleted only the exact `50` stale Lark rows. D1 retained all `50/50` observation identities and changed only
+  their reporting date plus the one Account Daily and two Coverage records; TikTok updated exactly one Account row;
+- exact rerun on Preview version `a6542443-92bd-44df-be28-2d70a145e66f` was zero-change: YouTube
+  `created=0/updated=0/skipped=50/deleted=0`, D1 changes `[0,0,0,0]`, and TikTok
+  `created=0/updated=0/skipped=1`. Final PROD D1 readback is `50/50` observations on `2026-09-10`, one matching
+  Account Daily row, two complete Coverage rows on `2026-09-10`, and zero active locks. Every Preview run restored
+  Preview URLs disabled and left Production traffic/deployment unchanged. This repair is complete;
 - out of scope: source/provider replay, Queue/DLQ mutation, protected incidents, unrelated Organic/Paid/Commerce/
   Chatwoot tables, schedule timing, and deletion of any D1 observation.
 
