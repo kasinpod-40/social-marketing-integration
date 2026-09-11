@@ -150,7 +150,9 @@ function createLarkStorage() {
   const client = {
     async searchRecordsByFieldValues({ tableId, fieldName, values }) {
       const allowed = new Set(values);
-      return [...table(tableId).values()].filter((record) => allowed.has(record.fields[fieldName]));
+      return [...table(tableId).values()]
+        .filter((record) => allowed.has(record.fields[fieldName]))
+        .map(toLarkReadback);
     },
     async batchDeleteRecords({ tableId, recordIds }) {
       for (const recordId of recordIds) table(tableId).delete(recordId);
@@ -158,6 +160,20 @@ function createLarkStorage() {
     },
   };
   return { table, byKey, repository, client };
+}
+
+function toLarkReadback(record) {
+  const fields = { ...record.fields };
+  for (const fieldName of [
+    'content_daily_key',
+    'account_key',
+    'platform',
+    'account_id',
+    'external_content_id',
+  ]) {
+    if (typeof fields[fieldName] === 'string') fields[fieldName] = [{ text: fields[fieldName] }];
+  }
+  return { recordId: record.recordId, fields };
 }
 
 function seedLark(storage) {

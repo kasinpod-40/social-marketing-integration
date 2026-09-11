@@ -213,6 +213,14 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - exact read-only evidence before implementation found 36 existing target identities plus 14 new identities,
   zero duplicate source-date groups and zero active Production locks. The repair must be isolated Preview-only,
   fail closed on any authority drift, read back both D1/Lark, and prove a zero-change rerun;
+- PR `#824` merged the reviewed date contract as `main@bfc16318`; both Branch Verification runs/jobs
+  `34576393714/103189705111` and `34576409412/103189756559` passed. Production Worker version
+  `56460fcd-705c-405f-9589-df99dbc28f52` is active at `100%` with the original triggers preserved;
+- the first isolated repair Preview failed closed before Business writes with
+  `ORGANIC_DATE_REPAIR_LARK_DUPLICATE_KEY`, restored Preview URLs disabled, and left Production traffic unchanged.
+  Live Lark Text cells return rich-text arrays, while the repair key index handled only primitive/object cells;
+  the follow-up must use the shared recursive Lark cell reader and cover the live rich-text readback shape before
+  any execute run;
 - out of scope: source/provider replay, Queue/DLQ mutation, protected incidents, unrelated Organic/Paid/Commerce/
   Chatwoot tables, schedule timing, and deletion of any D1 observation.
 

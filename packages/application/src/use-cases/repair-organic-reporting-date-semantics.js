@@ -1,4 +1,5 @@
 import { createDailySnapshotKey } from '../../../domain/src/value-objects/content-identity.js';
+import { readLarkText } from '../../../connectors/src/shared/lark-cell-value.js';
 import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 
 export const ORGANIC_REPORTING_DATE_REPAIR_VERSION = 'organic-reporting-date-repair-v1';
@@ -219,7 +220,12 @@ async function planTikTokAccountRepair({ client, tableId, lastSyncAt }) {
   return Object.freeze({
     currentLastSyncAt: Number(records[0].fields?.last_sync_at ?? 0),
     targetLastSyncAt: lastSyncAt,
-    desiredRow: Object.freeze({ ...records[0].fields, last_sync_at: lastSyncAt }),
+    desiredRow: Object.freeze({
+      ...records[0].fields,
+      account_key: 'tiktok:chemistry_k',
+      platform: 'tiktok',
+      last_sync_at: lastSyncAt,
+    }),
   });
 }
 
@@ -485,9 +491,7 @@ function requiredText(value, label) {
   return normalized;
 }
 function text(value) {
-  if (typeof value === 'string') return value.trim();
-  if (value && typeof value === 'object') return text(value.text ?? value.name ?? value.value);
-  return value === null || value === undefined ? '' : String(value).trim();
+  return readLarkText(value, { allowNull: true }) ?? '';
 }
 function integer(value, label) {
   const number = Number(value);
