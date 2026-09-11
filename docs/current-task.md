@@ -211,8 +211,20 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - implementation is contract/runtime/operator only and does not alter Organic data, unrelated Ads tables, Queue/DLQ,
   schedules, retention limits, or D1. Focused tests pass `66/66`; `npm run check`, full `3,349` Node tests plus `18`
   Workers-runtime tests, Report reliability `106/106`, dependency audit with zero vulnerabilities, deploy dry-run,
-  and `git diff --check` pass. Reviewed merge, Production runtime deployment, controlled migration, exact Lark
-  readback, four-View verification, and idempotent rerun remain required for completion.
+  and `git diff --check` pass;
+- PR `#822` merged the reviewed implementation as code-release `main@475f8b30`; Branch Verification runs/jobs
+  `34553985558/103122590792` and `34553998855/103122630323` passed on the final head;
+- Production Worker version `13f4ebb7-34ac-45f5-9f9f-d20caa7d8547` is active at `100%`. Controlled operator v4
+  completed on isolated Preview version `7bff4310-dbd6-4c1f-855c-1bc6b7913740`, restored Preview URLs disabled,
+  and proved Production traffic/deployment unchanged during the operator;
+- live migration preserved field ID `flde0fFAHG`, converted type `1→3`, and verified all `185/185` record identities
+  and exact Thai month values before and after conversion. Schema v0.16.0 readback has zero actions/conflicts;
+- all four exact View IDs (`vewz07Cg0X`, `vewDXGKATQ`, `vewH1VRlhC`, `vewLdLkOuY`) still group by
+  `period_month_th` descending with canonical empty Sort and now expose 21 visible fields that exclude the grouped
+  month column;
+- current MTD `45/45` and full history `185/185` reconcile to PROD D1 with zero duplicate stable keys. Both full
+  history passes returned `created=0/updated=0/skipped=185`; Daily retention was safely unchanged at `5,320→5,320`,
+  with zero candidates/deletes and zero D1 mutations. This extension is complete.
 
 ### Implementation result — WooCommerce Production readiness promotion (2026-09-08)
 

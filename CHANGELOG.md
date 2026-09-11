@@ -7,6 +7,9 @@
 - kept the month as the descending group field in Overview/Meta/Google/TikTok while hiding its repeated column;
 - made normal Paid daily maintenance append only a missing current-month option before stable-key MTD upsert, without
   rereading history, changing schedules, mutating D1, or touching Organic/unrelated tables.
+- completed Customer PROD conversion on the same field ID with `185/185` rows preserved, current/history D1 parity,
+  zero duplicate keys, zero Daily deletes/D1 mutations, and active Worker version
+  `13f4ebb7-34ac-45f5-9f9f-d20caa7d8547` from reviewed `main@475f8b30`.
 
 ## 2026-09-10 — Campaign Summary Thai monthly history
 

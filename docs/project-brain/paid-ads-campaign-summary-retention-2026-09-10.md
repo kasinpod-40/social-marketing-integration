@@ -149,3 +149,12 @@ The value-preserving migration first materializes and reconciles every historica
 still Text, accepts only exact configured month labels, converts the same field ID to Single Select, then repeats
 the full record readback. The normal Paid daily hook adds a missing current-month option idempotently before MTD
 upsert. It does not reread history, change stable keys, mutate D1, or expand beyond Paid Ads.
+
+PR `#822` merged this contract as code-release `main@475f8b30` after Branch Verification runs/jobs
+`34553985558/103122590792` and `34553998855/103122630323` passed. Worker version
+`13f4ebb7-34ac-45f5-9f9f-d20caa7d8547` is active at 100%. Controlled Preview version
+`7bff4310-dbd6-4c1f-855c-1bc6b7913740` preserved field ID `flde0fFAHG`, converted Text to Single Select, and
+read back all 185 exact rows before and after conversion. The four exact Views retained descending month Group
+and canonical empty Sort while hiding the month column. Current MTD reconciled `45/45`; two full-history passes
+reconciled `185/185` with `0/0/185` create/update/skip and zero duplicates. Daily stayed `5,320→5,320` with zero
+deletes or D1 mutations; Production traffic did not move during the operator and Preview URLs were restored disabled.

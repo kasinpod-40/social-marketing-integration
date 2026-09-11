@@ -13,6 +13,8 @@ verification and an idempotency rerun are one ordered fail-closed operator. See
 The Summary month presentation is a colored Single Select label such as `กันยายน 2569`. All four Views group by
 that field newest-first while hiding its repeated column. Daily Paid maintenance creates only a missing current-month
 option before the stable-key MTD upsert; historical rows remain unchanged unless the controlled history operator runs.
+PR `#822` and Customer PROD operator v4 completed this extension with all 185 rows preserved/reconciled, four View
+readbacks clean, and Worker version `13f4ebb7-34ac-45f5-9f9f-d20caa7d8547` active at 100%.
 
 ## Customer Weekly AI neutral-context quality repair — 2026-09-08
 
