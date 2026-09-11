@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-11 — Campaign Summary color month groups
+
+- changed the Paid-only `period_month_th` presentation from Text to Single Select labels containing only Thai month
+  and Buddhist year, with a value-preserving full-row migration and exact readback before and after conversion;
+- kept the month as the descending group field in Overview/Meta/Google/TikTok while hiding its repeated column;
+- made normal Paid daily maintenance append only a missing current-month option before stable-key MTD upsert, without
+  rereading history, changing schedules, mutating D1, or touching Organic/unrelated tables.
+
 ## 2026-09-10 — Campaign Summary Thai monthly history
 
 - extended the same Paid-only Campaign Summary table with a sortable Thai Buddhist-year month label and Thai

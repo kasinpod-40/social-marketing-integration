@@ -2,7 +2,7 @@ import { calculateAdsDerivedMetrics } from '../../../domain/src/entities/ads.js'
 import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 import { createExplicitNullUpdateRepository } from '../../../sync-engine/src/explicit-null-update-repository.js';
 
-export const MKT_ADS_MAINTENANCE_VERSION = 'mkt-ads-post-sync-maintenance-v2';
+export const MKT_ADS_MAINTENANCE_VERSION = 'mkt-ads-post-sync-maintenance-v3';
 export const MKT_ADS_DAILY_RETENTION_DAYS = 90;
 export const MKT_ADS_DAILY_SOFT_LIMIT = 17_000;
 export const MKT_ADS_DAILY_TARGET_LIMIT = 15_000;
@@ -43,12 +43,23 @@ export async function runMktAdsPostSyncMaintenance(input = {}) {
   const client = requireClient(input.client);
   const tables = requireObject(input.tables, 'tables');
 
+  const summaryTableId = summaryEnabled
+    ? requiredText(tables.mktAdsCampaignSummary, 'tables.mktAdsCampaignSummary')
+    : null;
+  const monthOption = summaryEnabled
+    ? await ensureCampaignSummaryMonthOption({
+      client,
+      tableId: summaryTableId,
+      timezone,
+      now,
+    })
+    : null;
   const summary = summaryEnabled
     ? await materializeCampaignSummary({
       db,
       repository: requireObject(input.repository, 'repository'),
       syncEngine: requireSyncEngine(input.syncEngine),
-      tableId: requiredText(tables.mktAdsCampaignSummary, 'tables.mktAdsCampaignSummary'),
+      tableId: summaryTableId,
       customerKey: requiredText(input.customerKey, 'customerKey'),
       timezone,
       now,
@@ -86,9 +97,74 @@ export async function runMktAdsPostSyncMaintenance(input = {}) {
   return Object.freeze({
     status: 'completed',
     contractVersion: MKT_ADS_MAINTENANCE_VERSION,
+    monthOption,
     summary,
     retention,
   });
+}
+
+/**
+ * เพิ่มตัวเลือกเดือนปัจจุบันเมื่อขึ้นเดือนใหม่เท่านั้น เพื่อให้ Daily runtime เขียน
+ * Single Select ได้ต่อเนื่องโดยไม่ต้อง Provision schema ซ้ำทุกวัน.
+ */
+export async function ensureCampaignSummaryMonthOption(input = {}) {
+  const client = requireObject(input.client, 'client');
+  if (typeof client.listFields !== 'function' || typeof client.updateField !== 'function') {
+    throw new TypeError('Ads Campaign Summary month option requires listFields/updateField');
+  }
+  const tableId = requiredText(input.tableId, 'tableId');
+  const timezone = requiredText(input.timezone ?? 'Asia/Bangkok', 'timezone');
+  const now = normalizeNow(input.now ?? Date.now());
+  const period = monthToDatePeriod(now, timezone);
+  const label = campaignSummaryThaiMonthLabel(period.periodStart);
+  const fields = await client.listFields({ tableId });
+  const matches = fields.filter((field) => field?.fieldName === 'period_month_th');
+  if (matches.length !== 1) {
+    throw maintenanceError(
+      'Ads Campaign Summary month field identity is missing or ambiguous',
+      'MKT_ADS_CAMPAIGN_SUMMARY_MONTH_FIELD_INVALID',
+    );
+  }
+  const field = matches[0];
+  // ช่วง Deploy ก่อน controlled migration ยังเป็น Text อยู่ได้ชั่วคราว และเขียน label ใหม่ได้อย่างปลอดภัย.
+  if (Number(field.type) === 1) {
+    return Object.freeze({ status: 'legacy_text', label, mutated: false });
+  }
+  if (Number(field.type) !== 3) {
+    throw maintenanceError(
+      'Ads Campaign Summary month field must be Text or Single Select',
+      'MKT_ADS_CAMPAIGN_SUMMARY_MONTH_FIELD_TYPE_INVALID',
+    );
+  }
+  const existingOptions = Array.isArray(field.property?.options) ? field.property.options : [];
+  if (existingOptions.some((option) => option?.name === label)) {
+    return Object.freeze({ status: 'ready', label, mutated: false });
+  }
+  const nextOptions = [
+    ...existingOptions,
+    { name: label, color: existingOptions.length % 8 },
+  ];
+  await client.updateField({
+    tableId,
+    fieldId: requiredText(field.fieldId, 'period_month_th.fieldId'),
+    field: {
+      fieldName: 'period_month_th',
+      type: 3,
+      uiType: 'SingleSelect',
+      description: field.description,
+      property: { ...field.property, options: nextOptions },
+    },
+  });
+  const readback = (await client.listFields({ tableId }))
+    .filter((candidate) => candidate?.fieldName === 'period_month_th');
+  if (readback.length !== 1 || Number(readback[0].type) !== 3
+    || !(readback[0].property?.options ?? []).some((option) => option?.name === label)) {
+    throw maintenanceError(
+      'Ads Campaign Summary month option readback failed',
+      'MKT_ADS_CAMPAIGN_SUMMARY_MONTH_OPTION_READBACK_FAILED',
+    );
+  }
+  return Object.freeze({ status: 'added', label, mutated: true });
 }
 
 export async function materializeCampaignSummary(input = {}) {
@@ -405,7 +481,7 @@ function campaignSummaryRow(row, period, timezone, now) {
   return Object.freeze({
     campaign_summary_key: `${platform}:${accountId}:${campaignId}:mtd:${period.periodStart.slice(0, 7)}`,
     period_kind: MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND,
-    period_month_th: thaiMonthLabel(period.periodStart),
+    period_month_th: campaignSummaryThaiMonthLabel(period.periodStart),
     period_start: dateOnlyInTimeZoneToEpochMilliseconds(period.periodStart, timezone, {
       label: 'Ads Campaign Summary period start',
     }),
@@ -588,7 +664,7 @@ function lastDayOfMonth(year, month) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
-function thaiMonthLabel(periodStart) {
+export function campaignSummaryThaiMonthLabel(periodStart) {
   const [year, month] = periodStart.slice(0, 7).split('-').map(Number);
   const monthNames = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -597,7 +673,7 @@ function thaiMonthLabel(periodStart) {
   if (!Number.isSafeInteger(year) || !Number.isSafeInteger(month) || !monthNames[month - 1]) {
     throw new TypeError('periodStart must contain a valid calendar month');
   }
-  return `${year + 543}-${String(month).padStart(2, '0')} · ${monthNames[month - 1]}`;
+  return `${monthNames[month - 1]} ${year + 543}`;
 }
 
 function dateOnly(value, fieldName) {

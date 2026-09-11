@@ -8,7 +8,8 @@ Storage direction ปัจจุบันคือ API Provider → D1 source/h
 และ safe deletion gate อยู่ที่ `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
 
 Paid Ads ใช้ PROD D1 เป็นแหล่งประวัติถาวร และมี `MKT_Ads_Campaign_Summary` เป็น Lark MTD projection ระดับ
-Campaign พร้อม Views แยก Meta/Google/TikTok. `MKT_Ads_Daily` เป็น bounded Lark cache เท่านั้น: retention
+Campaign พร้อม Views แยก Meta/Google/TikTok และจัดกลุ่มด้วยป้ายสีแบบ Single Select เช่น `กันยายน 2569`
+โดยซ่อนคอลัมน์เดือนที่ซ้ำในแต่ละแถว. `MKT_Ads_Daily` เป็น bounded Lark cache เท่านั้น: retention
 ลบได้สูงสุด 500 แถวต่อรอบและต้องพิสูจน์ exact identity กับ D1 ก่อนทุกแถว โดยไม่ลบ D1 หรือแตะ Organic.
 ดู `docs/project-brain/paid-ads-campaign-summary-retention-2026-09-10.md`.
 

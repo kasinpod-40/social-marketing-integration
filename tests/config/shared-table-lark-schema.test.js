@@ -71,6 +71,10 @@ test('preserves customer-facing field types, options, dates and reference metada
   const summary = byName.get('MKT_Ads_Campaign_Summary');
   assert.equal(summary.get('campaign_summary_key').primary, true);
   assert.equal(summary.get('period_month_th').required, true);
+  assert.equal(summary.get('period_month_th').type, 3);
+  assert.deepEqual(summary.get('period_month_th').property.options.map((option) => option.name), [
+    'มิถุนายน 2569', 'กรกฎาคม 2569', 'สิงหาคม 2569', 'กันยายน 2569',
+  ]);
   assert.match(summary.get('period_month_th').description, /เดือนภาษาไทย/u);
   assert.ok([...summary.values()].every((field) => /[ก-๙]/u.test(field.description)));
   assert.deepEqual(summary.get('platform').property.options.map((option) => option.name), [

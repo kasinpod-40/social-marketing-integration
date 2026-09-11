@@ -2,7 +2,7 @@ import { LARK_TABLE_ENV } from './lark-table-config.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 import { parseCsvRecords } from '../../shared/src/text/csv.js';
 
-export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'customer-shared-table-lark-schema-v0.15.0';
+export const SHARED_TABLE_LARK_SCHEMA_VERSION = 'customer-shared-table-lark-schema-v0.16.0';
 export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT = 3;
 export const SHARED_TABLE_LARK_SCHEMA_EXPECTED_FIELD_COUNT = 51;
 export const MKT_ADS_CAMPAIGN_SUMMARY_LOGICAL_NAME = 'MKT_Ads_Campaign_Summary';
@@ -14,7 +14,7 @@ export const MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD = 'period_month_th';
 export const MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT = deepFreeze([]);
 export const MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS = deepFreeze([
   'campaign_summary_key',
-  'campaign_name', 'platform', 'status', 'period_month_th', 'period_start', 'period_end',
+  'campaign_name', 'platform', 'status', 'period_start', 'period_end',
   'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'conversions', 'conversion_value', 'cpa', 'roas',
   'currency', 'account_id', 'campaign_id', 'last_synced_at', 'period_kind',
 ]);
@@ -22,7 +22,9 @@ export const MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS = deepFreeze([
 const MKT_ADS_CAMPAIGN_SUMMARY_FIELD_CONTRACT = deepFreeze([
   ['campaign_summary_key', 1, true, true, false, []],
   ['period_kind', 3, false, true, false, ['mtd']],
-  ['period_month_th', 1, false, true, false, []],
+  ['period_month_th', 3, false, true, false, [
+    'มิถุนายน 2569', 'กรกฎาคม 2569', 'สิงหาคม 2569', 'กันยายน 2569',
+  ]],
   ['period_start', 5, false, true, false, []],
   ['period_end', 5, false, true, false, []],
   ['platform', 3, false, true, false, ['meta_ads', 'google_ads', 'tiktok_ads']],
@@ -353,7 +355,8 @@ export function validateMktAdsCampaignSummaryLarkSchema(schema) {
   if (MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD !== 'period_month_th'
     || MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT.length !== 0
     || MKT_ADS_CAMPAIGN_SUMMARY_VIEW_SORT.some((entry) => !fieldNames.has(entry?.field))
-    || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.length !== fieldNames.size
+    || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.length !== fieldNames.size - 1
+    || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.includes(MKT_ADS_CAMPAIGN_SUMMARY_GROUP_FIELD)
     || MKT_ADS_CAMPAIGN_SUMMARY_VISIBLE_FIELDS.some((fieldName) => !fieldNames.has(fieldName))) {
     throw invalid('Ads Campaign Summary presentation field contract is invalid');
   }

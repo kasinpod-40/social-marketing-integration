@@ -138,3 +138,14 @@ Production deployment `c6aecb4b-0a1a-4e91-b28d-299426095d8f` now serves Worker v
 `8dc08bc8-fbe0-4ea7-aee7-e944d3f0233c` at 100% from `main@d62eb477`. Main Queue batch/concurrency is still
 `1/1`; generic redrive and automatic recovery remain disabled. Normal Paid sync recalculates only current MTD;
 historical month buckets remain stable unless the controlled history operator is explicitly run.
+
+## Color month-group extension
+
+`period_month_th` is a Single Select presentation field whose values contain only a Thai month and Buddhist year,
+for example `กันยายน 2569`. It remains the descending group field in all four Views but is omitted from their
+visible columns, so the colored group header carries the month without repeating it in every row.
+
+The value-preserving migration first materializes and reconciles every historical Summary row while the field is
+still Text, accepts only exact configured month labels, converts the same field ID to Single Select, then repeats
+the full record readback. The normal Paid daily hook adds a missing current-month option idempotently before MTD
+upsert. It does not reread history, change stable keys, mutate D1, or expand beyond Paid Ads.

@@ -129,7 +129,7 @@ MKT_Ads_Ads,13,source_updated_at,DateTime,No,Yes,Source time,updated_time,Source
 MKT_Ads_Ads,14,last_sync_at,DateTime,Yes,No,Audit,runtime,Latest successful sync instant,Exact instant,,,
 MKT_Ads_Campaign_Summary,1,campaign_summary_key,Text,Yes,No,Primary + Stable,สูตรคีย์,คีย์คงที่ของแพลตฟอร์ม บัญชี แคมเปญ และเดือน,ต้องมีค่าเสมอ,meta_ads:ACCOUNT_ID:CAMPAIGN_ID:mtd:2026-09,,ฟิลด์หลักของตาราง
 MKT_Ads_Campaign_Summary,2,period_kind,SingleSelect,Yes,No,Grain,ค่าคงที่,ชนิดช่วงเวลาของข้อมูลสรุป,ใช้ค่าที่ระบบกำหนดเท่านั้น,mtd,mtd,
-MKT_Ads_Campaign_Summary,3,period_month_th,Text,Yes,No,Display grain,คำนวณจาก period_start,ปีและเดือนภาษาไทยสำหรับจัดกลุ่มและเรียงเวลา,หนึ่งค่าต่อเดือน,2569-09 · กันยายน,,ใช้จัดกลุ่มในทุกมุมมอง
+MKT_Ads_Campaign_Summary,3,period_month_th,SingleSelect,Yes,No,Display grain,คำนวณจาก period_start,เดือนภาษาไทยและปีพุทธศักราชแบบป้ายสีสำหรับจัดกลุ่ม,หนึ่งค่าต่อเดือน,กันยายน 2569,มิถุนายน 2569|กรกฎาคม 2569|สิงหาคม 2569|กันยายน 2569,ใช้เป็นหัวข้อจัดกลุ่มและซ่อนจากคอลัมน์ในทุกมุมมอง
 MKT_Ads_Campaign_Summary,4,period_start,Date,Yes,No,Grain,วันเริ่มช่วงตามเวลาท้องถิ่น,วันเริ่มต้นของช่วงสรุปรายเดือน,เวลาเที่ยงคืนตาม Asia/Bangkok,2026-09-01,,
 MKT_Ads_Campaign_Summary,5,period_end,Date,Yes,No,Grain,วันสิ้นสุดช่วงตามเวลาท้องถิ่น,วันสิ้นสุดของช่วงสรุปรายเดือน,เวลาเที่ยงคืนตาม Asia/Bangkok,2026-09-10,,
 MKT_Ads_Campaign_Summary,6,platform,SingleSelect,Yes,No,Partition,ads_daily_facts.platform,แพลตฟอร์มโฆษณาแบบมาตรฐาน,ใช้ค่าที่ระบบกำหนดเท่านั้น,meta_ads,meta_ads|google_ads|tiktok_ads,ใช้แยกมุมมองตามแพลตฟอร์ม

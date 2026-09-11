@@ -1,12 +1,54 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ensureCampaignSummaryMonthOption,
   materializeCampaignSummary,
   materializeCampaignSummaryHistory,
   retainAdsDailyCache,
 } from '../../packages/application/src/use-cases/mkt-ads-post-sync-maintenance.js';
 
 const NOW = Date.parse('2026-09-06T01:00:00.000Z');
+
+test('adds a missing Thai Buddhist-year Single Select option once and reads it back', async () => {
+  const field = {
+    fieldId: 'fldMonth',
+    fieldName: 'period_month_th',
+    type: 3,
+    uiType: 'SingleSelect',
+    description: 'เดือนภาษาไทย',
+    property: { options: [{ id: 'optAug', name: 'สิงหาคม 2569', color: 1 }] },
+  };
+  let updates = 0;
+  const client = {
+    async listFields() { return [structuredClone(field)]; },
+    async updateField({ field: next }) {
+      updates += 1;
+      field.property = structuredClone(next.property);
+    },
+  };
+  const result = await ensureCampaignSummaryMonthOption({
+    client,
+    tableId: 'tblSummary',
+    timezone: 'Asia/Bangkok',
+    now: NOW,
+  });
+  assert.equal(result.status, 'added');
+  assert.equal(result.label, 'กันยายน 2569');
+  assert.equal(updates, 1);
+  assert.deepEqual(field.property.options.map((option) => option.name), [
+    'สิงหาคม 2569', 'กันยายน 2569',
+  ]);
+
+  const rerun = await ensureCampaignSummaryMonthOption({
+    client,
+    tableId: 'tblSummary',
+    timezone: 'Asia/Bangkok',
+    now: NOW,
+  });
+  assert.equal(rerun.status, 'ready');
+  assert.equal(rerun.mutated, false);
+  assert.equal(updates, 1);
+});
 
 function aggregateRow() {
   return {
@@ -74,7 +116,7 @@ test('campaign summary materializes one MTD row from D1 aggregate totals', async
   assert.equal(result.readback.reconciled, true);
   assert.equal(planCalls, 2);
   assert.equal(plannedRows[0].campaign_summary_key, 'google_ads:3328797186:cmp-1:mtd:2026-09');
-  assert.equal(plannedRows[0].period_month_th, '2569-09 · กันยายน');
+  assert.equal(plannedRows[0].period_month_th, 'กันยายน 2569');
   assert.equal(plannedRows[0].spend, 2);
   assert.equal(plannedRows[0].ctr, 0.05);
   assert.equal(plannedRows[0].cpc, 0.04);
@@ -136,7 +178,7 @@ test('campaign summary history materializes one bounded row per campaign and cal
   assert.equal(result.created, 4);
   assert.deepEqual(result.periods, expectedPeriods.map(([periodStart, periodEnd]) => ({ periodStart, periodEnd })));
   assert.deepEqual(plannedRows.map((row) => row.period_month_th), [
-    '2569-06 · มิถุนายน', '2569-07 · กรกฎาคม', '2569-08 · สิงหาคม', '2569-09 · กันยายน',
+    'มิถุนายน 2569', 'กรกฎาคม 2569', 'สิงหาคม 2569', 'กันยายน 2569',
   ]);
   assert.deepEqual(plannedRows.map((row) => row.campaign_summary_key), [
     'google_ads:3328797186:cmp-1:mtd:2026-06',
