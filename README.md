@@ -20,6 +20,10 @@ TikTok และ YouTube. TikTok ใช้ stable key `tiktok:${accountId}` แ�
 GET-only post-deploy readback ผ่าน 4/4; fresh scheduled evidence รอบถัดไปยังต้องรอตามเวลาจริง. ดู
 `docs/project-brain/tiktok-mkt-accounts-master-2026-08-16.md`.
 
+Organic daily contract แยก “วันข้อมูล” ออกจาก “เวลาซิงก์” ชัดเจน: `MKT_Content_Daily.metric_date` ใช้วัน
+Bangkok ที่จบสมบูรณ์ล่าสุด ส่วน `MKT_Accounts.last_sync_at` ใช้เวลาของ Work ที่เขียนปลายทางสำเร็จ
+และคงค่าเดิมตลอด retry ของ Work เดียวกัน.
+
 ## Read first
 
 ```text

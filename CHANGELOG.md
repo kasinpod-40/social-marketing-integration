@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-11 — Organic reporting-date and freshness semantics
+
+- aligned scheduled YouTube `MKT_Content_Daily.metric_date` with the latest completed Bangkok reporting day,
+  matching the other Organic channels while preserving the current operation/fetch timestamp;
+- changed TikTok `MKT_Accounts.last_sync_at` to the stable successful Work time written after Content/Daily;
+- added an exact, isolated Customer PROD repair for the 50-row YouTube 2026-09-11 misdated set and the single
+  TikTok account freshness field, with D1/Lark authority gates, readback and idempotent rerun.
+
 ## 2026-09-11 — Campaign Summary color month groups
 
 - changed the Paid-only `period_month_th` presentation from Text to Single Select labels containing only Thai month

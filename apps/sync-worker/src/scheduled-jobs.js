@@ -339,7 +339,9 @@ export function buildScheduledJobs(input = {}) {
       trigger: 'scheduled',
       syncMode: 'auto',
       requestedAt,
-      metricDate: local.date,
+      // MKT_Content_Daily ใช้วันรายงานที่ปิดสมบูรณ์ล่าสุดเหมือน Organic ช่องทางอื่น
+      // ส่วนเวลาที่รันจริงเก็บแยกใน fetched_at / MKT_Accounts.last_sync_at.
+      metricDate: completedPeriodEnd,
       analyticsEnabled,
     };
     if (analyticsEnabled) {

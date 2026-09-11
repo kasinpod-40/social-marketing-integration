@@ -6,6 +6,7 @@ import { InMemoryResumableWorkStore } from '../../packages/sync-engine/src/in-me
 
 const WRITE_PHASE = 'tiktok_native_business_write_v1';
 const PREFLIGHT_PHASE = 'tiktok_native_business_preflight_v1';
+const REQUESTED_AT = Date.parse('2026-07-21T00:30:00.000Z');
 
 test('TikTok staged business retry resumes the failed unit without refetching completed source pages', async () => {
   const rawRecords = Array.from({ length: 1_000 }, (_, index) => (
@@ -33,8 +34,8 @@ test('TikTok staged business retry resumes the failed unit without refetching co
     fullSyncIntervalMs: 86_400_000,
     resumableWorkStore: workStore,
     workKey: 'tiktok:message-staged-business-1',
-    requestedAt: 1_000,
-    generation: 1_000,
+    requestedAt: REQUESTED_AT,
+    generation: REQUESTED_AT,
     sourcePageSize: 100,
     sourceMaxPages: 20,
   };
@@ -98,6 +99,10 @@ test('TikTok staged business retry resumes the failed unit without refetching co
   assert.equal(repository.pageCalls.length, sourceCallsBeforeRetry);
   assert.equal(repository.count('tbl_mkt_content'), 1_000);
   assert.equal(repository.count('tbl_mkt_content_daily'), 1_000);
+  assert.equal(
+    repository.fields('tbl_mkt_accounts', 'tiktok:tt_account_1').last_sync_at,
+    common.requestedAt,
+  );
   assert.equal(repository.duplicateCreates, 0);
   assert.equal(repository.maxCreateBatch, 100);
   assert.equal(stateStore.saveCalls.length, 1);
@@ -120,7 +125,7 @@ test('TikTok staged retry after checkpoint persistence finishes completion witho
     stateStore,
     workStore,
     workKey: 'tiktok:message-checkpoint-replay',
-    requestedAt: 3_000,
+    requestedAt: REQUESTED_AT + 3_000,
   });
 
   await assert.rejects(
@@ -167,7 +172,7 @@ test('TikTok staged completion-phase replay survives completeWork interruption w
     stateStore,
     workStore,
     workKey: 'tiktok:message-completion-replay',
-    requestedAt: 4_000,
+    requestedAt: REQUESTED_AT + 4_000,
   });
 
   await assert.rejects(
@@ -220,8 +225,8 @@ test('TikTok staged planner blocks duplicate content identities across different
       cursorKey: 'profile:tiktok:tt_account_1:native_import',
       resumableWorkStore: workStore,
       workKey: 'tiktok:message-duplicate-staged',
-      requestedAt: 2_000,
-      generation: 2_000,
+      requestedAt: REQUESTED_AT + 2_000,
+      generation: REQUESTED_AT + 2_000,
       sourcePageSize: 1,
       sourceMaxPages: 10,
     }),
@@ -249,7 +254,7 @@ test('TikTok bounded continuation completes source, plan, preflight and write on
       stateStore,
       workStore,
       workKey: 'tiktok:bounded-continuation',
-      requestedAt: 5_000,
+      requestedAt: REQUESTED_AT + 5_000,
     }),
     sourcePageSize: 1,
     maxSourcePagesPerInvocation: 1,
@@ -312,7 +317,7 @@ test('TikTok retries an ambiguous pending continuation without advancing durable
       stateStore: createIncrementalStateStore(),
       workStore,
       workKey: 'tiktok:pending-continuation',
-      requestedAt: 6_000,
+      requestedAt: REQUESTED_AT + 6_000,
     }),
     sourcePageSize: 1,
     maxSourcePagesPerInvocation: 1,
@@ -341,7 +346,7 @@ test('TikTok rejects a continuation sequence ahead of its durable checkpoint', a
       stateStore: createIncrementalStateStore(),
       workStore: new InMemoryResumableWorkStore({ now: () => 70_000 }),
       workKey: 'tiktok:ahead-continuation',
-      requestedAt: 7_000,
+      requestedAt: REQUESTED_AT + 7_000,
     }),
     maxSourcePagesPerInvocation: 1,
     maxBusinessUnitsPerInvocation: 1,
@@ -429,6 +434,9 @@ function createIndexedRepository(input) {
     maxCreateBatch: 0,
     count(tableId) {
       return recordsByTable.get(tableId)?.size ?? 0;
+    },
+    fields(tableId, stableKey) {
+      return recordsByTable.get(tableId)?.get(stableKey)?.fields ?? null;
     },
     async listAll(tableId) {
       if (tableId === 'tbl_raw_tiktok_creator') {
