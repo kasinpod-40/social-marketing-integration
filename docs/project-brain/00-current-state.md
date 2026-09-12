@@ -4,6 +4,10 @@
 
 Current operational authority is `docs/current-task.md`.
 
+Customer-facing table and Dashboard usage is summarized in
+`docs/customer-social-mkt-data-hub-manual.md`; implementation and runtime contracts remain authoritative over
+that simplified guide.
+
 ```text
 INTEGRATION_WORKSPACE               = ACTIVE_VERIFIED
 REPOSITORY_CLOSEOUT                 = COMPLETE
