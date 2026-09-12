@@ -79,6 +79,19 @@ therefore a runtime cutover to the customer-owned Cloudflare resources and custo
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
+### Implementation result — concise Customer Data Hub manual (2026-09-12)
+
+- added `docs/customer-social-mkt-data-hub-manual.md` as a short Thai customer-facing guide covering all Lark
+  tables currently bound in Customer Production, all six Dashboards, date semantics, bounded Lark retention,
+  and functional Cloudflare D1 table groups;
+- the guide separates customer-facing Lark data from D1 historical/operational storage, explains stable-key
+  upsert, `metric_date` versus `last_sync_at`, `0` versus `N/A`, and avoids credentials, table IDs and customer
+  internal identities;
+- linked the guide from `README.md`; this documentation-only change performs no Worker deploy, Queue action,
+  D1/Lark mutation or Production schedule change;
+- PR `#829` contains the reviewed documentation diff; `git diff --check` and `npm run check` pass with `837`
+  source files, `2,557` local dependencies and zero architecture cycles.
+
 ### Implementation result — Paid Ads Campaign Summary and bounded Daily retention (2026-09-10)
 
 - PR `#801` continues on `feat/ads-campaign-summary-retention`; the implementation is intentionally scoped to

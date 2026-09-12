@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-12 — Customer Social MKT Data Hub manual
+
+- added a concise Thai customer manual for all active Production Lark tables, six Dashboards, date semantics,
+  retention behavior, and the functional D1 table groups without exposing credentials or internal customer IDs.
+
 ## 2026-09-12 — Scheduled YouTube completed-day validation
 
 - fixed the scheduled YouTube application boundary to validate the scheduler's latest fully completed Bangkok
