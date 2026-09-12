@@ -9,9 +9,13 @@ in explicitly. This preserves the canonical separation: `MKT_Content_Daily.metri
 day, while `fetched_at` and `MKT_Accounts.last_sync_at` advance only after destination completion.
 
 Customer PROD generation `youtube-scheduled-20260912` was rejected before Work creation by the stale same-day
-validator. Exact readback proves one Queue attempt, one open matching terminal DLQ, no Work and zero active YouTube
-locks, so there was no partial Business write. After reviewed deploy it may be sent once with the exact retained
-operation/work/generation; replacement generation and blind replay remain forbidden.
+validator, so there was no partial Business write. PR `#827` merged the boundary repair as
+`main@e354cf033495837cd4b1fd9709bc7bf1786d0839`; Worker version
+`c8045a16-234f-4746-a10f-53f5ecb6a682` is active at 100%. One guarded same-generation send then completed
+`848/848` source, D1, Content and Daily identities and updated the single Account row. Its stable run timestamp is
+`2026-09-12 01:30:14` Asia/Bangkok while its completed reporting day is `2026-09-11`. The exact DLQ is redriven,
+the Alert resolved, no replacement generation/new DLQ/duplicate input was produced, and the protected TikTok
+incident was not touched. Future scheduled YouTube runs follow this same separation automatically.
 
 ## Paid Ads Campaign Summary and bounded Daily retention — 2026-09-10
 
