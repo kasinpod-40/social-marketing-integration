@@ -1,6 +1,6 @@
-# คู่มือ Social MKT Data Hub สำหรับลูกค้า (ฉบับย่อ)
+# คู่มือ Social MKT Data Hub
 
-ระบบรับข้อมูลจากแต่ละช่องทาง เก็บประวัติหลักไว้ใน Cloudflare D1 แล้วส่งข้อมูลที่ใช้ดูงานไปยัง Lark Base
+เอกสารนี้อธิบายว่า Dashboard และตารางใน Lark Base ใช้ดูอะไร ข้อมูลมาจากไหน และมีเงื่อนไขอะไรที่ควรรู้ ระบบเก็บประวัติหลักไว้ใน Cloudflare D1 แล้วส่งข้อมูลที่ใช้ดูงานไปยัง Lark Base
 
 ## อ่านวันที่ให้ถูก
 
@@ -11,16 +11,119 @@
 
 ## Dashboard
 
-| Dashboard | ใช้ดูอะไร | เงื่อนไขสำคัญ |
-|---|---|---|
-| `📊 Executive Marketing Overview` | ภาพรวม Organic, Paid Ads, Commerce และ Customer Service | อ่านจากรายงานที่ระบบคำนวณและตรวจแล้ว ไม่รวมข้อมูลดิบโดยตรง |
-| `🌱 Organic Performance` | ผลงาน Facebook, Instagram, TikTok และ YouTube เช่น Reach, Views, Engagement และ Top Content | ใช้วันที่ข้อมูลที่จบสมบูรณ์และแสดงสถานะความครบถ้วนของข้อมูล |
-| `💰 Paid Ads Performance` | Spend, Impressions, Clicks, Conversions, ROAS และ Top Ads/Campaign | รวมเฉพาะบัญชีโฆษณาที่เชื่อมต่อและข้อมูลตามช่วงที่เลือก |
-| `🛒 Commerce & Conversion` | ยอดขาย ออเดอร์ ลูกค้า สินค้า และ Conversion | แสดงข้อมูล WooCommerce ที่ผ่านการรวมยอดแล้ว |
-| `💬 Customer Service & Leads` | Conversation, Agent, Inbox, Response และ Resolution | ใช้ข้อมูล Chatwoot ที่สร้างใหม่หรือมีการแก้ไขจริง |
-| `🛡️ Data Quality & Operations` | ความสด ความครบถ้วน สถานะ Sync และ Alert | เป็นหน้าตรวจสุขภาพระบบสำหรับผู้ดูแล |
+Dashboard อ่านจากชุดรายงานที่ระบบคำนวณและตรวจความครบถ้วนแล้ว ไม่ได้อ่านข้อมูลดิบโดยตรง ตัวกรองหลักคือ Platform, Account และช่วงเวลา `1D`, `3D`, `7D` หรือ `30D` หากข้อมูลฐานสำหรับเปรียบเทียบยังไม่ครบ ระบบจะแสดงว่างหรือ `N/A` แทนการใส่ศูนย์
 
-Dashboard ใช้ตัวกรอง Platform, Account และช่วงเวลาที่มีในหน้า โดยช่วงมาตรฐานของรายงานคือ `1D`, `3D`, `7D` และ `30D`.
+### 📊 Executive Marketing Overview
+
+หน้าสรุปสำหรับดูภาพรวมทุกด้านในหน้าเดียว
+
+| บล็อก | รูปแบบ | ค่าที่แสดง |
+|---|---|---|
+| Organic Total Views | ตัวเลขสรุป | ยอดดูสะสมล่าสุดของ Content ที่อยู่ในขอบเขตรายงาน |
+| Organic Views by Window | ตัวเลขตามช่วง | ยอดดูที่เกิดขึ้นในช่วง `1D`, `3D`, `7D` หรือ `30D` |
+| Orders | ตัวเลขสรุป | จำนวนออเดอร์ WooCommerce ที่ระบบรับรองในช่วงรายงาน |
+| Net Sales | ตัวเลขสรุป | ยอดขายสุทธิหลังหักรายการที่ระบบกำหนด หน่วยเป็นสกุลเงินของร้าน |
+| Net Sales by Window | ตัวเลขตามช่วง | ยอดขายสุทธิแยกตามช่วงเวลาที่เลือก |
+| Ad Spend | ตัวเลขสรุป | ค่าโฆษณารวมจากบัญชี Paid Ads ที่เชื่อมต่อ |
+| Ad Spend by Window | ตัวเลขตามช่วง | ค่าโฆษณาแยกตามช่วงเวลาที่เลือก |
+| Trend | กราฟตามเวลา | แนวโน้ม Organic Views, Net Sales หรือ Ad Spend ตามตัวกรอง |
+| Top Content | ตารางอันดับ | ชื่อ/ลิงก์ Content, Platform และค่าผลงานหลักในช่วงรายงาน |
+| Top Ads | ตารางอันดับ | Campaign/Ad, Platform, Spend และค่าผลงานหลักในช่วงรายงาน |
+| Data Readiness | สถานะข้อมูล | วันที่ข้อมูลล่าสุดและความพร้อมของข้อมูลที่นำมาสรุป |
+| Data Quality | สถานะข้อมูล | ความครบถ้วนของช่วงข้อมูลและเหตุผลเมื่อบาง Metric ยังเป็น `N/A` |
+
+### 🌱 Organic Performance
+
+ใช้ดูผลงาน Facebook, Instagram, TikTok และ YouTube ทั้งยอดล่าสุดและยอดที่เกิดขึ้นในช่วงที่เลือก
+
+| บล็อก | รูปแบบ | ค่าที่แสดง |
+|---|---|---|
+| Total Views | ตัวเลขสรุป | ยอดดูสะสมล่าสุด |
+| Total Likes | ตัวเลขสรุป | ยอดถูกใจสะสมล่าสุด |
+| Total Comments | ตัวเลขสรุป | ยอดความคิดเห็นสะสมล่าสุด |
+| Total Shares | ตัวเลขสรุป | ยอดแชร์สะสมล่าสุด |
+| Total Engagement | ตัวเลขสรุป | Engagement รวมล่าสุดตามนิยามกลางของระบบ |
+| Current Engagement Rate | ตัวเลขสรุป | อัตรา Engagement ล่าสุด |
+| Period Views | ตัวเลขตามช่วง | ยอดดูที่เพิ่มขึ้นในช่วงที่เลือก |
+| Period Likes | ตัวเลขตามช่วง | ยอดถูกใจที่เพิ่มขึ้นในช่วงที่เลือก |
+| Period Comments | ตัวเลขตามช่วง | ยอดความคิดเห็นที่เพิ่มขึ้นในช่วงที่เลือก |
+| Period Shares | ตัวเลขตามช่วง | ยอดแชร์ที่เพิ่มขึ้นในช่วงที่เลือก |
+| Period Engagement | ตัวเลขตามช่วง | Engagement ที่เกิดขึ้นในช่วงที่เลือก |
+| Period Engagement Rate | ตัวเลขตามช่วง | อัตรา Engagement ของช่วงที่เลือก |
+| Tracked Content | ตัวเลขตรวจข้อมูล | จำนวน Content ที่อยู่ในการคำนวณ |
+| New Content | ตัวเลขตรวจข้อมูล | จำนวน Content ที่เผยแพร่ใหม่ในช่วงที่เลือก |
+| Baseline Covered Content | ตัวเลขตรวจข้อมูล | จำนวน Content ที่มีข้อมูลฐานเพียงพอสำหรับหาค่าเพิ่มขึ้น |
+| Baseline Missing Content | ตัวเลขตรวจข้อมูล | จำนวน Content ที่ยังไม่มีข้อมูลฐานเพียงพอ |
+| Baseline Coverage Rate | เปอร์เซ็นต์ | สัดส่วน Content ที่พร้อมคำนวณค่าตามช่วง |
+| Trend | กราฟตามเวลา | แนวโน้ม Views และ Engagement ตามวัน |
+| Platform Comparison | กราฟเปรียบเทียบ | เปรียบเทียบค่าหลักระหว่าง Facebook, Instagram, TikTok และ YouTube |
+| Top Content | ตารางอันดับ | Content ที่ผลงานสูงสุด พร้อม Platform, วันที่เผยแพร่ และ Metric หลัก |
+| Data Quality | สถานะข้อมูล | ความครบถ้วนของช่วงข้อมูล; ค่าตามช่วงเป็น `N/A` เมื่อ Baseline ยังไม่ครบ |
+
+### 💰 Paid Ads Performance
+
+ใช้ดูประสิทธิภาพโฆษณาของ Meta Ads, Google Ads และ TikTok Ads
+
+| บล็อก | รูปแบบ | ค่าที่แสดง |
+|---|---|---|
+| Spend | ตัวเลขสรุป | ค่าโฆษณารวมในช่วงที่เลือก |
+| Impressions | ตัวเลขสรุป | จำนวนครั้งที่โฆษณาถูกแสดง |
+| Clicks | ตัวเลขสรุป | จำนวนคลิก |
+| CTR | ตัวเลขสรุป | อัตราคลิกต่อ Impression |
+| CPC | ตัวเลขสรุป | ค่าใช้จ่ายเฉลี่ยต่อคลิก |
+| CPM | ตัวเลขสรุป | ค่าใช้จ่ายเฉลี่ยต่อ 1,000 Impressions |
+| Trend | กราฟตามเวลา | แนวโน้ม Spend, Impressions, Clicks และ Metric ที่รองรับตามวัน |
+| Spend by Platform | กราฟเปรียบเทียบ | ค่าโฆษณาแยก Meta, Google และ TikTok |
+| Clicks by Platform | กราฟเปรียบเทียบ | จำนวนคลิกแยก Platform |
+| Top Ads | ตารางอันดับ | Campaign/Ad, Platform, Spend, Impressions, Clicks และ Conversion เมื่อแหล่งข้อมูลส่งมา |
+| Data Quality | สถานะข้อมูล | บัญชีที่รวมในรายงาน ช่วงข้อมูล และ Metric ที่ยังไม่มีจากต้นทาง |
+
+### 🛒 Commerce & Conversion
+
+ใช้ดูยอดขายจาก WooCommerce หลังรวมยอดและตรวจสถานะออเดอร์แล้ว
+
+| บล็อก | รูปแบบ | ค่าที่แสดง |
+|---|---|---|
+| Orders | ตัวเลขสรุป | จำนวนออเดอร์ที่ระบบรับรองในช่วงที่เลือก |
+| Orders by Window | ตัวเลขตามช่วง | จำนวนออเดอร์แยกตามช่วง `1D`, `3D`, `7D` หรือ `30D` |
+| Gross Sales | ตัวเลขสรุป | ยอดขายก่อนหักส่วนลด คืนเงิน และรายการปรับปรุงตามนิยามร้าน |
+| Gross Sales by Window | ตัวเลขตามช่วง | ยอดขายก่อนหักรายการ แยกตามช่วงที่เลือก |
+| Net Sales | ตัวเลขสรุป | ยอดขายสุทธิในช่วงที่เลือก |
+| Refunds | ตัวเลขสรุป | ยอดคืนเงินที่บันทึกในช่วงที่เลือก |
+| Trend | กราฟตามเวลา | แนวโน้ม Orders, Gross Sales, Net Sales และ Refunds ตามวัน |
+| อันดับสินค้า/ช่องทางชำระ/การจัดส่ง | ตารางอันดับ | รายการอันดับและยอดขายที่เกี่ยวข้อง เมื่อชุดรายงานมีข้อมูลส่วนนั้น |
+| Data Quality | สถานะข้อมูล | วันที่ข้อมูลล่าสุด ความครบถ้วน และสถานะข้อมูลจาก WooCommerce |
+
+### 💬 Customer Service & Leads
+
+ใช้ดูงานบริการลูกค้าจาก Chatwoot โดยดึงเฉพาะ Conversation ใหม่หรือรายการที่มีการเปลี่ยนแปลง
+
+| บล็อก | รูปแบบ | ค่าที่แสดง |
+|---|---|---|
+| New Conversations | ตัวเลขสรุป | จำนวน Conversation ที่เริ่มใหม่ในช่วงที่เลือก |
+| New Conversations by Window | ตัวเลขตามช่วง | Conversation ใหม่แยกตามช่วงเวลา |
+| Open Conversations | ตัวเลขสรุป | จำนวน Conversation ที่ยังเปิดอยู่ ณ จุดสรุปข้อมูล |
+| Resolved Conversations | ตัวเลขสรุป | จำนวน Conversation ที่ปิดหรือแก้ไขเสร็จในช่วงที่เลือก |
+| Resolved Conversations by Window | ตัวเลขตามช่วง | Conversation ที่ปิดแล้วแยกตามช่วงเวลา |
+| First Response Time | ตัวเลขสรุป | เวลาเฉลี่ยก่อนตอบลูกค้าครั้งแรก |
+| Resolution Time | ตัวเลขสรุป | เวลาเฉลี่ยตั้งแต่เปิดจนปิด Conversation |
+| Trend | กราฟตามเวลา | แนวโน้ม Conversation ใหม่ เปิดอยู่ และปิดแล้วตามวัน |
+| Agent/Inbox Ranking | ตารางอันดับ | จำนวนงานและเวลาตอบของ Agent หรือ Inbox เมื่อชุดรายงานมีข้อมูลจัดอันดับ |
+| Data Quality | สถานะข้อมูล | วันที่ข้อมูลล่าสุด จำนวนรายการที่นำมาคำนวณ และส่วนที่ยังไม่ครบ |
+
+### 🛡️ Data Quality & Operations
+
+หน้าตรวจสุขภาพระบบ ใช้แยกกรณี “ไม่มีข้อมูลจริง” ออกจาก “ข้อมูลยังมาไม่ครบ”
+
+| บล็อก | รูปแบบ | ค่าที่แสดง |
+|---|---|---|
+| Freshness | สถานะเวลา | วันที่ข้อมูลล่าสุด เวลาที่สร้างรายงาน และเวลาที่ Sync สำเร็จล่าสุด |
+| Coverage | เปอร์เซ็นต์/จำนวน | อัตราความครบถ้วน จำนวนรายการที่พร้อมคำนวณ และจำนวนที่ขาด Baseline |
+| Data Status | ป้ายสถานะ | `complete`, `partial`, `no_data` หรือ `source_unavailable` ตามหลักฐานของรอบนั้น |
+| Connector Health | สถานะระบบ | ผล Sync ล่าสุดของแต่ละช่องทาง งานที่กำลังทำ และงานที่ต้องตรวจ |
+| Alerts | ตารางรายการ | ระดับความสำคัญ สาเหตุ เวลาเกิด สถานะเปิด/แก้แล้ว และช่องทางที่เกี่ยวข้อง |
+
+ค่าบน Dashboard มาจาก `MKT_Report_Snapshots`, `MKT_Report_Metric_Values`, `MKT_Report_Top_Content` และ `MKT_Report_Top_Ads` ส่วนสถานะงานและปัญหาอ้างอิง `MKT_Sync_Log` กับ `MKT_System_Alerts`
 
 ## ตารางใน Lark Base
 

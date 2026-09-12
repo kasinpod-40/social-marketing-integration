@@ -2,7 +2,8 @@
 
 ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base สำหรับ Dashboard, Reporting, AI Summary, Insight, Alert และ Notification โดยใช้ JavaScript ES Modules, Cloudflare Workers, D1, Queues และ Lark Open API
 
-คู่มือสำหรับลูกค้าแบบสั้น: [`docs/customer-social-mkt-data-hub-manual.md`](docs/customer-social-mkt-data-hub-manual.md)
+คู่มือสำหรับลูกค้า: [`docs/customer-social-mkt-data-hub-manual.md`](docs/customer-social-mkt-data-hub-manual.md) ·
+[`ไฟล์ Word`](docs/คู่มือ-Social-MKT-Data-Hub.docx)
 
 Storage direction ปัจจุบันคือ API Provider → D1 source/history/coverage → customer-facing Lark
 `MKT_*`/Report. ระบบไม่สร้าง non-TikTok Lark RAW mirrors ใหม่และไม่มี switch เปิดกลับ; เฉพาะ

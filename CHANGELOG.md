@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-13 — Customer manual Dashboard block reference and Word delivery
+
+- expanded the Thai customer manual with every active Dashboard block, the value shown by each block, its display
+  form and the relevant completeness/`N/A` behavior;
+- added the formatted Word delivery `docs/คู่มือ-Social-MKT-Data-Hub.docx`, kept the customer-facing title as
+  `คู่มือ Social MKT Data Hub`, and retained the concise Lark Base and Cloudflare D1 table reference.
+
 ## 2026-09-12 — Customer Social MKT Data Hub manual
 
 - added a concise Thai customer manual for all active Production Lark tables, six Dashboards, date semantics,
