@@ -79,18 +79,24 @@ therefore a runtime cutover to the customer-owned Cloudflare resources and custo
 a new per-channel ownership onboarding. A secret that cannot be exported/read back remains a
 technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
-### Implementation result — concise Customer Data Hub manual (2026-09-12)
+### Implementation result — Customer Data Hub manual and Word delivery (2026-09-13)
 
-- added `docs/customer-social-mkt-data-hub-manual.md` as a short Thai customer-facing guide covering all Lark
-  tables currently bound in Customer Production, all six Dashboards, date semantics, bounded Lark retention,
-  and functional Cloudflare D1 table groups;
+- updated `docs/customer-social-mkt-data-hub-manual.md` as a concise Thai customer-facing guide covering all Lark
+  tables currently bound in Customer Production, all six Dashboards, date semantics, bounded Lark retention and
+  functional Cloudflare D1 table groups;
+- expanded all six Dashboard sections into explicit block-level references, including the display form, the value
+  shown, source/coverage behavior and `N/A` semantics for unavailable baselines;
+- added the formatted customer delivery `docs/คู่มือ-Social-MKT-Data-Hub.docx` with the exact title
+  `คู่มือ Social MKT Data Hub`, readable table hierarchy, repeated table headers and page numbering;
 - the guide separates customer-facing Lark data from D1 historical/operational storage, explains stable-key
   upsert, `metric_date` versus `last_sync_at`, `0` versus `N/A`, and avoids credentials, table IDs and customer
   internal identities;
-- linked the guide from `README.md`; this documentation-only change performs no Worker deploy, Queue action,
-  D1/Lark mutation or Production schedule change;
-- PR `#829` contains the reviewed documentation diff; `git diff --check` and `npm run check` pass with `837`
-  source files, `2,557` local dependencies and zero architecture cycles.
+- linked both Markdown and Word deliveries from `README.md`; this documentation-only change performs no Worker
+  deploy, Queue action, D1/Lark mutation or Production schedule change;
+- the DOCX was rendered with the repository document workflow, every page was inspected for table/page layout,
+  and a macOS native preview additionally confirmed complete Thai text rendering;
+- DOCX structural readback found `52` paragraphs, `14` tables and `127` table rows with every required Dashboard,
+  Lark and Cloudflare heading present; `git diff --check` and `npm run check` pass.
 
 ### Implementation result — Paid Ads Campaign Summary and bounded Daily retention (2026-09-10)
 

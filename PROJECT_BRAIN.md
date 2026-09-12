@@ -1,5 +1,14 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Social MKT Data Hub manual — 2026-09-13
+
+The customer delivery is maintained in both Markdown and Word as `docs/customer-social-mkt-data-hub-manual.md`
+and `docs/คู่มือ-Social-MKT-Data-Hub.docx`. Its title is `คู่มือ Social MKT Data Hub`. The Dashboard chapter names
+the active blocks and the exact business value each block shows across Executive, Organic, Paid Ads, Commerce,
+Customer Service and Data Quality. It also preserves the customer-facing Lark table guide, the functional D1
+storage guide, reporting-date semantics and fail-closed `N/A` behavior without exposing credentials or internal
+customer identifiers.
+
 ## Scheduled YouTube completed-day validation — 2026-09-12
 
 The YouTube scheduler correctly emits the latest fully completed Bangkok reporting day, while its operation and
