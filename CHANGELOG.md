@@ -9,6 +9,12 @@
 - added regression coverage for both accepted previous-day and rejected current-day scheduled payloads. The exact
   failed Customer PROD `youtube-scheduled-20260912` generation requires one guarded same-generation recovery only
   after reviewed merge/deploy and read-only lock/DLQ admission.
+- PR `#827` passed both Branch Verification workflows and merged as
+  `main@e354cf033495837cd4b1fd9709bc7bf1786d0839`; Customer Worker version
+  `c8045a16-234f-4746-a10f-53f5ecb6a682` is active at 100% with the original triggers and Queue safety settings.
+- completed the retained generation once with `848/848` source/D1/Lark identities, zero duplicate input rows and
+  one Account update. The Account sync timestamp is `2026-09-12` while the completed reporting date is
+  `2026-09-11`; the exact DLQ/Alert are closed and no protected or historical Business data was changed.
 
 ## 2026-09-11 — Organic reporting-date and freshness semantics
 

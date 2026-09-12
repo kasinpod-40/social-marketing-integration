@@ -239,7 +239,7 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - out of scope: source/provider replay, Queue/DLQ mutation, protected incidents, unrelated Organic/Paid/Commerce/
   Chatwoot tables, schedule timing, and deletion of any D1 observation.
 
-### Active repair — Scheduled YouTube completed-day validator (2026-09-12)
+### Completed repair — Scheduled YouTube completed-day validator (2026-09-12)
 
 - Customer PROD scheduled operation `youtube-scheduled-20260912`, work key
   `youtube:youtube-scheduled-20260912`, generation/requestedAt `1789151414000`, and metric date `2026-09-11`
@@ -258,6 +258,24 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   zero duplicate keys, and reviewed evidence documentation;
 - never touch protected `terminal:eafd8e43f1ae5113d12905301496fd4e`, never create a replacement generation,
   and keep Queue batch/concurrency `1/1`, generic redrive disabled and automatic recovery disabled.
+- PR `#827` passed both Branch Verification runs/jobs `34682635722/103523971980` and
+  `34682643319/103523994532`, then merged as `main@e354cf033495837cd4b1fd9709bc7bf1786d0839`.
+  Customer PROD Worker version `c8045a16-234f-4746-a10f-53f5ecb6a682` is active at `100%` in deployment
+  `48fb3327-1c25-450d-bf05-9c803289873c`; both cron triggers, Queue producer/consumers, batch/concurrency `1/1`,
+  generic redrive disabled and automatic recovery disabled were preserved.
+- The retained payload was sent once after exact operation/work/generation and lock-zero admission. It kept
+  operation `youtube-scheduled-20260912`, work `youtube:youtube-scheduled-20260912`, generation/requestedAt
+  `1789151414000` (`2026-09-12 01:30:14` Asia/Bangkok), and completed-day metric date `2026-09-11`; no
+  replacement generation was created.
+- Final completion readback proves source inventory/resources/account analytics `848/848`, D1 content state
+  `848/848`, Lark `MKT_Content` `848/848`, Lark `MKT_Content_Daily` `848/848`, and one successful
+  `MKT_Accounts` update. The completion contains zero duplicate input rows; D1 state has `848/848` distinct
+  content keys and the exact account daily fact is uniquely keyed on `2026-09-11`.
+- The retained DLQ `terminal:245999c13203f446dda7acd792c54a07` is now `redriven` with reference
+  `recovery:youtube-completed-day:e354cf03`, its exact Alert is `resolved`, no newer exact-scope DLQ was created,
+  and the protected TikTok incident remains present and untouched. Old Business history was preserved. This
+  repair is complete: `MKT_Content_Daily.metric_date` represents the latest fully completed day, while
+  `MKT_Accounts.last_sync_at` represents the actual successful run time and therefore advances to `2026-09-12`.
 
 ### Active extension — Campaign Summary color month groups (2026-09-11)
 
