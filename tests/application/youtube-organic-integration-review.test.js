@@ -4,6 +4,7 @@ import {
   writeYouTubeOrganicStorageFirst,
 } from '../../packages/application/src/storage/youtube-organic-history-storage.js';
 import {
+  assertYouTubeMetricDateMatchesRequestedAt,
   syncYouTubeOrganicEndToEnd,
 } from '../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 
@@ -285,4 +286,27 @@ test('YouTube cumulative metricDate must match the durable observation date', as
     metricDate: '2026-07-26',
     sourceTimezone: 'Asia/Bangkok',
   }), (error) => error.code === 'YOUTUBE_METRIC_DATE_GENERATION_MISMATCH');
+});
+
+test('scheduled YouTube accepts only the latest completed reporting day', () => {
+  assert.deepEqual(assertYouTubeMetricDateMatchesRequestedAt({
+    requestedAt: Date.parse('2026-09-12T01:30:14+07:00'),
+    metricDate: '2026-09-11',
+    sourceTimezone: 'Asia/Bangkok',
+    latestCompletedDay: true,
+  }), {
+    metricDate: '2026-09-11',
+    observedMetricDate: '2026-09-12',
+    expectedMetricDate: '2026-09-11',
+    latestCompletedDay: true,
+    sourceTimezone: 'Asia/Bangkok',
+  });
+
+  assert.throws(() => assertYouTubeMetricDateMatchesRequestedAt({
+    requestedAt: Date.parse('2026-09-12T01:30:14+07:00'),
+    metricDate: '2026-09-12',
+    sourceTimezone: 'Asia/Bangkok',
+    latestCompletedDay: true,
+  }), (error) => error.code === 'YOUTUBE_METRIC_DATE_GENERATION_MISMATCH'
+    && error.details?.expectedMetricDate === '2026-09-11');
 });

@@ -1,5 +1,6 @@
 import { syncYouTubeOrganicToLark } from './sync-youtube-organic-to-lark.js';
 import { YouTubeStorageFirstSyncEngine } from '../storage/youtube-storage-first-sync-engine.js';
+import { addDaysDateOnly } from '../reports/report-period.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 import { requireDateOnly, todayInTimeZone } from '../../../shared/src/date/date-only.js';
 
@@ -15,18 +16,14 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
 
   const requestedAt = requiredTimestamp(input.requestedAt ?? input.generation, 'requestedAt');
   const generation = requiredTimestamp(input.generation ?? requestedAt, 'generation');
-  const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
-  const sourceTimezone = requireText(
-    input.sourceTimezone ?? input.reportingTimezone ?? 'Asia/Bangkok',
-    'sourceTimezone',
-  );
-  const observedMetricDate = todayInTimeZone(sourceTimezone, new Date(requestedAt));
-  if (metricDate !== observedMetricDate) {
-    throw permanentError('YouTube cumulative metricDate must match the durable observation date', {
-      code: 'YOUTUBE_METRIC_DATE_GENERATION_MISMATCH',
-      details: { metricDate, observedMetricDate, sourceTimezone },
-    });
-  }
+  const metricDateContract = assertYouTubeMetricDateMatchesRequestedAt({
+    metricDate: input.metricDate,
+    requestedAt,
+    latestCompletedDay: input.latestCompletedMetricDate === true,
+    sourceTimezone: input.sourceTimezone ?? input.reportingTimezone ?? 'Asia/Bangkok',
+  });
+  const metricDate = metricDateContract.metricDate;
+  const sourceTimezone = metricDateContract.sourceTimezone;
   const dryRun = input.dryRun === true;
   const d1WriteEnabled = input.d1WriteEnabled === true;
   const larkWriteEnabled = input.larkWriteEnabled === true;
@@ -93,6 +90,43 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
         ? await storageSyncEngine.previewStorage()
         : storageSyncEngine.storageResult,
     }),
+  });
+}
+
+/**
+ * Scheduled runs observe now but write the latest fully completed reporting day. Operator and
+ * legacy calls retain same-day validation unless they explicitly opt into this completed-day contract.
+ */
+export function assertYouTubeMetricDateMatchesRequestedAt(input = {}) {
+  const requestedAt = requiredTimestamp(input.requestedAt, 'requestedAt');
+  const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(
+    input.sourceTimezone ?? input.reportingTimezone ?? 'Asia/Bangkok',
+    'sourceTimezone',
+  );
+  const observedMetricDate = todayInTimeZone(sourceTimezone, new Date(requestedAt));
+  const latestCompletedDay = input.latestCompletedDay === true;
+  const expectedMetricDate = latestCompletedDay
+    ? addDaysDateOnly(observedMetricDate, -1)
+    : observedMetricDate;
+  if (metricDate !== expectedMetricDate) {
+    throw permanentError('YouTube cumulative metricDate does not match its reporting-date contract', {
+      code: 'YOUTUBE_METRIC_DATE_GENERATION_MISMATCH',
+      details: {
+        metricDate,
+        observedMetricDate,
+        expectedMetricDate,
+        latestCompletedDay,
+        sourceTimezone,
+      },
+    });
+  }
+  return Object.freeze({
+    metricDate,
+    observedMetricDate,
+    expectedMetricDate,
+    latestCompletedDay,
+    sourceTimezone,
   });
 }
 

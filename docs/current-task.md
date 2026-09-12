@@ -239,6 +239,26 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 - out of scope: source/provider replay, Queue/DLQ mutation, protected incidents, unrelated Organic/Paid/Commerce/
   Chatwoot tables, schedule timing, and deletion of any D1 observation.
 
+### Active repair — Scheduled YouTube completed-day validator (2026-09-12)
+
+- Customer PROD scheduled operation `youtube-scheduled-20260912`, work key
+  `youtube:youtube-scheduled-20260912`, generation/requestedAt `1789151414000`, and metric date `2026-09-11`
+  were admitted exactly once but rejected before Work creation with
+  `YOUTUBE_METRIC_DATE_GENERATION_MISMATCH`;
+- root cause is the boundary between PR `#824`'s correct scheduler output (latest fully completed Bangkok day)
+  and the retained application validator (same execution day). There is one exact open DLQ
+  `terminal:245999c13203f446dda7acd792c54a07`, one matching open Alert, no Work row and zero active YouTube locks;
+  therefore no partial destination write or duplicate Business row exists;
+- scheduled routing now opts into previous-completed-day validation in both the currently active fallback route
+  and the dedicated YouTube route. Manual/operator and legacy calls retain same-day validation unless explicitly
+  opted in, preventing this repair from weakening unrelated admission contracts;
+- focused regression covers accepted `2026-09-11` and rejected `2026-09-12` metric dates for a Bangkok request on
+  `2026-09-12`. Required completion is reviewed PR/CI, exact Production deploy, one guarded send of the retained
+  same operation/work/generation after lock-zero admission, D1/Lark readback, Account freshness `2026-09-12`,
+  zero duplicate keys, and reviewed evidence documentation;
+- never touch protected `terminal:eafd8e43f1ae5113d12905301496fd4e`, never create a replacement generation,
+  and keep Queue batch/concurrency `1/1`, generic redrive disabled and automatic recovery disabled.
+
 ### Active extension — Campaign Summary color month groups (2026-09-11)
 
 - keep the same Customer PROD Summary table, Primary key, 185 historical identities, four existing Views, immutable

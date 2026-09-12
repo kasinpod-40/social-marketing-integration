@@ -333,6 +333,7 @@ export async function processJob(input) {
         generation: requestedAt,
         syncType: 'organic_sync',
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
+        latestCompletedMetricDate: input.job.body?.trigger === 'scheduled',
         reportingTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
         syncMode: input.job.body?.syncMode,
         recentVideoLimit: readPositiveInteger(input.env?.MKT_YOUTUBE_RECENT_VIDEO_LIMIT, 100),

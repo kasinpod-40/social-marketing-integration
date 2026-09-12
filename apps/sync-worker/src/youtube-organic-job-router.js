@@ -195,6 +195,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         generation: requestedAt,
         syncType: 'organic_end_to_end',
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
+        latestCompletedMetricDate: input.job.body?.trigger === 'scheduled',
         reportingTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
         sourceTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
         syncMode: input.job.body?.syncMode,

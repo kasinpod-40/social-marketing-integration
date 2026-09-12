@@ -1,5 +1,18 @@
 # Project Brain — Social Marketing Data Integration
 
+## Scheduled YouTube completed-day validation — 2026-09-12
+
+The YouTube scheduler correctly emits the latest fully completed Bangkok reporting day, while its operation and
+fetch time belong to the current execution day. The application validator must therefore enforce previous-day
+semantics only for `trigger=scheduled`; manual/operator and retained legacy calls remain same-day unless they opt
+in explicitly. This preserves the canonical separation: `MKT_Content_Daily.metric_date` is the completed reporting
+day, while `fetched_at` and `MKT_Accounts.last_sync_at` advance only after destination completion.
+
+Customer PROD generation `youtube-scheduled-20260912` was rejected before Work creation by the stale same-day
+validator. Exact readback proves one Queue attempt, one open matching terminal DLQ, no Work and zero active YouTube
+locks, so there was no partial Business write. After reviewed deploy it may be sent once with the exact retained
+operation/work/generation; replacement generation and blind replay remain forbidden.
+
 ## Paid Ads Campaign Summary and bounded Daily retention — 2026-09-10
 
 Customer Lark gains a current-month campaign projection in `MKT_Ads_Campaign_Summary`; PROD D1 remains the
