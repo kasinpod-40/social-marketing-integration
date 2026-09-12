@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-12 — Scheduled YouTube completed-day validation
+
+- fixed the scheduled YouTube application boundary to validate the scheduler's latest fully completed Bangkok
+  reporting day instead of incorrectly requiring the current execution date;
+- retained same-day validation for manual/operator calls unless they explicitly opt into completed-day semantics,
+  and preserved the scheduled Work generation, actual fetch timestamp, stable keys and destination ordering;
+- added regression coverage for both accepted previous-day and rejected current-day scheduled payloads. The exact
+  failed Customer PROD `youtube-scheduled-20260912` generation requires one guarded same-generation recovery only
+  after reviewed merge/deploy and read-only lock/DLQ admission.
+
 ## 2026-09-11 — Organic reporting-date and freshness semantics
 
 - aligned scheduled YouTube `MKT_Content_Daily.metric_date` with the latest completed Bangkok reporting day,
