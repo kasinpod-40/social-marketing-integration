@@ -88,7 +88,9 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
   upsert, `metric_date` versus `last_sync_at`, `0` versus `N/A`, and avoids credentials, table IDs and customer
   internal identities;
 - linked the guide from `README.md`; this documentation-only change performs no Worker deploy, Queue action,
-  D1/Lark mutation or Production schedule change.
+  D1/Lark mutation or Production schedule change;
+- PR `#829` contains the reviewed documentation diff; `git diff --check` and `npm run check` pass with `837`
+  source files, `2,557` local dependencies and zero architecture cycles.
 
 ### Implementation result — Paid Ads Campaign Summary and bounded Daily retention (2026-09-10)
 
