@@ -81,6 +81,9 @@ technical secret-setting step in Customer Cloudflare, not an ownership blocker.
 
 ### Implementation result — Customer Data Hub manual and Word delivery (2026-09-13)
 
+- completed a final customer-perspective wording review across the Markdown and Word deliveries, replacing only
+  stiff, ambiguous or unnecessarily technical phrasing while preserving every Dashboard block, table name,
+  business definition, date rule, retention limit and runtime condition;
 - updated `docs/customer-social-mkt-data-hub-manual.md` as a concise Thai customer-facing guide covering all Lark
   tables currently bound in Customer Production, all six Dashboards, date semantics, bounded Lark retention and
   functional Cloudflare D1 table groups;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-13 — Customer manual final wording review
+
+- refined only the customer-facing Thai wording in the Markdown and Word manuals so descriptions read naturally,
+  while preserving the document structure, Dashboard blocks, table names, technical meaning and system conditions.
+
 ## 2026-09-13 — Customer manual Dashboard block reference and Word delivery
 
 - expanded the Thai customer manual with every active Dashboard block, the value shown by each block, its display
