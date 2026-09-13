@@ -180,6 +180,51 @@ test('active Organic adapter produces current and previous equal-length values f
   assert.equal(writes[0].window_days, null);
 });
 
+test('TikTok runtime materializes a high-coverage observed subtotal without enabling it for other Organic platforms', async () => {
+  const source = {
+    contents: [
+      { ...content('covered', '2026-01-01'), platform: 'tiktok' },
+      { ...content('missing', '2026-01-01'), platform: 'tiktok' },
+    ],
+    observations: [
+      { ...observation('covered', '2026-07-09', 100), platform: 'tiktok' },
+      { ...observation('covered', '2026-07-12', 125), platform: 'tiktok' },
+      { ...observation('missing', '2026-07-11', 10), platform: 'tiktok' },
+      { ...observation('missing', '2026-07-12', 12), platform: 'tiktok' },
+    ],
+    accountDailyFacts: [],
+    readSummary: {
+      sourceScope: 'content',
+      coverageStatus: 'complete',
+      accountCoverageStatus: 'not_observed',
+      sourceWatermark: 'tiktok-wm',
+    },
+  };
+  const registry = createReportPlatformAdapterRegistry({
+    adapters: { tiktok: { async load() { return source; } } },
+  });
+  const result = await generateDashboardReportMaterialization({
+    registry,
+    materializationStore: { async saveReportMaterialization() { return { status: 'written' }; } },
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    platformScope: 'tiktok',
+    reportSettingKey: 'chemistry_k:tiktok:rolling:3d',
+    periodKind: 'rolling_days',
+    windowDays: 3,
+    periodEnd: '2026-07-12',
+    comparisonMode: 'previous_period',
+    sourceWatermark: 'tiktok-wm',
+    generatedAt: GENERATED_AT,
+  });
+
+  assert.equal(result.dataStatus, 'partial');
+  assert.equal(result.metricPayload['tiktok:period_views'].current, 25);
+  assert.equal(result.metricPayload['tiktok:period_views'].compare, null);
+  assert.equal(result.metricPayload['tiktok:period_views'].availabilityStatus, 'coverage_incomplete');
+  assert.equal(result.metricPayload['tiktok:baseline_coverage_rate'].current, 0.5);
+});
+
 test('Facebook Account scope preserves Content metrics as N/A without fabricated observations', async () => {
   const writes = [];
   const registry = createReportPlatformAdapterRegistry({

@@ -56,6 +56,46 @@ test('partial Organic window keeps period deltas unavailable while exposing trut
   });
 });
 
+test('TikTok opt-in exposes only the observed period subtotal with incomplete coverage metadata', () => {
+  const result = calculateOrganicPeriodMetrics({
+    platform: 'tiktok',
+    contents: [
+      content('covered', '2026-06-01'),
+      content('uncovered', '2026-06-01'),
+    ],
+    observations: [
+      observation('covered', '2026-07-09', 100, 10, 2, 1),
+      observation('covered', '2026-07-12', 120, 12, 3, 2),
+      observation('uncovered', '2026-07-11', 5, 1, 1, 0),
+      observation('uncovered', '2026-07-12', 8, 2, 1, 0),
+    ],
+    periodStart: '2026-07-10',
+    periodEnd: '2026-07-12',
+    coverageStatus: 'complete',
+    allowPartialBaselineSubtotal: true,
+  });
+  const payload = buildOrganicMetricPayload({
+    platform: 'tiktok',
+    current: result,
+    compare: result,
+    formulaVersion: 'tiktok-organic-v1',
+  });
+
+  assert.equal(result.periodCoverageComplete, false);
+  assert.equal(result.metrics.period_views, 20);
+  assert.equal(result.metrics.period_likes, 2);
+  assert.equal(result.metrics.period_comments, 1);
+  assert.equal(result.metrics.period_shares, 1);
+  assert.equal(result.metrics.period_engagement, 4);
+  assert.equal(result.metrics.period_engagement_rate, 0.2);
+  assert.equal(payload['tiktok:period_views'].availabilityStatus, 'coverage_incomplete');
+  assert.equal(payload['tiktok:period_views'].availabilityMessage, 'ข้อมูลบางส่วน — Coverage ยังไม่ครบ');
+  assert.equal(payload['tiktok:period_views'].current, 20);
+  assert.equal(payload['tiktok:period_views'].compare, null);
+  assert.equal(payload['tiktok:period_views'].change, null);
+  assert.equal(payload['tiktok:latest_total_views'].availabilityStatus, 'available');
+});
+
 test('Organic metric payload groups 17 client metrics and explains every unavailable value', () => {
   const result = partialOrganicResult();
   const payload = buildOrganicMetricPayload({

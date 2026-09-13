@@ -105,7 +105,7 @@ test('Report window transition requires refresh payload replacement under one st
   }));
 });
 
-test('Incomplete Organic baseline requires null aggregate KPIs in D1 and Lark', () => {
+test('Incomplete Organic baseline accepts null KPIs or an exact high-coverage TikTok subtotal', () => {
   const metricPayload = Object.fromEntries([
     'period_views', 'period_likes', 'period_comments', 'period_shares',
     'period_engagement', 'period_engagement_rate',
@@ -116,13 +116,40 @@ test('Incomplete Organic baseline requires null aggregate KPIs in D1 and Lark', 
   });
   assert.equal(result.incompleteBaseline, true);
   assert.equal(result.aggregateNullCount, 6);
+  assert.equal(result.partialSubtotal, false);
+  const tracked = 2076;
+  const covered = 2075;
+  const coverageRate = covered / tracked;
+  const partialMetricPayload = Object.fromEntries([
+    'period_views', 'period_likes', 'period_comments', 'period_shares',
+    'period_engagement', 'period_engagement_rate',
+  ].map((name) => [`tiktok:${name}`, {
+    current: name.endsWith('_rate') ? 0.04 : 100,
+    availabilityStatus: 'coverage_incomplete',
+  }]));
+  Object.assign(partialMetricPayload, {
+    'tiktok:tracked_content_count': { current: tracked },
+    'tiktok:baseline_covered_content_count': { current: covered },
+    'tiktok:baseline_missing_content_count': { current: 1 },
+    'tiktok:baseline_coverage_rate': { current: coverageRate },
+  });
+  const partial = assertReportRuntimeOrganicIntegrity({
+    payload: { coverageRate, metricPayload: partialMetricPayload },
+    larkMetrics: Object.fromEntries(Object.entries(partialMetricPayload).map(([key, metric]) => [key, metric.current])),
+  });
+  assert.equal(partial.partialSubtotal, true);
+  assert.equal(partial.aggregateNullCount, 0);
   assert.throws(() => assertReportRuntimeOrganicIntegrity({
     payload: {
       coverageRate: 0.999,
       metricPayload: { ...metricPayload, 'tiktok:period_views': { current: 123 } },
     },
     larkMetrics: { ...Object.fromEntries(Object.keys(metricPayload).map((key) => [key, null])), 'tiktok:period_views': 123 },
-  }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_NUMERIC');
+  }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_MIXED');
+  assert.throws(() => assertReportRuntimeOrganicIntegrity({
+    payload: { coverageRate: 0.98, metricPayload: partialMetricPayload },
+    larkMetrics: Object.fromEntries(Object.entries(partialMetricPayload).map(([key, metric]) => [key, metric.current])),
+  }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_UNPROVEN');
 });
 
 test('Platform-neutral metric integrity verifies WooCommerce D1 and Lark values exactly', () => {

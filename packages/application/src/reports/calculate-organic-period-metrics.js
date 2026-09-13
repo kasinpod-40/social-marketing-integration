@@ -105,13 +105,15 @@ export function calculateOrganicPeriodMetrics(input = {}) {
     : (coveredContentCount === trackedContentCount ? normalizeCompleteStatus(input.coverageStatus) : 'partial');
   const sourceCoverageComplete = isCompleteObservationCoverage(input.coverageStatus);
   const periodCoverageComplete = sourceCoverageComplete && coveredContentCount === trackedContentCount;
-  const periodViews = sumField(rows, 'periodViews', periodCoverageComplete);
-  const periodLikes = sumField(rows, 'periodLikes', periodCoverageComplete);
-  const periodComments = sumField(rows, 'periodComments', periodCoverageComplete);
-  const periodShares = sumField(rows, 'periodShares', periodCoverageComplete);
+  const periodSubtotalAllowed = periodCoverageComplete
+    || (sourceCoverageComplete && input.allowPartialBaselineSubtotal === true && coveredContentCount > 0);
+  const periodViews = sumField(rows, 'periodViews', periodSubtotalAllowed);
+  const periodLikes = sumField(rows, 'periodLikes', periodSubtotalAllowed);
+  const periodComments = sumField(rows, 'periodComments', periodSubtotalAllowed);
+  const periodShares = sumField(rows, 'periodShares', periodSubtotalAllowed);
   const periodEngagement = sumComponents(
     [periodLikes, periodComments, periodShares],
-    periodCoverageComplete,
+    periodSubtotalAllowed,
   );
   const latestTotalViews = sumCurrentField(rows, 'views', sourceCoverageComplete);
   const latestTotalLikes = sumCurrentField(rows, 'likes', sourceCoverageComplete);
@@ -152,6 +154,7 @@ export function calculateOrganicPeriodMetrics(input = {}) {
     trackedContentCount,
     coveredContentCount,
     missingBaselineContentCount,
+    periodCoverageComplete,
     baselineModeCounts: summarizeBaselineModes(rows),
     metrics,
     contentRows: Object.freeze(sortTopContentRows(rows)),
@@ -165,13 +168,15 @@ export function buildOrganicMetricPayload(input = {}) {
   const compare = input.compare == null ? null : requireObject(input.compare, 'compare');
   return Object.freeze(Object.fromEntries(ORGANIC_METRIC_DEFINITIONS.map((definition, index) => {
     const currentValue = normalizeMetric(current.metrics?.[definition.key]);
-    const compareValue = compare ? normalizeMetric(compare.metrics?.[definition.key]) : null;
-    const change = currentValue === null || compareValue === null ? null : currentValue - compareValue;
     const availabilityStatus = resolveMetricAvailability({
       definition,
       currentValue,
       current,
     });
+    const compareValue = availabilityStatus === 'coverage_incomplete'
+      ? null
+      : (compare ? normalizeMetric(compare.metrics?.[definition.key]) : null);
+    const change = currentValue === null || compareValue === null ? null : currentValue - compareValue;
     return [`${platform}:${definition.key}`, Object.freeze({
       metricKey: `${platform}:${definition.key}`,
       displayName: definition.displayName,
@@ -214,6 +219,11 @@ export function buildOrganicTopContentPayload(rows, limit = 5) {
 }
 
 function resolveMetricAvailability(input) {
+  if (input.currentValue !== null
+    && input.definition.metricScope === 'period_delta'
+    && input.current.periodCoverageComplete === false) {
+    return normalizeDashboardMetricAvailability({ status: 'coverage_incomplete' });
+  }
   if (input.currentValue !== null) {
     return normalizeDashboardMetricAvailability({ status: 'available' });
   }
