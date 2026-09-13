@@ -36,3 +36,9 @@ appears inside the selected period. The Dashboard must not turn the entire obser
 - Facebook, Instagram and YouTube retain strict null semantics for the same baseline condition.
 - Weekly AI may use a TikTok subtotal only when the existing high-coverage gate passes; it must keep comparison
   unavailable and must not describe the subtotal as complete.
+
+Live Customer Production closure is complete on `main@c82522be7840b7bc00df289b98e8cbb962a378a2` and Worker
+version `85f50869-3a7c-4d89-ab75-4e9994c7a8bd`. The Customer Lark Report metric schema now contains the additive
+`coverage_incomplete` option. Serial 1D/3D/7D/30D materializations for period end `2026-09-12` passed D1/Lark
+readback with 17 rows per report, six selected Period metrics per report and zero duplicate selected keys. The
+1D/3D/7D coverage is `2075/2076`; 30D remains complete. Weekly Monday Report/Notification schedules remain enabled.

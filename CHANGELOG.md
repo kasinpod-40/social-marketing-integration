@@ -10,6 +10,13 @@
   comparison unavailable, so the customer report can use measured values without presenting them as complete.
 - updated the reviewed Report-window reconciliation gate to accept this exception only when all six Period metrics,
   the minimum 99% coverage threshold and the tracked/covered/missing counters reconcile exactly.
+- PR #832 passed both Branch Verification workflows and merged as
+  `main@c82522be7840b7bc00df289b98e8cbb962a378a2`; Customer Worker version
+  `85f50869-3a7c-4d89-ab75-4e9994c7a8bd` is active at 100% with Queue safety and schedules unchanged.
+- provisioned only the missing `coverage_incomplete` option in the Customer Report metric table through an isolated
+  Preview version, restored Preview URLs disabled, and completed exact serial 1D/3D/7D/30D materializations.
+- D1/Lark readback agrees for all 24 selected Period metrics, with 17 rows per report and zero duplicate selected
+  keys. Final target locks and new open Report DLQs are zero; the protected forensic incident was not touched.
 
 ## 2026-09-13 — Customer manual final wording review
 

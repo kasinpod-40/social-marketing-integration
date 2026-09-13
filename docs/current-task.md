@@ -1619,5 +1619,22 @@ child identity after reviewed merge/deploy.
   channel partial and keeps period comparison unavailable;
 - the reviewed Report-window operator accepts the numeric path only when all six Period metrics use
   `coverage_incomplete`, coverage is at least 99%, and the tracked/covered/missing counters reconcile exactly;
-- implementation completion still requires final gates, reviewed merge, Customer PROD schema option provisioning,
-  exact 1D/3D/7D/30D rematerialization, and D1/Lark readback before the Monday Report/AI/Notification run.
+- PR #832 passed both Branch Verification workflows (`34759613860/103729986444` and
+  `34759616100/103729993287`) and merged as `main@c82522be7840b7bc00df289b98e8cbb962a378a2`;
+  Customer Worker version `85f50869-3a7c-4d89-ab75-4e9994c7a8bd` is active at 100% with the existing schedules
+  and Queue batch/concurrency `1/1` unchanged;
+- an isolated Preview operator added only the missing `coverage_incomplete` option to
+  `MKT_Report_Metric_Values.availability_status` (`tblHqEtDEUiqFhYx`). The exact post-apply plan had zero remaining
+  actions; Production traffic never changed and Preview URLs were restored disabled;
+- exact 1D/3D/7D/30D rematerializations for period end `2026-09-12` completed successfully in four serial runs.
+  D1 and Lark readback agree on all six Period metrics per window, with 17 metric rows per report and zero duplicate
+  selected keys. The 1D/3D/7D coverage is `2075/2076` (`0.9995183044`) and 30D coverage is `1.0`;
+- visible Period results are now 1D Views/Likes/Comments/Shares/Engagement `19,275/525/1/122/648`, 3D
+  `43,940/1,299/1/336/1,636`, 7D `138,570/4,931/2/833/5,766`, and 30D
+  `1,487,774/56,966/196/10,889/68,051`. Partial windows retain null compare/change values;
+- the one exact pre-schema terminal DLQ and its two alerts were marked `resolved` only after the four successful
+  readbacks; they were not redriven. Final target lock count and new open Report DLQ count are zero, and the protected
+  TikTok forensic incident was not read, redriven or changed;
+- the normal Weekly Report and Notification schedules remain enabled for Monday `09:15` and `09:30`
+  Asia/Bangkok, respectively. The high-coverage TikTok subtotal is now eligible for controlled AI evidence while
+  still being labelled partial and without an invented comparison.
