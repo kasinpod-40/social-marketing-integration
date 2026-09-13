@@ -49,6 +49,32 @@ test('admits the retained 99.85 percent TikTok baseline-only partial evidence', 
   )), true);
 });
 
+test('admits high-coverage TikTok observed subtotals without presenting a comparison', async () => {
+  const input = controlledInput();
+  applyTikTokBaselineOnlyPartial(input, {
+    tracked: 2076,
+    covered: 2075,
+    missing: 1,
+    coverageRate: 2075 / 2076,
+  });
+  for (const metric of tiktokMetrics(input).filter(({ metric_key: key }) => key.startsWith('tiktok:period_'))) {
+    metric.availability_status = 'coverage_incomplete';
+    metric.current_value = metric.metric_key.endsWith('_rate') ? 0.04 : 100;
+    metric.compare_value = null;
+    metric.change_value = null;
+    metric.change_percent = null;
+    metric.observed = true;
+    metric.baseline_status = 'missing';
+  }
+
+  const plan = await buildLarkNativeAiControlledPreviewReadiness(input);
+  assert.equal(plan.status, 'ready_for_controlled_preview');
+  assert.equal(plan.blockers.length, 0);
+  assert.equal(plan.goldenDatasetAuthority.admissionClass, 'baseline_partial_high_coverage');
+  assert.equal(plan.goldenDatasetAuthority.comparisonReady, false);
+  assert.equal(plan.goldenDatasetAuthority.periodDeltasSuppressed, false);
+});
+
 test('keeps a baseline-only partial below 99 percent coverage blocked', async () => {
   const input = controlledInput();
   applyTikTokBaselineOnlyPartial(input, {

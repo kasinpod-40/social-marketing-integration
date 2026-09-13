@@ -18,6 +18,7 @@ export const REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE = Object.freeze([
 ]);
 
 const LARK_REPORT_METRIC_DECIMAL_PLACES = 4;
+const TIKTOK_PARTIAL_PERIOD_MIN_COVERAGE_RATE = 0.99;
 
 export function parseReportRuntimeWindowRepairArgs(argv = []) {
   const unknown = argv.filter((argument) => argument !== '--execute');
@@ -177,17 +178,51 @@ export function assertReportRuntimeOrganicIntegrity(input = {}) {
   const coverageRate = optionalFinite(payload.coverageRate);
   const incompleteBaseline = coverageRate !== null && coverageRate < 1;
   const aggregateNullCount = aggregateMetricKeys.filter((key) => optionalFinite(metricPayload[key]?.current) === null).length;
-  if (incompleteBaseline && aggregateNullCount !== aggregateMetricKeys.length) throw repairError(
-    'Incomplete Organic baseline exposed numeric aggregate KPI values',
-    'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_NUMERIC',
+  const partialSubtotal = incompleteBaseline && aggregateNullCount === 0;
+  if (partialSubtotal) assertTikTokPartialSubtotal(metricPayload, aggregateMetricKeys, coverageRate);
+  else if (incompleteBaseline && aggregateNullCount !== aggregateMetricKeys.length) throw repairError(
+    'Incomplete Organic baseline mixed numeric and null aggregate KPI values',
+    'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_MIXED',
     { aggregateMetricCount: aggregateMetricKeys.length, aggregateNullCount },
   );
   return Object.freeze({
     ...metricIntegrity,
     incompleteBaseline,
+    partialSubtotal,
     aggregateMetricCount: aggregateMetricKeys.length,
     aggregateNullCount,
   });
+}
+
+function assertTikTokPartialSubtotal(metricPayload, aggregateMetricKeys, coverageRate) {
+  const statusesValid = aggregateMetricKeys.every((key) => (
+    optionalText(metricPayload[key]?.availabilityStatus ?? metricPayload[key]?.availability_status)
+      === 'coverage_incomplete'
+  ));
+  const tracked = optionalFinite(metricPayload['tiktok:tracked_content_count']?.current);
+  const covered = optionalFinite(metricPayload['tiktok:baseline_covered_content_count']?.current);
+  const missing = optionalFinite(metricPayload['tiktok:baseline_missing_content_count']?.current);
+  const metricCoverageRate = optionalFinite(metricPayload['tiktok:baseline_coverage_rate']?.current);
+  const countersValid = [tracked, covered, missing].every(Number.isSafeInteger)
+    && tracked > 0
+    && covered > 0
+    && missing > 0
+    && tracked === covered + missing
+    && metricCoverageRate !== null
+    && Math.abs(metricCoverageRate - covered / tracked) <= 0.0001
+    && Math.abs(coverageRate - metricCoverageRate) <= 0.0001;
+  if (!statusesValid || !countersValid || coverageRate < TIKTOK_PARTIAL_PERIOD_MIN_COVERAGE_RATE) {
+    throw repairError(
+      'Numeric partial Organic aggregate lacks exact high-coverage TikTok evidence',
+      'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_UNPROVEN',
+      {
+        statusesValid,
+        countersValid,
+        coverageRate,
+        minimumCoverageRate: TIKTOK_PARTIAL_PERIOD_MIN_COVERAGE_RATE,
+      },
+    );
+  }
 }
 
 /**

@@ -34,7 +34,7 @@ export const REPORT_METRIC_DIMENSION_TYPE_OPTIONS = Object.freeze([
  * Additive repository contract for the materialization consumer tables.
  * It is intentionally plan-only; applying it to a Live Base requires a separate authorization.
  */
-export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v7';
+export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v8';
 export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
   sharedOptionExtensions: {
     platforms: PLATFORM_OPTIONS,

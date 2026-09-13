@@ -245,9 +245,14 @@ function classifyTikTokGoldenDataset(tiktok) {
 
   if (!currentTotals.every(isAvailableObservedMetric)) return emptyGoldenDatasetAuthority('blocked');
   if (!dataQuality.every(isAvailableObservedMetric)) return emptyGoldenDatasetAuthority('blocked');
-  if (!periodDeltas.every((metric) => metric.availabilityStatus === 'baseline_incomplete'
+  const periodDeltasSuppressed = periodDeltas.every((metric) => metric.availabilityStatus === 'baseline_incomplete'
     && metric.currentValue === null
-    && metric.observed === false)) {
+    && metric.observed === false);
+  const periodDeltasPartial = periodDeltas.every((metric) => metric.availabilityStatus === 'coverage_incomplete'
+    && metric.currentValue !== null
+    && Number.isFinite(metric.currentValue)
+    && metric.observed === true);
+  if (!periodDeltasSuppressed && !periodDeltasPartial) {
     return emptyGoldenDatasetAuthority('blocked');
   }
 
@@ -257,9 +262,12 @@ function classifyTikTokGoldenDataset(tiktok) {
       continue;
     }
     if (!TIKTOK_PERIOD_DELTA_METRIC_KEY_SET.has(metric.metricKey)
-      || metric.availabilityStatus !== 'baseline_incomplete'
-      || metric.currentValue !== null
-      || metric.observed !== false) {
+      || (metric.availabilityStatus !== 'baseline_incomplete'
+        && metric.availabilityStatus !== 'coverage_incomplete')
+      || (metric.availabilityStatus === 'baseline_incomplete'
+        && (metric.currentValue !== null || metric.observed !== false))
+      || (metric.availabilityStatus === 'coverage_incomplete'
+        && (metric.currentValue === null || !Number.isFinite(metric.currentValue) || metric.observed !== true))) {
       return emptyGoldenDatasetAuthority('blocked');
     }
   }
@@ -284,6 +292,7 @@ function classifyTikTokGoldenDataset(tiktok) {
   }
 
   const highCoverage = coverageRate >= TIKTOK_HIGH_COVERAGE_PARTIAL_MIN_RATE;
+  if (periodDeltasPartial && !highCoverage) return emptyGoldenDatasetAuthority('blocked');
   const currentTotalsOnly = !highCoverage && newContent > 0 && covered > 0;
   if (!highCoverage && !currentTotalsOnly) return emptyGoldenDatasetAuthority('blocked');
 
@@ -294,7 +303,7 @@ function classifyTikTokGoldenDataset(tiktok) {
     previewEligible: true,
     currentTotalsReady: true,
     comparisonReady: false,
-    periodDeltasSuppressed: true,
+    periodDeltasSuppressed,
     baselineCoverageRate: coverageRate,
     trackedContentCount: tracked,
     coveredContentCount: covered,

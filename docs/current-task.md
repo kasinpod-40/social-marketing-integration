@@ -1607,3 +1607,17 @@ child identity after reviewed merge/deploy.
 - focused Chatwoot tests, `npm run check`, full `npm test`, Report reliability `106/106`, audit with zero
   vulnerabilities, deploy dry-run and `git diff --check` pass. Reviewed merge/deploy and one guarded exact
   same-generation recovery after `lock=0` remain required before declaring current Chatwoot freshness complete.
+
+### 2026-09-13 — TikTok Organic Dashboard Period partial-coverage repair
+
+- Production read-only evidence showed the Dashboard current-total cards were correct, while 1D/3D/7D Period cards
+  displayed zero because each window had exactly one of 2,076 retained contents without a valid pre-period baseline;
+- the Organic calculator still fails closed for incomplete source reads and for every non-TikTok platform. TikTok
+  alone may now expose the subtotal from baseline-covered rows, with `coverage_incomplete`, exact coverage counters
+  and no compare/change value;
+- Weekly AI controlled evidence accepts the numeric subtotal only at the existing high-coverage threshold, labels the
+  channel partial and keeps period comparison unavailable;
+- the reviewed Report-window operator accepts the numeric path only when all six Period metrics use
+  `coverage_incomplete`, coverage is at least 99%, and the tracked/covered/missing counters reconcile exactly;
+- implementation completion still requires final gates, reviewed merge, Customer PROD schema option provisioning,
+  exact 1D/3D/7D/30D rematerialization, and D1/Lark readback before the Monday Report/AI/Notification run.

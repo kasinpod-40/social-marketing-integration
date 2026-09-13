@@ -7,6 +7,7 @@ export const DASHBOARD_METRIC_SCOPE_OPTIONS = Object.freeze([
 export const DASHBOARD_METRIC_AVAILABILITY_OPTIONS = Object.freeze([
   'available',
   'baseline_incomplete',
+  'coverage_incomplete',
   'source_unavailable',
   'not_observed',
 ]);
@@ -17,6 +18,7 @@ const AVAILABILITY_STATUSES = new Set(DASHBOARD_METRIC_AVAILABILITY_OPTIONS);
 const AVAILABILITY_MESSAGES = Object.freeze({
   available: 'พร้อมใช้งาน',
   baseline_incomplete: 'N/A — Baseline ยังไม่ครบ',
+  coverage_incomplete: 'ข้อมูลบางส่วน — Coverage ยังไม่ครบ',
   source_unavailable: 'N/A — แหล่งข้อมูลยังไม่พร้อม',
   not_observed: 'N/A — ยังไม่มีข้อมูลสังเกตการณ์',
 });

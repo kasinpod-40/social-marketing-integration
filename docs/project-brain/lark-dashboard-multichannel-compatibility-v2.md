@@ -23,3 +23,16 @@ Latest exported Integration Workspace Base proves two independent gaps:
 ## Safety
 
 Repository implementation performs no Remote action. Post-merge Record-only Apply remains separately authorized and must stop after the 204 Display V2 cells. No Report window rerun, D1 mutation, Queue send, Worker deployment, Provider request, Schedule activation or Production action is part of this workstream.
+
+## 2026-09-13 TikTok Period partial-coverage decision
+
+TikTok cumulative content metrics may have near-complete baseline coverage when a newly discovered older video first
+appears inside the selected period. The Dashboard must not turn the entire observed subtotal into a visible zero.
+
+- Only TikTok may aggregate the period subtotal from rows with a proven baseline when the source read itself is
+  complete and at least one content row is covered.
+- The metric remains explicitly `coverage_incomplete`; coverage count/rate stay visible and no comparison or change is
+  calculated from potentially different covered subsets.
+- Facebook, Instagram and YouTube retain strict null semantics for the same baseline condition.
+- Weekly AI may use a TikTok subtotal only when the existing high-coverage gate passes; it must keep comparison
+  unavailable and must not describe the subtotal as complete.

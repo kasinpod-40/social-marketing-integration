@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-13 — TikTok Organic partial-period Dashboard values
+
+- changed only the TikTok Organic Report path to aggregate the observed period subtotal when source coverage is
+  complete but a small number of retained contents still lack a valid pre-period baseline;
+- marks those numeric Period metrics as `coverage_incomplete`, keeps comparison/change values null, and preserves
+  the existing strict null behavior for Facebook, Instagram and YouTube;
+- extended the controlled Weekly AI evidence gate to admit high-coverage TikTok subtotals while explicitly keeping
+  comparison unavailable, so the customer report can use measured values without presenting them as complete.
+- updated the reviewed Report-window reconciliation gate to accept this exception only when all six Period metrics,
+  the minimum 99% coverage threshold and the tracked/covered/missing counters reconcile exactly.
+
 ## 2026-09-13 — Customer manual final wording review
 
 - refined only the customer-facing Thai wording in the Markdown and Word manuals so descriptions read naturally,

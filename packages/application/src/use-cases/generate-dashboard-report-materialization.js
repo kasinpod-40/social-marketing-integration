@@ -310,6 +310,7 @@ async function buildOrganicResult(input) {
     periodStart: input.period.periodStart,
     periodEnd: input.period.periodEnd,
     coverageStatus: contentCoverageStatus,
+    allowPartialBaselineSubtotal: input.contract.platformScope === 'tiktok',
   });
   const compare = input.period.comparisonMode === 'none' ? null : calculateOrganicPeriodMetrics({
     platform: input.contract.platformScope,
@@ -318,6 +319,7 @@ async function buildOrganicResult(input) {
     periodStart: input.period.compareStart,
     periodEnd: input.period.compareEnd,
     coverageStatus: contentCoverageStatus,
+    allowPartialBaselineSubtotal: input.contract.platformScope === 'tiktok',
   });
   const currentAccount = calculateOrganicAccountPeriodMetrics({
     rows: source.accountDailyFacts ?? [],
