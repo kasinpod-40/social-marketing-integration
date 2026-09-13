@@ -8,6 +8,8 @@ the active blocks and the exact business value each block shows across Executive
 Customer Service and Data Quality. It also preserves the customer-facing Lark table guide, the functional D1
 storage guide, reporting-date semantics and fail-closed `N/A` behavior without exposing credentials or internal
 customer identifiers.
+The final wording pass is intentionally editorial only: customer-facing Thai is more natural, while every technical
+name, metric definition, date rule, retention boundary and runtime condition remains unchanged.
 
 ## Scheduled YouTube completed-day validation — 2026-09-12
 
