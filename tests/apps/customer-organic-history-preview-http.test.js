@@ -82,20 +82,85 @@ test('Customer Organic history Preview audit is fail-closed to exact PROD and re
   assert.equal(metaCalls, 1);
 });
 
-test('Customer Organic history Preview rejects execution and never constructs a source runtime', async () => {
+test('Customer Organic history Preview rejects an unknown mode and never constructs a source runtime', async () => {
   let constructed = false;
   const handler = createCustomerOrganicHistoryPreviewHttpHandler({
     async digest() { return TOKEN_DIGEST; },
     createMetaRuntime() { constructed = true; return {}; },
   });
   const response = await handler({
-    request: request({ mode: 'execute' }),
+    request: request({ mode: 'write' }),
     env: environment(),
     url: new URL(`https://preview.invalid${CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH}`),
   });
   assert.equal(response.status, 400);
   assert.equal(constructed, false);
   assert.equal((await response.json()).code, 'CUSTOMER_ORGANIC_HISTORY_MODE_INVALID');
+});
+
+test('Customer Organic history repair routes exact Facebook scope through isolated infrastructure', async () => {
+  let received = null;
+  const infrastructure = {
+    getStateDb() { return environment().MKT_STATE_DB; },
+    getMarketingHistoryStore() { return { store: true }; },
+    repository: { repository: true },
+    syncEngine: { syncEngine: true },
+  };
+  const source = { fetchContentInsightsPage() {} };
+  const handler = createCustomerOrganicHistoryPreviewHttpHandler({
+    async digest() { return TOKEN_DIGEST; },
+    createInfrastructure() { return infrastructure; },
+    createMetaRuntime() {
+      return {
+        sources: { facebook: source },
+        mappings: { facebookPageId: '982406442148381' },
+      };
+    },
+    async runRepair(input) {
+      received = input;
+      return { ok: true, mode: input.execute ? 'execute' : 'preview' };
+    },
+  });
+  const response = await handler({
+    request: request({
+      mode: 'execute',
+      platform: 'facebook',
+      metricDate: '2026-06-19',
+      batchIndex: 2,
+    }),
+    env: environment(),
+    url: new URL(`https://preview.invalid${CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH}`),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(received.execute, true);
+  assert.equal(received.platform, 'facebook');
+  assert.equal(received.metricDate, '2026-06-19');
+  assert.equal(received.batchIndex, 2);
+  assert.equal(received.facebookSource, source);
+  assert.equal(received.youtubeOwnerClient, null);
+  assert.equal(received.store.store, true);
+});
+
+test('Customer Organic history repair rejects Instagram/TikTok and dates outside exact scope', async () => {
+  let constructed = false;
+  const handler = createCustomerOrganicHistoryPreviewHttpHandler({
+    async digest() { return TOKEN_DIGEST; },
+    createInfrastructure() { constructed = true; return {}; },
+  });
+  for (const body of [
+    { mode: 'preview', platform: 'instagram', metricDate: '2026-06-19' },
+    { mode: 'preview', platform: 'tiktok', metricDate: '2026-06-19' },
+    { mode: 'preview', platform: 'facebook', metricDate: '2026-06-30' },
+    { mode: 'preview', platform: 'youtube', metricDate: '2026-07-28' },
+  ]) {
+    const response = await handler({
+      request: request(body),
+      env: environment(),
+      url: new URL(`https://preview.invalid${CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH}`),
+    });
+    assert.equal(response.status, 400);
+  }
+  assert.equal(constructed, false);
 });
 
 test('Customer Organic history Preview rejects wrong Lark table authority', async () => {

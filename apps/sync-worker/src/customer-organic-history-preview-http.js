@@ -1,9 +1,14 @@
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import { readYouTubeChannelIdFromEnv } from '../../../packages/config/src/youtube-organic-runtime-config.js';
 import { createMetaTokenConnectionRuntime } from '../../../packages/connectors/src/meta/meta-token-connection-runtime.js';
+import {
+  CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE,
+  repairCustomerOrganicContentHistoryBatch,
+} from '../../../packages/application/src/use-cases/repair-customer-organic-content-history.js';
 import { sanitizeOperationalError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { json } from '../../../packages/shared/src/http/response.js';
 import { timingSafeEqualText } from '../../../packages/shared/src/security/secure-token.js';
+import { createInfrastructure } from './runtime-infrastructure.js';
 import { createYouTubeRuntimeClients } from './youtube-runtime-clients.js';
 
 export const CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH =
@@ -18,12 +23,14 @@ const MAX_ANALYTICS_PAGES = 100;
 const ANALYTICS_PAGE_SIZE = 200;
 const ANALYTICS_VIDEO_SAMPLE_SIZE = 1;
 
-/** Preview-only, GET-only source capability audit for the exact Customer PROD runtime. */
+/** Isolated Preview route for GET-only capability audit and reviewed bounded history repair. */
 export function createCustomerOrganicHistoryPreviewHttpHandler(dependencies = {}) {
   const digest = dependencies.digest ?? sha256;
   const metaRuntimeFactory = dependencies.createMetaRuntime ?? createMetaTokenConnectionRuntime;
   const youtubeRuntimeFactory = dependencies.createYouTubeRuntimeClients
     ?? createYouTubeRuntimeClients;
+  const infrastructureFactory = dependencies.createInfrastructure ?? createInfrastructure;
+  const runRepair = dependencies.runRepair ?? repairCustomerOrganicContentHistoryBatch;
 
   return async function handle({ request, env, url }) {
     if (url.pathname !== CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH) return null;
@@ -37,18 +44,27 @@ export function createCustomerOrganicHistoryPreviewHttpHandler(dependencies = {}
       const runtime = assertExactCustomerRuntime(env);
       await requireAuthorization(request, env, digest);
       const body = await readBoundedJson(request);
-      if (body?.mode !== 'audit') {
-        throw operatorError('Organic history Preview mode must be audit',
+      if (!['audit', 'preview', 'execute'].includes(body?.mode)) {
+        throw operatorError('Organic history mode must be audit, preview or execute',
           'CUSTOMER_ORGANIC_HISTORY_MODE_INVALID');
       }
-      const period = normalizePeriod(body);
-      const result = await auditCustomerOrganicHistory({
-        env,
-        runtime,
-        period,
-        metaRuntimeFactory,
-        youtubeRuntimeFactory,
-      });
+      const result = body.mode === 'audit'
+        ? await auditCustomerOrganicHistory({
+          env,
+          runtime,
+          period: normalizePeriod(body),
+          metaRuntimeFactory,
+          youtubeRuntimeFactory,
+        })
+        : await runCustomerOrganicHistoryRepair({
+          body,
+          env,
+          runtime,
+          metaRuntimeFactory,
+          youtubeRuntimeFactory,
+          infrastructureFactory,
+          runRepair,
+        });
       return json({ ok: true, result }, { status: 200, headers: noStoreHeaders() });
     } catch (error) {
       const operational = sanitizeOperationalError(error);
@@ -61,6 +77,56 @@ export function createCustomerOrganicHistoryPreviewHttpHandler(dependencies = {}
       }, { status, headers: noStoreHeaders() });
     }
   };
+}
+
+async function runCustomerOrganicHistoryRepair(input) {
+  const platform = requireRepairPlatform(input.body?.platform);
+  const metricDate = requireRepairDate(platform, input.body?.metricDate);
+  const batchIndex = requireBatchIndex(input.body?.batchIndex);
+  const infrastructure = input.infrastructureFactory(input.env);
+  let facebookSource = null;
+  let youtubeOwnerClient = null;
+
+  if (platform === 'facebook') {
+    const meta = input.metaRuntimeFactory(input.env);
+    if (meta?.mappings?.facebookPageId
+      !== CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE.facebook.sourceAccountId
+      || !meta?.sources?.facebook) {
+      throw operatorError('Facebook source differs from the Customer repair allowlist',
+        'CUSTOMER_ORGANIC_HISTORY_IDENTITY_MISMATCH', { platform });
+    }
+    facebookSource = meta.sources.facebook;
+  } else {
+    const channelId = readYouTubeChannelIdFromEnv(input.env);
+    if (channelId !== CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE.youtube.sourceAccountId) {
+      throw operatorError('YouTube source differs from the Customer repair allowlist',
+        'CUSTOMER_ORGANIC_HISTORY_IDENTITY_MISMATCH', { platform });
+    }
+    const clients = await input.youtubeRuntimeFactory(input.env, {
+      publicApiKeyOnly: false,
+      analyticsEnabled: true,
+      customerKey: input.runtime.customerKey,
+      channelId,
+    });
+    youtubeOwnerClient = clients?.ownerClient ?? null;
+  }
+
+  return input.runRepair({
+    execute: input.body.mode === 'execute',
+    platform,
+    metricDate,
+    batchIndex,
+    db: infrastructure.getStateDb(),
+    store: infrastructure.getMarketingHistoryStore(),
+    repository: CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform].larkDestination
+      ? infrastructure.repository : null,
+    syncEngine: CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform].larkDestination
+      ? infrastructure.syncEngine : null,
+    tableId: CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform].larkDestination
+      ? input.env.LARK_TABLE_MKT_CONTENT_DAILY : null,
+    facebookSource,
+    youtubeOwnerClient,
+  });
 }
 
 export async function auditCustomerOrganicHistory(input = {}) {
@@ -401,6 +467,34 @@ function normalizePeriod(body) {
       'CUSTOMER_ORGANIC_HISTORY_PERIOD_INVALID', { since, until });
   }
   return Object.freeze({ since, until });
+}
+
+function requireRepairPlatform(value) {
+  const platform = requireText(value, 'platform');
+  if (!Object.hasOwn(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE, platform)) {
+    throw operatorError('Organic history repair platform is outside the reviewed scope',
+      'CUSTOMER_ORGANIC_HISTORY_PLATFORM_INVALID', { platform });
+  }
+  return platform;
+}
+
+function requireRepairDate(platform, value) {
+  const metricDate = requireDate(value, 'metricDate');
+  const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
+  if (metricDate < scope.startDate || metricDate > scope.endDate) {
+    throw operatorError('Organic history repair date escapes the reviewed missing range',
+      'CUSTOMER_ORGANIC_HISTORY_DATE_INVALID', { platform });
+  }
+  return metricDate;
+}
+
+function requireBatchIndex(value) {
+  const batchIndex = Number(value ?? 0);
+  if (!Number.isSafeInteger(batchIndex) || batchIndex < 0) {
+    throw operatorError('Organic history repair batchIndex must be a non-negative integer',
+      'CUSTOMER_ORGANIC_HISTORY_INPUT_INVALID');
+  }
+  return batchIndex;
 }
 
 function requireDate(value, fieldName) {
