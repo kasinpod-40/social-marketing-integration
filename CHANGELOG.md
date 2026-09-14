@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-14 — Customer Weekly AI bounded recommendation repair
+
+- added an isolated read-only Customer Weekly diagnostic that returns only retained identity hashes, output
+  presence and quality violation codes, with no generated prose or remote writes;
+- deterministically removes unsupported `[NO-SCALE]` wording and completes missing action detail only for the two
+  proven recommendation failures, while preserving the immutable generated AI row and rerunning the unchanged
+  full quality gate before Notification admission;
+- keeps all unrelated AI quality failures fail-closed and preserves the existing exactly-once Queue, delivery and
+  Lark mirror contracts.
+
 ## 2026-09-13 — TikTok Organic partial-period Dashboard values
 
 - changed only the TikTok Organic Report path to aggregate the observed period subtotal when source coverage is

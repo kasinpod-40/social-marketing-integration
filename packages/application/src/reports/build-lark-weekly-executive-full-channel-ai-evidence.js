@@ -298,6 +298,93 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   });
 }
 
+const REPAIRABLE_RECOMMENDATION_VIOLATIONS = new Set([
+  'recommendations_missing_action_detail',
+  'recommendations_unsupported_no_scale',
+]);
+
+/**
+ * Repair only the two proven Lark-Native-AI recommendation formatting failures.
+ * The generated source row stays immutable; callers may use the repaired in-memory
+ * projection only when the unchanged full quality gate accepts it.
+ */
+export function repairLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, evidence = {}) {
+  const original = validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs, evidence);
+  if (original.passed) {
+    return deepFreeze({ repaired: false, outputs: { ...outputs }, qualityGate: original });
+  }
+  if (original.violations.some((code) => !REPAIRABLE_RECOMMENDATION_VIOLATIONS.has(code))) {
+    return deepFreeze({ repaired: false, outputs: { ...outputs }, qualityGate: original });
+  }
+
+  const divergences = Array.isArray(evidence.funnelDivergences) ? evidence.funnelDivergences : [];
+  let lines = text(outputs.recommendations)
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (divergences.length === 0) {
+    lines = lines.filter((line) => !NO_SCALE_LANGUAGE.test(line));
+  }
+  lines = lines.map(ensureDecisionActionDetail);
+  while (lines.filter((line) => DECISION_LINE_START.test(line)).length < 2) {
+    const fallback = buildBoundedRepairDecision(evidence, lines.join('\n'));
+    if (!fallback) break;
+    lines.push(fallback);
+  }
+
+  const repairedOutputs = Object.freeze({
+    ...outputs,
+    recommendations: lines.join('\n'),
+  });
+  const repairedGate = validateLarkWeeklyExecutiveFullChannelAiOutputs(repairedOutputs, evidence);
+  if (!repairedGate.passed) {
+    return deepFreeze({
+      repaired: false,
+      outputs: { ...outputs },
+      qualityGate: original,
+      repairViolations: repairedGate.violations,
+    });
+  }
+  return deepFreeze({
+    repaired: true,
+    repairCode: 'bounded_recommendation_format_v1',
+    outputs: repairedOutputs,
+    qualityGate: repairedGate,
+  });
+}
+
+function ensureDecisionActionDetail(line) {
+  if (!DECISION_LINE_START.test(line) || DECISION_ACTION_VERB.test(line)) return line;
+  const label = /^\[([A-Z-]+)\]/u.exec(line)?.[1];
+  const suffix = {
+    CONTENT: ' ทำคอนเทนต์แนวนี้ต่อเพื่อวัดผลสัปดาห์ถัดไป',
+    TEST: ' ทดสอบต่อแบบจำกัดงบเพื่อวัดผลสัปดาห์ถัดไป',
+    KEEP: ' คงไว้ติดตามผลสัปดาห์ถัดไป',
+    REDUCE: ' ลดงบและติดตามผลสัปดาห์ถัดไป',
+    STOP: ' หยุดและย้ายงบไปทดสอบตัวเลือกอื่นที่มีหลักฐาน',
+    SCALE: ' เพิ่มงบแบบจำกัดและติดตามผลสัปดาห์ถัดไป',
+    'NO-SCALE': ' ไม่เพิ่มงบรวมจนกว่าปลาย Funnel ฟื้น',
+  }[label];
+  return suffix ? `${line}${suffix}` : line;
+}
+
+function buildBoundedRepairDecision(evidence, existing) {
+  const adNames = Array.isArray(evidence.adCandidateNames) ? evidence.adCandidateNames : [];
+  const ad = adNames.find((name) => !mentionsCandidate(existing, name)) ?? adNames[0];
+  if (ad) return `[TEST] ${ad} ทดสอบต่อแบบจำกัดงบเพื่อวัดผลสัปดาห์ถัดไป`;
+  const contentNames = Array.isArray(evidence.contentCandidateNames) ? evidence.contentCandidateNames : [];
+  const content = contentNames.find((name) => !mentionsCandidate(existing, name)) ?? contentNames[0];
+  if (content) return `[CONTENT] ${content} ทำคอนเทนต์แนวนี้ต่อเพื่อวัดผลสัปดาห์ถัดไป`;
+  const fact = [
+    ...(Array.isArray(evidence.positiveComparisonFacts) ? evidence.positiveComparisonFacts : []),
+    ...(Array.isArray(evidence.negativeComparisonFacts) ? evidence.negativeComparisonFacts : []),
+  ][0];
+  if (fact?.channel && fact?.metric) {
+    return `[KEEP] ${fact.channel} คงไว้ติดตาม ${fact.metric} ในสัปดาห์ถัดไป`;
+  }
+  return null;
+}
+
 function buildNativeAiBoundedDecisionSummary(input) {
   let last = null;
   for (const labelLimit of CANDIDATE_LABEL_LIMITS) {

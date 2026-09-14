@@ -1,5 +1,18 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Weekly AI bounded recommendation repair — 2026-09-14
+
+The exact Customer Weekly period `2026-09-07..2026-09-13` completed all eight Report materializations, but Lark
+Native AI emitted one unsupported `[NO-SCALE]` recommendation without a supported Funnel divergence and without
+an action verb. The full quality gate correctly blocked delivery. A Preview-only, read-only diagnostic exposes
+only hashed identity, output presence and violation codes; it never returns generated prose.
+
+The automatic runtime may repair only `recommendations_missing_action_detail` and
+`recommendations_unsupported_no_scale`. It keeps the generated AI row immutable, derives a bounded in-memory
+recommendation projection solely from retained candidates/comparison evidence, and runs the unchanged complete
+quality gate again. Any other violation or non-zero repaired violation remains terminal. Notification admission
+and D1 exactly-once delivery authority remain unchanged.
+
 ## Customer Social MKT Data Hub manual — 2026-09-13
 
 The customer delivery is maintained in both Markdown and Word as `docs/customer-social-mkt-data-hub-manual.md`
