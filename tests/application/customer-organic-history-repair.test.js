@@ -192,7 +192,7 @@ test('history repair fails closed on active Production work before reading a pro
   const runtime = await createRuntime();
   try {
     runtime.d1.database.prepare('INSERT INTO sync_locks VALUES (?,?)')
-      .run('facebook:chemistry_k:organic', Date.now() + 60_000);
+      .run('chemistry_k:facebook:chemistry_k:scheduled_end_to_end', Date.now() + 60_000);
     let sourceRead = false;
     await assert.rejects(
       () => repairCustomerOrganicContentHistoryBatch({
@@ -211,6 +211,45 @@ test('history repair fails closed on active Production work before reading a pro
       (error) => error?.code === 'CUSTOMER_ORGANIC_HISTORY_ACTIVE_LOCK',
     );
     assert.equal(sourceRead, false);
+  } finally {
+    runtime.d1.close();
+  }
+});
+
+test('history repair ignores an unrelated active platform lock', async () => {
+  const runtime = await createRuntime();
+  try {
+    runtime.d1.database.prepare('INSERT INTO sync_locks VALUES (?,?)')
+      .run('chemistry_k:chatwoot:chemistry_k:analytics', Date.now() + 60_000);
+    seedContentState(runtime.d1, {
+      platform: 'facebook', sourceAccountId: FACEBOOK_ACCOUNT,
+      externalContentId: 'post-1', publishedAt: '2026-06-19',
+    });
+    let sourceRead = false;
+    const result = await repairCustomerOrganicContentHistoryBatch({
+      execute: false,
+      platform: 'facebook',
+      metricDate: '2026-06-19',
+      db: runtime.d1,
+      store: runtime.store,
+      repository: runtime.lark.repository,
+      syncEngine: new TableSyncEngine(),
+      tableId: 'content-daily',
+      facebookSource: {
+        async fetchContentInsightsPage() {
+          sourceRead = true;
+          return {
+            rows: [{
+              name: 'post_media_view', period: 'day',
+              values: [{ value: 123, end_time: '2026-06-19T12:00:00+07:00' }],
+            }],
+          };
+        },
+      },
+    });
+    assert.equal(sourceRead, true);
+    assert.equal(result.mode, 'preview');
+    assert.equal(result.providerRows, 1);
   } finally {
     runtime.d1.close();
   }

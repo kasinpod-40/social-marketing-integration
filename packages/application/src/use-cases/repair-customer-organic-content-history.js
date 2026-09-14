@@ -55,7 +55,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     ? requireMethods(input.syncEngine, ['planByKey', 'executePlan'], 'syncEngine')
     : null;
   const tableId = scope.larkDestination ? requireText(input.tableId, 'tableId') : null;
-  await assertNoActiveLocks(db);
+  await assertNoConflictingActiveLocks(db, platform);
   const state = await loadStateBatch(db, { platform, metricDate, batchIndex });
   const metrics = platform === 'facebook'
     ? await loadFacebookMetrics(input.facebookSource, state.rows, metricDate)
@@ -116,7 +116,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     });
   }
 
-  await assertNoActiveLocks(db);
+  await assertNoConflictingActiveLocks(db, platform);
   await store.saveCoverageRun(rows.partialCoverageRun);
   let d1Created = 0;
   let d1Skipped = 0;
@@ -130,7 +130,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
 
   let larkWrite = { created: 0, skipped: 0 };
   if (scope.larkDestination) {
-    await assertNoActiveLocks(db);
+    await assertNoConflictingActiveLocks(db, platform);
     larkWrite = await syncEngine.executePlan(larkPlan);
     const readbackPlan = await syncEngine.planByKey({
       repository,
@@ -454,13 +454,20 @@ async function readCoverage(db, coverageRunId) {
     .bind(coverageRunId).first();
 }
 
-async function assertNoActiveLocks(db) {
+async function assertNoConflictingActiveLocks(db, platform) {
+  // Lock keys are created by the shared Reliability runner as
+  // customerProfile:platform:accountKey:syncType. History repair writes only
+  // the exact platform partition, so unrelated channel/report locks are not a
+  // conflict and must not starve this bounded operator between cron ticks.
+  const prefix = `${CUSTOMER_KEY}:${platform}:${ACCOUNT_KEY}:`;
   const row = await db.prepare(
-    'SELECT COUNT(*) AS count FROM sync_locks WHERE expires_at > unixepoch()*1000',
-  ).first();
+    `SELECT COUNT(*) AS count FROM sync_locks
+     WHERE expires_at > unixepoch()*1000
+       AND substr(lock_key, 1, length(?)) = ?`,
+  ).bind(prefix, prefix).first();
   if (Number(row?.count ?? -1) !== 0) {
-    throw repairError('An active Production sync lock blocks the bounded history repair',
-      'CUSTOMER_ORGANIC_HISTORY_ACTIVE_LOCK');
+    throw repairError('An active same-platform Production sync lock blocks the bounded history repair',
+      'CUSTOMER_ORGANIC_HISTORY_ACTIVE_LOCK', { platform });
   }
 }
 
