@@ -125,3 +125,61 @@ test('Customer Organic history Preview rejects invalid authorization', async () 
   assert.equal(response.status, 401);
   assert.equal((await response.json()).code, 'CUSTOMER_ORGANIC_HISTORY_UNAUTHORIZED');
 });
+
+test('Customer Organic history audit scopes day-by-video Analytics to a bounded D1 video batch', async () => {
+  let analyticsInput = null;
+  const emptyMetaAdapter = {
+    async fetchContentPage() { return { rows: [], hasMore: false, nextCursor: null }; },
+  };
+  const handler = createCustomerOrganicHistoryPreviewHttpHandler({
+    async digest() { return TOKEN_DIGEST; },
+    createMetaRuntime() {
+      return {
+        sources: { facebook: emptyMetaAdapter, instagram: emptyMetaAdapter },
+        mappings: { facebookPageId: 'page', instagramAccountId: 'instagram' },
+      };
+    },
+    async createYouTubeRuntimeClients() {
+      return {
+        ownerClient: {
+          async getChannel() { return { id: 'youtube-channel' }; },
+          async queryAnalytics(input) {
+            analyticsInput = input;
+            return {
+              columnHeaders: [{ name: 'day' }, { name: 'video' }],
+              rows: [['2026-06-20', 'video-a']],
+            };
+          },
+        },
+      };
+    },
+  });
+  const env = {
+    ...environment(),
+    YOUTUBE_CHANNEL_ID: 'youtube-channel',
+    MKT_STATE_DB: {
+      prepare(sql) {
+        return {
+          async all() {
+            if (sql.includes('SELECT external_content_id')) {
+              return { results: [{ external_content_id: 'video-a' }] };
+            }
+            return { results: [] };
+          },
+        };
+      },
+    },
+  };
+  const response = await handler({
+    request: request(),
+    env,
+    url: new URL(`https://preview.invalid${CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH}`),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(analyticsInput.filters, 'video==video-a');
+  assert.equal(body.result.providers.youtube.sampledVideos, 1);
+  assert.equal(body.result.providers.youtube.analyticsRows, 1);
+  assert.equal(body.result.providers.youtube.earliestMetricDate, '2026-06-20');
+  assert.equal(body.result.providers.youtube.exactHistoricalContentMetricsAvailable, true);
+});

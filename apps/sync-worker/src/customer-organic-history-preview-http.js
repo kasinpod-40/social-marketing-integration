@@ -16,6 +16,7 @@ const MAX_BODY_BYTES = 16_384;
 const MAX_META_PAGES = 25;
 const MAX_ANALYTICS_PAGES = 100;
 const ANALYTICS_PAGE_SIZE = 200;
+const ANALYTICS_VIDEO_BATCH_SIZE = 50;
 
 /** Preview-only, GET-only source capability audit for the exact Customer PROD runtime. */
 export function createCustomerOrganicHistoryPreviewHttpHandler(dependencies = {}) {
@@ -86,6 +87,7 @@ export async function auditCustomerOrganicHistory(input = {}) {
       env: input.env,
       runtime: input.runtime,
       period: input.period,
+      db: input.env.MKT_STATE_DB,
       youtubeRuntimeFactory: input.youtubeRuntimeFactory,
     }),
     readD1Coverage(input.env.MKT_STATE_DB),
@@ -189,7 +191,7 @@ function summarizeMetaInsights(rows) {
   });
 }
 
-async function auditYouTube({ env, runtime, period, youtubeRuntimeFactory }) {
+async function auditYouTube({ env, runtime, period, db, youtubeRuntimeFactory }) {
   const channelId = readYouTubeChannelIdFromEnv(env);
   const clients = await youtubeRuntimeFactory(env, {
     publicApiKeyOnly: false,
@@ -206,6 +208,19 @@ async function auditYouTube({ env, runtime, period, youtubeRuntimeFactory }) {
     throw operatorError('YouTube Owner identity differs from the Customer allowlist',
       'CUSTOMER_ORGANIC_HISTORY_IDENTITY_MISMATCH', { platform: 'youtube' });
   }
+  const auditVideoIds = await readYouTubeAuditVideoIds(db);
+  if (auditVideoIds.length === 0) {
+    return deepFreeze({
+      sourceRead: true,
+      ownerIdentityMatched: true,
+      sampledVideos: 0,
+      analyticsRows: 0,
+      distinctVideos: 0,
+      earliestMetricDate: null,
+      latestMetricDate: null,
+      exactHistoricalContentMetricsAvailable: false,
+    });
+  }
   let startIndex = 1;
   let rowCount = 0;
   let earliestDate = null;
@@ -218,6 +233,7 @@ async function auditYouTube({ env, runtime, period, youtubeRuntimeFactory }) {
       endDate: period.until,
       dimensions: 'day,video',
       metrics: 'views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration',
+      filters: `video==${auditVideoIds.join(',')}`,
       sort: 'day,video',
       maxResults: ANALYTICS_PAGE_SIZE,
       startIndex,
@@ -241,6 +257,7 @@ async function auditYouTube({ env, runtime, period, youtubeRuntimeFactory }) {
       return deepFreeze({
         sourceRead: true,
         ownerIdentityMatched: true,
+        sampledVideos: auditVideoIds.length,
         analyticsRows: rowCount,
         distinctVideos: videoIds.size,
         earliestMetricDate: earliestDate,
@@ -255,6 +272,20 @@ async function auditYouTube({ env, runtime, period, youtubeRuntimeFactory }) {
       platform: 'youtube',
       maxPages: MAX_ANALYTICS_PAGES,
     });
+}
+
+async function readYouTubeAuditVideoIds(db) {
+  const result = await db.prepare(`
+    SELECT external_content_id
+    FROM organic_content_observations
+    WHERE customer_key = 'chemistry_k' AND account_key = 'chemistry_k'
+      AND platform = 'youtube'
+    GROUP BY external_content_id
+    ORDER BY MIN(metric_date) ASC, external_content_id ASC
+    LIMIT ${ANALYTICS_VIDEO_BATCH_SIZE}
+  `).all();
+  const rows = Array.isArray(result) ? result : (result?.results ?? []);
+  return rows.map((row) => String(row?.external_content_id ?? '').trim()).filter(Boolean);
 }
 
 async function readD1Coverage(db) {
