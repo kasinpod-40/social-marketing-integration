@@ -1680,3 +1680,18 @@ child identity after reviewed merge/deploy.
 - the normal Weekly Report and Notification schedules remain enabled for Monday `09:15` and `09:30`
   Asia/Bangkok, respectively. The high-coverage TikTok subtotal is now eligible for controlled AI evidence while
   still being labelled partial and without an invented comparison.
+
+### 2026-09-14 — Customer Organic history source audit
+
+- Customer PROD D1 proves `MKT_Content_Daily` source coverage currently starts at `2026-06-30` for Facebook and
+  Instagram, `2026-07-24` for TikTok and `2026-07-28` for YouTube; no existing business row is eligible for deletion
+  or replacement during this repair;
+- PR #836 merged as `main@95bf6043` with an isolated GET-only Preview audit for the exact Customer PROD authority.
+  The Preview performs zero provider, D1 or Lark writes and always restores Preview URLs disabled without changing
+  Production traffic;
+- the first live audit exposed a YouTube Analytics request-contract defect before any mutation: `day,video` reports
+  require an explicit bounded video filter. The audit now derives at most 50 proven Customer video identities from
+  D1 and applies the same filter contract used by the normal YouTube sync;
+- live source capability readback remains required before any historical row is materialized. Historical values must
+  come from provider truth; current totals must never be copied into earlier dates, and unavailable metrics remain
+  `null` rather than fabricated zeroes.
