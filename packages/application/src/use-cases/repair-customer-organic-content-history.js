@@ -237,8 +237,6 @@ export async function buildCustomerOrganicHistoryRows(input = {}) {
       account_id: sourceAccountId,
       external_content_id: externalContentId,
       ...values,
-      fetched_at: FETCHED_AT,
-      sync_run_id: syncRunId,
     }));
   }
 
