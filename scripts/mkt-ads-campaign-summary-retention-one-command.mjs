@@ -43,6 +43,7 @@ const execute = process.argv.includes('--execute');
 const organicDateRepair = process.argv.includes('--organic-date-repair');
 const organicHistoryAudit = process.argv.includes('--organic-history-audit');
 const organicHistoryRepair = process.argv.includes('--organic-history-repair');
+const organicHistoryPlatform = readOption('--organic-history-platform');
 
 let runtimeRoot = null;
 let target = null;
@@ -83,6 +84,12 @@ if (primaryError || restoreError) {
 async function main() {
   if ([organicDateRepair, organicHistoryAudit, organicHistoryRepair].filter(Boolean).length > 1) {
     throw operatorError('Organic date, history audit and history repair modes are mutually exclusive',
+      'MKT_ADS_PROD_ARGUMENT_INVALID');
+  }
+  if (organicHistoryPlatform !== null
+    && (!organicHistoryRepair
+      || !Object.hasOwn(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE, organicHistoryPlatform))) {
+    throw operatorError('Organic history platform selector is outside the reviewed repair scope',
       'MKT_ADS_PROD_ARGUMENT_INVALID');
   }
   const confirmation = organicDateRepair
@@ -220,7 +227,9 @@ async function runOrganicHistoryRepair(input) {
   };
   const previewBatches = [];
   const dateResults = [];
-  const platforms = Object.keys(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE);
+  const platforms = organicHistoryPlatform
+    ? [organicHistoryPlatform]
+    : Object.keys(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE);
   for (const platform of platforms) {
     const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
     const dates = input.execute
@@ -323,6 +332,16 @@ function dateRange(start, end) {
 function shiftDate(value, days) {
   return new Date(Date.parse(`${value}T00:00:00.000Z`) + days * 86_400_000)
     .toISOString().slice(0, 10);
+}
+
+function readOption(name) {
+  const prefix = `${name}=`;
+  const values = process.argv.filter((value) => value.startsWith(prefix));
+  if (values.length === 0) return null;
+  if (values.length !== 1 || values[0].slice(prefix.length).trim() === '') {
+    throw operatorError(`${name} must be provided exactly once`, 'MKT_ADS_PROD_ARGUMENT_INVALID');
+  }
+  return values[0].slice(prefix.length).trim();
 }
 
 function buildPreviewConfig(configInput, tokenSha256) {
