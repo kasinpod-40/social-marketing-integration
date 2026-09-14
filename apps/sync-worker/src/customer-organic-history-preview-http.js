@@ -16,7 +16,7 @@ const MAX_BODY_BYTES = 16_384;
 const MAX_META_PAGES = 25;
 const MAX_ANALYTICS_PAGES = 100;
 const ANALYTICS_PAGE_SIZE = 200;
-const ANALYTICS_VIDEO_BATCH_SIZE = 50;
+const ANALYTICS_VIDEO_SAMPLE_SIZE = 1;
 
 /** Preview-only, GET-only source capability audit for the exact Customer PROD runtime. */
 export function createCustomerOrganicHistoryPreviewHttpHandler(dependencies = {}) {
@@ -71,25 +71,25 @@ export async function auditCustomerOrganicHistory(input = {}) {
     META_MAX_PAGES: String(MAX_META_PAGES),
   });
   const [facebook, instagram, youtube, d1] = await Promise.all([
-    auditMetaPlatform({
+    auditProviderSafely('facebook', () => auditMetaPlatform({
       platform: 'facebook',
       adapter: meta.sources.facebook,
       sourceAccountId: meta.mappings.facebookPageId,
       period: input.period,
-    }),
-    auditMetaPlatform({
+    })),
+    auditProviderSafely('instagram', () => auditMetaPlatform({
       platform: 'instagram',
       adapter: meta.sources.instagram,
       sourceAccountId: meta.mappings.instagramAccountId,
       period: input.period,
-    }),
-    auditYouTube({
+    })),
+    auditProviderSafely('youtube', () => auditYouTube({
       env: input.env,
       runtime: input.runtime,
       period: input.period,
       db: input.env.MKT_STATE_DB,
       youtubeRuntimeFactory: input.youtubeRuntimeFactory,
-    }),
+    })),
     readD1Coverage(input.env.MKT_STATE_DB),
   ]);
   return deepFreeze({
@@ -102,6 +102,21 @@ export async function auditCustomerOrganicHistory(input = {}) {
     providers: { facebook, instagram, tiktok: tiktokCapability(d1), youtube },
     d1,
   });
+}
+
+async function auditProviderSafely(platform, audit) {
+  try {
+    return await audit();
+  } catch (error) {
+    const operational = sanitizeOperationalError(error);
+    return deepFreeze({
+      sourceRead: false,
+      platform,
+      errorCode: operational.code ?? 'CUSTOMER_ORGANIC_HISTORY_PROVIDER_FAILED',
+      retryable: operational.retryable === true,
+      details: operational.details ?? {},
+    });
+  }
 }
 
 async function auditMetaPlatform({ platform, adapter, sourceAccountId, period }) {
@@ -214,6 +229,7 @@ async function auditYouTube({ env, runtime, period, db, youtubeRuntimeFactory })
       sourceRead: true,
       ownerIdentityMatched: true,
       sampledVideos: 0,
+      sampledMetrics: ['views'],
       analyticsRows: 0,
       distinctVideos: 0,
       earliestMetricDate: null,
@@ -232,7 +248,7 @@ async function auditYouTube({ env, runtime, period, db, youtubeRuntimeFactory })
       startDate: period.since,
       endDate: period.until,
       dimensions: 'day,video',
-      metrics: 'views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration',
+      metrics: 'views',
       filters: `video==${auditVideoIds.join(',')}`,
       sort: 'day,video',
       maxResults: ANALYTICS_PAGE_SIZE,
@@ -258,6 +274,7 @@ async function auditYouTube({ env, runtime, period, db, youtubeRuntimeFactory })
         sourceRead: true,
         ownerIdentityMatched: true,
         sampledVideos: auditVideoIds.length,
+        sampledMetrics: ['views'],
         analyticsRows: rowCount,
         distinctVideos: videoIds.size,
         earliestMetricDate: earliestDate,
@@ -275,16 +292,15 @@ async function auditYouTube({ env, runtime, period, db, youtubeRuntimeFactory })
 }
 
 async function readYouTubeAuditVideoIds(db) {
-  const result = await db.prepare(`
+  const stateResult = await db.prepare(`
     SELECT external_content_id
-    FROM organic_content_observations
+    FROM organic_content_state
     WHERE customer_key = 'chemistry_k' AND account_key = 'chemistry_k'
-      AND platform = 'youtube'
-    GROUP BY external_content_id
-    ORDER BY MIN(metric_date) ASC, external_content_id ASC
-    LIMIT ${ANALYTICS_VIDEO_BATCH_SIZE}
+      AND platform = 'youtube' AND published_at IS NOT NULL
+    ORDER BY published_at ASC, external_content_id ASC
+    LIMIT ${ANALYTICS_VIDEO_SAMPLE_SIZE}
   `).all();
-  const rows = Array.isArray(result) ? result : (result?.results ?? []);
+  const rows = Array.isArray(stateResult) ? stateResult : (stateResult?.results ?? []);
   return rows.map((row) => String(row?.external_content_id ?? '').trim()).filter(Boolean);
 }
 

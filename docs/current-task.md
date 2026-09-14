@@ -1690,8 +1690,11 @@ child identity after reviewed merge/deploy.
   The Preview performs zero provider, D1 or Lark writes and always restores Preview URLs disabled without changing
   Production traffic;
 - the first live audit exposed a YouTube Analytics request-contract defect before any mutation: `day,video` reports
-  require an explicit bounded video filter. The audit now derives at most 50 proven Customer video identities from
-  D1 and applies the same filter contract used by the normal YouTube sync;
+  require an explicit bounded video filter. The audit derives a proven Customer video identity from D1 and applies
+  the same filter contract used by the normal YouTube sync;
+- two filtered live attempts then received repeatable upstream `500 internalError`. The audit now samples only the
+  oldest proven Customer video and the `views` metric, and records a sanitized per-provider failure without discarding
+  successful Meta evidence. This is diagnostic only and does not weaken any mutation gate;
 - live source capability readback remains required before any historical row is materialized. Historical values must
   come from provider truth; current totals must never be copied into earlier dates, and unavailable metrics remain
   `null` rather than fabricated zeroes.

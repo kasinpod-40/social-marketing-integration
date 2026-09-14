@@ -126,7 +126,7 @@ test('Customer Organic history Preview rejects invalid authorization', async () 
   assert.equal((await response.json()).code, 'CUSTOMER_ORGANIC_HISTORY_UNAUTHORIZED');
 });
 
-test('Customer Organic history audit scopes day-by-video Analytics to a bounded D1 video batch', async () => {
+test('Customer Organic history audit scopes day-by-video Analytics to one oldest D1-proven video', async () => {
   let analyticsInput = null;
   const emptyMetaAdapter = {
     async fetchContentPage() { return { rows: [], hasMore: false, nextCursor: null }; },
@@ -182,4 +182,58 @@ test('Customer Organic history audit scopes day-by-video Analytics to a bounded 
   assert.equal(body.result.providers.youtube.analyticsRows, 1);
   assert.equal(body.result.providers.youtube.earliestMetricDate, '2026-06-20');
   assert.equal(body.result.providers.youtube.exactHistoricalContentMetricsAvailable, true);
+});
+
+test('Customer Organic history audit preserves other provider evidence when YouTube is transient', async () => {
+  const emptyMetaAdapter = {
+    async fetchContentPage() { return { rows: [], hasMore: false, nextCursor: null }; },
+  };
+  const handler = createCustomerOrganicHistoryPreviewHttpHandler({
+    async digest() { return TOKEN_DIGEST; },
+    createMetaRuntime() {
+      return {
+        sources: { facebook: emptyMetaAdapter, instagram: emptyMetaAdapter },
+        mappings: { facebookPageId: 'page', instagramAccountId: 'instagram' },
+      };
+    },
+    async createYouTubeRuntimeClients() {
+      return {
+        ownerClient: {
+          async getChannel() { return { id: 'youtube-channel' }; },
+          async queryAnalytics() {
+            const error = new Error('temporary');
+            error.code = 'YOUTUBE_TRANSIENT_API_ERROR';
+            error.retryable = true;
+            throw error;
+          },
+        },
+      };
+    },
+  });
+  const env = {
+    ...environment(),
+    YOUTUBE_CHANNEL_ID: 'youtube-channel',
+    MKT_STATE_DB: {
+      prepare(sql) {
+        return {
+          async all() {
+            return sql.includes('SELECT external_content_id')
+              ? { results: [{ external_content_id: 'video-a' }] }
+              : { results: [] };
+          },
+        };
+      },
+    },
+  };
+  const response = await handler({
+    request: request(),
+    env,
+    url: new URL(`https://preview.invalid${CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH}`),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.result.providers.facebook.sourceRead, true);
+  assert.equal(body.result.providers.instagram.sourceRead, true);
+  assert.equal(body.result.providers.youtube.sourceRead, false);
+  assert.equal(body.result.providers.youtube.errorCode, 'YOUTUBE_TRANSIENT_API_ERROR');
 });
