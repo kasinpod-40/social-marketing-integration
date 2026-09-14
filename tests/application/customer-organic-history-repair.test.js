@@ -205,6 +205,51 @@ test('history repair fails closed on active Production work before reading a pro
   }
 });
 
+test('Facebook empty exact-date result exposes only bounded date/period diagnostics', async () => {
+  const runtime = await createRuntime();
+  try {
+    seedContentState(runtime.d1, {
+      platform: 'facebook', sourceAccountId: FACEBOOK_ACCOUNT,
+      externalContentId: 'post-1', publishedAt: '2026-06-19',
+    });
+    await assert.rejects(
+      () => repairCustomerOrganicContentHistoryBatch({
+        execute: false,
+        platform: 'facebook',
+        metricDate: '2026-06-19',
+        batchIndex: 0,
+        db: runtime.d1,
+        store: runtime.store,
+        repository: runtime.lark.repository,
+        syncEngine: new TableSyncEngine(),
+        tableId: 'content-daily',
+        facebookSource: {
+          async fetchContentInsightsPage() {
+            return {
+              rows: [{
+                name: 'post_media_view', period: 'lifetime',
+                values: [{ value: 123, end_time: '2026-06-20T00:00:00+0000' }],
+              }],
+            };
+          },
+        },
+      }),
+      (error) => {
+        assert.equal(error?.code, 'CUSTOMER_ORGANIC_HISTORY_SOURCE_METRICS_EMPTY');
+        assert.deepEqual(error?.details?.sourceDiagnostics, {
+          returnedDates: [['2026-06-20', 1]],
+          returnedPeriods: [['lifetime', 1]],
+        });
+        assert.equal(JSON.stringify(error.details).includes('post-1'), false);
+        assert.equal(JSON.stringify(error.details).includes('123'), false);
+        return true;
+      },
+    );
+  } finally {
+    runtime.d1.close();
+  }
+});
+
 async function createRuntime() {
   const d1 = createSqliteD1();
   d1.exec(await readFile(MIGRATION_URL, 'utf8'));

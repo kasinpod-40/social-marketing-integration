@@ -64,6 +64,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     throw repairError('Historical provider returned no metric rows for a non-empty D1 scope',
       'CUSTOMER_ORGANIC_HISTORY_SOURCE_METRICS_EMPTY', {
         platform, metricDate, batchIndex, scopedContent: state.rows.length,
+        sourceDiagnostics: metrics.diagnostics ?? {},
       });
   }
   const rows = await buildCustomerOrganicHistoryRows({
@@ -328,6 +329,8 @@ async function loadStateBatch(db, input) {
 async function loadFacebookMetrics(source, states, metricDate) {
   requireMethods(source, ['fetchContentInsightsPage'], 'facebookSource');
   const metrics = new Map();
+  const returnedDates = new Map();
+  const returnedPeriods = new Map();
   let observed = 0;
   for (const state of states) {
     const externalContentId = requireText(state.external_content_id, 'external_content_id');
@@ -340,6 +343,12 @@ async function loadFacebookMetrics(source, states, metricDate) {
     const row = emptyMetrics();
     for (const insight of response?.rows ?? []) {
       const name = String(insight?.name ?? '').toLowerCase();
+      const period = String(insight?.period ?? 'unknown');
+      returnedPeriods.set(period, (returnedPeriods.get(period) ?? 0) + 1);
+      for (const value of insight?.values ?? []) {
+        const returnedDate = dateFromMetaEndTime(value?.end_time);
+        if (returnedDate) returnedDates.set(returnedDate, (returnedDates.get(returnedDate) ?? 0) + 1);
+      }
       const target = (insight?.values ?? []).find((value) => (
         dateFromMetaEndTime(value?.end_time) === metricDate
       ));
@@ -352,7 +361,15 @@ async function loadFacebookMetrics(source, states, metricDate) {
     if (row.views !== null || row.unique_viewers !== null) observed += 1;
     metrics.set(externalContentId, Object.freeze(row));
   }
-  return Object.freeze({ values: metrics, observed, get size() { return metrics.size; } });
+  return Object.freeze({
+    values: metrics,
+    observed,
+    diagnostics: Object.freeze({
+      returnedDates: Object.freeze([...returnedDates.entries()].slice(0, 10)),
+      returnedPeriods: Object.freeze([...returnedPeriods.entries()].slice(0, 10)),
+    }),
+    get size() { return metrics.size; },
+  });
 }
 
 async function loadYouTubeMetrics(ownerClient, states, metricDate) {
