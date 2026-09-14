@@ -24,12 +24,13 @@ test('Facebook history repair writes exact provider facts to D1/Lark and reruns 
           pageId: FACEBOOK_ACCOUNT,
           contentId: 'post-1',
           since: '2026-06-19',
-          until: '2026-06-19',
+          until: '2026-06-20',
         });
         return {
           rows: [
-            { name: 'post_media_view', values: [{ value: 123, end_time: '2026-06-19T12:00:00+07:00' }] },
-            { name: 'post_total_media_view_unique', values: [{ value: 100, end_time: '2026-06-19T12:00:00+07:00' }] },
+            { name: 'post_media_view', period: 'day', values: [{ value: 123, end_time: '2026-06-19T12:00:00+07:00' }] },
+            { name: 'post_total_media_view_unique', period: 'day', values: [{ value: 100, end_time: '2026-06-19T12:00:00+07:00' }] },
+            { name: 'post_media_view', period: 'lifetime', values: [{ value: 999 }] },
           ],
         };
       },
@@ -227,7 +228,7 @@ test('Facebook empty exact-date result exposes only bounded date/period diagnost
           async fetchContentInsightsPage() {
             return {
               rows: [{
-                name: 'post_media_view', period: 'lifetime',
+                name: 'post_media_view', period: 'day',
                 values: [{ value: 123, end_time: '2026-06-20T00:00:00+0000' }],
               }],
             };
@@ -238,7 +239,7 @@ test('Facebook empty exact-date result exposes only bounded date/period diagnost
         assert.equal(error?.code, 'CUSTOMER_ORGANIC_HISTORY_SOURCE_METRICS_EMPTY');
         assert.deepEqual(error?.details?.sourceDiagnostics, {
           returnedDates: [['2026-06-20', 1]],
-          returnedPeriods: [['lifetime', 1]],
+          returnedPeriods: [['day', 1]],
         });
         assert.equal(JSON.stringify(error.details).includes('post-1'), false);
         assert.equal(JSON.stringify(error.details).includes('123'), false);

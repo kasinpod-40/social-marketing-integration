@@ -338,7 +338,8 @@ async function loadFacebookMetrics(source, states, metricDate) {
       pageId: CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE.facebook.sourceAccountId,
       contentId: externalContentId,
       since: metricDate,
-      until: metricDate,
+      // Graph Insights treats `until` as an exclusive boundary for day-period values.
+      until: shiftDate(metricDate, 1),
     });
     const row = emptyMetrics();
     for (const insight of response?.rows ?? []) {
@@ -349,6 +350,7 @@ async function loadFacebookMetrics(source, states, metricDate) {
         const returnedDate = dateFromMetaEndTime(value?.end_time);
         if (returnedDate) returnedDates.set(returnedDate, (returnedDates.get(returnedDate) ?? 0) + 1);
       }
+      if (period !== 'day') continue;
       const target = (insight?.values ?? []).find((value) => (
         dateFromMetaEndTime(value?.end_time) === metricDate
       ));
