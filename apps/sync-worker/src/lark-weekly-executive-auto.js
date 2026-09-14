@@ -16,6 +16,9 @@ import {
   buildReportTopAdsRows,
   buildReportTopContentRows,
 } from '../../../packages/application/src/reports/build-report-output-rows.js';
+import {
+  repairLarkWeeklyExecutiveFullChannelAiOutputs,
+} from '../../../packages/application/src/reports/build-lark-weekly-executive-full-channel-ai-evidence.js';
 import { addDaysDateOnly } from '../../../packages/application/src/reports/report-period.js';
 import {
   createReportId,
@@ -156,9 +159,14 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
           generatedRecord: retainedGeneratedRecord,
           synthesis,
         });
-        const accepted = assertGenerated(retainedGeneratedRecord.fields, retainedExpected);
+        const acceptedSource = acceptGeneratedWeeklyRecord({
+          record: retainedGeneratedRecord,
+          expected: retainedExpected,
+          assertGenerated,
+        });
+        const accepted = acceptedSource.accepted;
         const admission = buildAdmission({
-          sourceRecord: retainedGeneratedRecord,
+          sourceRecord: acceptedSource.record,
           acceptedEvidence: {
             factualReportSha256: synthesis.factualReportSha256,
             period: synthesis.factualReport.period,
@@ -295,12 +303,14 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
         mainQueueAttempts,
         maximumAttempts,
       });
-      const accepted = assertGenerated(
-        generatedRecord.fields,
-        synthesis,
-      );
+      const acceptedSource = acceptGeneratedWeeklyRecord({
+        record: generatedRecord,
+        expected: synthesis,
+        assertGenerated,
+      });
+      const accepted = acceptedSource.accepted;
       const admission = buildAdmission({
-        sourceRecord: generatedRecord,
+        sourceRecord: acceptedSource.record,
         synthesis,
       });
       return await finishAutomaticWeeklyExecutive({
@@ -321,6 +331,32 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
       throw error;
     }
   };
+}
+
+export function acceptGeneratedWeeklyRecord({ record, expected, assertGenerated }) {
+  try {
+    return Object.freeze({
+      record,
+      accepted: assertGenerated(record.fields, expected),
+      repairCode: null,
+    });
+  } catch (error) {
+    if (error?.code !== 'LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED') throw error;
+    const repaired = repairLarkWeeklyExecutiveFullChannelAiOutputs(
+      error?.details?.outputs ?? {},
+      expected?.evidence?.evidence ?? {},
+    );
+    if (repaired.repaired !== true) throw error;
+    const repairedRecord = Object.freeze({
+      ...record,
+      fields: Object.freeze({ ...record.fields, ...repaired.outputs }),
+    });
+    return Object.freeze({
+      record: repairedRecord,
+      accepted: assertGenerated(repairedRecord.fields, expected),
+      repairCode: repaired.repairCode,
+    });
+  }
 }
 
 function bindRetainedGeneratedEvidence({ generatedRecord, synthesis }) {

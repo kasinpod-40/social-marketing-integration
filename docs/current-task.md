@@ -73,6 +73,24 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Active repair — Customer Weekly AI recommendation quality (2026-09-14)
+
+- Customer PROD Weekly Reports for `2026-09-07..2026-09-13` completed across all eight active channels, while
+  the automatic Executive Work `lark_notification:weekly-executive-auto-20260913` stopped before Notification
+  admission with `LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED`;
+- an isolated read-only Preview version proved the exact generated row has all four outputs and only two
+  violations: `recommendations_missing_action_detail` and `recommendations_unsupported_no_scale`. It performed
+  zero D1/Lark writes, zero Queue admissions and zero message sends, restored Preview URLs disabled, and left
+  Production version `85f50869-3a7c-4d89-ab75-4e9994c7a8bd` unchanged;
+- the bounded repair removes an unsupported `[NO-SCALE]` line only when the retained evidence has no Funnel
+  divergence, completes only missing decision-action wording from retained candidate/comparison evidence, and
+  admits the in-memory projection only after the unchanged full quality gate passes with zero violations;
+- the generated Lark AI row, its Work/generation, Report identities and Business evidence remain immutable.
+  Any unrelated quality failure still fails closed. Live proof against the exact retained row passes the repaired
+  gate with `violations=[]`;
+- remaining closeout is reviewed PR/CI, Customer PROD deploy, one guarded same-generation recovery after lock-zero,
+  and exact one sent+mirrored Group delivery with zero duplicate sends.
+
 Latest user authority on 2026-08-23 confirms that the source accounts, source data, and connector
 credentials used in the Integration Workspace are already customer assets. Customer Production is
 therefore a runtime cutover to the customer-owned Cloudflare resources and customer Lark Base, not
