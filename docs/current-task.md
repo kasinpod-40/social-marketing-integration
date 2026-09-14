@@ -85,10 +85,15 @@ enable and verify one connector schedule at a time before Report/AI/Notification
 - the repair first adds an isolated, authenticated Preview-only source capability audit. It binds only the exact
   Customer PROD D1/Lark authority, performs GET-only Meta/YouTube reads, returns aggregates without source IDs or
   credentials, and has no Queue, schedule, D1 or Lark mutation path;
-- after reviewed merge, the source audit must prove which historical metrics are genuinely available from each
-  provider. The subsequent repair may write only exact provider facts or explicit `null` for unavailable metrics;
-  copying current cumulative counters into past dates is forbidden. Final completion still requires D1/Lark
-  readback, stable-key reconciliation and an idempotent rerun for every repaired platform.
+- PR #836/#837/#838 and live GET-only readback prove Facebook daily Insights and YouTube cumulative Owner
+  Analytics are historical sources, while Instagram and the protected TikTok Native table are current-only;
+- the bounded implementation repairs Facebook `2026-06-19..2026-06-29` into D1/Lark and YouTube
+  `2026-06-19..2026-07-27` into durable D1 only. The roughly 32,500-row YouTube interval is intentionally not
+  copied into the bounded Lark compatibility cache. It uses 50-row requests, active-lock fencing, Stable keys,
+  create-only Lark semantics, exact readback and completed-batch no-op reruns;
+- focused regression `14/14`, `npm run check`, full Node `3,376/3,376`, Workers-runtime `18/18`, Report
+  reliability, zero-vulnerability audit, deploy dry-run and `git diff --check` pass. Reviewed merge and controlled
+  Customer PROD execution/readback remain required for final completion.
 
 ### Implementation result — Customer Weekly AI recommendation quality (2026-09-14)
 
@@ -1695,6 +1700,22 @@ child identity after reviewed merge/deploy.
 - two filtered live attempts then received repeatable upstream `500 internalError`. The audit now samples only the
   oldest proven Customer video and the `views` metric, and records a sanitized per-provider failure without discarding
   successful Meta evidence. This is diagnostic only and does not weaken any mutation gate;
-- live source capability readback remains required before any historical row is materialized. Historical values must
-  come from provider truth; current totals must never be copied into earlier dates, and unavailable metrics remain
-  `null` rather than fabricated zeroes.
+- live source capability readback is complete. Historical values must come from provider truth; current totals must
+  never be copied into earlier dates, and unavailable metrics remain `null` rather than fabricated zeroes.
+
+### 2026-09-14 — Customer Organic history bounded repair
+
+- live GET-only evidence now proves exact historical daily values are available for Facebook Page Insights and
+  YouTube Owner Analytics. Instagram returns only current lifetime values, while the protected TikTok Native table
+  is a current snapshot; neither unsupported source is eligible for an invented historical backfill;
+- the reviewed repair scope is create-only and exact: Facebook `2026-06-19..2026-06-29` writes D1 and the bounded
+  `MKT_Content_Daily` cache, while YouTube `2026-06-19..2026-07-27` writes the complete durable D1 history only;
+- Production sizing proves the YouTube interval contains about `32,500` content-day observations. Expanding all of
+  them into the already bounded Lark cache would exceed its safe capacity, so D1 remains the report/history
+  authority and normal Daily retention continues to own the customer-facing Lark cache;
+- each request is bounded to 50 Content identities, rechecks that Production has zero active sync locks before
+  every write boundary, verifies Provider identity, writes Stable keys, performs exact D1/Lark readback, rejects
+  conflicting existing Lark rows, and turns a completed batch rerun into a no-op;
+- the operator uses an isolated Preview-only Worker version, exact Customer PROD bindings and confirmation, leaves
+  Production traffic/version unchanged, and restores Preview URLs disabled. Focused regression is `14/14` and
+  `npm run check` passes; full gates, reviewed merge, live preview and controlled PROD execution remain pending.

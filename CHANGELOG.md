@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-14 — Customer Organic exact history repair
+
+- added a create-only, 50-row bounded Customer PROD repair for exact Facebook daily Insights from
+  `2026-06-19..2026-06-29` and YouTube cumulative video views from `2026-06-19..2026-07-27`;
+- writes Facebook to D1 and the bounded `MKT_Content_Daily` cache, while retaining the roughly 32,500-row YouTube
+  interval in durable D1 only so the customer Lark table cannot be overfilled;
+- rejects Instagram/TikTok historical mutation because their current sources do not expose exact historical
+  snapshots, preserves missing metrics as null and fences every write on zero active Production locks;
+- added isolated Preview-only execution, exact Customer authority/confirmation, stable-key reconciliation,
+  D1/Lark readback and completed-batch no-op reruns without changing Production Worker traffic or schedules.
+
 ## 2026-09-14 — Customer Weekly AI bounded recommendation repair
 
 - added an isolated read-only Customer Weekly diagnostic that returns only retained identity hashes, output

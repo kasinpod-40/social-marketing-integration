@@ -1412,6 +1412,20 @@ stale and was not copied. The temporary Customer importer mode is disabled after
 - Secrets stay in Environment/Secret Manager;
 - Production resources must be customer-owned.
 
+## Customer Organic history bounded repair — 2026-09-14
+
+Customer PROD source evidence separates repairable history from current-only sources. Facebook Page Insights can
+return exact daily values and YouTube Owner Analytics can return exact cumulative views by video/date. Instagram
+exposes current lifetime totals only, and the protected TikTok Native table is a current snapshot; historical rows
+must not be synthesized for either source.
+
+The exact repair therefore creates Facebook history for `2026-06-19..2026-06-29` in D1 and
+`MKT_Content_Daily`, and YouTube history for `2026-06-19..2026-07-27` in durable D1. The latter is intentionally
+D1-only because the interval is about 32,500 content-day rows and `MKT_Content_Daily` is a bounded compatibility
+cache, not the permanent history store. Every 50-row batch uses Provider-proven values, stable identities,
+create-only semantics, active-lock fencing and exact readback. Unavailable metrics remain `null`; no old business
+row, protected TikTok source, schedule, Queue or Production Worker traffic is changed.
+
 ## WooCommerce Production readiness promotion — 2026-09-08
 
 WooCommerce Customer Production UAT and its incremental reconciliation completed on 2026-08-31, but the central

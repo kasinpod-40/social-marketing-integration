@@ -27,6 +27,11 @@ Organic daily contract แยก “วันข้อมูล” ออกจ�
 Bangkok ที่จบสมบูรณ์ล่าสุด ส่วน `MKT_Accounts.last_sync_at` ใช้เวลาของ Work ที่เขียนปลายทางสำเร็จ
 และคงค่าเดิมตลอด retry ของ Work เดียวกัน.
 
+ประวัติ Organic แบบย้อนหลังใช้ข้อมูลที่ Provider พิสูจน์ได้เท่านั้น: Facebook ซ่อมลง D1/Lark ได้ และ
+YouTube เก็บช่วงขนาดใหญ่ใน D1 ซึ่งเป็นแหล่งประวัติถาวร โดยไม่ยัดทุก content-day เข้า
+`MKT_Content_Daily` ที่เป็น bounded cache. Instagram และ TikTok ไม่มี historical snapshot ใน Source ปัจจุบัน
+จึงไม่คัดลอกยอดปัจจุบันไปใส่วันเก่าหรือเติมศูนย์แทนข้อมูลที่ไม่มี.
+
 ## Read first
 
 ```text

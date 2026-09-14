@@ -6,6 +6,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE } from '../packages/application/src/use-cases/repair-customer-organic-content-history.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 import { loadSharedTableSchemaContract } from './lib/shared-table-schema-contract.js';
@@ -22,6 +23,7 @@ import {
 
 const CONFIRMATION = 'APPLY_CUSTOMER_PROD_ADS_SUMMARY_RETENTION';
 const ORGANIC_DATE_CONFIRMATION = 'APPLY_CUSTOMER_PROD_ORGANIC_DATE_REPAIR';
+const ORGANIC_HISTORY_REPAIR_CONFIRMATION = 'APPLY_CUSTOMER_PROD_ORGANIC_HISTORY_REPAIR';
 const ACCOUNT_ID = '154f6bf72740d29d7453cec7fb800d32';
 const WORKER = 'social-mkt-sync-worker';
 const DATABASE = 'social-mkt-state-prod';
@@ -40,6 +42,7 @@ const CONFIG_PATH = resolve(
 const execute = process.argv.includes('--execute');
 const organicDateRepair = process.argv.includes('--organic-date-repair');
 const organicHistoryAudit = process.argv.includes('--organic-history-audit');
+const organicHistoryRepair = process.argv.includes('--organic-history-repair');
 
 let runtimeRoot = null;
 let target = null;
@@ -78,11 +81,13 @@ if (primaryError || restoreError) {
 }
 
 async function main() {
-  if (organicDateRepair && organicHistoryAudit) {
-    throw operatorError('Organic date repair and history audit modes are mutually exclusive',
+  if ([organicDateRepair, organicHistoryAudit, organicHistoryRepair].filter(Boolean).length > 1) {
+    throw operatorError('Organic date, history audit and history repair modes are mutually exclusive',
       'MKT_ADS_PROD_ARGUMENT_INVALID');
   }
-  const confirmation = organicDateRepair ? ORGANIC_DATE_CONFIRMATION : CONFIRMATION;
+  const confirmation = organicDateRepair
+    ? ORGANIC_DATE_CONFIRMATION
+    : organicHistoryRepair ? ORGANIC_HISTORY_REPAIR_CONFIRMATION : CONFIRMATION;
   if (execute && !organicHistoryAudit
     && process.env.CONFIRM_MKT_ADS_PROD_OPERATOR !== confirmation) {
     throw operatorError('Exact PROD confirmation is required', 'MKT_ADS_PROD_CONFIRMATION_REQUIRED');
@@ -118,7 +123,7 @@ async function main() {
   const accountSubdomain = await readAccountSubdomain(auth.token);
   const productionBaselineVersion = readActiveVersion(commandEnv, CONFIG_PATH);
   const token = randomBytes(48).toString('base64url');
-  const previewAlias = `${organicHistoryAudit
+  const previewAlias = `${organicHistoryAudit || organicHistoryRepair
     ? 'organic-history'
     : organicDateRepair ? 'organic-date' : 'ads-summary'}-${randomBytes(4).toString('hex')}`;
 
@@ -150,7 +155,7 @@ async function main() {
   await assertProductionVersionUnchanged();
 
   const operatorUrl = new URL(
-    organicHistoryAudit
+    organicHistoryAudit || organicHistoryRepair
       ? ORGANIC_HISTORY_PREVIEW_PATH
       : organicDateRepair ? ORGANIC_DATE_PREVIEW_PATH : PREVIEW_PATH,
     `${upload.previewOrigin}/`,
@@ -158,32 +163,20 @@ async function main() {
   const readiness = await waitForMktAdsPreviewRoute({ fetchImpl: fetch, url: operatorUrl.toString() });
   await assertProductionVersionUnchanged();
 
-  // Send the potentially mutating operator request exactly once. Only the GET readiness probe retries.
-  const response = await fetch(operatorUrl, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${token}`,
-      'content-type': 'application/json',
-      'cache-control': 'no-store',
-    },
-    body: JSON.stringify(organicHistoryAudit
-      ? { mode: 'audit', since: '2026-06-19', until: '2026-07-28' }
-      : organicDateRepair ? { mode: execute ? 'execute' : 'preview' }
-      : {
-        mode: execute ? 'execute' : 'preview',
-        contract: await loadSharedTableSchemaContract(),
-      }),
-    redirect: 'error',
-    signal: AbortSignal.timeout(execute ? 600_000 : 120_000),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || body?.ok !== true) {
-    throw operatorError(
-      `Preview operator failed with HTTP ${response.status}: ${body?.code ?? 'UNKNOWN'}: ${body?.error ?? 'Unknown error'}`,
-      body?.code ?? 'MKT_ADS_PREVIEW_HTTP_FAILED',
-      { status: response.status, operational: body?.details ?? {} },
-    );
-  }
+  const result = organicHistoryRepair
+    ? await runOrganicHistoryRepair({ operatorUrl, token, execute })
+    : await postOperator({
+      operatorUrl,
+      token,
+      body: organicHistoryAudit
+        ? { mode: 'audit', since: '2026-06-19', until: '2026-07-28' }
+        : organicDateRepair ? { mode: execute ? 'execute' : 'preview' }
+          : {
+            mode: execute ? 'execute' : 'preview',
+            contract: await loadSharedTableSchemaContract(),
+          },
+      timeoutMs: execute ? 600_000 : 120_000,
+    });
   await assertProductionVersionUnchanged();
   console.log(JSON.stringify({
     ok: true,
@@ -193,8 +186,143 @@ async function main() {
     productionTrafficChanged: false,
     previewVersion: upload.versionId,
     previewReadiness: readiness,
-    result: body.result,
+    result,
   }, null, 2));
+}
+
+async function postOperator(input) {
+  const response = await fetch(input.operatorUrl, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${input.token}`,
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+    },
+    body: JSON.stringify(input.body),
+    redirect: 'error',
+    signal: AbortSignal.timeout(input.timeoutMs),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.ok !== true) {
+    throw operatorError(
+      `Preview operator failed with HTTP ${response.status}: ${body?.code ?? 'UNKNOWN'}: ${body?.error ?? 'Unknown error'}`,
+      body?.code ?? 'MKT_ADS_PREVIEW_HTTP_FAILED',
+      { status: response.status, operational: body?.details ?? {} },
+    );
+  }
+  return body.result;
+}
+
+async function runOrganicHistoryRepair(input) {
+  const totals = {
+    requests: 0, dates: 0, d1Created: 0, d1Skipped: 0,
+    larkCreated: 0, larkSkipped: 0, providerRows: 0, sourceMetricRows: 0,
+  };
+  const previewBatches = [];
+  const dateResults = [];
+  const platforms = Object.keys(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE);
+  for (const platform of platforms) {
+    const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
+    const dates = input.execute
+      ? dateRange(scope.startDate, scope.endDate)
+      : [scope.startDate];
+    for (const metricDate of dates) {
+      let batchIndex = 0;
+      let hasMore = false;
+      const dateResult = {
+        platform, metricDate, requests: 0, providerRows: 0, sourceMetricRows: 0,
+        d1Created: 0, d1Skipped: 0, larkCreated: 0, larkSkipped: 0,
+      };
+      do {
+        if (batchIndex >= 100) {
+          throw operatorError('Organic history repair exceeded the reviewed batch limit',
+            'CUSTOMER_ORGANIC_HISTORY_BATCH_LIMIT');
+        }
+        const result = await postOperator({
+          operatorUrl: input.operatorUrl,
+          token: input.token,
+          body: {
+            mode: input.execute ? 'execute' : 'preview',
+            platform,
+            metricDate,
+            batchIndex,
+          },
+          timeoutMs: input.execute ? 600_000 : 120_000,
+        });
+        assertOrganicHistoryResult(result, { platform, metricDate, batchIndex, execute: input.execute });
+        totals.requests += 1;
+        totals.d1Created += Number(result.d1Created ?? 0);
+        totals.d1Skipped += Number(result.d1Skipped ?? 0);
+        totals.larkCreated += Number(result.larkCreated ?? 0);
+        totals.larkSkipped += Number(result.larkSkipped ?? 0);
+        totals.providerRows += Number(result.providerRows ?? 0);
+        totals.sourceMetricRows += Number(result.sourceMetricRows ?? 0);
+        dateResult.requests += 1;
+        dateResult.providerRows += Number(result.providerRows ?? 0);
+        dateResult.sourceMetricRows += Number(result.sourceMetricRows ?? 0);
+        dateResult.d1Created += Number(result.d1Created ?? 0);
+        dateResult.d1Skipped += Number(result.d1Skipped ?? 0);
+        dateResult.larkCreated += Number(result.larkCreated ?? 0);
+        dateResult.larkSkipped += Number(result.larkSkipped ?? 0);
+        hasMore = input.execute && result.hasMore === true;
+        batchIndex += 1;
+        if (!input.execute) previewBatches.push(result);
+      } while (hasMore);
+      totals.dates += 1;
+      if (input.execute) {
+        dateResults.push(Object.freeze(dateResult));
+        console.log(JSON.stringify({
+          ok: true,
+          stage: 'organic_history_date_complete',
+          platform,
+          metricDate,
+          requests: batchIndex,
+          providerRows: dateResult.providerRows,
+          sourceMetricRows: dateResult.sourceMetricRows,
+          d1Created: dateResult.d1Created,
+          d1Skipped: dateResult.d1Skipped,
+          larkCreated: dateResult.larkCreated,
+          larkSkipped: dateResult.larkSkipped,
+        }));
+      }
+    }
+  }
+  return Object.freeze({
+    mode: input.execute ? 'execute' : 'preview',
+    scope: Object.freeze({
+      facebook: CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE.facebook,
+      youtube: CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE.youtube,
+    }),
+    totals: Object.freeze(totals),
+    previewBatches: Object.freeze(previewBatches),
+    dates: Object.freeze(dateResults),
+  });
+}
+
+function assertOrganicHistoryResult(result, expected) {
+  const expectedMode = expected.execute ? 'execute' : 'preview';
+  const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[expected.platform];
+  if (!result || result.ok !== true
+    || result.mode !== expectedMode
+    || result.platform !== expected.platform
+    || result.metricDate !== expected.metricDate
+    || Number(result.batchIndex) !== expected.batchIndex
+    || result.larkRequired !== scope.larkDestination
+    || result.readback?.duplicateStableKeys !== (expected.execute ? 0 : undefined)) {
+    throw operatorError('Organic history repair returned an invalid bounded result',
+      'CUSTOMER_ORGANIC_HISTORY_RESULT_INVALID');
+  }
+}
+
+function dateRange(start, end) {
+  const dates = [];
+  for (let current = start; current <= end; current = shiftDate(current, 1)) dates.push(current);
+  return dates;
+}
+
+function shiftDate(value, days) {
+  return new Date(Date.parse(`${value}T00:00:00.000Z`) + days * 86_400_000)
+    .toISOString().slice(0, 10);
 }
 
 function buildPreviewConfig(configInput, tokenSha256) {
@@ -204,7 +332,7 @@ function buildPreviewConfig(configInput, tokenSha256) {
   config.preview_urls = true;
   config.vars = {
     ...config.vars,
-    [organicHistoryAudit
+    [organicHistoryAudit || organicHistoryRepair
       ? 'MKT_ORGANIC_HISTORY_TOKEN_SHA256'
       : organicDateRepair ? 'MKT_ORGANIC_DATE_REPAIR_TOKEN_SHA256'
       : 'MKT_ADS_PROD_OPERATOR_TOKEN_SHA256']: tokenSha256,
