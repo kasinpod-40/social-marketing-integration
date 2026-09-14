@@ -73,6 +73,23 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-14)
+
+- a fresh read-only Customer PROD D1 audit proved that the earliest retained
+  `organic_content_observations.metric_date` is `2026-06-30` for Facebook/Instagram,
+  `2026-07-24` for TikTok and `2026-07-28` for YouTube; this scope was not part of the earlier
+  Paid Ads history closeout and must not be represented as already complete;
+- the current Integration Lark Base and the retained local Base export do not contain earlier
+  Customer snapshots that can be copied with exact provenance. The local YouTube OAuth identity is also a
+  different channel, so it is explicitly rejected as a Customer repair source;
+- the repair first adds an isolated, authenticated Preview-only source capability audit. It binds only the exact
+  Customer PROD D1/Lark authority, performs GET-only Meta/YouTube reads, returns aggregates without source IDs or
+  credentials, and has no Queue, schedule, D1 or Lark mutation path;
+- after reviewed merge, the source audit must prove which historical metrics are genuinely available from each
+  provider. The subsequent repair may write only exact provider facts or explicit `null` for unavailable metrics;
+  copying current cumulative counters into past dates is forbidden. Final completion still requires D1/Lark
+  readback, stable-key reconciliation and an idempotent rerun for every repaired platform.
+
 ### Implementation result — Customer Weekly AI recommendation quality (2026-09-14)
 
 - Customer PROD Weekly Reports for `2026-09-07..2026-09-13` completed across all eight active channels, while

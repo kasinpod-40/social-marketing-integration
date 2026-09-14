@@ -33,11 +33,13 @@ const ADS_DAILY_TABLE_ID = 'tblTjWaxgSCwSj1P';
 const PREVIEW_ENTRYPOINT = resolve('apps/sync-worker/src/mkt-ads-campaign-summary-retention-preview-entry.js');
 const PREVIEW_PATH = '/__codex/mkt-ads-campaign-summary-retention-v1';
 const ORGANIC_DATE_PREVIEW_PATH = '/__codex/organic-reporting-date-repair-v1';
+const ORGANIC_HISTORY_PREVIEW_PATH = '/__codex/customer-organic-history-v1';
 const CONFIG_PATH = resolve(
   process.env.MKT_CUSTOMER_WRANGLER_CONFIG ?? '.customer-youtube-uat.wrangler.jsonc',
 );
 const execute = process.argv.includes('--execute');
 const organicDateRepair = process.argv.includes('--organic-date-repair');
+const organicHistoryAudit = process.argv.includes('--organic-history-audit');
 
 let runtimeRoot = null;
 let target = null;
@@ -76,8 +78,13 @@ if (primaryError || restoreError) {
 }
 
 async function main() {
+  if (organicDateRepair && organicHistoryAudit) {
+    throw operatorError('Organic date repair and history audit modes are mutually exclusive',
+      'MKT_ADS_PROD_ARGUMENT_INVALID');
+  }
   const confirmation = organicDateRepair ? ORGANIC_DATE_CONFIRMATION : CONFIRMATION;
-  if (execute && process.env.CONFIRM_MKT_ADS_PROD_OPERATOR !== confirmation) {
+  if (execute && !organicHistoryAudit
+    && process.env.CONFIRM_MKT_ADS_PROD_OPERATOR !== confirmation) {
     throw operatorError('Exact PROD confirmation is required', 'MKT_ADS_PROD_CONFIRMATION_REQUIRED');
   }
   assertReviewedMain();
@@ -111,7 +118,9 @@ async function main() {
   const accountSubdomain = await readAccountSubdomain(auth.token);
   const productionBaselineVersion = readActiveVersion(commandEnv, CONFIG_PATH);
   const token = randomBytes(48).toString('base64url');
-  const previewAlias = `${organicDateRepair ? 'organic-date' : 'ads-summary'}-${randomBytes(4).toString('hex')}`;
+  const previewAlias = `${organicHistoryAudit
+    ? 'organic-history'
+    : organicDateRepair ? 'organic-date' : 'ads-summary'}-${randomBytes(4).toString('hex')}`;
 
   runtimeRoot = await mkdtemp(join(tmpdir(), 'mkt-ads-summary-retention-'));
   const runtimeConfigPath = join(runtimeRoot, 'wrangler.preview.json');
@@ -141,7 +150,9 @@ async function main() {
   await assertProductionVersionUnchanged();
 
   const operatorUrl = new URL(
-    organicDateRepair ? ORGANIC_DATE_PREVIEW_PATH : PREVIEW_PATH,
+    organicHistoryAudit
+      ? ORGANIC_HISTORY_PREVIEW_PATH
+      : organicDateRepair ? ORGANIC_DATE_PREVIEW_PATH : PREVIEW_PATH,
     `${upload.previewOrigin}/`,
   );
   const readiness = await waitForMktAdsPreviewRoute({ fetchImpl: fetch, url: operatorUrl.toString() });
@@ -155,8 +166,9 @@ async function main() {
       'content-type': 'application/json',
       'cache-control': 'no-store',
     },
-    body: JSON.stringify(organicDateRepair
-      ? { mode: execute ? 'execute' : 'preview' }
+    body: JSON.stringify(organicHistoryAudit
+      ? { mode: 'audit', since: '2026-06-19', until: '2026-07-28' }
+      : organicDateRepair ? { mode: execute ? 'execute' : 'preview' }
       : {
         mode: execute ? 'execute' : 'preview',
         contract: await loadSharedTableSchemaContract(),
@@ -192,8 +204,9 @@ function buildPreviewConfig(configInput, tokenSha256) {
   config.preview_urls = true;
   config.vars = {
     ...config.vars,
-    [organicDateRepair
-      ? 'MKT_ORGANIC_DATE_REPAIR_TOKEN_SHA256'
+    [organicHistoryAudit
+      ? 'MKT_ORGANIC_HISTORY_TOKEN_SHA256'
+      : organicDateRepair ? 'MKT_ORGANIC_DATE_REPAIR_TOKEN_SHA256'
       : 'MKT_ADS_PROD_OPERATOR_TOKEN_SHA256']: tokenSha256,
   };
   for (const [name] of Object.entries(config.vars)) {

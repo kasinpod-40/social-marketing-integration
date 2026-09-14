@@ -7,10 +7,15 @@ import {
   createOrganicReportingDateRepairPreviewHttpHandler,
   ORGANIC_REPORTING_DATE_REPAIR_PREVIEW_PATH,
 } from './organic-reporting-date-repair-preview-http.js';
+import {
+  createCustomerOrganicHistoryPreviewHttpHandler,
+  CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH,
+} from './customer-organic-history-preview-http.js';
 
 export function createMktAdsCampaignSummaryRetentionPreviewWorker(dependencies = {}) {
   const handler = createMktAdsCampaignSummaryRetentionPreviewHttpHandler(dependencies);
   const organicDateHandler = createOrganicReportingDateRepairPreviewHttpHandler(dependencies);
+  const organicHistoryHandler = createCustomerOrganicHistoryPreviewHttpHandler(dependencies);
   return Object.freeze({
     async fetch(request, env, ctx) {
       const url = new URL(request.url);
@@ -19,6 +24,9 @@ export function createMktAdsCampaignSummaryRetentionPreviewWorker(dependencies =
       }
       if (url.pathname === ORGANIC_REPORTING_DATE_REPAIR_PREVIEW_PATH) {
         return organicDateHandler({ request, env, ctx, url });
+      }
+      if (url.pathname === CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH) {
+        return organicHistoryHandler({ request, env, ctx, url });
       }
       return json({ ok: false, code: 'ROUTE_NOT_FOUND' }, { status: 404 });
     },
