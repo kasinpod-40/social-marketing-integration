@@ -73,7 +73,7 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
-### Active repair — Customer Weekly AI recommendation quality (2026-09-14)
+### Implementation result — Customer Weekly AI recommendation quality (2026-09-14)
 
 - Customer PROD Weekly Reports for `2026-09-07..2026-09-13` completed across all eight active channels, while
   the automatic Executive Work `lark_notification:weekly-executive-auto-20260913` stopped before Notification
@@ -88,8 +88,15 @@ enable and verify one connector schedule at a time before Report/AI/Notification
 - the generated Lark AI row, its Work/generation, Report identities and Business evidence remain immutable.
   Any unrelated quality failure still fails closed. Live proof against the exact retained row passes the repaired
   gate with `violations=[]`;
-- remaining closeout is reviewed PR/CI, Customer PROD deploy, one guarded same-generation recovery after lock-zero,
-  and exact one sent+mirrored Group delivery with zero duplicate sends.
+- PR `#834` passed both Branch Verification runs (`34803050409/103849408335` and
+  `34803062100/103849439354`) and merged as `main@6b6ef743`; Production Worker version
+  `54b80d1b-80f8-45dd-907f-7d9bcd0877db` serves 100% traffic;
+- the exact retained Work/generation was recovered once after proving current fence, lock-zero, the one open DLQ,
+  the one open Alert, and zero prior delivery. Cloudflare Queue accepted the byte-for-field retained replay payload
+  once (`sha256=4bcb853155f2d33d3f41d9ccb87a2df0129df007202f5aad885dd218a4d136fc`);
+- final Customer PROD readback at `2026-09-14T03:45:32.701Z` proves Work `completed` with
+  `qualityGatePassed=true`, one delivery `sent`, mirror `mirrored`, `claim_count=1`, lock-zero, the exact DLQ
+  `redriven`, and its Alert `resolved`. No replacement generation or duplicate delivery was created.
 
 Latest user authority on 2026-08-23 confirms that the source accounts, source data, and connector
 credentials used in the Integration Workspace are already customer assets. Customer Production is
