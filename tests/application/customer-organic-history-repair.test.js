@@ -64,6 +64,14 @@ test('Facebook history repair writes exact provider facts to D1/Lark and reruns 
       runtime.lark.byKey('facebook:982406442148381:post-1:2026-06-19').views,
       123,
     );
+    assert.deepEqual(
+      Object.keys(runtime.lark.byKey('facebook:982406442148381:post-1:2026-06-19')).sort(),
+      [
+        'account_id', 'avg_watch_time_seconds', 'comments', 'completion_rate',
+        'content_daily_key', 'external_content_id', 'likes', 'metric_date', 'platform',
+        'shares', 'total_watch_time_seconds', 'unique_viewers', 'views',
+      ],
+    );
 
     const second = await repairCustomerOrganicContentHistoryBatch({
       ...input,
