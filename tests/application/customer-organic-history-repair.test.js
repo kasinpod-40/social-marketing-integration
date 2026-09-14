@@ -92,8 +92,8 @@ test('YouTube history repair requests cumulative views and keeps unavailable met
   const runtime = await createRuntime();
   try {
     for (const [externalContentId, publishedAt] of [
-      ['video-1', '2026-06-01'],
-      ['video-2', '2026-06-10'],
+      ['_video-1', '2026-06-01'],
+      ['Avideo-2', '2026-06-10'],
     ]) {
       seedContentState(runtime.d1, {
         platform: 'youtube', sourceAccountId: YOUTUBE_ACCOUNT,
@@ -114,7 +114,7 @@ test('YouTube history repair requests cumulative views and keeps unavailable met
           analyticsInput = input;
           return {
             columnHeaders: [{ name: 'video' }, { name: 'views' }],
-            rows: [['video-1', 77]],
+            rows: [['_video-1', 77]],
           };
         },
       },
@@ -131,7 +131,7 @@ test('YouTube history repair requests cumulative views and keeps unavailable met
       endDate: '2026-06-19',
       dimensions: 'video',
       metrics: 'views',
-      filters: 'video==video-1,video-2',
+      filters: 'video==Avideo-2,_video-1',
       sort: 'video',
       maxResults: 200,
       startIndex: 1,
@@ -148,10 +148,12 @@ test('YouTube history repair requests cumulative views and keeps unavailable met
 test('YouTube history repair completes D1 authority without expanding the bounded Lark cache', async () => {
   const runtime = await createRuntime();
   try {
-    seedContentState(runtime.d1, {
-      platform: 'youtube', sourceAccountId: YOUTUBE_ACCOUNT,
-      externalContentId: 'video-1', publishedAt: '2026-06-01',
-    });
+    for (const externalContentId of ['_video-1', 'Avideo-2']) {
+      seedContentState(runtime.d1, {
+        platform: 'youtube', sourceAccountId: YOUTUBE_ACCOUNT,
+        externalContentId, publishedAt: '2026-06-01',
+      });
+    }
     const input = {
       execute: true,
       platform: 'youtube',
@@ -164,23 +166,23 @@ test('YouTube history repair completes D1 authority without expanding the bounde
         async queryAnalytics() {
           return {
             columnHeaders: [{ name: 'video' }, { name: 'views' }],
-            rows: [['video-1', 77]],
+            rows: [['Avideo-2', 88], ['_video-1', 77]],
           };
         },
       },
     };
     const first = await repairCustomerOrganicContentHistoryBatch(input);
-    assert.equal(first.d1Created, 1);
+    assert.equal(first.d1Created, 2);
     assert.equal(first.larkRequired, false);
     assert.equal(first.larkCreated, 0);
     assert.deepEqual(first.readback, { d1: true, lark: null, duplicateStableKeys: 0 });
     assert.equal(runtime.lark.size(), 0);
     const second = await repairCustomerOrganicContentHistoryBatch(input);
     assert.equal(second.replay, true);
-    assert.equal(second.d1Skipped, 1);
+    assert.equal(second.d1Skipped, 2);
     assert.equal(runtime.d1.database.prepare(
       'SELECT COUNT(*) AS count FROM organic_content_observations',
-    ).get().count, 1);
+    ).get().count, 2);
   } finally {
     runtime.d1.close();
   }

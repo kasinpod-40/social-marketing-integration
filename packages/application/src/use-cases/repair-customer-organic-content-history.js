@@ -426,11 +426,13 @@ async function assertD1Readback(db, rows) {
     WHERE coverage_run_id = ? ORDER BY observation_key ASC
   `).bind(rows.coverageRun.coverage_run_id).all();
   const actual = Array.isArray(result) ? result : (result?.results ?? []);
-  const expected = [...rows.observations].sort((a, b) => a.observation_key.localeCompare(b.observation_key));
-  if (actual.length !== expected.length || actual.some((row, index) => (
-    row.observation_key !== expected[index].observation_key
-    || row.metrics_hash !== expected[index].metrics_hash
-    || row.source_revision !== expected[index].source_revision
+  // SQLite uses binary text ordering while localeCompare can reorder mixed-case/
+  // punctuation-heavy Provider IDs. Reconcile by Stable key, never by position.
+  const expected = new Map(rows.observations.map((row) => [row.observation_key, row]));
+  if (actual.length !== expected.size || actual.some((row) => (
+    !expected.has(row.observation_key)
+    || row.metrics_hash !== expected.get(row.observation_key).metrics_hash
+    || row.source_revision !== expected.get(row.observation_key).source_revision
   ))) {
     throw repairError('D1 historical readback differs from the exact source projection',
       'CUSTOMER_ORGANIC_HISTORY_D1_READBACK_FAILED');
