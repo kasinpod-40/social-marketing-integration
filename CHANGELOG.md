@@ -9,6 +9,10 @@
   full quality gate before Notification admission;
 - keeps all unrelated AI quality failures fail-closed and preserves the existing exactly-once Queue, delivery and
   Lark mirror contracts.
+- deployed reviewed `main@6b6ef743` to Customer Production version
+  `54b80d1b-80f8-45dd-907f-7d9bcd0877db` and recovered the exact retained Weekly generation once; final
+  readback proves one sent and mirrored Group delivery with claim count one, zero lock, redriven DLQ, resolved
+  Alert, and no duplicate.
 
 ## 2026-09-13 — TikTok Organic partial-period Dashboard values
 

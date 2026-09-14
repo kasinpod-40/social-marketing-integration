@@ -13,6 +13,12 @@ recommendation projection solely from retained candidates/comparison evidence, a
 quality gate again. Any other violation or non-zero repaired violation remains terminal. Notification admission
 and D1 exactly-once delivery authority remain unchanged.
 
+PR `#834` merged as `main@6b6ef743` after both Branch Verification runs passed. Customer Production version
+`54b80d1b-80f8-45dd-907f-7d9bcd0877db` was verified at 100% traffic. The exact retained
+`weekly-executive-auto-20260913` generation was recovered once with its original Queue payload. Final D1 authority
+shows Work completed, one Group delivery sent, Lark mirror completed, claim count one, lock-zero, DLQ redriven,
+and Alert resolved at `2026-09-14T03:45:32.701Z`; there is no duplicate delivery.
+
 ## Customer Social MKT Data Hub manual — 2026-09-13
 
 The customer delivery is maintained in both Markdown and Word as `docs/customer-social-mkt-data-hub-manual.md`
