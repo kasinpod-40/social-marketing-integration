@@ -10,6 +10,11 @@
   snapshots, preserves missing metrics as null and fences every write on zero active Production locks;
 - added isolated Preview-only execution, exact Customer authority/confirmation, stable-key reconciliation,
   D1/Lark readback and completed-batch no-op reruns without changing Production Worker traffic or schedules.
+- merged the complete repair chain through `main@19871a82` and finished controlled Customer PROD execution:
+  Facebook is exact at 321 D1/Lark rows across 11 dates, and YouTube is exact at 32,164 durable D1 rows across
+  all 39 dates with 655 completed coverage batches;
+- final reconciliation has zero failed rows, duplicate Stable keys or active locks. Preview URLs are disabled and
+  Production continues serving version `54b80d1b-80f8-45dd-907f-7d9bcd0877db` at 100%.
 
 ## 2026-09-14 — Customer Weekly AI bounded recommendation repair
 

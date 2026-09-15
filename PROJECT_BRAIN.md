@@ -1421,10 +1421,16 @@ must not be synthesized for either source.
 
 The exact repair therefore creates Facebook history for `2026-06-19..2026-06-29` in D1 and
 `MKT_Content_Daily`, and YouTube history for `2026-06-19..2026-07-27` in durable D1. The latter is intentionally
-D1-only because the interval is about 32,500 content-day rows and `MKT_Content_Daily` is a bounded compatibility
+D1-only because the interval is 32,164 content-day rows and `MKT_Content_Daily` is a bounded compatibility
 cache, not the permanent history store. Every 50-row batch uses Provider-proven values, stable identities,
 create-only semantics, active-lock fencing and exact readback. Unavailable metrics remain `null`; no old business
 row, protected TikTok source, schedule, Queue or Production Worker traffic is changed.
+
+The controlled Customer PROD closeout completed on `main@19871a82` after PRs `#836..#847`. Facebook reconciles
+321 D1/Lark rows across 11 dates with zero duplicate; YouTube reconciles 32,164 D1 rows across all 39 dates with
+655 completed coverage batches. For both sources, expected/observed/written totals agree, failed rows, duplicate
+Stable keys and active locks are zero. The isolated Preview window is disabled again and Production remains on
+version `54b80d1b-80f8-45dd-907f-7d9bcd0877db` at 100%.
 
 ## WooCommerce Production readiness promotion — 2026-09-08
 

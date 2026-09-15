@@ -64,6 +64,7 @@ REPORT_PARITY_TARGET                     = EXACT_1D_3D_7D_30D_AFTER_CUSTOMER_D1_
 CUSTOMER_CHATWOOT_DAILY_DISCOVERY        = UPDATED_WITHIN_ONCE_CODE_AND_FULL_GATES_PASS
 CUSTOMER_TIKTOK_20260827_FAST_BRIDGE     = COMPLETE_D1_LARK_REPORT_IMPORT_GATE_DISABLED
 CUSTOMER_D1_FREE_CAPACITY_GUARD          = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
+CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE_D1_32164
 ```
 
 ## Objective
@@ -73,7 +74,7 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
-### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-14)
+### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-15)
 
 - a fresh read-only Customer PROD D1 audit proved that the earliest retained
   `organic_content_observations.metric_date` is `2026-06-30` for Facebook/Instagram,
@@ -87,13 +88,19 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   credentials, and has no Queue, schedule, D1 or Lark mutation path;
 - PR #836/#837/#838 and live GET-only readback prove Facebook daily Insights and YouTube cumulative Owner
   Analytics are historical sources, while Instagram and the protected TikTok Native table are current-only;
-- the bounded implementation repairs Facebook `2026-06-19..2026-06-29` into D1/Lark and YouTube
-  `2026-06-19..2026-07-27` into durable D1 only. The roughly 32,500-row YouTube interval is intentionally not
-  copied into the bounded Lark compatibility cache. It uses 50-row requests, active-lock fencing, Stable keys,
-  create-only Lark semantics, exact readback and completed-batch no-op reruns;
-- focused regression `14/14`, `npm run check`, full Node `3,376/3,376`, Workers-runtime `18/18`, Report
-  reliability, zero-vulnerability audit, deploy dry-run and `git diff --check` pass. Reviewed merge and controlled
-  Customer PROD execution/readback remain required for final completion.
+- the bounded implementation repaired Facebook `2026-06-19..2026-06-29` into D1/Lark and YouTube
+  `2026-06-19..2026-07-27` into durable D1 only. The large YouTube interval is intentionally not copied into the
+  bounded Lark compatibility cache. It uses 50-row requests, same-platform active-lock fencing, Stable keys,
+  create-only Lark semantics, exact readback, date-level resume and completed-batch no-op reruns;
+- PRs `#836..#847` are merged; the final reviewed release is `main@19871a82`. The last three Branch Verification
+  pairs all passed: `34910240477/34910237870`, `34914558986/34914555811`, and
+  `34916015188/34916011620`;
+- final Customer PROD readback proves Facebook `321/321` exact rows over 11 dates with per-batch Lark readback and
+  duplicate zero. YouTube has `655/655` completed coverage batches and `32,164/32,164` exact D1 rows over 39
+  contiguous dates; distinct Stable keys also equal `32,164`, failed rows and duplicates are zero;
+- the final lock count is zero for both platforms. Preview URLs are confirmed disabled
+  (`enabled=false`, `previews_enabled=false`), Production traffic still serves version
+  `54b80d1b-80f8-45dd-907f-7d9bcd0877db` at 100%, and no Production schedule, Queue or old Business row changed.
 
 ### Implementation result — Customer Weekly AI recommendation quality (2026-09-14)
 
@@ -1717,5 +1724,14 @@ child identity after reviewed merge/deploy.
   every write boundary, verifies Provider identity, writes Stable keys, performs exact D1/Lark readback, rejects
   conflicting existing Lark rows, and turns a completed batch rerun into a no-op;
 - the operator uses an isolated Preview-only Worker version, exact Customer PROD bindings and confirmation, leaves
-  Production traffic/version unchanged, and restores Preview URLs disabled. Focused regression is `14/14` and
-  `npm run check` passes; full gates, reviewed merge, live preview and controlled PROD execution remain pending.
+  Production traffic/version unchanged, and restores Preview URLs disabled. Later reviewed increments scope the
+  lock fence to the exact platform, resume from an exact date and retry only explicit transient YouTube API errors;
+- PRs `#836..#847` are merged through final `main@19871a82`; focused regression is `16/16`, `npm run check` and
+  every final Branch Verification pair pass;
+- controlled Customer PROD execution is complete. Facebook has 11 complete coverage runs and 321 exact D1/Lark
+  rows for `2026-06-19..2026-06-29`; batch readback and rerun prove zero duplicate. YouTube has 655 complete
+  coverage runs and 32,164 exact D1 rows for all 39 dates in `2026-06-19..2026-07-27`; expected, observed and
+  written totals are all 32,164, with zero failed rows, duplicate keys or active locks;
+- final Cloudflare readback confirms Worker Preview URLs disabled and Production version
+  `54b80d1b-80f8-45dd-907f-7d9bcd0877db` unchanged at 100%. Instagram and TikTok remain correctly unmodified
+  because their current sources cannot prove historical Daily values.
