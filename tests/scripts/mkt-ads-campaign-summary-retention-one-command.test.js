@@ -22,6 +22,9 @@ test('Customer Organic history operator is exact-confirmed, bounded and uses the
   assert.match(source, /dateRange\(organicHistoryStartDate \?\? scope\.startDate, scope\.endDate\)/u);
   assert.match(source, /organicHistoryStartDate < scope\.startDate/u);
   assert.match(source, /organicHistoryStartDate > scope\.endDate/u);
+  assert.match(source, /const YOUTUBE_HISTORY_TRANSIENT_ATTEMPTS = 3;/u);
+  assert.match(source, /error\?\.code === 'YOUTUBE_TRANSIENT_API_ERROR'/u);
+  assert.match(source, /stage: 'organic_history_provider_retry'/u);
   assert.match(source, /const ORGANIC_HISTORY_PREVIEW_PATH = '\/__codex\/customer-organic-history-v1';/u);
   assert.match(source, /if \(batchIndex >= 100\)/u);
   assert.match(source, /await assertProductionVersionUnchanged\(\)/u);
