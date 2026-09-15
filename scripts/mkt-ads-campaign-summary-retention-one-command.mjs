@@ -30,6 +30,8 @@ const DATABASE = 'social-mkt-state-prod';
 const DATABASE_ID = 'f03ab092-a1aa-4478-8ba2-c20d7b54851f';
 const CLOUDFLARE_PROFILE = 'chemistry-k-prod';
 const CUSTOMER_PROFILE = 'chemistry_k';
+const YOUTUBE_HISTORY_TRANSIENT_ATTEMPTS = 3;
+const YOUTUBE_HISTORY_RETRY_DELAY_MS = 5_000;
 const APP_TOKEN = 'Tcm4bYRL4acuQysp6AwlmXBKgbe';
 const ADS_DAILY_TABLE_ID = 'tblTjWaxgSCwSj1P';
 const PREVIEW_ENTRYPOINT = resolve('apps/sync-worker/src/mkt-ads-campaign-summary-retention-preview-entry.js');
@@ -261,7 +263,7 @@ async function runOrganicHistoryRepair(input) {
           throw operatorError('Organic history repair exceeded the reviewed batch limit',
             'CUSTOMER_ORGANIC_HISTORY_BATCH_LIMIT');
         }
-        const result = await postOperator({
+        const result = await postOrganicHistoryBatch({
           operatorUrl: input.operatorUrl,
           token: input.token,
           body: {
@@ -320,6 +322,32 @@ async function runOrganicHistoryRepair(input) {
     previewBatches: Object.freeze(previewBatches),
     dates: Object.freeze(dateResults),
   });
+}
+
+async function postOrganicHistoryBatch(input) {
+  for (let attempt = 1; attempt <= YOUTUBE_HISTORY_TRANSIENT_ATTEMPTS; attempt += 1) {
+    try {
+      return await postOperator(input);
+    } catch (error) {
+      const retryableProviderFailure = input.body?.platform === 'youtube'
+        && error?.code === 'YOUTUBE_TRANSIENT_API_ERROR';
+      if (!retryableProviderFailure || attempt === YOUTUBE_HISTORY_TRANSIENT_ATTEMPTS) throw error;
+      console.log(JSON.stringify({
+        ok: false,
+        stage: 'organic_history_provider_retry',
+        platform: 'youtube',
+        metricDate: input.body.metricDate,
+        batchIndex: input.body.batchIndex,
+        attempt,
+        code: error.code,
+      }));
+      await new Promise((resolveDelay) => {
+        setTimeout(resolveDelay, YOUTUBE_HISTORY_RETRY_DELAY_MS * attempt);
+      });
+    }
+  }
+  throw operatorError('YouTube history retry boundary was exhausted',
+    'YOUTUBE_TRANSIENT_API_ERROR');
 }
 
 function assertOrganicHistoryResult(result, expected) {
