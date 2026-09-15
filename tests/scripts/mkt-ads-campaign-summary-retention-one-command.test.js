@@ -17,7 +17,11 @@ test('Customer Organic history operator is exact-confirmed, bounded and uses the
   assert.match(source, /const ORGANIC_HISTORY_REPAIR_CONFIRMATION = 'APPLY_CUSTOMER_PROD_ORGANIC_HISTORY_REPAIR';/u);
   assert.match(source, /process\.argv\.includes\('--organic-history-repair'\)/u);
   assert.match(source, /readOption\('--organic-history-platform'\)/u);
+  assert.match(source, /readOption\('--organic-history-start-date'\)/u);
   assert.match(source, /Object\.hasOwn\(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE, organicHistoryPlatform\)/u);
+  assert.match(source, /dateRange\(organicHistoryStartDate \?\? scope\.startDate, scope\.endDate\)/u);
+  assert.match(source, /organicHistoryStartDate < scope\.startDate/u);
+  assert.match(source, /organicHistoryStartDate > scope\.endDate/u);
   assert.match(source, /const ORGANIC_HISTORY_PREVIEW_PATH = '\/__codex\/customer-organic-history-v1';/u);
   assert.match(source, /if \(batchIndex >= 100\)/u);
   assert.match(source, /await assertProductionVersionUnchanged\(\)/u);
