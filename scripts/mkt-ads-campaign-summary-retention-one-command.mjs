@@ -44,6 +44,7 @@ const organicDateRepair = process.argv.includes('--organic-date-repair');
 const organicHistoryAudit = process.argv.includes('--organic-history-audit');
 const organicHistoryRepair = process.argv.includes('--organic-history-repair');
 const organicHistoryPlatform = readOption('--organic-history-platform');
+const organicHistoryStartDate = readOption('--organic-history-start-date');
 
 let runtimeRoot = null;
 let target = null;
@@ -91,6 +92,19 @@ async function main() {
       || !Object.hasOwn(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE, organicHistoryPlatform))) {
     throw operatorError('Organic history platform selector is outside the reviewed repair scope',
       'MKT_ADS_PROD_ARGUMENT_INVALID');
+  }
+  if (organicHistoryStartDate !== null) {
+    const scope = organicHistoryPlatform
+      ? CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[organicHistoryPlatform]
+      : null;
+    if (!organicHistoryRepair || !scope
+      || !/^\d{4}-\d{2}-\d{2}$/u.test(organicHistoryStartDate)
+      || shiftDate(organicHistoryStartDate, 0) !== organicHistoryStartDate
+      || organicHistoryStartDate < scope.startDate
+      || organicHistoryStartDate > scope.endDate) {
+      throw operatorError('Organic history start date requires one reviewed platform and must stay in its scope',
+        'MKT_ADS_PROD_ARGUMENT_INVALID');
+    }
   }
   const confirmation = organicDateRepair
     ? ORGANIC_DATE_CONFIRMATION
@@ -233,7 +247,7 @@ async function runOrganicHistoryRepair(input) {
   for (const platform of platforms) {
     const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
     const dates = input.execute
-      ? dateRange(scope.startDate, scope.endDate)
+      ? dateRange(organicHistoryStartDate ?? scope.startDate, scope.endDate)
       : [scope.startDate];
     for (const metricDate of dates) {
       let batchIndex = 0;
@@ -256,7 +270,7 @@ async function runOrganicHistoryRepair(input) {
             metricDate,
             batchIndex,
           },
-          timeoutMs: input.execute ? 600_000 : 120_000,
+          timeoutMs: input.execute ? 900_000 : 120_000,
         });
         assertOrganicHistoryResult(result, { platform, metricDate, batchIndex, execute: input.execute });
         totals.requests += 1;
