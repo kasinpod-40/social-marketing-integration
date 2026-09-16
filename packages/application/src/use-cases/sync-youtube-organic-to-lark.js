@@ -11,6 +11,8 @@ import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerp
 import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 import { createContentKey } from '../storage/marketing-history-contract.js';
+import { buildYouTubeAccountDailyFact } from '../storage/youtube-account-history-storage.js';
+import { projectOrganicAccountDailyFactToLark } from './organic-account-daily-projection.js';
 
 const ANALYTICS_METRICS = 'views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,averageViewPercentage';
 const ANALYTICS_DIMENSIONS = 'day,video';
@@ -26,6 +28,7 @@ const WORK_PHASES = Object.freeze({
   D1_STORAGE: 'youtube_d1_storage_v1',
   DESTINATION_CONTENT: 'youtube_destination_content_v1',
   DESTINATION_DAILY: 'youtube_destination_daily_v1',
+  DESTINATION_ACCOUNT_DAILY: 'youtube_destination_account_daily_v1',
   DESTINATION_ACCOUNTS: 'youtube_destination_accounts_v1',
 });
 
@@ -376,6 +379,25 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     timezone: requireText(input.reportingTimezone ?? 'Asia/Bangkok', 'reportingTimezone'),
     last_sync_at: fetchedAt,
   })];
+  const accountDailyRows = [projectOrganicAccountDailyFactToLark({
+    fact: buildYouTubeAccountDailyFact({
+      raw: rawChannelRows[0],
+      context: {
+        accountKey,
+        customerKey: requireText(input.customerKey, 'customerKey'),
+        metricDate,
+        sourceTimezone: requireText(input.reportingTimezone ?? 'Asia/Bangkok', 'reportingTimezone'),
+        fetchedAt,
+        observedAt: fetchedAt,
+      },
+      ids: {
+        accountCoverageRunId: `lark_projection:${workKey}`,
+        sourceWatermark: workKey,
+        historySyncRunId: syncRunId,
+      },
+    }),
+    canonicalAccountKey: `youtube:${accountKey}`,
+  })];
 
   if (typeof syncEngine.captureSourceRows === 'function') {
     syncEngine.captureSourceRows({
@@ -401,6 +423,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       rows: {
         content: normalized.contentRows,
         daily: normalized.dailySnapshotRows,
+        accountDaily: accountDailyRows,
         accounts: accountRows,
       },
       onProgress,
@@ -428,6 +451,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       rows: {
         content: normalized.contentRows,
         dailySnapshots: normalized.dailySnapshotRows,
+        accountDaily: accountDailyRows,
         accounts: accountRows,
       },
       maxRows: maxDestinationRowsPerInvocation,
@@ -453,6 +477,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       rows: {
         content: normalized.contentRows,
         daily: normalized.dailySnapshotRows,
+        accountDaily: accountDailyRows,
         accounts: accountRows,
       },
       onProgress,
@@ -1403,6 +1428,13 @@ async function executeDurableDestinationPhases(input) {
       rows: input.rows.dailySnapshots,
     }),
     Object.freeze({
+      name: 'accountDaily',
+      phase: WORK_PHASES.DESTINATION_ACCOUNT_DAILY,
+      tableId: input.tables.mktAccountDaily,
+      keyField: 'account_daily_key',
+      rows: input.rows.accountDaily,
+    }),
+    Object.freeze({
       name: 'accounts',
       phase: WORK_PHASES.DESTINATION_ACCOUNTS,
       tableId: input.tables.mktAccounts,
@@ -1653,6 +1685,7 @@ async function planAll(input) {
   const definitions = [
     ['content', input.tables.mktContent, 'content_key', input.rows.content],
     ['dailySnapshots', input.tables.mktContentDaily, 'content_daily_key', input.rows.daily],
+    ['accountDaily', input.tables.mktAccountDaily, 'account_daily_key', input.rows.accountDaily],
     // Account ต้อง Execute สุดท้ายเพื่อไม่ประกาศ connected ก่อน RAW/Canonical writes ผ่าน
     ['accounts', input.tables.mktAccounts, 'account_key', input.rows.accounts],
   ];
@@ -1671,7 +1704,7 @@ async function planAll(input) {
 }
 
 function orderedPlans(plans) {
-  return ['content', 'dailySnapshots', 'accounts']
+  return ['content', 'dailySnapshots', 'accountDaily', 'accounts']
     .map((name) => [name, plans[name]]);
 }
 
@@ -2102,7 +2135,7 @@ function requireWorkStore(value) {
   return value;
 }
 function requireTables(value) {
-  const keys = ['mktAccounts', 'mktContent', 'mktContentDaily'];
+  const keys = ['mktAccounts', 'mktAccountDaily', 'mktContent', 'mktContentDaily'];
   return Object.freeze(Object.fromEntries(keys.map((key) => [key, requireText(value?.[key], `tables.${key}`)])));
 }
 function requireHistoryGateway(value) {

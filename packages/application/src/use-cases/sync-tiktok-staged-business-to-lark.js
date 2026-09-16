@@ -51,7 +51,7 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
   const context = requireContext(input.context);
   const repository = requireRepository(input.repository);
   const syncEngine = requireSyncEngine(input.syncEngine);
-  const tables = requireTables(input.tables);
+  const tables = requireTables(input.tables, { historyEnabled: input.historyHooks != null });
   const sourceSummary = requireSourceSummary(input.sourceSummary);
   const syncRunId = requireText(input.syncRunId, 'syncRunId');
   const accountId = requireText(input.accountId, 'accountId');
@@ -410,7 +410,9 @@ function buildContinuationResult(input) {
 
 function normalizeHistoryHooks(value) {
   if (value === null || value === undefined) return null;
-  for (const method of ['preflightUnit', 'begin', 'writeUnit', 'complete', 'fail']) {
+  for (const method of [
+    'preflightUnit', 'begin', 'writeUnit', 'materializeAccountDaily', 'complete', 'fail',
+  ]) {
     if (typeof value?.[method] !== 'function') {
       throw new TypeError(`TikTok staged business historyHooks.${method} is required`);
     }

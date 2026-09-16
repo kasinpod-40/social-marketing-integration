@@ -74,6 +74,26 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — Organic MKT_Account_Daily four-platform completion (2026-09-16)
+
+- scope is the existing Customer PROD `MKT_Account_Daily` table only; Facebook/Instagram rows are preserved.
+  YouTube uses exact `organic_account_daily_facts` for the Customer channel and excludes the retained foreign
+  `dev_ft_pumkin` fact. TikTok uses only the exact Customer D1 current-state partition, not fabricated
+  historical profile metrics; its portfolio views/interactions are cumulative video-state sums, and unsupported
+  follower/reach fields remain null;
+- the normal YouTube and TikTok D1-first paths now upsert one Account Daily row by stable
+  `account_key:metric_date` after Content/Daily completion. TikTok's account fact is durably written to D1 before
+  its Lark projection. A bounded, authenticated Preview-only operator plans existing YouTube facts and the latest
+  TikTok current-state snapshot, writes only the shared Account Daily table, reads back D1/Lark, and proves a
+  no-create/no-update rerun;
+- read-only Customer PROD D1 evidence before execution: YouTube has 34 exact Customer facts over
+  `2026-07-28..2026-09-15`; one foreign/dev YouTube fact is excluded. TikTok has 2,079 available current-state
+  videos and no Account Daily fact yet. Its latest completed coverage period is `2026-09-16`, matching the
+  latest source observation in Bangkok time;
+- focused tests, `npm run check`, full Node unit suite, 18 Workers-runtime tests, 106 Report reliability tests,
+  zero-vulnerability audit, and deploy dry-run pass. Reviewed PR/merge, controlled PROD operator execution,
+  Lark readback/reconciliation and final rerun evidence are still required before declaring complete.
+
 ### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-15)
 
 - a fresh read-only Customer PROD D1 audit proved that the earliest retained

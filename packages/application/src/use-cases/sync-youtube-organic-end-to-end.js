@@ -140,6 +140,7 @@ export function buildEndToEndCompletion(input = {}) {
       storage: input.storage ?? null,
       larkTargets: Object.freeze([
         'MKT_Accounts',
+        'MKT_Account_Daily',
         'MKT_Content',
         'MKT_Content_Daily',
       ]),

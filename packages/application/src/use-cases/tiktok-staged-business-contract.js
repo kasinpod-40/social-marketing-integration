@@ -138,10 +138,13 @@ export function requireIncrementalStateStore(value) {
   return value;
 }
 
-export function requireTables(value) {
+export function requireTables(value, options = {}) {
   return Object.freeze({
     rawTikTokCreatorVideos: requireText(value?.rawTikTokCreatorVideos, 'tables.rawTikTokCreatorVideos'),
     mktAccounts: requireText(value?.mktAccounts, 'tables.mktAccounts'),
+    mktAccountDaily: options.historyEnabled === true
+      ? requireText(value?.mktAccountDaily, 'tables.mktAccountDaily')
+      : value?.mktAccountDaily ?? null,
     mktContent: requireText(value?.mktContent, 'tables.mktContent'),
     mktContentDaily: requireText(value?.mktContentDaily, 'tables.mktContentDaily'),
     mktClassificationDictionary: requireText(

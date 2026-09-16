@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-16 — Organic Account Daily for YouTube and TikTok
+
+- project exact Customer YouTube D1 account facts and TikTok current-state portfolio metrics to the existing
+  `MKT_Account_Daily` table, preserving Facebook/Instagram and unsupported metrics as null;
+- add normal D1-first daily writes plus an exact Customer Preview-only backfill with D1/Lark readback and
+  stable-key idempotency. TikTok snapshot date comes from the source observation, not YouTube's latest day;
+- exclude the retained foreign/dev YouTube channel by exact identity. Production execution and live reconciliation
+  remain pending reviewed merge.
+
 ## 2026-09-14 — Customer Organic exact history repair
 
 - added a create-only, 50-row bounded Customer PROD repair for exact Facebook daily Insights from

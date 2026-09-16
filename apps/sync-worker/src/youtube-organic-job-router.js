@@ -226,6 +226,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         dryRun,
         tables: {
           mktAccounts: tableIds.mktAccounts,
+          mktAccountDaily: tableIds.mktAccountDaily,
           mktContent: tableIds.mktContent,
           mktContentDaily: tableIds.mktContentDaily,
         },

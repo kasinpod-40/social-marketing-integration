@@ -192,6 +192,7 @@ async function processPostLarkD1FirstSync(input) {
   const tableIds = readLarkTableIdsFromEnv(input.env, [
     'rawTikTokCreatorVideos',
     'mktAccounts',
+    'mktAccountDaily',
     'mktContent',
     'mktContentDaily',
     'mktClassificationDictionary',
@@ -244,6 +245,7 @@ async function processPostLarkD1FirstSync(input) {
         accountKey: connectorConfig.accountKey,
         sourceAccountId: null,
         sourceTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
+        metricDate,
         observedAt: requestedAt,
         fetchedAt: requestedAt,
         historySyncRunId: `history:tiktok:${coverageDigest}`,
@@ -292,6 +294,7 @@ async function processPostLarkD1FirstSync(input) {
         tables: {
           rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
           mktAccounts: tableIds.mktAccounts,
+          mktAccountDaily: tableIds.mktAccountDaily,
           mktContent: tableIds.mktContent,
           mktContentDaily: tableIds.mktContentDaily,
           mktClassificationDictionary: tableIds.mktClassificationDictionary,

@@ -29,3 +29,11 @@ test('Customer Organic history operator is exact-confirmed, bounded and uses the
   assert.match(source, /if \(batchIndex >= 100\)/u);
   assert.match(source, /await assertProductionVersionUnchanged\(\)/u);
 });
+
+test('Customer Organic Account Daily operator uses one exact-confirmed Preview-only route', async () => {
+  const source = await readFile(SCRIPT, 'utf8');
+  assert.match(source, /const ORGANIC_ACCOUNT_DAILY_CONFIRMATION = 'APPLY_CUSTOMER_PROD_ORGANIC_ACCOUNT_DAILY';/u);
+  assert.match(source, /process\.argv\.includes\('--organic-account-daily'\)/u);
+  assert.match(source, /const ORGANIC_ACCOUNT_DAILY_PREVIEW_PATH = '\/__codex\/customer-organic-account-daily-v1';/u);
+  assert.match(source, /organicAccountDaily \? \{ mode: execute \? 'execute' : 'preview' \}/u);
+});

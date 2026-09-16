@@ -1,4 +1,9 @@
 import { createOrganicHistoryWriter } from './organic-history-writer.js';
+import { validateStorageRow } from './marketing-history-contract.js';
+import {
+  buildTikTokPortfolioAccountDailyFact,
+  projectOrganicAccountDailyFactToLark,
+} from '../use-cases/organic-account-daily-projection.js';
 
 /** สร้าง Hooks สำหรับ TikTok staged Canonical path โดยบังคับ D1 ก่อน Lark ทุก Unit */
 export function createTikTokOrganicHistoryHooks(input = {}) {
@@ -30,6 +35,64 @@ export function createTikTokOrganicHistoryHooks(input = {}) {
     },
     async writeUnit(prepared) {
       return writer.writeBatch(readPreparedBatch(prepared));
+    },
+    async materializeAccountDaily() {
+      const aggregate = await writer.context.gateway.readOrganicAccountSnapshotAggregate({
+        customerKey: writer.context.customerKey,
+        platform: 'tiktok',
+        accountKey: writer.context.accountKey,
+      });
+      const accountCoverageRunId = `${writer.context.coverageRunId}:account_daily`;
+      const fact = buildTikTokPortfolioAccountDailyFact({
+        aggregate,
+        customerKey: writer.context.customerKey,
+        accountKey: writer.context.accountKey,
+        sourceAccountId: writer.context.sourceAccountId ?? writer.context.accountKey,
+        metricDate: writer.context.metricDate,
+        sourceTimezone: writer.context.sourceTimezone,
+        coverageRunId: accountCoverageRunId,
+        sourceRevision: writer.context.sourceRevision ?? sourceWatermark,
+        fetchedAt: writer.context.fetchedAt,
+        observedAt: writer.context.observedAt,
+        syncRunId: writer.context.historySyncRunId,
+      });
+      const write = await writer.context.gateway.upsertOrganicAccountDailyFact(fact);
+      await writer.context.gateway.saveCoverageRun(validateStorageRow('data_coverage_runs', {
+        coverage_run_id: accountCoverageRunId,
+        sync_run_id: writer.context.historySyncRunId,
+        customer_key: writer.context.customerKey,
+        platform: 'tiktok',
+        account_key: writer.context.accountKey,
+        dataset_key: 'organic_account_portfolio_snapshot',
+        metric_semantics: 'snapshot',
+        scope_mode: 'full_inventory',
+        period_start: writer.context.metricDate,
+        period_end: writer.context.metricDate,
+        source_timezone: writer.context.sourceTimezone,
+        status: fact.data_status,
+        expected_entities: aggregate.row_count,
+        observed_entities: aggregate.row_count,
+        expected_rows: 1,
+        observed_rows: 1,
+        written_rows: 1,
+        failed_rows: 0,
+        source_watermark: sourceWatermark,
+        revisable_until: null,
+        started_at: writer.context.observedAt,
+        completed_at: writer.context.observedAt,
+        error_code: null,
+        created_at: writer.context.observedAt,
+        updated_at: writer.context.observedAt,
+      }));
+      return Object.freeze({
+        fact,
+        larkRow: projectOrganicAccountDailyFactToLark({
+          fact,
+          canonicalAccountKey: `tiktok:${writer.context.accountKey}`,
+        }),
+        aggregate,
+        write,
+      });
     },
     async complete(summary, completedAt = Date.now()) {
       return writer.completeCoverage({

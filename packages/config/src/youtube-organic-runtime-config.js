@@ -8,6 +8,7 @@ import { isPlaceholderConfigValue, requireConfiguredText } from '../../shared/sr
  */
 export const YOUTUBE_REQUIRED_LARK_TABLE_KEYS = Object.freeze([
   'mktAccounts',
+  'mktAccountDaily',
   'mktContent',
   'mktContentDaily',
 ]);

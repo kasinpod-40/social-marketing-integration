@@ -4,6 +4,7 @@ import { permanentError, transientError } from '../../shared/src/errors/runtime-
 const REQUIRED_TABLES = Object.freeze([
   'organic_content_state',
   'organic_content_observations',
+  'organic_account_daily_facts',
   'data_coverage_runs',
   'data_coverage_entities',
 ]);
@@ -116,12 +117,55 @@ export class D1OrganicHistoryGateway {
     }
   }
 
+  /** Aggregate only the exact current-state partition; no provider or Lark source reads. */
+  async readOrganicAccountSnapshotAggregate(input = {}) {
+    const customerKey = requireText(input.customerKey, 'customerKey');
+    const platform = requireText(input.platform, 'platform');
+    const accountKey = requireText(input.accountKey, 'accountKey');
+    try {
+      const row = await this.db.prepare(`
+        SELECT
+          COUNT(*) AS row_count,
+          MAX(last_observed_at) AS max_observed_at,
+          SUM(CASE WHEN views IS NOT NULL THEN 1 ELSE 0 END) AS views_present,
+          COALESCE(SUM(views), 0) AS views_total,
+          SUM(CASE WHEN likes IS NOT NULL AND comments IS NOT NULL AND shares IS NOT NULL
+            THEN 1 ELSE 0 END) AS interactions_present,
+          COALESCE(SUM(COALESCE(likes, 0) + COALESCE(comments, 0) + COALESCE(shares, 0)), 0)
+            AS interactions_total
+        FROM organic_content_state
+        WHERE customer_key = ?
+          AND platform = ?
+          AND account_key = ?
+          AND source_availability_status = 'available'
+      `).bind(customerKey, platform, accountKey).first();
+      return Object.freeze({
+        row_count: Number(row?.row_count ?? 0),
+        max_observed_at: row?.max_observed_at === null || row?.max_observed_at === undefined
+          ? null : Number(row.max_observed_at),
+        views_present: Number(row?.views_present ?? 0),
+        views_total: Number(row?.views_total ?? 0),
+        interactions_present: Number(row?.interactions_present ?? 0),
+        interactions_total: Number(row?.interactions_total ?? 0),
+      });
+    } catch (cause) {
+      throw transientError('Failed to aggregate Organic account snapshot', {
+        code: 'D1_ORGANIC_ACCOUNT_AGGREGATE_READ_FAILED',
+        cause,
+      });
+    }
+  }
+
   upsertOrganicContentState(value) {
     return this.store.upsertOrganicContentState(value);
   }
 
   saveOrganicContentObservation(value) {
     return this.store.saveOrganicContentObservation(value);
+  }
+
+  upsertOrganicAccountDailyFact(value) {
+    return this.store.upsertOrganicAccountDailyFact(value);
   }
 
   saveCoverageRun(value) {

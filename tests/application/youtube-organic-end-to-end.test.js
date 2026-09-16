@@ -243,7 +243,7 @@ test('end-to-end storage identity is part of the durable work completion', () =>
   assert.equal(completion.endToEnd.storage.contentCoverageRunId, 'coverage:youtube:test');
   assert.equal(completion.endToEnd.storage.accountCoverageRunId, 'coverage:youtube-account:test');
   assert.deepEqual(completion.endToEnd.larkTargets, [
-    'MKT_Accounts', 'MKT_Content', 'MKT_Content_Daily',
+    'MKT_Accounts', 'MKT_Account_Daily', 'MKT_Content', 'MKT_Content_Daily',
   ]);
 });
 

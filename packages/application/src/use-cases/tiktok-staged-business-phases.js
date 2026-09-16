@@ -301,6 +301,66 @@ export async function writeAllUnits(input) {
     });
   }
 
+  if (input.historyHooks && typeof input.historyHooks.materializeAccountDaily !== 'function') {
+    throw permanentError('TikTok D1-first history hook is missing Account Daily materialization', {
+      code: 'TIKTOK_ACCOUNT_DAILY_HOOK_MISSING',
+    });
+  }
+
+  let accountDailyPlan = emptyPlan();
+  let accountDailyResult = state.accountDailyResult;
+  if (input.historyHooks) {
+    await input.context.assertCurrent();
+    const accountDaily = await input.historyHooks.materializeAccountDaily();
+    await input.context.assertCurrent();
+    accountDailyPlan = await input.syncEngine.planByKey({
+      repository: input.repository,
+      tableId: input.tables.mktAccountDaily,
+      keyField: 'account_daily_key',
+      rows: [accountDaily.larkRow],
+      onProgress: (event) => input.onProgress({
+        scope: 'account_daily',
+        syncRunId: input.syncRunId,
+        ...event,
+      }),
+    });
+    try {
+      accountDailyResult = await input.syncEngine.executePlan(accountDailyPlan, {
+        beforeWriteChunk: input.context.assertCurrent,
+        onProgress: (event) => input.onProgress({
+          scope: 'account_daily',
+          syncRunId: input.syncRunId,
+          ...event,
+        }),
+      });
+    } catch (cause) {
+      throw buildStagedPartialError({
+        cause,
+        input,
+        state,
+        prepared: {
+          plans: {
+            account: emptyPlan(),
+            accountDaily: accountDailyPlan,
+            content: emptyPlan(),
+            dailySnapshots: emptyPlan(),
+          },
+          reconciliation: emptyReconciliation(),
+        },
+        failedPhase: 'account_daily',
+        accountDailyResult: isPartialSyncError(cause)
+          ? normalizeTablePartialResult(cause.partialResult, accountDailyPlan)
+          : null,
+        accountResult: emptyResult(),
+        historyResult: null,
+        contentResult: emptyResult(),
+        dailyResult: emptyResult(),
+      });
+    }
+    state = Object.freeze({ ...state, accountDailyResult });
+    await saveWriteState({ ...input, state, complete: false });
+  }
+
   const accountPlan = await planTikTokAccountDestination({
     repository: input.repository,
     syncEngine: input.syncEngine,
@@ -327,7 +387,12 @@ export async function writeAllUnits(input) {
       input,
       state,
       prepared: {
-        plans: { account: accountPlan, content: emptyPlan(), dailySnapshots: emptyPlan() },
+        plans: {
+          account: accountPlan,
+          accountDaily: emptyPlan(),
+          content: emptyPlan(),
+          dailySnapshots: emptyPlan(),
+        },
         reconciliation: emptyReconciliation(),
       },
       failedPhase: 'account',
