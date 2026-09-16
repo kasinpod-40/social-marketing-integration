@@ -7,7 +7,9 @@
 - add normal D1-first daily writes plus an exact Customer Preview-only backfill with D1/Lark readback and
   stable-key idempotency. TikTok snapshot date comes from the source observation, not YouTube's latest day;
 - exclude the retained foreign/dev YouTube channel by exact identity. Production execution and live reconciliation
-  remain pending reviewed merge.
+  passed after PR `#849` merged as `main@5225e535`: Lark created/read back 35/35 Customer rows; D1 TikTok
+  fact readback 1/1; separate rerun was create 0/update 0/skip 35 with zero duplicates. Worker version
+  `c98e61e1-83a0-4b2c-b0c3-c901bf83dadc` serves 100% with unchanged bindings and Preview URLs disabled.
 
 ## 2026-09-14 — Customer Organic exact history repair
 
