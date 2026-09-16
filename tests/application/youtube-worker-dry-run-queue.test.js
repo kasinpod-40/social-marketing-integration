@@ -221,6 +221,7 @@ function createHarness(options = {}) {
     YOUTUBE_CHANNEL_ID: 'UC_TEST',
     YOUTUBE_API_KEY: 'test-public-api-key',
     LARK_TABLE_MKT_ACCOUNTS: 'tbl_accounts',
+    LARK_TABLE_MKT_ACCOUNT_DAILY: 'tbl_account_daily',
     LARK_TABLE_RAW_YOUTUBE_CHANNELS: 'tbl_raw_channels',
     LARK_TABLE_RAW_YOUTUBE_VIDEOS: 'tbl_raw_videos',
     LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY: 'tbl_raw_analytics',

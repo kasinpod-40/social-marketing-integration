@@ -9,7 +9,8 @@ import { runReliableSync } from '../../packages/reliability/src/reliable-sync-ru
 import { InMemoryLeaseLockManager } from '../../packages/reliability/src/in-memory-lease-lock-manager.js';
 
 const TABLES = Object.freeze({
-  mktAccounts: 'accounts', rawYouTubeChannels: 'channels', rawYouTubeVideos: 'videos',
+  mktAccounts: 'accounts', mktAccountDaily: 'account_daily',
+  rawYouTubeChannels: 'channels', rawYouTubeVideos: 'videos',
   rawYouTubeAnalyticsDaily: 'analytics', mktContent: 'content', mktContentDaily: 'daily',
 });
 const CHANNEL = Object.freeze({
@@ -161,9 +162,11 @@ test('stable Free-plan execution checkpoints bounded destination rows before pub
     'youtube_destination_content_v1',
     'youtube_destination_daily_v1',
     'youtube_destination_daily_v1',
+    'youtube_destination_account_daily_v1',
   ]);
   assert.equal(result.tables.content.result.created, 2);
   assert.equal(result.tables.dailySnapshots.result.created, 2);
+  assert.equal(result.tables.accountDaily.result.created, 1);
   assert.equal(result.tables.accounts.result.created, 1);
   assert.equal(repository.events.at(-1), 'write:accounts');
   assert.equal(stateStore.saved.length, 1);

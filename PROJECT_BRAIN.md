@@ -1,5 +1,16 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Organic Account Daily four-platform completion — 2026-09-16
+
+The existing `MKT_Account_Daily` schema supports all four Organic platforms. Facebook/Instagram rows remain
+unchanged. The YouTube path projects its exact Customer D1 account fact after Content/Daily completion. The
+TikTok D1-first path aggregates only the exact Customer available current-state video partition and writes a
+snapshot Account Daily fact to D1 before Lark. It leaves unsupported profile metrics null and never reconstructs
+historical daily values from a current-only Native source. The isolated Preview operator excludes a foreign/dev
+YouTube fact by exact channel identity, backfills bounded D1-backed rows, reads back D1/Lark, and requires a
+zero-create/zero-update rerun. Read-only pre-execution PROD evidence is 34 Customer YouTube facts and 2,079
+available TikTok video states with latest completed coverage period `2026-09-16`. Live closeout remains pending.
+
 ## Customer Weekly AI bounded recommendation repair — 2026-09-14
 
 The exact Customer Weekly period `2026-09-07..2026-09-13` completed all eight Report materializations, but Lark

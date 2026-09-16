@@ -37,7 +37,7 @@ test('Lark failure after D1 success retries D1 idempotently and repairs Lark', a
 
   events.length = 0;
   const result = await writeAllUnits(input);
-  assert.deepEqual(events, ['d1', 'lark:content', 'lark:daily', 'lark:account']);
+  assert.deepEqual(events, ['d1', 'lark:content', 'lark:daily', 'd1:account-daily', 'lark:account-daily', 'lark:account']);
   assert.equal(historyHooks.calls, 2);
   assert.equal(result.historyResult.contentRowsDurable, 1);
   assert.equal(result.historyResult.observationRowsDurable, 1);
@@ -56,6 +56,7 @@ function createInput(input) {
     tables: {
       rawTikTokCreatorVideos: 'raw-tiktok',
       mktAccounts: 'mkt-accounts',
+      mktAccountDaily: 'mkt-account-daily',
       mktContent: 'mkt-content',
       mktContentDaily: 'mkt-content-daily',
       mktClassificationDictionary: 'mkt-dictionary',
@@ -162,6 +163,10 @@ function createHistoryHooks(events, input = {}) {
         ? historyResult({ observationsCreated: 1 })
         : historyResult({ observationsSkipped: 1 });
     },
+    async materializeAccountDaily() {
+      events.push('d1:account-daily');
+      return { larkRow: { account_daily_key: 'tiktok:chemistry_k:2026-07-23' } };
+    },
   };
 }
 
@@ -183,6 +188,7 @@ function createSyncEngine(events, input = {}) {
     async executePlan(plan) {
       const role = plan.tableId === 'mkt-accounts'
         ? 'account'
+        : plan.tableId === 'mkt-account-daily' ? 'account-daily'
         : plan.tableId === 'mkt-content' ? 'content' : 'daily';
       events.push(`lark:${role}`);
       if (role === 'content') {

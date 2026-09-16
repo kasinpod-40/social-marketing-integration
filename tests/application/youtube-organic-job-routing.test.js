@@ -41,6 +41,7 @@ test('Analytics-enabled route requests the exact Customer Connection owner clien
       MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
       YOUTUBE_CHANNEL_ID: 'UC_CUSTOMER_CHANNEL',
       LARK_TABLE_MKT_ACCOUNTS: 'tbl_accounts',
+      LARK_TABLE_MKT_ACCOUNT_DAILY: 'tbl_account_daily',
       LARK_TABLE_RAW_YOUTUBE_CHANNELS: 'tbl_raw_channels',
       LARK_TABLE_RAW_YOUTUBE_VIDEOS: 'tbl_raw_videos',
       LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY: 'tbl_raw_analytics',

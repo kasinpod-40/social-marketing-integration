@@ -26,6 +26,9 @@ GET-only post-deploy readback ผ่าน 4/4; fresh scheduled evidence รอ�
 Organic daily contract แยก “วันข้อมูล” ออกจาก “เวลาซิงก์” ชัดเจน: `MKT_Content_Daily.metric_date` ใช้วัน
 Bangkok ที่จบสมบูรณ์ล่าสุด ส่วน `MKT_Accounts.last_sync_at` ใช้เวลาของ Work ที่เขียนปลายทางสำเร็จ
 และคงค่าเดิมตลอด retry ของ Work เดียวกัน.
+`MKT_Account_Daily` รองรับ Facebook, Instagram, YouTube และ TikTok ในตารางเดียวกัน: YouTube นำ Account
+fact จาก D1 มาแสดง; TikTok แสดงยอดสะสมของวิดีโอใน current-state snapshot ที่มีหลักฐานจริง โดยคงค่า
+profile metrics ที่แหล่งข้อมูลไม่รองรับเป็นว่าง ไม่สร้างย้อนหลังจาก snapshot ล่าสุด.
 
 ประวัติ Organic แบบย้อนหลังใช้ข้อมูลที่ Provider พิสูจน์ได้เท่านั้น: Facebook ซ่อมลง D1/Lark ได้ และ
 YouTube เก็บ 32,164 content-day ระหว่าง 19 มิ.ย.–27 ก.ค. ใน D1 ซึ่งเป็นแหล่งประวัติถาวร โดยไม่ยัดทุกแถวเข้า

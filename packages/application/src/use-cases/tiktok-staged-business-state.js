@@ -35,6 +35,7 @@ export function normalizeWriteState(value, planFingerprint = null) {
     sourceRecordsCompleted: nonNegativeInteger(state.sourceRecordsCompleted ?? 0),
     selectedRecordsCompleted: nonNegativeInteger(state.selectedRecordsCompleted ?? 0),
     accountResult: normalizeTableResult(state.accountResult),
+    accountDailyResult: normalizeTableResult(state.accountDailyResult),
     contentResult: normalizeTableResult(state.contentResult),
     dailyResult: normalizeTableResult(state.dailyResult),
     historyResult: normalizeHistoryResult(state.historyResult),
@@ -299,6 +300,7 @@ export function buildWriteResult(input) {
     incremental: summarizeIncremental(input.plan, input.checkpointSaved),
     content: withTableSourceSkips(input.state.contentResult, input.plan),
     account: input.state.accountResult,
+    accountDaily: input.state.accountDailyResult,
     dailySnapshots: withTableSourceSkips(input.state.dailyResult, input.plan),
     d1History: input.state.historyResult,
     reconciliation: Object.freeze({
@@ -335,7 +337,19 @@ export function buildStagedPartialError(input) {
     ?? (input.failedPhase === 'account'
       ? unknownTableResult(input.prepared.plans.account)
       : plannedOnlyResult(input.prepared.plans.account));
+  const accountDailyPlan = input.prepared.plans.accountDaily ?? {
+    skipped: 0,
+    duplicateInputRows: 0,
+  };
+  const accountDailyCurrent = input.accountDailyResult
+    ?? (input.failedPhase === 'account_daily'
+      ? unknownTableResult(accountDailyPlan)
+      : plannedOnlyResult(accountDailyPlan));
   const accountAggregate = mergeTableResult(input.state.accountResult, accountCurrent);
+  const accountDailyAggregate = mergeTableResult(
+    input.state.accountDailyResult,
+    accountDailyCurrent,
+  );
   const contentAggregate = mergeTableResult(input.state.contentResult, contentCurrent);
   const dailyAggregate = mergeTableResult(input.state.dailyResult, dailyCurrent);
   const historyAggregate = input.historyResult
@@ -344,6 +358,7 @@ export function buildStagedPartialError(input) {
   const confirmedWrites = contentAggregate.created + contentAggregate.updated
     + dailyAggregate.created + dailyAggregate.updated
     + accountAggregate.created + accountAggregate.updated
+    + accountDailyAggregate.created + accountDailyAggregate.updated
     + historyAggregate.contentRowsDurable + historyAggregate.observationRowsDurable;
   if (confirmedWrites === 0 && !isPartialSyncError(input.cause)) return input.cause;
 
@@ -352,6 +367,7 @@ export function buildStagedPartialError(input) {
     contentResult: contentAggregate,
     dailyResult: dailyAggregate,
     accountResult: accountAggregate,
+    accountDailyResult: accountDailyAggregate,
     historyResult: historyAggregate,
     reconciliation: mergeReconciliation(input.state.reconciliation, input.prepared.reconciliation),
   });
@@ -379,6 +395,8 @@ export function buildStagedPartialError(input) {
       dailyUpdated: dailyAggregate.updated,
       accountCreated: accountAggregate.created,
       accountUpdated: accountAggregate.updated,
+      accountDailyCreated: accountDailyAggregate.created,
+      accountDailyUpdated: accountDailyAggregate.updated,
       causeCode: input.cause?.code ?? null,
       causeMessage: input.cause instanceof Error ? input.cause.message : String(input.cause),
     },

@@ -414,11 +414,13 @@ function failCompleteWorkOnce(store) {
 function createIndexedRepository(input) {
   const recordsByTable = new Map([
     ['tbl_mkt_accounts', new Map()],
+    ['tbl_mkt_account_daily', new Map()],
     ['tbl_mkt_content', new Map()],
     ['tbl_mkt_content_daily', new Map()],
   ]);
   const externalIndexByTable = new Map([
     ['tbl_mkt_accounts', new Map()],
+    ['tbl_mkt_account_daily', new Map()],
     ['tbl_mkt_content', new Map()],
     ['tbl_mkt_content_daily', new Map()],
   ]);
@@ -489,6 +491,7 @@ function createIndexedRepository(input) {
       }
       const stableField = tableId === 'tbl_mkt_accounts'
         ? 'account_key'
+        : tableId === 'tbl_mkt_account_daily' ? 'account_daily_key'
         : tableId === 'tbl_mkt_content' ? 'content_key' : 'content_daily_key';
       const stableIndex = recordsByTable.get(tableId);
       const externalIndex = externalIndexByTable.get(tableId);
@@ -508,6 +511,7 @@ function createIndexedRepository(input) {
       repository.writeCalls.push({ operation: 'update', tableId, rows: rows.length });
       const stableField = tableId === 'tbl_mkt_accounts'
         ? 'account_key'
+        : tableId === 'tbl_mkt_account_daily' ? 'account_daily_key'
         : tableId === 'tbl_mkt_content' ? 'content_key' : 'content_daily_key';
       const stableIndex = recordsByTable.get(tableId);
       const externalIndex = externalIndexByTable.get(tableId);
@@ -598,6 +602,7 @@ function tableIds() {
   return {
     rawTikTokCreatorVideos: 'tbl_raw_tiktok_creator',
     mktAccounts: 'tbl_mkt_accounts',
+    mktAccountDaily: 'tbl_mkt_account_daily',
     mktContent: 'tbl_mkt_content',
     mktContentDaily: 'tbl_mkt_content_daily',
     mktClassificationDictionary: 'tbl_dictionary',

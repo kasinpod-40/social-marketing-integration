@@ -23,6 +23,38 @@ test('Organic history gateway fails closed before Migration 0009 exists', async 
   }
 });
 
+test('Organic account aggregate is exact-scope and preserves incomplete metric evidence', async () => {
+  const { d1, gateway } = await createGateway();
+  try {
+    const first = createWriter(gateway, { observedAt: START, suffix: 'aggregate-one' });
+    await first.writeBatch(sourceBatch({ views: 100, likes: 10, comments: 1, shares: 2 }));
+    const second = createWriter(gateway, { observedAt: START + DAY, suffix: 'aggregate-two' });
+    await second.writeBatch(sourceBatch({
+      externalContentId: 'video-2',
+      views: 200,
+      likes: 20,
+      comments: 2,
+      shares: null,
+    }));
+
+    const aggregate = await gateway.readOrganicAccountSnapshotAggregate({
+      customerKey: 'chemistry_k',
+      platform: 'tiktok',
+      accountKey: 'chemistry_k',
+    });
+    assert.deepEqual(aggregate, {
+      row_count: 2,
+      max_observed_at: START + DAY,
+      views_present: 2,
+      views_total: 300,
+      interactions_present: 1,
+      interactions_total: 35,
+    });
+  } finally {
+    d1.close();
+  }
+});
+
 test('Organic history creates initial observation and retries the same durable snapshot idempotently', async () => {
   const { d1, gateway } = await createGateway();
   try {
@@ -176,16 +208,17 @@ function createWriter(gateway, input) {
 }
 
 function sourceBatch(metrics) {
+  const externalContentId = metrics.externalContentId ?? 'video-1';
   return {
     contentRows: [{
-      content_key: 'tiktok:chemistry_k:video-1',
+      content_key: `tiktok:chemistry_k:${externalContentId}`,
       platform: 'tiktok',
       account_id: 'chemistry_k',
-      external_content_id: 'video-1',
+      external_content_id: externalContentId,
       content_type: 'video',
       published_at: Date.parse('2026-07-01T00:00:00.000Z'),
       caption: 'Chemistry K',
-      content_url: 'https://www.tiktok.com/@chemistry_k/video/video-1',
+      content_url: `https://www.tiktok.com/@chemistry_k/video/${externalContentId}`,
       thumbnail_url: null,
       duration_seconds: 30,
       latest_views: metrics.views,
@@ -201,7 +234,7 @@ function sourceBatch(metrics) {
       metric_date: START,
       platform: 'tiktok',
       account_id: 'chemistry_k',
-      external_content_id: 'video-1',
+      external_content_id: externalContentId,
       views: metrics.views,
       likes: metrics.likes,
       comments: metrics.comments ?? 1,

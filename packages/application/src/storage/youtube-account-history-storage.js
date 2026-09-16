@@ -36,35 +36,10 @@ export async function writeYouTubeAccountSnapshot(input) {
   };
   const coverageStart = await beginAccountCoverage(input, coverageBase);
 
-  const fact = validateStorageRow('organic_account_daily_facts', {
-    account_daily_key: createAccountDailyKey({
-      platform: PLATFORM,
-      account_key: input.context.accountKey,
-      metric_date: input.context.metricDate,
-    }),
-    customer_key: input.context.customerKey,
-    platform: PLATFORM,
-    account_key: input.context.accountKey,
-    source_account_id: requireText(raw.channel_id, 'channel_id'),
-    metric_date: input.context.metricDate,
-    account_timezone: input.context.sourceTimezone,
-    followers: raw.subscriber_count_hidden === true
-      ? null
-      : nullableNonNegativeInteger(raw.subscriber_count),
-    follows: null,
-    profile_views: null,
-    views: nullableNonNegativeInteger(raw.view_count),
-    reach: null,
-    accounts_engaged: null,
-    total_interactions: null,
-    net_follows: null,
-    data_status: 'complete',
-    coverage_run_id: input.ids.accountCoverageRunId,
-    source_revision: input.ids.sourceWatermark,
-    fetched_at: input.context.fetchedAt,
-    sync_run_id: input.ids.historySyncRunId,
-    created_at: input.context.observedAt,
-    updated_at: input.context.observedAt,
+  const fact = buildYouTubeAccountDailyFact({
+    raw,
+    context: input.context,
+    ids: input.ids,
   });
 
   try {
@@ -99,6 +74,42 @@ export async function writeYouTubeAccountSnapshot(input) {
     }
     throw error;
   }
+}
+
+export function buildYouTubeAccountDailyFact(input = {}) {
+  const raw = input.raw;
+  const context = input.context;
+  const ids = input.ids;
+  return validateStorageRow('organic_account_daily_facts', {
+    account_daily_key: createAccountDailyKey({
+      platform: PLATFORM,
+      account_key: context.accountKey,
+      metric_date: context.metricDate,
+    }),
+    customer_key: context.customerKey,
+    platform: PLATFORM,
+    account_key: context.accountKey,
+    source_account_id: requireText(raw.channel_id, 'channel_id'),
+    metric_date: context.metricDate,
+    account_timezone: context.sourceTimezone,
+    followers: raw.subscriber_count_hidden === true
+      ? null
+      : nullableNonNegativeInteger(raw.subscriber_count),
+    follows: null,
+    profile_views: null,
+    views: nullableNonNegativeInteger(raw.view_count),
+    reach: null,
+    accounts_engaged: null,
+    total_interactions: null,
+    net_follows: null,
+    data_status: 'complete',
+    coverage_run_id: ids.accountCoverageRunId,
+    source_revision: ids.sourceWatermark,
+    fetched_at: context.fetchedAt,
+    sync_run_id: ids.historySyncRunId,
+    created_at: context.observedAt,
+    updated_at: context.observedAt,
+  });
 }
 
 async function beginAccountCoverage(input, coverageBase) {
