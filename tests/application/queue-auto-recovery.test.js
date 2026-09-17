@@ -3,10 +3,106 @@ import assert from 'node:assert/strict';
 import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
   attemptQueueAutoRecovery,
+  checkDeferredMetaRetry,
+  readDeferredMetaFailureDelaySeconds,
+  resolveDeferredMetaRetryPolicy,
   resolveQueueAutoRecoveryPolicy,
 } from '../../apps/sync-worker/src/queue-auto-recovery.js';
 
 const GENERATION = Date.parse('2026-08-25T00:40:22.000Z');
+
+test('scheduled Customer Meta retries wait for other channels without sending group notifications', async () => {
+  const generation = Date.parse('2026-09-17T00:30:00+07:00');
+  const input = baseInput({
+    env: { ...customerEnv(), MKT_META_DEFERRED_RETRY_ENABLED: 'true' },
+    operation: { ...operation(), generation, originalRequestedAt: generation },
+  });
+  const error = {
+    code: 'META_TRANSIENT_API_ERROR',
+    details: { operation: 'meta_ads.performance.daily', graphCode: 2, graphSubcode: 1504044 },
+  };
+  const policy = resolveDeferredMetaRetryPolicy({ ...input, error });
+  assert.equal(policy.eligible, true);
+  assert.equal(new Date(policy.notBefore).toISOString(), '2026-09-17T03:00:00.000Z');
+  assert.equal(readDeferredMetaFailureDelaySeconds({ ...input, error, now: generation }), 34_200);
+  assert.equal(readDeferredMetaFailureDelaySeconds({ ...input, error, now: policy.notBefore }), 3_600);
+
+  const statements = [];
+  const retry = {
+    ...input,
+    message: { attempts: 2 },
+    env: {
+      ...input.env,
+      MKT_STATE_DB: {
+        prepare(sql) {
+          statements.push(sql);
+          return {
+            bind(...values) {
+              statements.push(values);
+              return { async first() { return { active_count: 1 }; } };
+            },
+          };
+        },
+      },
+    },
+  };
+  assert.equal((await checkDeferredMetaRetry({ ...retry, now: generation })).reason, 'schedule_pending');
+  assert.deepEqual(
+    await checkDeferredMetaRetry({ ...retry, now: policy.notBefore }),
+    { ...policy, reason: 'other_channel_active', activeCount: 1, delaySeconds: 1_800 },
+  );
+  assert.match(statements[0], /work_type <> \?/u);
+  assert.equal(statements[1][2], JOB_TYPES.META_ADS_SYNC);
+  assert.equal(Object.hasOwn(retry.env, 'LARK_NOTIFICATION_DESTINATION_CHAT_NAME'), false);
+  const ready = await checkDeferredMetaRetry({
+    ...retry,
+    now: policy.notBefore,
+    env: {
+      ...retry.env,
+      MKT_STATE_DB: {
+        prepare() { return { bind() { return { async first() { return { active_count: 0 }; } }; } }; },
+      },
+    },
+  });
+  assert.equal(ready.reason, 'ready');
+  assert.equal(ready.delaySeconds, 0);
+  const unavailable = await checkDeferredMetaRetry({
+    ...retry,
+    now: policy.notBefore,
+    env: {
+      ...retry.env,
+      MKT_STATE_DB: { prepare() { throw new Error('D1 unavailable'); } },
+    },
+  });
+  assert.equal(unavailable.reason, 'state_unavailable');
+  assert.equal(unavailable.delaySeconds, 1_800);
+});
+
+test('deferred Meta retry is exact and fails closed for other errors or runtimes', async () => {
+  const input = baseInput({ env: { ...customerEnv(), MKT_META_DEFERRED_RETRY_ENABLED: 'true' } });
+  assert.equal(resolveDeferredMetaRetryPolicy({ ...input, error: {
+    code: 'META_TRANSIENT_API_ERROR',
+    details: { operation: 'meta_ads.performance.daily', graphCode: 2, graphSubcode: 1504045 },
+  } }).eligible, false);
+  assert.equal(resolveDeferredMetaRetryPolicy({ ...input, job: {
+    body: { ...input.job.body, trigger: 'manual_uat' },
+  } }).eligible, false);
+  assert.equal(resolveDeferredMetaRetryPolicy({ ...input, env: {
+    ...input.env,
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+  } }).eligible, false);
+  assert.equal((await checkDeferredMetaRetry({
+    ...input,
+    message: { attempts: 1 },
+  })).delaySeconds, 0);
+  assert.equal(readDeferredMetaFailureDelaySeconds({
+    ...input,
+    error: { code: 'META_TRANSIENT_API_ERROR', details: {
+      operation: 'meta_ads.performance.daily', graphCode: 2, graphSubcode: 1504045,
+    } },
+  }), null);
+});
 
 test('Queue auto-recovery is fail-closed outside exact Customer Production', () => {
   assert.deepEqual(resolveQueueAutoRecoveryPolicy(baseInput({

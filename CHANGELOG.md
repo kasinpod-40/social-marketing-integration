@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-17 — Deferred Customer Meta Ads retry
+
+- classify only the observed scheduled Meta Ads Graph `2/1504044` response as retryable, preserving
+  permanent classification for adjacent and Organic errors;
+- add a default-off Customer Production gate that delays retry until after the daily source window and
+  while another same-day channel Work is active, using the original Queue identity and checkpoint;
+- leave customer-group failure messages, generic DLQ redrive, broad auto-recovery, and Business data
+  unchanged. Production activation and exact K2/K3 incident recovery require reviewed live gates.
+
 ## 2026-09-17 — YouTube Account Daily fallback wiring
 
 - fix the scheduled YouTube `organic_sync` fallback route to pass its already validated complete Lark table
