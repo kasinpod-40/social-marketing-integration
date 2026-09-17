@@ -276,7 +276,7 @@ function createMetaApiError({ response, payload, operation }) {
     || response.status >= 500
     || metaError.is_transient === true
     || isMetaAdsBusinessUseCaseRateLimit(metaError)
-    || isMetaAdsDeferredServiceFailure(metaError, operation);
+    || isMetaAdsDeferredServiceFailure(metaError, operation, response.status);
   const factory = retryable ? transientError : permanentError;
   return factory(`Meta Graph request failed: ${operation}`, {
     code: retryable ? 'META_TRANSIENT_API_ERROR' : 'META_PERMANENT_API_ERROR',
@@ -300,9 +300,10 @@ export function isMetaAdsBusinessUseCaseRateLimit(error) {
 }
 
 /** Exact Ads-only provider failure observed on both scheduled Customer ad accounts. */
-export function isMetaAdsDeferredServiceFailure(error, operation) {
+export function isMetaAdsDeferredServiceFailure(error, operation, status = null) {
   const details = error?.details ?? error;
-  return typeof operation === 'string'
+  return Number(status ?? details?.status) === 400
+    && typeof operation === 'string'
     && operation.startsWith('meta_ads.')
     && Number(details?.graphCode ?? details?.code) === 2
     && Number(details?.graphSubcode ?? details?.error_subcode) === 1504044;

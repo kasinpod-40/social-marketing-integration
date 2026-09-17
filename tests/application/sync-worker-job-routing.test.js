@@ -52,7 +52,7 @@ test('scheduled Meta provider failure defers the same Queue message until after 
       processed += 1;
       throw transientError('Synthetic Meta service failure', {
         code: 'META_TRANSIENT_API_ERROR',
-        details: { operation: 'meta_ads.performance.daily', graphCode: 2, graphSubcode: 1504044 },
+        details: { operation: 'meta_ads.performance.daily', status: 400, graphCode: 2, graphSubcode: 1504044 },
       });
     },
   });

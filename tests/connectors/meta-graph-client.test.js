@@ -154,10 +154,11 @@ test('only the observed Meta Ads code/subcode pair is retryable', async () => {
     operationName: 'meta_ads.performance.daily',
   })).id, 'ok');
   assert.deepEqual(delays, [10]);
-  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'meta_ads.performance.daily'), true);
-  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'instagram.content.insights'), false);
-  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504045 }, 'meta_ads.performance.daily'), false);
-  assert.equal(isMetaAdsDeferredServiceFailure({ code: 200, error_subcode: 1504044 }, 'meta_ads.performance.daily'), false);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'meta_ads.performance.daily', 400), true);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'instagram.content.insights', 400), false);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504045 }, 'meta_ads.performance.daily', 400), false);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 200, error_subcode: 1504044 }, 'meta_ads.performance.daily', 400), false);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'meta_ads.performance.daily', 403), false);
 });
 
 test('Meta 429 honors retry-after and exposes usage metadata to request events', async () => {

@@ -19,7 +19,7 @@ test('scheduled Customer Meta retries wait for other channels without sending gr
   });
   const error = {
     code: 'META_TRANSIENT_API_ERROR',
-    details: { operation: 'meta_ads.performance.daily', graphCode: 2, graphSubcode: 1504044 },
+    details: { operation: 'meta_ads.performance.daily', status: 400, graphCode: 2, graphSubcode: 1504044 },
   };
   const policy = resolveDeferredMetaRetryPolicy({ ...input, error });
   assert.equal(policy.eligible, true);
@@ -82,7 +82,7 @@ test('deferred Meta retry is exact and fails closed for other errors or runtimes
   const input = baseInput({ env: { ...customerEnv(), MKT_META_DEFERRED_RETRY_ENABLED: 'true' } });
   assert.equal(resolveDeferredMetaRetryPolicy({ ...input, error: {
     code: 'META_TRANSIENT_API_ERROR',
-    details: { operation: 'meta_ads.performance.daily', graphCode: 2, graphSubcode: 1504045 },
+    details: { operation: 'meta_ads.performance.daily', status: 400, graphCode: 2, graphSubcode: 1504045 },
   } }).eligible, false);
   assert.equal(resolveDeferredMetaRetryPolicy({ ...input, job: {
     body: { ...input.job.body, trigger: 'manual_uat' },
@@ -99,7 +99,7 @@ test('deferred Meta retry is exact and fails closed for other errors or runtimes
   assert.equal(readDeferredMetaFailureDelaySeconds({
     ...input,
     error: { code: 'META_TRANSIENT_API_ERROR', details: {
-      operation: 'meta_ads.performance.daily', graphCode: 2, graphSubcode: 1504045,
+      operation: 'meta_ads.performance.daily', status: 400, graphCode: 2, graphSubcode: 1504045,
     } },
   }), null);
 });
