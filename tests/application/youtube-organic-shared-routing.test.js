@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
   createYouTubeOrganicActiveJobRouter,
@@ -87,4 +88,13 @@ test('non-YouTube jobs always remain in the existing router chain', async () => 
 
   assert.equal(selectYouTubeOrganicActiveRoute(input), 'fallback');
   assert.equal(await router(input), 'fallback');
+});
+
+test('fallback YouTube route passes the complete validated destination table set', () => {
+  const source = readFileSync(new URL('../../apps/sync-worker/src/active-job-router.js', import.meta.url), 'utf8');
+  const youtubeRoute = source.split('if (definition.type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC) {')[1]
+    ?.split('if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {')[0];
+  assert.ok(youtubeRoute);
+  assert.match(youtubeRoute, /const youtubeTableIds = readYouTubeLarkTableIdsFromEnv\(input\.env\)/u);
+  assert.match(youtubeRoute, /tables: youtubeTableIds,/u);
 });

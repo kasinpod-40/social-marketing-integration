@@ -107,6 +107,12 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   schedules remain configured. Preview URL flags were read back independently as `enabled=false` and
   `previews_enabled=false`. The next natural daily run is still required to observe future automatic row creation;
   no artificial future-date sync or Queue replay was issued.
+- first post-deploy read-only scheduled-run check found the Customer YouTube `organic_sync` fallback run at
+  `2026-09-16T18:31:18Z` failed before source reads with `YouTube sync requires tables.mktAccountDaily`.
+  The fallback router already validates the complete four-table YouTube set but passed only three table IDs
+  into the D1-first use case. The reviewed repair passes that exact validated set unchanged; regression coverage
+  guards the fallback route. TikTok's separate post-Lark run succeeded at `2026-09-16T22:38:39Z`;
+  its `2026-09-16` Account Daily fact is the expected completed reporting day on 17 September.
 
 ### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-15)
 

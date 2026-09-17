@@ -358,11 +358,7 @@ export async function processJob(input) {
         d1WriteEnabled: readBoolean(input.env?.MKT_TIME_SERIES_D1_WRITE_ENABLED, false),
         larkWriteEnabled: readBoolean(input.env?.MKT_YOUTUBE_LARK_WRITE_ENABLED, false),
         dryRun: input.job.body?.dryRun === true,
-        tables: {
-          mktAccounts: tableIds.mktAccounts,
-          mktContent: tableIds.mktContent,
-          mktContentDaily: tableIds.mktContentDaily,
-        },
+        tables: youtubeTableIds,
       });
       },
     });

@@ -17,6 +17,12 @@ and a separate rerun skipped all 35 with zero duplicate keys. `MKT_Account_Daily
 bindings unchanged; Preview URLs are disabled. The next scheduled daily run will supply first-run automatic
 evidence; no future-date or Queue replay was forced.
 
+The first natural post-deploy YouTube run exposed one fallback-router wiring omission: although its four
+required table IDs were validated, the `organic_sync` call passed only three and failed before source reads
+with `tables.mktAccountDaily` missing. The narrow follow-up passes the already validated full table set;
+the Production schedule and customer data remain unchanged. The separate TikTok post-Lark run succeeded on
+17 September morning and retained the expected `2026-09-16` completed-day Account Daily fact.
+
 ## Customer Weekly AI bounded recommendation repair — 2026-09-14
 
 The exact Customer Weekly period `2026-09-07..2026-09-13` completed all eight Report materializations, but Lark
