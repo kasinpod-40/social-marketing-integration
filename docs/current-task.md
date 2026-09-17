@@ -84,7 +84,7 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   channel Work remains active. It retains the original Queue body, Work key, generation and durable checkpoint;
 - this path does not send error messages to the customer group, does not activate generic DLQ redrive or the
   previously disabled broad Queue auto-recovery, and does not mutate D1 Business facts or Lark data;
-- focused 45/45, `npm run check`, full Node 3,396/3,396 and Workers 18/18, Report reliability 106/106,
+- focused 45/45, `npm run check`, full Node 3,397/3,397 and Workers 18/18, Report reliability 106/106,
   `npm audit --audit-level=high` zero vulnerabilities, `npm ci`, and deploy dry-run exit 0 passed locally;
 - **not yet a Production completion claim**: reviewed PR/Branch Verification, controlled deploy with exact
   Customer binding enabled, live retry observation, and D1/Lark Ads Daily parity remain required. Current
