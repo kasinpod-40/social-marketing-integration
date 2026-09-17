@@ -9,6 +9,13 @@
 - add a guarded one-incident recovery operator for the failed `youtube-scheduled-20260917` generation. It is
   plan-only by default and permits one exact Queue send only after reviewed-version, DLQ, lock, operation,
   source-failure and missing-target-fact fences pass; generic redrive and other incidents remain untouched.
+- PR `#852` passed both Branch Verification jobs and merged as `main@2bde0650`. One exact Queue send recovered
+  the original Work, which completed and wrote the `2026-09-16` YouTube Account Daily fact to Customer D1.
+  Controlled Lark reconciliation created its missing row, updated one TikTok current-state row and read back
+  36/36 exact Account Daily projections; rerun planned zero creates/updates and zero duplicate input keys.
+- add a YouTube Account Daily post-write stable-key readback guard for both bounded and unbounded destination
+  paths. A Lark acknowledgement without a matching row can no longer complete the Work or advance account
+  freshness; a focused regression covers the false-acknowledgement case.
 
 ## 2026-09-16 — Organic Account Daily for YouTube and TikTok
 

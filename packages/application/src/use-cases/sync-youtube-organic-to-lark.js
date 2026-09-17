@@ -490,6 +490,12 @@ export async function syncYouTubeOrganicToLark(input = {}) {
         beforeWriteChunk: assertCurrentWork,
         onProgress: (event) => onProgress({ scope: name, ...event }),
       });
+      if (name === 'accountDaily') {
+        await assertAccountDailyReadback({
+          syncEngine, repository, tableId: tables.mktAccountDaily,
+          rows: accountDailyRows, assertCurrentWork,
+        });
+      }
     }
   }
 
@@ -1525,6 +1531,15 @@ async function executeDurableDestinationPhases(input) {
         beforeWriteChunk: input.assertCurrentWork,
         onProgress: (event) => input.onProgress({ scope: definition.name, ...event }),
       });
+      if (definition.name === 'accountDaily') {
+        await assertAccountDailyReadback({
+          syncEngine: input.syncEngine,
+          repository: input.repository,
+          tableId: definition.tableId,
+          rows,
+          assertCurrentWork: input.assertCurrentWork,
+        });
+      }
     }
     const nextState = {
       nextIndex: stop,
@@ -1580,6 +1595,29 @@ function durableDestinationContinuation(phase, processedItems, expectedItems) {
     continuationPhase: phase,
     progress: Object.freeze({ complete: false, processedItems, expectedItems }),
   });
+}
+
+async function assertAccountDailyReadback(input) {
+  await input.assertCurrentWork();
+  const readback = await input.syncEngine.planByKey({
+    repository: input.repository,
+    tableId: input.tableId,
+    keyField: 'account_daily_key',
+    rows: input.rows,
+  });
+  if (readback.createRows.length !== 0 || readback.updateRows.length !== 0
+    || Number(readback.skipped ?? 0) !== input.rows.length
+    || Number(readback.duplicateInputRows ?? 0) !== 0) {
+    // A successful Lark API write acknowledgement alone must not publish account freshness.
+    throw permanentError('YouTube Account Daily destination readback did not reconcile', {
+      code: 'YOUTUBE_ACCOUNT_DAILY_READBACK_MISMATCH',
+      details: {
+        expectedRows: input.rows.length,
+        missingRows: readback.createRows.length,
+        differingRows: readback.updateRows.length,
+      },
+    });
+  }
 }
 
 function normalizeYouTubeDestinationState(value) {

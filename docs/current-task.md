@@ -116,8 +116,25 @@ enable and verify one connector schedule at a time before Report/AI/Notification
 - PR `#851` passed both final-HEAD Branch Verification jobs and merged as `main@55567f83fa8b44d220ca439fe730c9f3090b543d`.
   Production Worker version `db3b806b-885f-41db-bed7-d37eebe4d606` now serves 100%, with all 248 bindings and
   script runtime metadata exactly matching the prior active version. The failed `youtube-scheduled-20260917`
-  generation remains open before source reads; a dedicated exact-generation recovery operator must verify the
-  single DLQ, operation fence, zero active lock/work/newer operation, and missing target fact before one Queue send.
+  generation was recovered by a dedicated exact-generation operator only after checking the single DLQ, operation
+  fence, zero active lock/work/newer operation, and missing target fact. PR `#852` final head `7a54d2dd` passed
+  Branch Verification runs/jobs `35175808607/105057140670` and `35175819534/105057174209`, then merged as
+  `main@2bde0650f41f38df5a669974772572b1403dd6c4`. Its one controlled Queue send was accepted and the exact
+  DLQ was marked redriven; generic redrive remained disabled;
+- that original YouTube Work subsequently completed. The successful sync run wrote 1,297 records, and Customer D1
+  has exactly one complete Account Daily fact `youtube:chemistry_k:2026-09-16` (followers 146,000; cumulative views
+  36,127,680). A read-only Preview plan found one missing YouTube Lark row and one newer TikTok current-state row;
+  the controlled existing operator created one, updated one and skipped 34 in `tbl7rAIECdX34Ec1`. Lark readback
+  reconciled all 36/36 rows against D1, duplicate input keys were zero, and the immediate rerun plan was create 0,
+  update 0, skip 36. Preview URLs were restored and Production version
+  `db3b806b-885f-41db-bed7-d37eebe4d606` remained unchanged throughout;
+- because the natural YouTube completion reported an Account Daily create while independent Lark planning still
+  found the row missing, the daily path now requires a stable-key readback immediately after its Account Daily
+  write, before recording the durable phase or publishing account freshness. A missing/differing row fails closed
+  with `YOUTUBE_ACCOUNT_DAILY_READBACK_MISMATCH`; a focused ghost-acknowledgement regression proves no false
+  completion or account freshness. Focused tests 18/18, full Node tests 3,392/3,392, Workers-runtime tests 18/18,
+  Report reliability tests 106/106, `npm run check`, deploy dry-run, zero-vulnerability audit and `git diff --check`
+  pass. The next natural daily run must still validate this guard in Production.
 
 ### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-15)
 
