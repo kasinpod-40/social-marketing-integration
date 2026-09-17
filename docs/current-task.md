@@ -113,6 +113,11 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   into the D1-first use case. The reviewed repair passes that exact validated set unchanged; regression coverage
   guards the fallback route. TikTok's separate post-Lark run succeeded at `2026-09-16T22:38:39Z`;
   its `2026-09-16` Account Daily fact is the expected completed reporting day on 17 September.
+- PR `#851` passed both final-HEAD Branch Verification jobs and merged as `main@55567f83fa8b44d220ca439fe730c9f3090b543d`.
+  Production Worker version `db3b806b-885f-41db-bed7-d37eebe4d606` now serves 100%, with all 248 bindings and
+  script runtime metadata exactly matching the prior active version. The failed `youtube-scheduled-20260917`
+  generation remains open before source reads; a dedicated exact-generation recovery operator must verify the
+  single DLQ, operation fence, zero active lock/work/newer operation, and missing target fact before one Queue send.
 
 ### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-15)
 

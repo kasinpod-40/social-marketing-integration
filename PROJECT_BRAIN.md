@@ -22,6 +22,9 @@ required table IDs were validated, the `organic_sync` call passed only three and
 with `tables.mktAccountDaily` missing. The narrow follow-up passes the already validated full table set;
 the Production schedule and customer data remain unchanged. The separate TikTok post-Lark run succeeded on
 17 September morning and retained the expected `2026-09-16` completed-day Account Daily fact.
+PR `#851` merged as `main@55567f83`; Worker version `db3b806b-885f-41db-bed7-d37eebe4d606` is active at
+100% with exact 248/248 binding and runtime parity. A one-incident operator is required to recover only the
+failed `youtube-scheduled-20260917` generation after read-only fence checks; generic redrive remains disabled.
 
 ## Customer Weekly AI bounded recommendation repair — 2026-09-14
 

@@ -6,6 +6,9 @@
   set, including `MKT_Account_Daily`, into the D1-first use case. A post-deploy read-only check identified
   the missing argument before any source read; no source data or other connector route is changed;
 - add a focused regression check for the fallback destination-table handoff.
+- add a guarded one-incident recovery operator for the failed `youtube-scheduled-20260917` generation. It is
+  plan-only by default and permits one exact Queue send only after reviewed-version, DLQ, lock, operation,
+  source-failure and missing-target-fact fences pass; generic redrive and other incidents remain untouched.
 
 ## 2026-09-16 — Organic Account Daily for YouTube and TikTok
 
