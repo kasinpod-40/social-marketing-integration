@@ -74,6 +74,23 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — Meta Ads 2026-09-16 exact terminal recovery (2026-09-17)
+
+- PR #854 passed final-head Branch Verification `35211853543` and Meta End-to-End `35211853522`, then merged
+  `main@c9077d2e`. Customer PROD Worker version `29e2caf4-8ac0-4877-8cba-01c2e520a54d` is active at 100%;
+  248 existing bindings were byte-for-byte identical and the sole added binding is
+  `MKT_META_DEFERRED_RETRY_ENABLED=true`. Generic redrive and broad auto-recovery remain false; main Queue
+  batch/concurrency are 1/1;
+- exact K2/K3 scheduled 2026-09-16 generation `1789579848000` are terminal on Graph 400 code 2/subcode 1504044,
+  with incomplete Daily source checkpoints and zero PROD D1 Ads Daily facts on 2026-09-16. All other same-day
+  channels are completed. Both DLQ entries are open/not-started, with no active locks or newer generation;
+- a one-incident-at-a-time operator validates the exact DLQ, original replay payload, Graph signature, Work,
+  checkpoint, Queue attempt, fence, active-lock and other-channel gates before an atomic claim and Work
+  reactivation. It sends the original generation at most once and fails closed after uncertain Queue delivery.
+  Read-only PROD preflight passed for both K2 and K3 with zero Queue sends;
+- **not yet complete**: reviewed PR/full gates, guarded K2 then K3 execution, D1/Lark Ads Daily readback and
+  no-duplicate reconciliation remain required. Never touch the protected unrelated terminal.
+
 ### Implementation result — deferred Customer Meta Ads retry (2026-09-17)
 
 - scope is the observed scheduled Meta Ads K2/K3 Graph HTTP 400 `code=2/subcode=1504044` failure only. This

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-17 — Exact Meta Ads 2026-09-16 terminal recovery operator
+
+- add a guarded, read-only-by-default, one-incident-at-a-time operator for the observed scheduled K2/K3
+  Graph 2/1504044 terminal Work; the original Queue payload/generation and durable checkpoint are preserved;
+- fail closed on changed DLQ/Work/fence, other active channel, newer operation, lock or uncertain Queue send.
+  No generic redrive, customer-group failure notification, Business deletion, or unrelated terminal access.
+
 ## 2026-09-17 — Deferred Customer Meta Ads retry
 
 - classify only the observed scheduled Meta Ads Graph `2/1504044` response as retryable, preserving
