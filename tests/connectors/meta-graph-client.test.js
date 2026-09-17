@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isMetaAdsBusinessUseCaseRateLimit,
+  isMetaAdsDeferredServiceFailure,
   MetaGraphClient,
 } from '../../packages/connectors/src/meta/meta-graph.client.js';
 
@@ -130,6 +131,34 @@ test('Meta Ads BUC throttle retries even when provider returns HTTP 400 without 
   assert.equal(isMetaAdsBusinessUseCaseRateLimit({
     details: { graphCode: 4, graphSubcode: 2446079 },
   }), false);
+});
+
+test('only the observed Meta Ads code/subcode pair is retryable', async () => {
+  const delays = [];
+  let calls = 0;
+  const client = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    maxAttempts: 2,
+    retryBaseDelayMs: 10,
+    randomImpl: () => 0,
+    sleepImpl: async (ms) => { delays.push(ms); },
+    fetchImpl: async () => {
+      calls += 1;
+      return calls === 1
+        ? Response.json({ error: { code: 2, error_subcode: 1504044, is_transient: false } }, { status: 400 })
+        : Response.json({ id: 'ok' });
+    },
+  });
+  assert.equal((await client.get('act_fixture/insights', {}, {
+    operationName: 'meta_ads.performance.daily',
+  })).id, 'ok');
+  assert.deepEqual(delays, [10]);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'meta_ads.performance.daily', 400), true);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'instagram.content.insights', 400), false);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504045 }, 'meta_ads.performance.daily', 400), false);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 200, error_subcode: 1504044 }, 'meta_ads.performance.daily', 400), false);
+  assert.equal(isMetaAdsDeferredServiceFailure({ code: 2, error_subcode: 1504044 }, 'meta_ads.performance.daily', 403), false);
 });
 
 test('Meta 429 honors retry-after and exposes usage metadata to request events', async () => {

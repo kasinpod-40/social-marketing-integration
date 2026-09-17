@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Meta Ads deferred retry — 2026-09-17
+
+The observed scheduled Meta K2/K3 Graph HTTP 400 `code=2/subcode=1504044` is treated as a bounded,
+Ads-only retryable provider failure. When the separate Customer Production flag is enabled, the same
+Queue message waits until at least 10:00 Asia/Bangkok, then checks D1 for other same-day active channel
+Work before executing again. This keeps the original operation/generation/checkpoint and never sends a
+failure message to the customer group. The policy does not enable generic DLQ redrive or broad Queue
+auto-recovery. An exhausted or already terminal incident remains visible in D1 and needs a separately
+guarded exact-generation recovery; local code/test success alone is not Customer PROD parity.
+
 ## Customer Organic Account Daily four-platform completion — 2026-09-16
 
 The existing `MKT_Account_Daily` schema supports all four Organic platforms. Facebook/Instagram rows remain

@@ -1,14 +1,102 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import syncWorker, { createSyncWorker, processJob } from '../../apps/sync-worker/src/index.js';
+import { routeQueueBatch } from '../../apps/sync-worker/src/queue-batch-router.js';
 import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
+import { createStableQueueOperationBody } from '../../packages/application/src/jobs/queue-operation.js';
 import {
   CUSTOMER_WEEKLY_NOTIFICATION_SETTINGS_ACTIVATION_VERSION,
 } from '../../packages/application/src/use-cases/seed-report-settings.js';
 import {
   markReliabilityHandled,
   permanentError,
+  transientError,
 } from '../../packages/shared/src/errors/runtime-error.js';
+
+test('scheduled Meta provider failure defers the same Queue message until after other channels', async () => {
+  const generation = Date.parse('2026-09-17T00:30:00+07:00');
+  const body = createStableQueueOperationBody({
+    schemaVersion: 1,
+    type: JOB_TYPES.META_ADS_SYNC,
+    trigger: 'scheduled',
+    sourceAccountKey: 'chemistry_k2',
+    periodStart: '2026-09-16',
+    periodEnd: '2026-09-16',
+  }, { operationId: 'meta-ads-chemistry_k2-scheduled-20260916', originalRequestedAt: generation });
+  const message = createMessage(body);
+  message.attempts = 1;
+  let processed = 0;
+  await routeQueueBatch({ queue: 'sync-main', messages: [message] }, {
+    MKT_MAIN_QUEUE_NAME: 'sync-main',
+    MKT_DLQ_QUEUE_NAME: 'sync-dlq',
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_META_DEFERRED_RETRY_ENABLED: 'true',
+    MKT_STATE_DB: {
+      async batch() { return []; },
+      prepare(sql) {
+        return {
+          bind() { return this; },
+          async run() { return { meta: { changes: 1 } }; },
+          async first() {
+            return /FROM queue_operation_attempts/u.test(sql)
+              ? { main_queue_attempts: 1, work_key: body.workKey }
+              : null;
+          },
+        };
+      },
+    },
+  }, {
+    createQueueCapacityWorkStore: () => ({ async cleanupSupersededWorkUnits() { return {}; } }),
+    processJob: async () => {
+      processed += 1;
+      throw transientError('Synthetic Meta service failure', {
+        code: 'META_TRANSIENT_API_ERROR',
+        details: { operation: 'meta_ads.performance.daily', status: 400, graphCode: 2, graphSubcode: 1504044 },
+      });
+    },
+  });
+  assert.equal(processed, 1);
+  assert.equal(message.acked, false);
+  assert.equal(message.retried, true);
+  assert.ok(message.retryOptions.delaySeconds >= 3_600);
+  assert.ok(message.retryOptions.delaySeconds <= 43_200);
+});
+
+test('deferred Meta retry does not execute while another same-day channel Work is active', async () => {
+  const generation = Date.parse('2026-09-17T00:30:00+07:00');
+  const body = createStableQueueOperationBody({
+    schemaVersion: 1,
+    type: JOB_TYPES.META_ADS_SYNC,
+    trigger: 'scheduled',
+    sourceAccountKey: 'chemistry_k2',
+    periodStart: '2026-09-16',
+    periodEnd: '2026-09-16',
+  }, { operationId: 'meta-ads-chemistry_k2-scheduled-20260916', originalRequestedAt: generation });
+  const message = createMessage(body);
+  message.attempts = 2;
+  let processed = 0;
+  await routeQueueBatch({ queue: 'sync-main', messages: [message] }, {
+    MKT_MAIN_QUEUE_NAME: 'sync-main',
+    MKT_DLQ_QUEUE_NAME: 'sync-dlq',
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_META_DEFERRED_RETRY_ENABLED: 'true',
+    MKT_STATE_DB: {
+      async batch() { return []; },
+      prepare() {
+        return { bind() { return this; }, async first() { return { active_count: 1 }; } };
+      },
+    },
+  }, {
+    createQueueCapacityWorkStore: () => ({ async cleanupSupersededWorkUnits() { return {}; } }),
+    processJob: async () => { processed += 1; },
+  });
+  assert.equal(processed, 0);
+  assert.equal(message.acked, false);
+  assert.equal(message.retried, true);
+  assert.ok(message.retryOptions.delaySeconds >= 1_800);
+});
 
 test('sync worker acknowledges unsupported job types as permanent failures', async () => {
   const message = createMessage({ type: 'unknown.job' });
