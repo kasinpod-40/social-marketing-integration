@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## Meta Ads 2026-09-16 exact incident recovery — 2026-09-17
+
+PR #854 merged as `main@c9077d2e`; Worker version `29e2caf4` is active at 100% with only the separate
+deferred Meta Ads retry flag added to the 248 unchanged Production bindings. The older K2/K3 scheduled Work
+generation `1789579848000` remains terminal on the exact Graph 400 code 2/subcode 1504044 and needs a
+separately reviewed recovery. Both read-only operator preflights passed with no Queue send. The operator
+admits only those two DLQ IDs and the original replay payload, requires all other same-day Work complete,
+no newer generation/active lock, and uses compare-and-set before a single Queue send per incident.
+Completion requires D1/Lark Ads Daily readback; merely deploying the future retry gate does not fill the gap.
+
 ## Customer Meta Ads deferred retry — 2026-09-17
 
 The observed scheduled Meta K2/K3 Graph HTTP 400 `code=2/subcode=1504044` is treated as a bounded,
