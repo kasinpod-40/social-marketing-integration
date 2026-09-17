@@ -172,6 +172,46 @@ test('stable Free-plan execution checkpoints bounded destination rows before pub
   assert.equal(stateStore.saved.length, 1);
 });
 
+test('does not complete a bounded YouTube run when Account Daily create is acknowledged but absent on Lark readback', async () => {
+  const repository = createRepository();
+  const createMany = repository.createMany.bind(repository);
+  repository.createMany = async (tableId, rows, options) => tableId === 'account_daily'
+    ? { created: rows.length }
+    : createMany(tableId, rows, options);
+  const stateStore = createStateStore();
+  const input = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore: new InMemoryResumableWorkStore(),
+    publicClient: {
+      async getChannel() { return CHANNEL; },
+      async listUploadVideoIdsPage() {
+        return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+      },
+      async listVideos() { return videos; },
+    },
+    syncRunId: 'run-account-daily-readback', channelId: 'channel_A', accountKey: 'youtube_dev',
+    customerProfile: 'integration_workspace', cursorKey: 'youtube-account-daily-readback',
+    workKey: 'youtube:account-daily-readback', metricDate: '2026-07-15',
+    reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
+    generation: 1000, requestedAt: 1000, tables: TABLES,
+    maxDestinationRowsPerInvocation: 1,
+  };
+
+  await assert.rejects(async () => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const result = await syncYouTubeOrganicToLark({ ...input, syncRunId: `run-readback-${attempt}` });
+      if (!result.continuationRequired) throw new Error('YouTube run falsely completed');
+    }
+  }, (error) => error?.code === 'YOUTUBE_ACCOUNT_DAILY_READBACK_MISMATCH'
+      && error.details?.expectedRows === 1
+      && error.details?.missingRows === 1);
+  assert.equal(repository.count('account_daily'), 0);
+  assert.equal(repository.count('accounts'), 0);
+  assert.equal(stateStore.saved.length, 0);
+});
+
 test('destination unit sequences remain unique when the execution batch shrinks or grows mid-phase', async () => {
   const repository = createRepository();
   const resumableWorkStore = new InMemoryResumableWorkStore();

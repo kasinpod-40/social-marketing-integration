@@ -23,8 +23,16 @@ with `tables.mktAccountDaily` missing. The narrow follow-up passes the already v
 the Production schedule and customer data remain unchanged. The separate TikTok post-Lark run succeeded on
 17 September morning and retained the expected `2026-09-16` completed-day Account Daily fact.
 PR `#851` merged as `main@55567f83`; Worker version `db3b806b-885f-41db-bed7-d37eebe4d606` is active at
-100% with exact 248/248 binding and runtime parity. A one-incident operator is required to recover only the
-failed `youtube-scheduled-20260917` generation after read-only fence checks; generic redrive remains disabled.
+100% with exact 248/248 binding and runtime parity. PR `#852` merged as `main@2bde0650` and the one-incident
+operator recovered only `youtube-scheduled-20260917` after read-only fence checks; generic redrive remained
+disabled. The original YouTube Work completed, writing 1,297 records and one complete `2026-09-16` Account Daily
+fact to Customer D1. Its Lark row was initially missing; the existing Preview-only Account Daily operator then
+created that one row and updated one current TikTok snapshot. Readback matched all 36/36 Customer D1 projections
+in `tbl7rAIECdX34Ec1`; a rerun planned zero creates/updates and skipped all 36 with zero duplicate keys. Preview
+URLs were restored and the Production Worker version was unchanged. The natural Work had reported an Account Daily
+create despite the missing Lark row; the follow-up daily-path guard now replans that one stable key after write and
+fails closed before durable phase completion or account freshness if Lark readback is missing/different. The next
+natural daily run remains the required Production validation of that guard.
 
 ## Customer Weekly AI bounded recommendation repair — 2026-09-14
 
