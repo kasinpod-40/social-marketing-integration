@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-17 — YouTube Account Daily fallback wiring
+
+- fix the scheduled YouTube `organic_sync` fallback route to pass its already validated complete Lark table
+  set, including `MKT_Account_Daily`, into the D1-first use case. A post-deploy read-only check identified
+  the missing argument before any source read; no source data or other connector route is changed;
+- add a focused regression check for the fallback destination-table handoff.
+
 ## 2026-09-16 — Organic Account Daily for YouTube and TikTok
 
 - project exact Customer YouTube D1 account facts and TikTok current-state portfolio metrics to the existing
