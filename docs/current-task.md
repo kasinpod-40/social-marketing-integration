@@ -90,6 +90,12 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   Read-only PROD preflight passed for both K2 and K3 with zero Queue sends;
 - **not yet complete**: reviewed PR/full gates, guarded K2 then K3 execution, D1/Lark Ads Daily readback and
   no-duplicate reconciliation remain required. Never touch the protected unrelated terminal.
+- PR #855 passed final-head Branch Verification `35241198379` and Meta End-to-End `35241198430`, merged as
+  `main@dfee667e`. The first K2 execute attempt stopped before D1 claim/Queue send: Queue inventory returned
+  HTTP 403 because the operator's bearer lookup accidentally used Wrangler's default profile. Minimal live
+  reproduction showed default profile 403 and `chemistry-k-prod` 200 for the same exact account endpoint;
+  D1 readback reconfirmed K2 DLQ open/not_started and Work terminal. The narrow follow-up binds bearer lookup
+  to `chemistry-k-prod`; no blind replay or broader runtime flag change occurred.
 
 ### Implementation result — deferred Customer Meta Ads retry (2026-09-17)
 

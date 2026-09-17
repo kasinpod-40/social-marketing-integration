@@ -9,6 +9,10 @@ separately reviewed recovery. Both read-only operator preflights passed with no 
 admits only those two DLQ IDs and the original replay payload, requires all other same-day Work complete,
 no newer generation/active lock, and uses compare-and-set before a single Queue send per incident.
 Completion requires D1/Lark Ads Daily readback; merely deploying the future retry gate does not fill the gap.
+PR #855 merged as `main@dfee667e`. First K2 execute stopped before claim/send because Wrangler's default
+OAuth profile lacked Queue inventory permission for the customer account (HTTP 403); the exact production
+profile returned 200. D1 proved the incident remained open/not_started/terminal. The follow-up pins bearer
+lookup to `chemistry-k-prod` and keeps every recovery fence unchanged.
 
 ## Customer Meta Ads deferred retry — 2026-09-17
 

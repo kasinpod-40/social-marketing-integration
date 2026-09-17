@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-17 — Pin Meta Ads exact recovery Queue auth to Customer PROD profile
+
+- use the exact `chemistry-k-prod` Wrangler profile for the Queue REST bearer. The default profile returned
+  403 before any recovery claim or Queue send; add a focused regression guard and sanitized HTTP diagnostics.
+
 ## 2026-09-17 — Exact Meta Ads 2026-09-16 terminal recovery operator
 
 - add a guarded, read-only-by-default, one-incident-at-a-time operator for the observed scheduled K2/K3

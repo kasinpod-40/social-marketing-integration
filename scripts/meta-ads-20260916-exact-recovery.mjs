@@ -37,7 +37,9 @@ try {
   } else {
     const auth = resolveCloudflareBearerAuth({
       explicitApiToken: process.env.CLOUDFLARE_API_TOKEN,
-      authOutput: process.env.CLOUDFLARE_API_TOKEN ? null : wrangler(['auth', 'token', '--json']),
+      authOutput: process.env.CLOUDFLARE_API_TOKEN ? null : wrangler([
+        'auth', 'token', '--json', '--profile', 'chemistry-k-prod',
+      ]),
     });
     const inventory = await listCloudflareQueuesViaApi({
       accountId: authority.accountId, bearerToken: auth.token,
@@ -76,7 +78,8 @@ try {
   }
 } catch (error) {
   console.error(JSON.stringify({ ok: false, code: 'META_ADS_EXACT_RECOVERY_FAILED',
-    message: error?.message ?? String(error), sent,
+    message: error?.message ?? String(error), causeCode: error?.code ?? null,
+    httpStatus: error?.details?.status ?? null, sent,
     note: 'After a claim or uncertain Queue send, do not rerun; inspect exact D1 state first' }));
   process.exitCode = 1;
 }
