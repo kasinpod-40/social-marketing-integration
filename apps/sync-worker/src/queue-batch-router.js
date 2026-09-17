@@ -103,8 +103,6 @@ async function processMainQueueBatch(batch, env, dependencies) {
           ok: true,
           scope: 'deferred_meta_retry',
           status: deferredMetaRetry.reason,
-          operationId: operation.operationId,
-          workKey: operation.workKey,
           delaySeconds: deferredMetaRetry.delaySeconds,
         });
         message.retry({ delaySeconds: deferredMetaRetry.delaySeconds });
