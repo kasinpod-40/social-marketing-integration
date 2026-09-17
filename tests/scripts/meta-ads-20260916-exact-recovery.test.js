@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   META_ADS_EXACT_RECOVERY,
   readMetaRecoveryTarget,
@@ -84,4 +85,10 @@ test('SQL is exact CAS with no Business/source deletion or unrelated terminal ac
   assert.match(sql[3], /status='open'/u);
   assert.match(sql[4], /status='redriven'/u);
   assert.throws(() => buildMetaRecoveryClaimSql(target, NaN), /Invalid recovery timestamp/u);
+});
+
+test('Queue REST bearer is resolved from the exact customer PROD Wrangler profile', () => {
+  const operator = readFileSync(new URL('../../scripts/meta-ads-20260916-exact-recovery.mjs', import.meta.url), 'utf8');
+  assert.match(operator, /'auth', 'token', '--json', '--profile', 'chemistry-k-prod'/u);
+  assert.match(operator, /config\.vars\?\.MKT_QUEUE_AUTO_RECOVERY_ENABLED !== 'false'/u);
 });
