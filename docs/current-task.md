@@ -74,6 +74,23 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — deferred Customer Meta Ads retry (2026-09-17)
+
+- scope is the observed scheduled Meta Ads K2/K3 Graph HTTP 400 `code=2/subcode=1504044` failure only. This
+  exact Ads operation is now retryable; unrelated Graph errors, Organic operations and manual jobs keep their
+  existing classification;
+- a Customer Production-only, default-off `MKT_META_DEFERRED_RETRY_ENABLED` gate delays this exact failure to
+  10:00 Asia/Bangkok or later. A retry delivery checks the same-day D1 Work set and waits while any other
+  channel Work remains active. It retains the original Queue body, Work key, generation and durable checkpoint;
+- this path does not send error messages to the customer group, does not activate generic DLQ redrive or the
+  previously disabled broad Queue auto-recovery, and does not mutate D1 Business facts or Lark data;
+- focused 45/45, `npm run check`, full Node 3,396/3,396 and Workers 18/18, Report reliability 106/106,
+  `npm audit --audit-level=high` zero vulnerabilities, `npm ci`, and deploy dry-run exit 0 passed locally;
+- **not yet a Production completion claim**: reviewed PR/Branch Verification, controlled deploy with exact
+  Customer binding enabled, live retry observation, and D1/Lark Ads Daily parity remain required. Current
+  terminal K2/K3 incidents are not automatically revived by this change and require separate exact-generation
+  guarded recovery after review.
+
 ### Implementation result — Organic MKT_Account_Daily four-platform completion (2026-09-16)
 
 - scope is the existing Customer PROD `MKT_Account_Daily` table only; Facebook/Instagram rows are preserved.

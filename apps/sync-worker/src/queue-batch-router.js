@@ -19,7 +19,11 @@ import {
   requireQueueName,
   summarizeJobResult,
 } from './worker-runtime-support.js';
-import { attemptQueueAutoRecovery } from './queue-auto-recovery.js';
+import {
+  attemptQueueAutoRecovery,
+  checkDeferredMetaRetry,
+  readDeferredMetaFailureDelaySeconds,
+} from './queue-auto-recovery.js';
 
 export const QUEUE_ROLES = Object.freeze({
   MAIN: 'main',
@@ -93,6 +97,19 @@ async function processMainQueueBatch(batch, env, dependencies) {
       });
       job = normalizeQueueJobMessage(message);
       operation = resolveQueueOperation({ job, message });
+      const deferredMetaRetry = await checkDeferredMetaRetry({ env, job, operation, message });
+      if (deferredMetaRetry.delaySeconds > 0) {
+        logQueueResult({
+          ok: true,
+          scope: 'deferred_meta_retry',
+          status: deferredMetaRetry.reason,
+          operationId: operation.operationId,
+          workKey: operation.workKey,
+          delaySeconds: deferredMetaRetry.delaySeconds,
+        });
+        message.retry({ delaySeconds: deferredMetaRetry.delaySeconds });
+        continue;
+      }
       if (operation.stable && queueOperationStore) {
         const recorded = await queueOperationStore.recordMainQueueAttempt({
           operationId: operation.operationId,
@@ -147,7 +164,12 @@ async function processMainQueueBatch(batch, env, dependencies) {
       });
 
       if (retryable) {
-        message.retry({ delaySeconds: readRetryDelaySeconds(env, message, error) });
+        message.retry({ delaySeconds: readDeferredMetaFailureDelaySeconds({
+          env,
+          job,
+          operation,
+          error,
+        }) ?? readRetryDelaySeconds(env, message, error) });
         continue;
       }
 
