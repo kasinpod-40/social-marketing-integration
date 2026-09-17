@@ -91,8 +91,22 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   videos and no Account Daily fact yet. Its latest completed coverage period is `2026-09-16`, matching the
   latest source observation in Bangkok time;
 - focused tests, `npm run check`, full Node unit suite, 18 Workers-runtime tests, 106 Report reliability tests,
-  zero-vulnerability audit, and deploy dry-run pass. Reviewed PR/merge, controlled PROD operator execution,
-  Lark readback/reconciliation and final rerun evidence are still required before declaring complete.
+  zero-vulnerability audit, and deploy dry-run pass. PR `#849` final head `7ab9e0f9` passed both Branch
+  Verification runs/jobs `35113037283/104851349133` and `35113049163/104851393800`, then merged as
+  `main@5225e53567e93b2b082e0f7bb39c269d50e5cca4`;
+- isolated PROD Preview preflight at version `862a037b-38c2-4d38-89da-1d89219dbb4c` planned exactly 35
+  creates (YouTube 34, TikTok 1), zero updates/duplicates and zero mutations. Controlled execute at Preview
+  version `e8ff4da6-c44a-4c83-9bed-6920663dc0d5` wrote the one TikTok D1 fact and 35/35 Lark rows in
+  `MKT_Account_Daily` table `tbl7rAIECdX34Ec1`, with exact D1 readback 1/1 and Lark readback 35/35;
+- separate rerun at Preview version `473220f7-9b2e-41fd-872e-9904cd69042e` proved D1 skipped 1, Lark
+  created 0/updated 0/skipped 35, duplicate keys 0, and exact readback 35/35. Post-run D1 read-only query
+  shows TikTok 1/1 key on `2026-09-16`, Customer YouTube 34/34 keys over `2026-07-28..2026-09-15`, and the
+  retained foreign/dev YouTube fact still present and untouched;
+- Production Worker `c98e61e1-83a0-4b2c-b0c3-c901bf83dadc` from reviewed main is active at 100%. Its 248
+  bindings, secrets, D1/Queue, compatibility date and CPU limit match the prior active version; existing
+  schedules remain configured. Preview URL flags were read back independently as `enabled=false` and
+  `previews_enabled=false`. The next natural daily run is still required to observe future automatic row creation;
+  no artificial future-date sync or Queue replay was issued.
 
 ### Implementation result — Customer Organic history repair to 2026-06-19 (2026-09-15)
 

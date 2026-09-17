@@ -9,7 +9,13 @@ snapshot Account Daily fact to D1 before Lark. It leaves unsupported profile met
 historical daily values from a current-only Native source. The isolated Preview operator excludes a foreign/dev
 YouTube fact by exact channel identity, backfills bounded D1-backed rows, reads back D1/Lark, and requires a
 zero-create/zero-update rerun. Read-only pre-execution PROD evidence is 34 Customer YouTube facts and 2,079
-available TikTok video states with latest completed coverage period `2026-09-16`. Live closeout remains pending.
+available TikTok video states with latest completed coverage period `2026-09-16`. PR `#849` passed two final-head
+Branch Verification jobs and merged as `main@5225e535`. Exact Customer PROD Preview preflight planned 35 creates;
+the controlled operator wrote 35/35 Lark rows, verified the one new TikTok D1 fact and all 35 Lark projections,
+and a separate rerun skipped all 35 with zero duplicate keys. `MKT_Account_Daily` table ID is
+`tbl7rAIECdX34Ec1`. Worker version `c98e61e1-83a0-4b2c-b0c3-c901bf83dadc` is active at 100% with all 248
+bindings unchanged; Preview URLs are disabled. The next scheduled daily run will supply first-run automatic
+evidence; no future-date or Queue replay was forced.
 
 ## Customer Weekly AI bounded recommendation repair — 2026-09-14
 
