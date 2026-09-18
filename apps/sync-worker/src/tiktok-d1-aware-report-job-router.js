@@ -50,6 +50,17 @@ import {
 } from './worker-runtime-support.js';
 
 const LEGACY_REPORT_TYPES = new Set([JOB_TYPES.DAILY_REPORT_GENERATE, JOB_TYPES.WEEKLY_REPORT_GENERATE]);
+const DEFAULT_REPORT_MAX_FACT_ROWS = 10_000;
+const DEFAULT_CHATWOOT_MAX_FACT_ROWS = 25_000;
+
+export function resolveDashboardReportMaxFactRows(env, platformScope) {
+  // Chatwoot's 30-day source can exceed the shared 10k bound; keep a finite,
+  // platform-specific cap without changing the limits of the other connectors.
+  const fallback = platformScope === 'chatwoot'
+    ? DEFAULT_CHATWOOT_MAX_FACT_ROWS
+    : DEFAULT_REPORT_MAX_FACT_ROWS;
+  return readPositiveInteger(env?.MKT_REPORT_D1_MAX_FACT_ROWS, fallback);
+}
 
 export async function processJobWithTikTokD1AwareReport(input) {
   const type = input.job?.body?.type;
@@ -155,7 +166,7 @@ async function processDashboardReportJob(input) {
           topAdsLimit: body.topAdsLimit,
           generatedAt: Date.parse(body.requestedAt),
           maxContentRecords: readPositiveInteger(input.env?.MKT_REPORT_D1_MAX_CONTENT_RECORDS, 10_000),
-          maxFactRows: readPositiveInteger(input.env?.MKT_REPORT_D1_MAX_FACT_ROWS, 10_000),
+          maxFactRows: resolveDashboardReportMaxFactRows(input.env, platformScope),
         });
         const ai = await generateReportAiSummary({
           enabled: storageConfig.reportAiSummaryEnabled,

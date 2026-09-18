@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-18 — Chatwoot 30-day Report bound
+
+- raise only Chatwoot's default bounded D1 Report read from 10,000 to 25,000 facts after Customer PROD sizing found 12,106 Conversation Daily identities in the 30-day window;
+- preserve the existing 50,000 hard maximum, explicit configuration override, and every other channel's 10,000-row default. Reviewed deploy and live Report readback are still required.
+
 ## 2026-09-18 — Chatwoot Reporting-event Daily projection repair
 
 - rebuild First Response, Resolution, Reply and Resolved-conversation Daily values from the authoritative raw D1
