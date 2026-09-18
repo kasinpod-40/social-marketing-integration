@@ -65,7 +65,9 @@ export async function processChatwootAnalyticsJob(input = {}) {
   );
   const infrastructure = input.getInfrastructure();
   const resumableWorkStore = infrastructure.getResumableWorkStore();
-  const cursorKey = `chatwoot:${connector.accountKey}:analytics`;
+  const cursorKey = mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION
+    ? `chatwoot:${connector.accountKey}:reporting-daily-reprojection`
+    : `chatwoot:${connector.accountKey}:analytics`;
   const window = resolveChatwootRuntimeWindow({
     mode,
     requestedAt: operation.originalRequestedAt,
@@ -124,7 +126,9 @@ export async function processChatwootAnalyticsJob(input = {}) {
     customerProfile: runtimeConfig.profileKey,
     accountKey: connector.accountKey,
     platform: 'chatwoot',
-    source: 'chatwoot_application_api',
+    source: mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION
+      ? 'chatwoot_retained_d1_reporting_events'
+      : 'chatwoot_application_api',
     syncType: `${mode}_unit`,
     // Each continuation is a new Queue delivery; retry count must not grow with completed units.
     retryCount: Math.max(0, readAttempts(input.message) - 1),
@@ -229,7 +233,8 @@ export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig, trigg
       code: 'CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID',
     });
   }
-  const scheduled = trigger === JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY;
+  const scheduled = trigger === JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY
+    || trigger === JOB_TRIGGERS.CHATWOOT_REPORTING_DAILY_REPROJECTION;
   const missingFlags = [];
   if (chatwootConfig?.flags?.connector !== true) missingFlags.push('MKT_CONNECTOR_CHATWOOT_ENABLED');
   if (chatwootConfig?.flags?.d1Write !== true) missingFlags.push('MKT_CHATWOOT_D1_WRITE_ENABLED');

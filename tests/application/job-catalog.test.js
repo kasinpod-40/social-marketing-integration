@@ -29,6 +29,7 @@ test('Chatwoot job is active for retained manual and scheduled daily triggers', 
     JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
     JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
     JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY,
+    JOB_TRIGGERS.CHATWOOT_REPORTING_DAILY_REPROJECTION,
   ]);
   assert.equal(assertJobImplemented(definition), definition);
 });

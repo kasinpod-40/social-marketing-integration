@@ -8,6 +8,8 @@
   event sums/sample counts so rollup averages remain weighted and reruns remain idempotent;
 - preserve message/new/reopen values and null semantics, leave the removed Resolution Time Dashboard block
   removed, and require reviewed merge/deploy plus exact PROD D1/Lark reconciliation before live completion.
+- add a bounded 30-calendar-day D1-only reprojection trigger with an isolated cursor so Production repair
+  reuses retained facts, never calls the Chatwoot Provider, and does not disturb the normal Daily checkpoint.
 
 ## 2026-09-17 — Pin Meta Ads exact recovery Queue auth to Customer PROD profile
 

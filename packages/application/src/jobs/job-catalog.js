@@ -55,6 +55,7 @@ export const JOB_TRIGGERS = Object.freeze({
   CHATWOOT_INITIAL_30_DAY_UAT: 'chatwoot_initial_30_day_uat',
   CHATWOOT_DAILY_INCREMENTAL: 'chatwoot_daily_incremental',
   CHATWOOT_SCHEDULED_DAILY: 'chatwoot_scheduled_daily',
+  CHATWOOT_REPORTING_DAILY_REPROJECTION: 'chatwoot_reporting_daily_reprojection',
   LARK_NOTIFICATION_CONTROLLED_UAT: 'lark_notification_controlled_uat',
   LARK_NOTIFICATION_RUNTIME: 'lark_notification_runtime',
 });
@@ -168,6 +169,7 @@ const JOB_CATALOG = Object.freeze({
       JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
       JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
       JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY,
+      JOB_TRIGGERS.CHATWOOT_REPORTING_DAILY_REPROJECTION,
     ],
   }),
 
