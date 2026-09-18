@@ -34,6 +34,81 @@ export function createChatwootDailyRollupState(input = {}) {
   });
 }
 
+/** Rebuild Conversation Daily metric columns from authoritative D1 Reporting events. */
+export function buildChatwootConversationDailyProjectionRows(input = {}) {
+  const rows = requireRows(input.rows, 'rows');
+  const reportingTimezone = requireText(input.reportingTimezone, 'reportingTimezone');
+  const syncRunId = requireText(input.syncRunId, 'syncRunId');
+  const coverageRunId = requireText(input.coverageRunId, 'coverageRunId');
+  const fetchedAt = positiveInteger(input.fetchedAt, 'fetchedAt');
+  return Object.freeze(rows.map((row) => Object.freeze({
+    conversation_daily_key: requireText(row.conversationDailyKey, 'conversationDailyKey'),
+    customer_key: requireText(row.customerKey, 'customerKey'),
+    account_key: requireText(row.accountKey, 'accountKey'),
+    external_account_id: positiveInteger(row.externalAccountId, 'externalAccountId'),
+    external_conversation_id: positiveInteger(
+      row.externalConversationId,
+      'externalConversationId',
+    ),
+    external_inbox_id: nullablePositiveInteger(row.externalInboxId, 'externalInboxId'),
+    external_agent_id: nullablePositiveInteger(row.externalAgentId, 'externalAgentId'),
+    external_team_id: nullablePositiveInteger(row.externalTeamId, 'externalTeamId'),
+    metric_date: requireDate(row.metricDate, 'metricDate'),
+    reporting_timezone: reportingTimezone,
+    status: optionalText(row.status),
+    new_conversation_count: nonNegativeInteger(
+      row.newConversationCount,
+      'newConversationCount',
+    ),
+    resolved_count: nonNegativeInteger(row.resolvedCount, 'resolvedCount'),
+    reopened_count: nonNegativeInteger(row.reopenedCount, 'reopenedCount'),
+    incoming_message_count: nonNegativeInteger(
+      row.incomingMessageCount,
+      'incomingMessageCount',
+    ),
+    outgoing_message_count: nonNegativeInteger(
+      row.outgoingMessageCount,
+      'outgoingMessageCount',
+    ),
+    private_message_count: nonNegativeInteger(
+      row.privateMessageCount ?? 0,
+      'privateMessageCount',
+    ),
+    attachment_message_count: nonNegativeInteger(
+      row.attachmentMessageCount ?? 0,
+      'attachmentMessageCount',
+    ),
+    first_response_seconds: average(normalizeMetricAccumulator(
+      row.firstResponse,
+      row.firstResponseSeconds,
+    )),
+    first_response_business_seconds: average(normalizeMetricAccumulator(
+      row.firstResponseBusiness,
+      row.firstResponseBusinessSeconds,
+    )),
+    resolution_seconds: average(normalizeMetricAccumulator(
+      row.resolution,
+      row.resolutionSeconds,
+    )),
+    resolution_business_seconds: average(normalizeMetricAccumulator(
+      row.resolutionBusiness,
+      row.resolutionBusinessSeconds,
+    )),
+    reply_seconds: average(normalizeMetricAccumulator(row.reply, row.replySeconds)),
+    reply_business_seconds: average(normalizeMetricAccumulator(
+      row.replyBusiness,
+      row.replyBusinessSeconds,
+    )),
+    data_status: 'partial',
+    coverage_run_id: optionalText(row.coverageRunId) ?? coverageRunId,
+    source_revision: requireText(row.sourceRevision, 'sourceRevision'),
+    fetched_at: fetchedAt,
+    sync_run_id: syncRunId,
+    created_at: nullablePositiveInteger(row.createdAt, 'createdAt') ?? fetchedAt,
+    updated_at: fetchedAt,
+  })));
+}
+
 export function buildChatwootDailyRollupRows(input = {}) {
   const state = normalizeState(input.state);
   const reportingTimezone = requireText(input.reportingTimezone, 'reportingTimezone');
@@ -108,6 +183,7 @@ export function buildChatwootDailyRollupRows(input = {}) {
     metricDate: state.metricDate,
     syncRunId,
     coverageRunIdPrefix,
+    sourceWatermark: state.sourceRevision,
     observedAt: fetchedAt,
     datasets: [
       ['agent_daily', 'agent_daily_key', agents],
@@ -149,7 +225,7 @@ function buildRollupCoverage(input) {
       observed_rows: rows.length,
       written_rows: 0,
       failed_rows: 0,
-      source_watermark: null,
+      source_watermark: requireText(input.sourceWatermark, 'sourceWatermark'),
       revisable_until: null,
       started_at: input.observedAt,
       completed_at: null,
@@ -247,16 +323,26 @@ function mergeAggregate(target, row, countConversation) {
   target.reopenedCount += row.reopenedCount;
   target.incomingMessageCount += row.incomingMessageCount;
   target.outgoingMessageCount += row.outgoingMessageCount;
-  add(target.firstResponse, row.firstResponseSeconds);
-  add(target.resolution, row.resolutionSeconds);
-  add(target.reply, row.replySeconds);
+  addAccumulator(target.firstResponse, normalizeMetricAccumulator(
+    row.firstResponse,
+    row.firstResponseSeconds,
+  ));
+  addAccumulator(target.resolution, normalizeMetricAccumulator(
+    row.resolution,
+    row.resolutionSeconds,
+  ));
+  addAccumulator(target.reply, normalizeMetricAccumulator(row.reply, row.replySeconds));
 }
 
-function add(target, value) {
-  if (value === null || value === undefined) return;
-  const number = finiteNumber(value, 'metric');
-  target.sum += number;
-  target.count += 1;
+function normalizeMetricAccumulator(value, fallback) {
+  if (value !== null && value !== undefined) return normalizeAccumulator(value);
+  if (fallback === null || fallback === undefined) return { sum: 0, count: 0 };
+  return { sum: finiteNumber(fallback, 'metric'), count: 1 };
+}
+
+function addAccumulator(target, value) {
+  target.sum += value.sum;
+  target.count += value.count;
 }
 
 function average(value) {
@@ -305,4 +391,15 @@ function requireDate(value, fieldName) {
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
   return value.trim();
+}
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+function nullablePositiveInteger(value, fieldName) {
+  if (value === null || value === undefined) return null;
+  return positiveInteger(value, fieldName);
+}
+function requireRows(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`${fieldName} must be an array`);
+  return value;
 }

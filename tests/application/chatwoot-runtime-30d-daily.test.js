@@ -19,6 +19,7 @@ import {
   resolveChatwootRuntimeWindow,
 } from '../../packages/application/src/use-cases/chatwoot-runtime-contract.js';
 import {
+  buildChatwootConversationDailyProjectionRows,
   buildChatwootDailyRollupRows,
   createChatwootDailyRollupState,
   mergeChatwootDailyRollupState,
@@ -259,6 +260,72 @@ test('daily rollup preserves missing metrics as null and stable keys on rerun', 
   assert.equal(rows.account[0].avg_resolution_seconds, null);
   assert.equal(rows.inboxes[0].incoming_message_count, 2);
   assert.equal(rows.account[0].account_daily_key, 'chatwoot:chemistry_k:account:2026-07-30');
+  assert.equal(rows.coverageRuns[0].source_watermark, '100');
+});
+
+test('daily rollup rebuilds Reporting metrics and uses weighted event samples', () => {
+  const base = {
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    externalAccountId: 1,
+    externalInboxId: 4,
+    externalAgentId: 6,
+    externalTeamId: null,
+    metricDate: '2026-09-16',
+    reportingTimezone: 'Asia/Bangkok',
+    status: null,
+    newConversationCount: 0,
+    resolvedCount: 0,
+    reopenedCount: 0,
+    incomingMessageCount: 1,
+    outgoingMessageCount: 1,
+    privateMessageCount: 0,
+    attachmentMessageCount: 0,
+    firstResponseBusiness: { sum: 0, count: 0 },
+    resolution: { sum: 0, count: 0 },
+    resolutionBusiness: { sum: 0, count: 0 },
+    reply: { sum: 0, count: 0 },
+    replyBusiness: { sum: 0, count: 0 },
+    coverageRunId: 'coverage:reporting',
+    sourceRevision: '1789568332922',
+  };
+  const sourceRows = [{
+    ...base,
+    conversationDailyKey: 'chatwoot:chemistry_k:conversation:10552:2026-09-16',
+    externalConversationId: 10552,
+    firstResponse: { sum: 540, count: 2 },
+  }, {
+    ...base,
+    conversationDailyKey: 'chatwoot:chemistry_k:conversation:10553:2026-09-16',
+    externalConversationId: 10553,
+    firstResponse: { sum: 60, count: 1 },
+  }];
+  const projected = buildChatwootConversationDailyProjectionRows({
+    rows: sourceRows,
+    reportingTimezone: 'Asia/Bangkok',
+    syncRunId: 'sync:repair',
+    coverageRunId: 'coverage:fallback',
+    fetchedAt: REQUESTED_AT,
+  });
+  assert.equal(projected[0].first_response_seconds, 270);
+  assert.equal(projected[0].resolution_seconds, null);
+  assert.equal(projected[0].coverage_run_id, 'coverage:reporting');
+
+  const seed = createChatwootDailyRollupState({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    externalAccountId: 1,
+    metricDate: '2026-09-16',
+  });
+  const rows = buildChatwootDailyRollupRows({
+    state: mergeChatwootDailyRollupState(seed, sourceRows),
+    reportingTimezone: 'Asia/Bangkok',
+    syncRunId: 'sync:repair',
+    coverageRunIdPrefix: 'coverage:repair',
+    fetchedAt: REQUESTED_AT,
+  });
+  assert.equal(rows.account[0].avg_first_response_seconds, 200);
+  assert.equal(rows.account[0].conversation_count, 2);
 });
 
 test('stale continuation resumes from durable sequence without Provider or Business writes', async () => {
