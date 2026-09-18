@@ -35,6 +35,11 @@ YouTube เก็บ 32,164 content-day ระหว่าง 19 มิ.ย.–2
 `MKT_Content_Daily` ที่เป็น bounded cache. Instagram และ TikTok ไม่มี historical snapshot ใน Source ปัจจุบัน
 จึงไม่คัดลอกยอดปัจจุบันไปใส่วันเก่าหรือเติมศูนย์แทนข้อมูลที่ไม่มี.
 
+รอบ Scheduled ปกติเก็บการเติบโตของ Content ปัจจุบันแบบ cumulative snapshot: YouTube ไล่ครบทุกวิดีโอด้วย
+durable continuation แทนการจำกัดเฉพาะ 100 รายการล่าสุด และ Instagram ไล่ครบ media inventory ปัจจุบันเพื่อให้
+โพสต์เก่าที่มียอดเพิ่มเกิด Daily snapshot ของวันรายงานนั้น. การเปลี่ยนนี้มีผลตั้งแต่วันที่เริ่มรัน contract ใหม่
+เท่านั้น ไม่สร้างตัวเลขย้อนหลังที่ Provider ไม่เคยส่ง และไม่เปลี่ยนขอบเขต 10,000 แถวของ Lark cache.
+
 ## Read first
 
 ```text

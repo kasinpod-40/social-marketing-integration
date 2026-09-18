@@ -27,6 +27,24 @@ test('Instagram inventory keeps exact month rows and retires pagination after lo
   assert.equal(result.nextCursor, null);
 });
 
+test('explicit Instagram full-inventory mode bypasses a configured history range', async () => {
+  const client = fakeClient([{ rows: [
+    { id: '2', timestamp: '2026-09-17T09:00:00Z' },
+    { id: '1', timestamp: '2026-06-19T09:00:00Z' },
+  ], hasMore: false, nextCursor: null }]);
+  const adapter = new InstagramOrganicSourceAdapter({
+    client,
+    contentDateRange: { since: '2026-09-17', until: '2026-09-17' },
+  });
+
+  const result = await adapter.fetchContentPage({
+    accountId: '17841413521012797',
+    contentInventoryMode: 'full_inventory',
+  });
+
+  assert.deepEqual(result.rows.map((row) => row.id), ['2', '1']);
+});
+
 test('Instagram inventory continues through pages newer than the requested month', () => {
   const result = boundInstagramContentPage({
     rows: [

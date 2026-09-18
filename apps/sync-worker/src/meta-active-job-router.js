@@ -6,7 +6,10 @@ import {
 } from '../../../packages/application/src/jobs/job-catalog.js';
 import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
 import { withQueueOperation } from '../../../packages/application/src/jobs/queue-operation.js';
-import { processMetaEndToEndSync } from '../../../packages/application/src/use-cases/process-meta-end-to-end-sync.js';
+import {
+  META_ORGANIC_CONTENT_SNAPSHOT_MODES,
+  processMetaEndToEndSync,
+} from '../../../packages/application/src/use-cases/process-meta-end-to-end-sync.js';
 import {
   META_END_TO_END_LARK_TABLES,
   loadMetaEndToEndRuntimeConfig,
@@ -143,6 +146,9 @@ async function processMetaJob(input, connectorKey, metaConfig) {
       customerKey: customerRuntime.customerKey,
       sourceTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
       dateRange,
+      organicContentSnapshotMode: connectorKey === 'instagram' && scheduled
+        ? META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT
+        : META_ORGANIC_CONTENT_SNAPSHOT_MODES.REPORT_RANGE,
       adsSourceMode: connectorKey === 'meta_ads' ? input.job.body?.sourceMode : null,
       sourceReadOnly: input.job.body?.dryRun === true,
       d1WriteEnabled: metaConfig.flags.d1Write === true && input.job.body?.dryRun !== true,

@@ -297,6 +297,7 @@ test('YouTube Analytics runs once daily and locks a 7-day completed Pacific rang
 
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].analyticsEnabled, true);
+  assert.equal(jobs[0].syncMode, 'full');
   assert.equal(jobs[0].operationId, 'youtube-scheduled-20260719');
   assert.equal(jobs[0].workKey, 'youtube:youtube-scheduled-20260719');
   assert.equal(jobs[0].metricDate, '2026-07-18');

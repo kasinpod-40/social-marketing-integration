@@ -24,6 +24,7 @@ export async function collectMetaEndToEndSourceUnit(input = {}) {
   const state = normalizeState(input.state);
   const identities = normalizeIdentities(input.identities);
   const dateRange = normalizeDateRange(input.dateRange);
+  const contentInventoryMode = normalizeContentInventoryMode(input.contentInventoryMode);
   const maxPages = boundedInteger(input.maxPages ?? MAX_PAGES, 'maxPages', 1, MAX_PAGES);
 
   if (state.pageNumber > maxPages) {
@@ -40,6 +41,7 @@ export async function collectMetaEndToEndSourceUnit(input = {}) {
     state,
     identities,
     dateRange,
+    contentInventoryMode,
   });
   const rows = Object.freeze(result.rows.map((row) => requireObject(row, 'source row')));
   const nextCursor = optionalText(result.nextCursor);
@@ -150,6 +152,7 @@ async function invokeDataset(input) {
         accountId,
         ...commonPage,
         ...input.dateRange,
+        ...(input.contentInventoryMode ? { contentInventoryMode: input.contentInventoryMode } : {}),
       }));
     case 'instagram.content.insights':
       return page(await input.adapter.fetchContentInsightsPage({
@@ -255,6 +258,16 @@ function normalizeDateRange(value) {
     });
   }
   return Object.freeze(since ? { since, until } : {});
+}
+
+function normalizeContentInventoryMode(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value !== 'full_inventory') {
+    throw sourceError('Meta content inventory mode is invalid', {
+      code: 'META_END_TO_END_CONTENT_INVENTORY_MODE_INVALID',
+    });
+  }
+  return value;
 }
 
 function requireDateRange(value) {
