@@ -157,6 +157,12 @@ export function boundInstagramContentPage(page = {}, dateRange = null) {
 }
 
 function requestedContentDateRange(input, configured) {
+  if (input?.contentInventoryMode === 'full_inventory') return null;
+  if (input?.contentInventoryMode !== null
+    && input?.contentInventoryMode !== undefined
+    && input?.contentInventoryMode !== '') {
+    throw new TypeError('Instagram contentInventoryMode must be full_inventory');
+  }
   const hasExplicit = input?.since !== null
     && input?.since !== undefined
     && input?.since !== ''

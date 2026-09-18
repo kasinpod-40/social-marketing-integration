@@ -142,6 +142,10 @@ test('Meta continuation keeps the originating trigger instead of reverting sched
   assert.match(source, /trigger:\s*input\.job\.body\.trigger/u);
   assert.doesNotMatch(source, /trigger:\s*'manual_uat',\s*\n\s*continuation:/u);
   assert.match(source, /Scheduled Meta job cannot reduce into dry-run or D1-only mode/u);
+  assert.match(
+    source,
+    /connectorKey === 'instagram' && scheduled[\s\S]*FULL_INVENTORY_CURRENT/u,
+  );
 });
 
 test('Meta router enqueues every durable post-source continuation phase', () => {

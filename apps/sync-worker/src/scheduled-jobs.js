@@ -337,7 +337,9 @@ export function buildScheduledJobs(input = {}) {
       schemaVersion: 1,
       type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
       trigger: 'scheduled',
-      syncMode: 'auto',
+      // Daily growth must observe every current video. The existing durable continuation
+      // still bounds each invocation; `full` removes only the latest-100 logical cutoff.
+      syncMode: 'full',
       requestedAt,
       // MKT_Content_Daily ใช้วันรายงานที่ปิดสมบูรณ์ล่าสุดเหมือน Organic ช่องทางอื่น
       // ส่วนเวลาที่รันจริงเก็บแยกใน fetched_at / MKT_Accounts.last_sync_at.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-18 — Scheduled Organic Daily growth completeness
+
+- make every scheduled YouTube run request a full current-video snapshot while preserving the existing bounded
+  uploads pagination, D1-first persistence and continuation batches; this removes the accidental latest-100
+  logical cutoff caused by a less-than-24-hour `auto` checkpoint interval;
+- make scheduled Instagram page the full current media inventory and collect current/lifetime insight values for
+  old and new media on the completed report date, while keeping account insights and manual/history operations
+  on their exact reviewed date ranges;
+- bind the Instagram scope to the durable operation fingerprint, preserve Facebook/TikTok behavior and the
+  10,000-row Lark cache/retention contract, and never fabricate snapshots before collection began.
+
 ## 2026-09-18 — Chatwoot historical reprojection revision
 
 - use processing-time `fetched_at` only for retained-D1 Chatwoot Daily reprojection, so a historical window timestamp cannot make D1 skip facts written by a later scheduled sync;

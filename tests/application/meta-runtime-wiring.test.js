@@ -466,6 +466,122 @@ test('forwards the reviewed period to Instagram content inventory staging', asyn
   assert.equal(contentCalls[0].until, '2026-07-26');
 });
 
+test('scheduled Instagram full-inventory snapshots observe old media on the completed day', async () => {
+  const workStore = createWorkStore();
+  const calls = { content: [], accountInsights: [], contentInsights: [] };
+  const operation = Object.freeze({
+    operationId: 'instagram-full-inventory-001',
+    workKey: 'instagram:instagram-full-inventory-001',
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+    stable: true,
+  });
+  const input = baseInput({
+    connectorKey: 'instagram',
+    jobType: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+    operation,
+    syncRunId: 'meta:instagram:instagram-full-inventory-001',
+    cursorKey: 'integration_workspace:instagram:chemistry_k:daily',
+    adapter: {
+      async fetchAccount() {
+        return { resource: { id: 'instagram_1', name: 'Fixture Instagram' } };
+      },
+      async fetchContentPage(value) {
+        calls.content.push(value);
+        return {
+          rows: [
+            { id: 'old_media', timestamp: '2026-06-19T09:00:00Z' },
+            { id: 'new_media', timestamp: '2026-07-26T09:00:00Z' },
+          ],
+          hasMore: false,
+          nextCursor: null,
+        };
+      },
+      async fetchAccountInsightsPage(value) {
+        calls.accountInsights.push(value);
+        return { rows: [], hasMore: false, nextCursor: null };
+      },
+      async fetchContentInsightsPage(value) {
+        calls.contentInsights.push(value);
+        return { rows: [], hasMore: false, nextCursor: null };
+      },
+    },
+    sourceAccountId: 'instagram_1',
+    resumableWorkStore: workStore,
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+    dateRange: { since: '2026-07-26', until: '2026-07-26' },
+    organicContentSnapshotMode: 'full_inventory_current',
+  });
+
+  let result;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    result = await processMetaEndToEndSync(input);
+    if (result.status === 'source_validated') break;
+  }
+
+  assert.equal(result.status, 'source_validated');
+  assert.equal(calls.content.length, 1);
+  assert.equal(calls.content[0].since, undefined);
+  assert.equal(calls.content[0].until, undefined);
+  assert.equal(calls.content[0].contentInventoryMode, 'full_inventory');
+  assert.deepEqual(
+    calls.contentInsights.map((call) => ({ mediaId: call.mediaId, since: call.since, until: call.until })),
+    [
+      { mediaId: 'old_media', since: undefined, until: undefined },
+      { mediaId: 'new_media', since: undefined, until: undefined },
+    ],
+  );
+  assert.equal(calls.accountInsights[0].since, '2026-07-26');
+  assert.equal(calls.accountInsights[0].until, '2026-07-26');
+  assert.deepEqual(result.sourceSummary, {
+    accountRows: 1,
+    contentRows: 2,
+    contentInsightEntities: 2,
+    contentInsightRows: 0,
+    accountInsightRows: 0,
+  });
+});
+
+test('Instagram durable generation cannot change from report range to full inventory mid-run', async () => {
+  const workStore = createWorkStore();
+  const operation = Object.freeze({
+    operationId: 'instagram-mode-fingerprint-001',
+    workKey: 'instagram:instagram-mode-fingerprint-001',
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+    stable: true,
+  });
+  const input = baseInput({
+    connectorKey: 'instagram',
+    jobType: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
+    operation,
+    syncRunId: 'meta:instagram:instagram-mode-fingerprint-001',
+    cursorKey: 'integration_workspace:instagram:chemistry_k:daily',
+    adapter: {
+      async fetchAccount() {
+        return { resource: { id: 'instagram_1', name: 'Fixture Instagram' } };
+      },
+    },
+    sourceAccountId: 'instagram_1',
+    resumableWorkStore: workStore,
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+    dateRange: { since: '2026-07-26', until: '2026-07-26' },
+  });
+
+  assert.equal((await processMetaEndToEndSync(input)).status, 'source_continuation');
+  await assert.rejects(
+    processMetaEndToEndSync({
+      ...input,
+      organicContentSnapshotMode: 'full_inventory_current',
+    }),
+    /operation fingerprint mismatch/u,
+  );
+});
+
 
 test('fails before another Provider call when the durable source-unit limit is reached', async () => {
   const workStore = createWorkStore();

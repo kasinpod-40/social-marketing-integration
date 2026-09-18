@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = BOUNDED_DAILY_INCREMENTAL_SOURCE_REVIEW
+TASK_STATUS                              = ORGANIC_DAILY_GROWTH_REPAIR_CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 17eea757
-CURRENT_BRANCH                           = codex/bounded-daily-incremental-source
+BASE_MAIN_SHA                            = 74ecaf22
+CURRENT_BRANCH                           = codex/organic-daily-growth-repair
 CUSTOMER_WORKERS_PLAN                    = PAID_BASE_PLAN_NO_ADD_ON
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -73,6 +73,41 @@ Cut over every reviewed customer-owned connector from the Integration Workspace 
 customer Production ownership tuple. Reuse the migrated D1 state and customer Base mappings, preserve the
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
+
+### Authorized repair — Organic Daily growth completeness (2026-09-18)
+
+- Objective: make the normal scheduled Organic Daily path capture cumulative growth for every current
+  YouTube video and Instagram media item, rather than only the latest 100 YouTube videos or Instagram
+  posts published on the report date.
+- In scope: scheduled YouTube mode selection, scheduled Instagram full-inventory current snapshots,
+  durable continuation/fingerprint safety, D1-first writes, focused regression, and delivery documentation.
+- Out of scope: fabricating Instagram/TikTok snapshots before collection began, changing Facebook/TikTok
+  source semantics, increasing the 10,000-record Lark cache bound, Production deploy, or live data mutation.
+- Acceptance: scheduled YouTube jobs explicitly request a full inventory; scheduled Instagram inventory
+  and media insights ignore the publication-date filter while account insights remain bound to the completed
+  report date; manual/history operations retain their reviewed range semantics; existing Facebook/TikTok
+  behavior and stable operation safety do not regress.
+- Required tests: scheduled-job contract, Instagram full-inventory source staging, configured history-range
+  bypass only for the explicit full-inventory request, Meta operation fingerprint isolation, focused Organic
+  routing tests, repository checks, full unit/Workers tests, Report reliability, audit, and deploy dry-run.
+
+### Implementation result — Organic Daily growth completeness (2026-09-18)
+
+- Scheduled YouTube now explicitly requests the existing full-inventory path. This removes the prior logical
+  latest-100 ceiling while retaining bounded Provider pagination, durable continuation, D1-first writes and the
+  existing bounded Lark cache.
+- Scheduled Instagram now uses an explicit `full_inventory_current` snapshot mode. Media discovery and per-media
+  current/lifetime insights cover old and new posts without a publication-date filter, while account insights
+  remain scoped to the exact completed report date. Manual/history operations retain `report_range` semantics.
+- The Meta durable operation fingerprint includes the non-default snapshot mode, so a resumed operation cannot
+  silently change from report-range to full-inventory behavior. Explicit full-inventory collection also bypasses
+  a configured historical publication range without weakening the default adapter boundary.
+- Regression proves an older Instagram post is projected to the requested Daily observation date, scheduled
+  YouTube is full-inventory, scheduled Instagram includes old/current media, and Facebook/TikTok behavior remains
+  unchanged. Final gates pass: `npm run check`; full `npm test` (3,410 Node + 18 Workers); Report reliability
+  106/106; `npm audit --audit-level=high` with zero vulnerabilities; deploy dry-run; and `git diff --check`.
+- **Production remains unchanged.** Live completion requires review/merge, a reviewed Customer Production deploy,
+  one natural scheduled run, and D1/Lark/Dashboard readback. No historical Instagram/TikTok values were fabricated.
 
 ### Implementation result — Chatwoot 30-day Report fact bound (2026-09-18)
 

@@ -477,7 +477,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       schemaVersion: 1,
       type: 'youtube.channel.organic.sync',
       trigger: 'scheduled',
-      syncMode: 'auto',
+      syncMode: 'full',
       metricDate: '2026-07-18',
       analyticsEnabled: true,
       analyticsStartDate: '2026-07-11',

@@ -16,6 +16,10 @@ const ADS_CONNECTOR = 'meta_ads';
 const META_ADS_MAX_REPORT_RANGE_DAYS = 31;
 const SOURCE_UNIT_READ_PAGE_SIZE = 500;
 const FACEBOOK_DAILY_CONTENT_SCOPE = 'facebook_daily_dashboard_lookback_v1';
+export const META_ORGANIC_CONTENT_SNAPSHOT_MODES = Object.freeze({
+  REPORT_RANGE: 'report_range',
+  FULL_INVENTORY_CURRENT: 'full_inventory_current',
+});
 const ORGANIC_STAGES = Object.freeze([
   'account',
   'content',
@@ -56,6 +60,10 @@ export async function processMetaEndToEndSync(input = {}) {
   const sourceTimezone = requireText(input.sourceTimezone ?? 'Asia/Bangkok', 'sourceTimezone');
   const dateRange = normalizeDateRange(input.dateRange, connectorKey === ADS_CONNECTOR);
   const adsSourceMode = normalizeAdsSourceMode(input.adsSourceMode, connectorKey);
+  const organicContentSnapshotMode = normalizeOrganicContentSnapshotMode(
+    input.organicContentSnapshotMode,
+    connectorKey,
+  );
   const limits = normalizeLimits(input.limits);
   const assertLockActive = typeof input.assertLockActive === 'function'
     ? input.assertLockActive
@@ -73,6 +81,9 @@ export async function processMetaEndToEndSync(input = {}) {
     dateRange,
     ...(adsSourceMode === META_ADS_SOURCE_MODES.DAILY_ACTIVITY_SCOPED_CREATIVES
       ? { adsSourceMode }
+      : {}),
+    ...(organicContentSnapshotMode === META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT
+      ? { organicContentSnapshotMode }
       : {}),
     generation: operation.generation,
   });
@@ -119,7 +130,12 @@ export async function processMetaEndToEndSync(input = {}) {
       );
     }
     await assertLockActive();
-    const request = resolveSourceRequest({ connectorKey, state, dateRange });
+    const request = resolveSourceRequest({
+      connectorKey,
+      state,
+      dateRange,
+      organicContentSnapshotMode,
+    });
     const unit = await collectMetaEndToEndSourceUnit({
       connectorKey,
       datasetKey: request.datasetKey,
@@ -127,6 +143,7 @@ export async function processMetaEndToEndSync(input = {}) {
       identities: { sourceAccountId },
       state: request.state,
       dateRange: request.dateRange,
+      contentInventoryMode: request.contentInventoryMode,
       maxPages: limits.sourceMaxPages,
     });
     const payload = createStagedPayload(unit);
@@ -239,6 +256,7 @@ export async function processMetaEndToEndSync(input = {}) {
     sourceTimezone,
     sourceWatermark: state.sourceWatermark,
     dateRange,
+    organicContentSnapshotMode,
   });
 
   const result = await processMetaEndToEndGeneration({
@@ -395,8 +413,16 @@ function isFacebookDailyRange(connectorKey, dateRange) {
     && dateRange.since === dateRange.until;
 }
 
-function resolveSourceRequest({ connectorKey, state, dateRange }) {
+function resolveSourceRequest({
+  connectorKey,
+  state,
+  dateRange,
+  organicContentSnapshotMode,
+}) {
   const pageState = state.pageState ?? { pageNumber: 1 };
+  const fullInventoryCurrent = connectorKey === 'instagram'
+    && organicContentSnapshotMode
+      === META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT;
   if (ORGANIC_CONNECTORS.has(connectorKey)) {
     if (state.stage === 'account') {
       return { datasetKey: `${connectorKey}.account.latest`, state: pageState };
@@ -405,7 +431,8 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
       return {
         datasetKey: `${connectorKey}.content.inventory`,
         state: pageState,
-        dateRange,
+        dateRange: fullInventoryCurrent ? {} : dateRange,
+        ...(fullInventoryCurrent ? { contentInventoryMode: 'full_inventory' } : {}),
       };
     }
     if (state.stage === 'account_insights') {
@@ -422,7 +449,7 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
           ...pageState,
           entityId: state.contentIds[state.contentIndex],
         },
-        dateRange,
+        dateRange: fullInventoryCurrent ? {} : dateRange,
       };
     }
   }
@@ -570,7 +597,10 @@ async function buildWriteSet(input) {
       contentInsights: input.sourceSnapshot.contentInsights,
       accountInsights: input.sourceSnapshot.accountInsights,
       observationDate: input.dateRange.until,
-      contentScopeMode: input.dateRange.since ? 'report_range' : 'full_inventory',
+      contentScopeMode: input.organicContentSnapshotMode
+        === META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT
+        ? 'full_inventory'
+        : input.dateRange.since ? 'report_range' : 'full_inventory',
     });
   }
   const accountTimezone = requireText(
@@ -1045,6 +1075,25 @@ function normalizeAdsSourceMode(value, connectorKey) {
     throw permanentError('Meta Ads source mode is invalid', {
       code: 'META_ADS_SOURCE_MODE_INVALID',
       details: { sourceMode: mode },
+    });
+  }
+  return mode;
+}
+
+function normalizeOrganicContentSnapshotMode(value, connectorKey) {
+  if (!ORGANIC_CONNECTORS.has(connectorKey)) return null;
+  const mode = optionalText(value) ?? META_ORGANIC_CONTENT_SNAPSHOT_MODES.REPORT_RANGE;
+  if (!Object.values(META_ORGANIC_CONTENT_SNAPSHOT_MODES).includes(mode)) {
+    throw permanentError('Meta Organic content snapshot mode is invalid', {
+      code: 'META_ORGANIC_CONTENT_SNAPSHOT_MODE_INVALID',
+      details: { connectorKey, mode },
+    });
+  }
+  if (mode === META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT
+    && connectorKey !== 'instagram') {
+    throw permanentError('Full-inventory current snapshots are enabled only for Instagram', {
+      code: 'META_ORGANIC_CONTENT_SNAPSHOT_MODE_INVALID',
+      details: { connectorKey, mode },
     });
   }
   return mode;

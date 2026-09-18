@@ -1,5 +1,20 @@
 # Project Brain — Social Marketing Data Integration
 
+## Scheduled Organic Daily growth completeness — 2026-09-18
+
+The scheduled YouTube job must explicitly request `full`, not `auto`. The prior 24-hour checkpoint decision
+could classify a valid next-day run as incremental when the previous completion was less than 24 hours earlier,
+limiting the logical snapshot to the latest 100 videos. Full mode still uses the existing durable pagination,
+five-row D1 batches and bounded Lark destination batches; it changes completeness, not per-invocation limits.
+
+Scheduled Instagram must page the complete current media inventory and read current/lifetime insights for every
+media item, while its account insights remain bound to the completed Bangkok report date. This makes an old post
+whose cumulative metrics changed produce a stable `content_id:metric_date` Daily snapshot for the current report
+day. Manual/history operations keep their exact publication-date range. The full-inventory mode is included in
+the durable operation fingerprint so an in-progress range generation cannot silently change scope. D1 remains
+the historical authority and `MKT_Content_Daily` remains a bounded 10,000-record compatibility cache governed by
+retention. No pre-collection Instagram/TikTok history is fabricated.
+
 ## Chatwoot retained-event reprojection revision — 2026-09-18
 
 The bounded PROD repair pins `requestedAt` to 2026-09-17 23:59:59 Bangkok to retain the exact 2026-08-19..09-17 reporting window. Normal scheduled Chatwoot runs can later write the same Conversation Daily identities with a newer `fetched_at`. A repair using the pinned timestamp for D1 revision then silently loses those upserts even when the work reports complete. The narrow follow-up keeps the pinned window/generation but uses actual processing time as `fetched_at` only for `REPORTING_DAILY_REPROJECTION`; normal Daily keeps its original revision contract. The current v4 run is diagnostic and cannot prove completion; a fresh exact v5 rerun, raw-event/D1 reconciliation, Lark readback, and 1/3/7/30-day Report refresh remain required after the fix is deployed.

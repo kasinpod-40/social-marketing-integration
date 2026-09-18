@@ -443,6 +443,48 @@ test('keeps Instagram Provider identity in Canonical rows and account_key in D1 
   );
 });
 
+test('records current Instagram metrics for an old post on the requested Daily observation date', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_fixture_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_instagram_daily_growth',
+    operationId: 'operation_instagram_daily_growth',
+    fetchedAt: Date.parse('2026-09-18T00:30:00Z'),
+    observationDate: '2026-09-17',
+    contentScopeMode: 'full_inventory',
+    accountResource: {
+      user_id: 'ig_fixture_001',
+      username: 'fixture.instagram',
+      account_type: 'BUSINESS',
+    },
+    contentResources: [{
+      id: 'old_media_fixture',
+      media_type: 'VIDEO',
+      timestamp: '2026-06-19T09:00:00Z',
+    }],
+    contentInsights: [{
+      contentId: 'old_media_fixture',
+      insights: [{
+        name: 'views',
+        period: 'lifetime',
+        total_value: { value: 1234 },
+      }],
+    }],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.context.scopeMode, 'full_inventory');
+  assert.equal(writeSet.canonical.contentDaily[0].views, 1234);
+  assert.match(writeSet.canonical.contentDaily[0].content_daily_key, /:2026-09-17$/u);
+  assert.equal(
+    writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].metric_date,
+    Date.parse('2026-09-17T00:00:00+07:00'),
+  );
+});
+
 test('maps Instagram creator source classification to the shared canonical profile option', () => {
   const writeSet = buildMetaOrganicWriteSet({
     connectorKey: 'instagram',
