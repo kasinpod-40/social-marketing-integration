@@ -9,6 +9,7 @@ import { assertConnectorRunnable } from '../../../packages/application/src/conne
 import { withQueueOperation } from '../../../packages/application/src/jobs/queue-operation.js';
 import {
   CHATWOOT_RUNTIME_CONTRACT_VERSION,
+  CHATWOOT_RUNTIME_MODES,
   assertLockedChatwootRuntimeConfig,
   readChatwootContinuationSequence,
   resolveChatwootRuntimeMode,
@@ -65,9 +66,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
   );
   const infrastructure = input.getInfrastructure();
   const resumableWorkStore = infrastructure.getResumableWorkStore();
-  const cursorKey = mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION
-    ? `chatwoot:${connector.accountKey}:reporting-daily-reprojection`
-    : `chatwoot:${connector.accountKey}:analytics`;
+  const cursorKey = resolveChatwootCursorKey(mode, connector.accountKey);
   const window = resolveChatwootRuntimeWindow({
     mode,
     requestedAt: operation.originalRequestedAt,
@@ -217,6 +216,13 @@ export async function processChatwootAnalyticsJob(input = {}) {
     return Object.freeze({ ...result, continuationEnqueued: true });
   }
   return result;
+}
+
+export function resolveChatwootCursorKey(mode, accountKey) {
+  const key = requireJobText(accountKey, 'accountKey');
+  return mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION
+    ? `chatwoot:${key}:reporting-daily-reprojection`
+    : `chatwoot:${key}:analytics`;
 }
 
 export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig, trigger = null) {
