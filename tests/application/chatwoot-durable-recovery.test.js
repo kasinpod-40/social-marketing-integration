@@ -753,6 +753,7 @@ test('rollup writes rebuilt Conversation Daily before derived Daily tables', asy
   }
   const larkPlans = [];
   const input = runtimeInput({
+    now: () => REQUESTED_AT + DAY_MS,
     flags: { reportWrite: true, larkWrite: true },
     chatwootStore: store,
     coverageStore: {
@@ -798,6 +799,7 @@ test('rollup writes rebuilt Conversation Daily before derived Daily tables', asy
   assert.equal(writes[0].method, 'upsertConversationDailyFact');
   assert.equal(writes[0].row.first_response_seconds, 73);
   assert.equal(writes[0].row.resolved_count, 1);
+  assert.ok(writes.every(({ row }) => row.fetched_at === REQUESTED_AT));
   assert.deepEqual(larkPlans.map((plan) => plan.tableId), [
     'conversation-daily-table',
     'agent-daily-table',
@@ -808,6 +810,18 @@ test('rollup writes rebuilt Conversation Daily before derived Daily tables', asy
 });
 
 test('Reporting Daily reprojection reads retained D1 only and never advances Provider cursor', async () => {
+  const repairTime = REQUESTED_AT + DAY_MS;
+  const writes = [];
+  const chatwootStore = noOpStore();
+  for (const method of [
+    'upsertConversationDailyFact', 'upsertAgentDailyFact',
+    'upsertInboxDailyFact', 'upsertAccountDailyFact',
+  ]) {
+    chatwootStore[method] = async (row) => {
+      writes.push({ method, fetchedAt: row.fetched_at });
+      return row;
+    };
+  }
   let durableState = {
     ...createInitialChatwootDurableState({
       mode: CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
@@ -827,6 +841,7 @@ test('Reporting Daily reprojection reads retained D1 only and never advances Pro
     mode: CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
     continuationSequence: 0,
     cursorKey: 'chatwoot:chemistry_k:reporting-daily-reprojection',
+    now: () => repairTime,
     client: requiredClient({
       listInboxes: providerRead,
       listAgents: providerRead,
@@ -839,7 +854,7 @@ test('Reporting Daily reprojection reads retained D1 only and never advances Pro
       listMessagesPage: providerRead,
       listAccountReportingEventsPage: providerRead,
     }),
-    chatwootStore: noOpStore(),
+    chatwootStore,
     coverageStore: {
       saveCoverageRun: async (row) => row,
       saveCoverageEntities: async (rows) => rows,
@@ -850,7 +865,7 @@ test('Reporting Daily reprojection reads retained D1 only and never advances Pro
     },
     rollupSource: {
       listConversationDailyPage: async () => ({
-        rows: [], nextAfterKey: null, complete: true,
+        rows: [rollupSourceRow()], nextAfterKey: null, complete: true,
       }),
     },
     flags: { reportWrite: true, larkWrite: false },
@@ -866,6 +881,11 @@ test('Reporting Daily reprojection reads retained D1 only and never advances Pro
   assert.equal(durableState.rollupComplete, true);
   assert.equal(durableState.checkpointComplete, true);
   assert.equal(durableState.nextSequence, 1);
+  assert.deepEqual(writes.map(({ method }) => method), [
+    'upsertConversationDailyFact', 'upsertAgentDailyFact',
+    'upsertInboxDailyFact', 'upsertAccountDailyFact',
+  ]);
+  assert.ok(writes.every(({ fetchedAt }) => fetchedAt === repairTime));
 });
 
 function rollupSourceRow() {
