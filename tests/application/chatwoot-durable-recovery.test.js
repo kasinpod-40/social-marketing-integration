@@ -807,6 +807,67 @@ test('rollup writes rebuilt Conversation Daily before derived Daily tables', asy
   assert.equal(durableState.rollupRowsWritten, 4);
 });
 
+test('Reporting Daily reprojection reads retained D1 only and never advances Provider cursor', async () => {
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
+      requestedAt: REQUESTED_AT,
+    }),
+    rollupMetricDates: ['2026-07-30'],
+    rollupDateIndex: 0,
+    rollupAfterKey: null,
+    rollupAggregate: null,
+    rollupPagesProcessed: 0,
+    rollupRowsWritten: 0,
+  };
+  const providerRead = async () => {
+    throw new Error('Provider must not be read during retained D1 reprojection');
+  };
+  const result = await syncChatwootDurableRuntime(runtimeInput({
+    mode: CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
+    continuationSequence: 0,
+    cursorKey: 'chatwoot:chemistry_k:reporting-daily-reprojection',
+    client: requiredClient({
+      listInboxes: providerRead,
+      listAgents: providerRead,
+      listTeams: providerRead,
+      listLabels: providerRead,
+      listConversationsPage: providerRead,
+      getConversation: providerRead,
+      listConversationReportingEvents: providerRead,
+      listConversationLabels: providerRead,
+      listMessagesPage: providerRead,
+      listAccountReportingEventsPage: providerRead,
+    }),
+    chatwootStore: noOpStore(),
+    coverageStore: {
+      saveCoverageRun: async (row) => row,
+      saveCoverageEntities: async (rows) => rows,
+    },
+    incrementalStateStore: {
+      loadCheckpoint: providerRead,
+      saveCheckpoint: providerRead,
+    },
+    rollupSource: {
+      listConversationDailyPage: async () => ({
+        rows: [], nextAfterKey: null, complete: true,
+      }),
+    },
+    flags: { reportWrite: true, larkWrite: false },
+    workStore: {
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (input) => {
+        durableState = input.state;
+        return { state: input.state };
+      },
+    },
+  }));
+  assert.equal(result.complete, true);
+  assert.equal(durableState.rollupComplete, true);
+  assert.equal(durableState.checkpointComplete, true);
+  assert.equal(durableState.nextSequence, 1);
+});
+
 function rollupSourceRow() {
   return {
     conversationDailyKey: 'chatwoot:chemistry_k:conversation:10552:2026-07-30',

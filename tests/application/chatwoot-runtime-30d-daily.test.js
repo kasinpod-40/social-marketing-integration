@@ -54,14 +54,26 @@ test('Chatwoot runtime contract is locked to 30d initial and daily 3d overlap', 
     mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
     requestedAt: REQUESTED_AT,
   });
+  const reprojection = resolveChatwootRuntimeWindow({
+    mode: CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
+    requestedAt: REQUESTED_AT,
+  });
   assert.equal(initial.endAt - initial.startAt, 30 * DAY_MS);
   assert.equal(daily.endAt - daily.startAt, 3 * DAY_MS);
+  assert.equal(reprojection.endAt - reprojection.startAt, 29 * DAY_MS);
+  assert.equal(reprojection.days, 30);
   assert.equal(initial.autoExpanded, false);
   assert.equal(daily.includeUpdatedOlderConversations, true);
   assert.equal(createInitialChatwootDurableState({
     mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
     requestedAt: REQUESTED_AT,
   }).conversationDiscoveryStrategy, 'updated_within_once');
+  const reprojectionState = createInitialChatwootDurableState({
+    mode: CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
+    requestedAt: REQUESTED_AT,
+  });
+  assert.equal(reprojectionState.stage, 'rollup');
+  assert.equal(reprojectionState.reportingComplete, true);
 });
 
 test('Chatwoot catalog centralizes triggers and schema version', () => {
@@ -73,6 +85,7 @@ test('Chatwoot catalog centralizes triggers and schema version', () => {
     JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
     JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
     JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY,
+    JOB_TRIGGERS.CHATWOOT_REPORTING_DAILY_REPROJECTION,
   ]);
   assert.equal(
     resolveChatwootRuntimeMode(JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL),
@@ -81,6 +94,10 @@ test('Chatwoot catalog centralizes triggers and schema version', () => {
   assert.equal(
     resolveChatwootRuntimeMode(JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY),
     CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+  );
+  assert.equal(
+    resolveChatwootRuntimeMode(JOB_TRIGGERS.CHATWOOT_REPORTING_DAILY_REPROJECTION),
+    CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
   );
 });
 
@@ -113,6 +130,17 @@ test('Chatwoot runtime admits only the exact reviewed customer Production tuple'
       JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
     ),
     (error) => error.code === 'CHATWOOT_MANUAL_UAT_TARGET_INVALID',
+  );
+  const scheduledConfig = {
+    flags: { ...config.flags, schedule: true },
+  };
+  assert.equal(
+    assertChatwootManualRuntime(
+      runtime,
+      scheduledConfig,
+      JOB_TRIGGERS.CHATWOOT_REPORTING_DAILY_REPROJECTION,
+    ).accountKey,
+    'chemistry_k',
   );
 });
 

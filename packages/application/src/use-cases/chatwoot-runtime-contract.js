@@ -7,6 +7,7 @@ export const CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION = JOB_SCHEMA_VERSIONS.CHATWOOT_
 export const CHATWOOT_RUNTIME_MODES = Object.freeze({
   INITIAL_30_DAY_UAT: 'initial_30_day_uat',
   DAILY_INCREMENTAL: 'daily_incremental',
+  REPORTING_DAILY_REPROJECTION: 'reporting_daily_reprojection',
 });
 
 export const CHATWOOT_CONVERSATION_DISCOVERY_STRATEGIES = Object.freeze({
@@ -40,6 +41,9 @@ export function resolveChatwootRuntimeMode(trigger) {
     || trigger === JOB_TRIGGERS.CHATWOOT_SCHEDULED_DAILY) {
     return CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL;
   }
+  if (trigger === JOB_TRIGGERS.CHATWOOT_REPORTING_DAILY_REPROJECTION) {
+    return CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION;
+  }
   throw permanentError('Chatwoot runtime received an unsupported trigger', {
     code: 'CHATWOOT_TRIGGER_INVALID',
     details: { trigger: trigger ?? null },
@@ -53,12 +57,17 @@ export function resolveChatwootRuntimeMode(trigger) {
 export function resolveChatwootRuntimeWindow(input = {}) {
   const requestedAt = requireTimestamp(input.requestedAt, 'requestedAt');
   const mode = requireMode(input.mode);
-  const days = mode === CHATWOOT_RUNTIME_MODES.INITIAL_30_DAY_UAT
-    ? CHATWOOT_RUNTIME_CONTRACT.initialBackfillDays
-    : CHATWOOT_RUNTIME_CONTRACT.incrementalOverlapDays;
+  const days = mode === CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL
+    ? CHATWOOT_RUNTIME_CONTRACT.incrementalOverlapDays
+    : CHATWOOT_RUNTIME_CONTRACT.initialBackfillDays;
+  // Reprojection operates on complete local calendar dates. Inclusive date iteration therefore
+  // spans N-1 elapsed days to produce exactly N daily slots.
+  const elapsedDays = mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION
+    ? days - 1
+    : days;
   return Object.freeze({
     mode,
-    startAt: requestedAt - days * DAY_MS,
+    startAt: requestedAt - elapsedDays * DAY_MS,
     endAt: requestedAt,
     days,
     autoExpanded: false,
@@ -120,7 +129,7 @@ export function createInitialChatwootDurableState(input = {}) {
   const mode = requireMode(input.mode);
   const window = resolveChatwootRuntimeWindow({ mode, requestedAt: input.requestedAt });
   const conversationDiscoveryStrategy = defaultConversationDiscoveryStrategy(mode);
-  return Object.freeze({
+  const state = {
     contractVersion: CHATWOOT_RUNTIME_CONTRACT_VERSION,
     schemaVersion: CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION,
     mode,
@@ -157,7 +166,17 @@ export function createInitialChatwootDurableState(input = {}) {
     rollupComplete: false,
     checkpointComplete: false,
     complete: false,
-  });
+  };
+  if (mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION) {
+    Object.assign(state, {
+      stage: 'rollup',
+      mastersComplete: true,
+      conversationDiscoveryComplete: true,
+      conversationsComplete: true,
+      reportingComplete: true,
+    });
+  }
+  return Object.freeze(state);
 }
 
 export function assertChatwootDurableState(value, expected = {}) {

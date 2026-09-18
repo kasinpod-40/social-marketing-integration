@@ -52,6 +52,12 @@ export async function syncChatwootDurableRuntime(input = {}) {
       mode: context.mode,
       requestedAt: context.requestedAt,
     });
+  if (context.mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION
+      && !Array.isArray(state.rollupMetricDates)) {
+    const initialized = { ...state };
+    initializeRollup(initialized, context);
+    state = Object.freeze(initialized);
+  }
 
   const requestedSequence = readChatwootContinuationSequence(input.continuationSequence);
   if (requestedSequence > state.nextSequence) {
@@ -471,7 +477,12 @@ async function processRollupUnit(context, state) {
     next.rollupAggregate = null;
     if (next.rollupDateIndex >= metricDates.length) {
       next.rollupComplete = true;
-      next.stage = 'checkpoint';
+      if (context.mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION) {
+        next.checkpointComplete = true;
+        next.complete = true;
+      } else {
+        next.stage = 'checkpoint';
+      }
     }
   }
   next.nextSequence += 1;

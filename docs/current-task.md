@@ -76,6 +76,9 @@ enable and verify one connector schedule at a time before Report/AI/Notification
 
 ### Implementation result — Chatwoot Reporting-event Daily projection repair (2026-09-18)
 
+- Added the exact `chatwoot_reporting_daily_reprojection` recovery trigger for the reviewed Customer
+  Production runtime. It processes exactly 30 complete calendar dates from retained D1, uses an isolated
+  durable cursor, performs zero Chatwoot Provider reads, and never advances the normal Daily cursor.
 - Customer PROD read-only evidence proved the Source events are present while the derived Daily facts are stale:
   `first_response=2,058`, `reply_time=9,780`, `conversation_resolved=13`; for `2026-09-16` the authoritative
   14 First Response events average exactly 73 seconds, while Conversation/Account Daily retained null First
