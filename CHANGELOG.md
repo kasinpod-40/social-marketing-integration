@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-18 — Chatwoot historical reprojection revision
+
+- use processing-time `fetched_at` only for retained-D1 Chatwoot Daily reprojection, so a historical window timestamp cannot make D1 skip facts written by a later scheduled sync;
+- preserve the pinned 30-day window, stable keys, D1 revision guard and normal Daily timestamp behavior. Controlled PROD rerun and D1/Lark/Report readback remain pending.
+
 ## 2026-09-18 — Chatwoot 30-day Report bound
 
 - raise only Chatwoot's default bounded D1 Report read from 10,000 to 25,000 facts after Customer PROD sizing found 12,106 Conversation Daily identities in the 30-day window;

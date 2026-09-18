@@ -1,5 +1,9 @@
 # Project Brain — Social Marketing Data Integration
 
+## Chatwoot retained-event reprojection revision — 2026-09-18
+
+The bounded PROD repair pins `requestedAt` to 2026-09-17 23:59:59 Bangkok to retain the exact 2026-08-19..09-17 reporting window. Normal scheduled Chatwoot runs can later write the same Conversation Daily identities with a newer `fetched_at`. A repair using the pinned timestamp for D1 revision then silently loses those upserts even when the work reports complete. The narrow follow-up keeps the pinned window/generation but uses actual processing time as `fetched_at` only for `REPORTING_DAILY_REPROJECTION`; normal Daily keeps its original revision contract. The current v4 run is diagnostic and cannot prove completion; a fresh exact v5 rerun, raw-event/D1 reconciliation, Lark readback, and 1/3/7/30-day Report refresh remain required after the fix is deployed.
+
 ## Customer Chatwoot 30-day Report sizing — 2026-09-18
 
 Customer PROD D1 contains 12,106 distinct Conversation Daily identities for `2026-08-19..2026-09-17`. The shared Report Worker previously passed a 10,000-row default into the bounded Chatwoot reader, so Daily repair alone cannot prove a usable 30 Days Report. The narrow follow-up uses a 25,000 Chatwoot-only default while retaining the reader's 50,000 hard maximum and other channels' 10,000 default. A configured positive override remains authoritative. This is a near-term bounded capacity repair, not a claim that arbitrary future Chatwoot growth is solved; live 1/3/7/30 Days readback and PROD D1/Lark reconciliation remain required.

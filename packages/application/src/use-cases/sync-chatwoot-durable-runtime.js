@@ -448,12 +448,18 @@ async function processRollupUnit(context, state) {
     next.nextSequence,
     `rollup-source:${metricDate}`,
   );
+  // The reprojection's requestedAt is pinned to the historical window end. Use
+  // processing time for its D1 revision so a newer scheduled Daily row cannot
+  // silently reject an otherwise correct retained-Reporting projection.
+  const fetchedAt = context.mode === CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION
+    ? Math.max(context.requestedAt, context.now())
+    : context.requestedAt;
   const projectedRows = buildChatwootConversationDailyProjectionRows({
     rows: page.rows,
     reportingTimezone: context.reportingTimezone,
     syncRunId: projectionSyncRunId,
     coverageRunId: `${projectionSyncRunId}:coverage:chatwoot:conversation_daily`,
-    fetchedAt: context.requestedAt,
+    fetchedAt,
   });
   await writeConversationDailyProjectionRows(context, projectedRows);
   next.rollupRowsWritten = Number(next.rollupRowsWritten ?? 0) + projectedRows.length;
@@ -467,7 +473,7 @@ async function processRollupUnit(context, state) {
       reportingTimezone: context.reportingTimezone,
       syncRunId: unitSyncRunId,
       coverageRunIdPrefix: `${unitSyncRunId}:coverage`,
-      fetchedAt: context.requestedAt,
+      fetchedAt,
     });
     await writeRollupRows(context, rows);
     next.rollupRowsWritten = Number(next.rollupRowsWritten ?? 0)

@@ -80,6 +80,13 @@ enable and verify one connector schedule at a time before Report/AI/Notification
 - The Chatwoot-only default is now 25,000 rows, below the reader's existing 50,000 hard maximum. Every other channel retains the 10,000 default; an explicitly configured positive limit remains authoritative and invalid values still fail closed.
 - Focused tests cover Chatwoot and unrelated channel defaults, explicit override, invalid override and unchanged reader guards. **Live completion remains pending** final-head Branch Verification, reviewed deploy, the active Daily reprojection's D1/Lark reconciliation, and 1/3/7/30 Days Report readback.
 
+### Implementation result — Chatwoot historical reprojection revision (2026-09-18)
+
+- Customer PROD readback during the exact 30-day reprojection found a retained 2026-09-03 First Response event of 597 seconds while its Conversation Daily fact remained null. The normal scheduled Daily had `fetched_at=1789673435000`, later than the historical reprojection's pinned `requestedAt=1789664399001`; D1's revision guard therefore correctly rejected that older projection. Across the target window, 131 existing Conversation Daily facts have newer `fetched_at` than the reprojection generation.
+- For `REPORTING_DAILY_REPROJECTION` only, the projection and derived Daily rows now use the actual processing time as `fetched_at`, floored at `requestedAt`. The historical window and Queue generation remain pinned and unchanged; normal Daily retains its existing timestamp contract. Tests assert both paths and the D1-first write order.
+- Final local gates on this patch: focused Chatwoot recovery 13/13, `npm run check`, full `npm test` (3,406 Node and 18 Workers), Report reliability 106/106, `npm audit --audit-level=high` (zero vulnerabilities), deploy dry-run, `npm ci --ignore-scripts`, and `git diff --check` passed.
+- **Live completion pending** final-head CI, reviewed deploy after the active v4 operation ends, one bounded new-generation reprojection, exact source/D1/Lark reconciliation, and refreshed 1/3/7/30 Days Reports. Do not treat v4's eventual `completed` status alone as data completeness.
+
 ### Implementation result — Chatwoot Reporting-event Daily projection repair (2026-09-18)
 
 - Added the exact `chatwoot_reporting_daily_reprojection` recovery trigger for the reviewed Customer
