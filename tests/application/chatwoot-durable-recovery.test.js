@@ -719,3 +719,121 @@ test('partial failure reruns the same durable Reporting unit without duplicate S
   assert.equal(stableBusinessKeys.size, 1);
   assert.equal(stableCoverageKeys.size, 1);
 });
+
+test('rollup writes rebuilt Conversation Daily before derived Daily tables', async () => {
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'rollup',
+    mastersComplete: true,
+    conversationsComplete: true,
+    reportingComplete: true,
+    rollupMetricDates: ['2026-07-30'],
+    rollupDateIndex: 0,
+    rollupAfterKey: null,
+    rollupAggregate: null,
+    rollupPagesProcessed: 0,
+    rollupRowsWritten: 0,
+    nextSequence: 2,
+  };
+  const writes = [];
+  const store = noOpStore();
+  for (const method of [
+    'upsertConversationDailyFact',
+    'upsertAgentDailyFact',
+    'upsertInboxDailyFact',
+    'upsertAccountDailyFact',
+  ]) {
+    store[method] = async (row) => {
+      writes.push({ method, row });
+      return { outcome: 'written' };
+    };
+  }
+  const larkPlans = [];
+  const input = runtimeInput({
+    flags: { reportWrite: true, larkWrite: true },
+    chatwootStore: store,
+    coverageStore: {
+      saveCoverageRun: async (row) => row,
+      saveCoverageEntities: async (rows) => rows,
+    },
+    rollupSource: {
+      listConversationDailyPage: async (query) => {
+        assert.equal(query.reportingTimezone, 'Asia/Bangkok');
+        return {
+          rows: [rollupSourceRow()],
+          nextAfterKey: null,
+          complete: true,
+        };
+      },
+    },
+    repository: {},
+    syncEngine: {
+      planByKey: async (plan) => {
+        larkPlans.push(plan);
+        return plan;
+      },
+      executePlan: async () => ({ created: 0, updated: 1, skipped: 0 }),
+    },
+    tables: {
+      mktConversationDaily: 'conversation-daily-table',
+      mktAgentDaily: 'agent-daily-table',
+      mktInboxDaily: 'inbox-daily-table',
+      mktConversationAccountDaily: 'account-daily-table',
+    },
+    client: requiredClient(),
+    workStore: {
+      loadPhase: async () => ({ state: durableState }),
+      savePhase: async (inputValue) => {
+        durableState = inputValue.state;
+        return { state: inputValue.state };
+      },
+    },
+  });
+
+  const result = await syncChatwootDurableRuntime(input);
+  assert.equal(result.stage, 'checkpoint');
+  assert.equal(writes[0].method, 'upsertConversationDailyFact');
+  assert.equal(writes[0].row.first_response_seconds, 73);
+  assert.equal(writes[0].row.resolved_count, 1);
+  assert.deepEqual(larkPlans.map((plan) => plan.tableId), [
+    'conversation-daily-table',
+    'agent-daily-table',
+    'inbox-daily-table',
+    'account-daily-table',
+  ]);
+  assert.equal(durableState.rollupRowsWritten, 4);
+});
+
+function rollupSourceRow() {
+  return {
+    conversationDailyKey: 'chatwoot:chemistry_k:conversation:10552:2026-07-30',
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    externalAccountId: 1,
+    externalConversationId: 10552,
+    externalInboxId: 4,
+    externalAgentId: 6,
+    externalTeamId: null,
+    metricDate: '2026-07-30',
+    reportingTimezone: 'Asia/Bangkok',
+    status: null,
+    newConversationCount: 1,
+    resolvedCount: 1,
+    reopenedCount: 0,
+    incomingMessageCount: 2,
+    outgoingMessageCount: 1,
+    privateMessageCount: 0,
+    attachmentMessageCount: 0,
+    firstResponse: { sum: 73, count: 1 },
+    firstResponseBusiness: { sum: 0, count: 0 },
+    resolution: { sum: 1314, count: 1 },
+    resolutionBusiness: { sum: 0, count: 0 },
+    reply: { sum: 180, count: 3 },
+    replyBusiness: { sum: 0, count: 0 },
+    coverageRunId: 'coverage:reporting',
+    sourceRevision: '1789568332922',
+  };
+}

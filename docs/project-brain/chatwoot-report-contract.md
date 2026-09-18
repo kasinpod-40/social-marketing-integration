@@ -21,6 +21,12 @@ This contract is machine-readable but deliberately unwired. Connector/Job/Report
 
 Counts are summed from conversation daily facts. Duration averages are calculated as the sum of eligible non-null conversation durations divided by the eligible sample count; daily averages are never averaged across days. Open/Pending/Snoozed/active Agent/active Inbox values use the latest completed-day Account snapshot in the requested period.
 
+The durable account Reporting endpoint is the authority for `first_response`, `reply_time` and
+`conversation_resolved` events. The daily rollup must project these raw D1 facts into Conversation Daily even when
+the related Conversation did not change inside the incremental revision window. Rollup state carries event sums
+and sample counts so Agent, Inbox and Account averages remain weighted. Existing Conversation Daily remains the
+authority for message/new/reopen counts; missing Reporting evidence stays null and must not be converted to zero.
+
 ## Null and zero
 
 Incomplete Coverage and missing duration evidence remain `null`. An admitted period with zero observed events remains numeric `0`. Equal ranked positions are not comparable across periods, so dimension comparison/change values remain null.

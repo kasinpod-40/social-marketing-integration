@@ -74,6 +74,32 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — Chatwoot Reporting-event Daily projection repair (2026-09-18)
+
+- Customer PROD read-only evidence proved the Source events are present while the derived Daily facts are stale:
+  `first_response=2,058`, `reply_time=9,780`, `conversation_resolved=13`; for `2026-09-16` the authoritative
+  14 First Response events average exactly 73 seconds, while Conversation/Account Daily retained null First
+  Response and zero Resolved values;
+- root cause is the split durable path: account Reporting pages persisted raw events, but Daily projection was
+  built only from Conversations selected by the three-day `updated_within` revision filter. Reporting events for
+  an unchanged older Conversation therefore never reached Conversation/Agent/Inbox/Account Daily;
+- the bounded rollup source now unions existing Conversation Daily identities with authoritative raw Reporting
+  event identities for each exact local day. It rebuilds First Response, Resolution, Reply and unique Resolved
+  conversation values without Provider rereads, preserves message/new/reopen counts, and uses event sums/sample
+  counts so Agent/Inbox/Account averages are weighted rather than averages of averages;
+- every projected Conversation Daily row is written to D1 before its Lark stable-key projection, then the same
+  rows feed Agent/Inbox/Account rollups. Reruns retain the same stable keys and cannot create duplicates. Missing
+  event evidence remains null; `Resolution Time` remains absent from the Dashboard while its source facts are
+  repaired for correctness;
+- focused regression passes 25/25; `npm run check`, full `npm test` (3,403 Node + 18 Worker), Report reliability
+  106/106, zero-vulnerability audit, deploy dry-run and `git diff --check` pass. Exact PROD SQL projection proof
+  for `2026-09-16` returns 64 projected rows, 14 First Response samples, 73-second weighted average and zero
+  resolved conversations;
+- **live completion pending review**: merge final HEAD, deploy reviewed main with existing Customer bindings and
+  Queue batch/concurrency 1/1 unchanged, execute one controlled D1-first repair, then reconcile D1/Lark Daily and
+  the Customer Service Report. No generic redrive, broad auto-recovery, customer-group failure notification or
+  protected forensic-terminal access is authorized.
+
 ### Implementation result — Meta Ads 2026-09-16 exact terminal recovery (2026-09-17)
 
 - PR #854 passed final-head Branch Verification `35211853543` and Meta End-to-End `35211853522`, then merged

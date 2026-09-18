@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-18 — Chatwoot Reporting-event Daily projection repair
+
+- rebuild First Response, Resolution, Reply and Resolved-conversation Daily values from the authoritative raw D1
+  Reporting events, including unchanged older Conversations omitted by the incremental revision filter;
+- write the corrected Conversation Daily stable keys before deriving Agent/Inbox/Account Daily, and carry raw
+  event sums/sample counts so rollup averages remain weighted and reruns remain idempotent;
+- preserve message/new/reopen values and null semantics, leave the removed Resolution Time Dashboard block
+  removed, and require reviewed merge/deploy plus exact PROD D1/Lark reconciliation before live completion.
+
 ## 2026-09-17 — Pin Meta Ads exact recovery Queue auth to Customer PROD profile
 
 - use the exact `chemistry-k-prod` Wrangler profile for the Queue REST bearer. The default profile returned

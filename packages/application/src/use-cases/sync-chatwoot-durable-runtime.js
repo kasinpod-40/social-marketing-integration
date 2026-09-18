@@ -18,6 +18,7 @@ import {
   resolveChatwootRuntimeWindow,
 } from './chatwoot-runtime-contract.js';
 import {
+  buildChatwootConversationDailyProjectionRows,
   buildChatwootDailyRollupRows,
   createChatwootDailyRollupState,
   mergeChatwootDailyRollupState,
@@ -432,9 +433,24 @@ async function processRollupUnit(context, state) {
   const page = await context.rollupSource.listConversationDailyPage({
     accountKey: context.accountKey,
     metricDate,
+    reportingTimezone: context.reportingTimezone,
     afterKey: next.rollupAfterKey ?? null,
     limit: ROLLUP_PAGE_SIZE,
   });
+  const projectionSyncRunId = unitRunId(
+    context,
+    next.nextSequence,
+    `rollup-source:${metricDate}`,
+  );
+  const projectedRows = buildChatwootConversationDailyProjectionRows({
+    rows: page.rows,
+    reportingTimezone: context.reportingTimezone,
+    syncRunId: projectionSyncRunId,
+    coverageRunId: `${projectionSyncRunId}:coverage:chatwoot:conversation_daily`,
+    fetchedAt: context.requestedAt,
+  });
+  await writeConversationDailyProjectionRows(context, projectedRows);
+  next.rollupRowsWritten = Number(next.rollupRowsWritten ?? 0) + projectedRows.length;
   next.rollupAggregate = mergeChatwootDailyRollupState(aggregate, page.rows);
   next.rollupPagesProcessed = Number(next.rollupPagesProcessed ?? 0) + 1;
   next.rollupAfterKey = page.nextAfterKey;
@@ -460,6 +476,25 @@ async function processRollupUnit(context, state) {
   }
   next.nextSequence += 1;
   return Object.freeze(next);
+}
+
+async function writeConversationDailyProjectionRows(context, rows) {
+  for (const row of rows) {
+    await context.assertCurrent();
+    await context.chatwootStore.upsertConversationDailyFact(row);
+  }
+  if (!context.flags.larkWrite || rows.length === 0) return;
+  const plan = await context.syncEngine.planByKey({
+    repository: context.repository,
+    tableId: requireText(
+      context.tables.mktConversationDaily,
+      'tables.mktConversationDaily',
+    ),
+    keyField: 'conversation_daily_key',
+    rows,
+  });
+  await context.assertCurrent();
+  await context.syncEngine.executePlan(plan, { beforeWriteChunk: context.assertCurrent });
 }
 
 async function processCheckpointUnit(context, state) {
