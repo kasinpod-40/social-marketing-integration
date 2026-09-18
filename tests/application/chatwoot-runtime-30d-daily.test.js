@@ -27,7 +27,10 @@ import {
 import { syncChatwootDurableRuntime } from '../../packages/application/src/use-cases/sync-chatwoot-durable-runtime.js';
 import { readChatwootRuntimeConfig } from '../../packages/config/src/chatwoot-runtime-config.js';
 import { ChatwootDurableApiClient } from '../../packages/connectors/src/chatwoot/chatwoot-durable-api.client.js';
-import { assertChatwootManualRuntime } from '../../apps/sync-worker/src/chatwoot-job-router.js';
+import {
+  assertChatwootManualRuntime,
+  resolveChatwootCursorKey,
+} from '../../apps/sync-worker/src/chatwoot-job-router.js';
 
 const REQUESTED_AT = Date.parse('2026-07-31T01:00:00Z');
 const DAY_MS = 86_400_000;
@@ -74,6 +77,13 @@ test('Chatwoot runtime contract is locked to 30d initial and daily 3d overlap', 
   });
   assert.equal(reprojectionState.stage, 'rollup');
   assert.equal(reprojectionState.reportingComplete, true);
+  assert.equal(
+    resolveChatwootCursorKey(
+      CHATWOOT_RUNTIME_MODES.REPORTING_DAILY_REPROJECTION,
+      'chemistry_k',
+    ),
+    'chatwoot:chemistry_k:reporting-daily-reprojection',
+  );
 });
 
 test('Chatwoot catalog centralizes triggers and schema version', () => {
