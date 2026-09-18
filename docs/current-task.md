@@ -74,6 +74,12 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — Chatwoot 30-day Report fact bound (2026-09-18)
+
+- Customer PROD read-only sizing for `2026-08-19..2026-09-17` found 12,106 distinct Conversation Daily identities across 30 dates. The shared Report Worker passed a 10,000-row default to the Chatwoot D1 reader, so a 30 Days refresh would fail closed even after the Daily reprojection completed.
+- The Chatwoot-only default is now 25,000 rows, below the reader's existing 50,000 hard maximum. Every other channel retains the 10,000 default; an explicitly configured positive limit remains authoritative and invalid values still fail closed.
+- Focused tests cover Chatwoot and unrelated channel defaults, explicit override, invalid override and unchanged reader guards. **Live completion remains pending** final-head Branch Verification, reviewed deploy, the active Daily reprojection's D1/Lark reconciliation, and 1/3/7/30 Days Report readback.
+
 ### Implementation result — Chatwoot Reporting-event Daily projection repair (2026-09-18)
 
 - Added the exact `chatwoot_reporting_daily_reprojection` recovery trigger for the reviewed Customer

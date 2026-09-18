@@ -1,5 +1,9 @@
 # Project Brain — Social Marketing Data Integration
 
+## Customer Chatwoot 30-day Report sizing — 2026-09-18
+
+Customer PROD D1 contains 12,106 distinct Conversation Daily identities for `2026-08-19..2026-09-17`. The shared Report Worker previously passed a 10,000-row default into the bounded Chatwoot reader, so Daily repair alone cannot prove a usable 30 Days Report. The narrow follow-up uses a 25,000 Chatwoot-only default while retaining the reader's 50,000 hard maximum and other channels' 10,000 default. A configured positive override remains authoritative. This is a near-term bounded capacity repair, not a claim that arbitrary future Chatwoot growth is solved; live 1/3/7/30 Days readback and PROD D1/Lark reconciliation remain required.
+
 ## Meta Ads 2026-09-16 exact incident recovery — 2026-09-17
 
 PR #854 merged as `main@c9077d2e`; Worker version `29e2caf4` is active at 100% with only the separate

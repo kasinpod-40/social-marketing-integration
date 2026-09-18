@@ -7,6 +7,7 @@ import {
   getReportPlatformContract,
 } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
 import { createReportSettingRowsForProfile } from '../../packages/config/src/report-settings.seed.js';
+import { resolveDashboardReportMaxFactRows } from '../../apps/sync-worker/src/tiktok-d1-aware-report-job-router.js';
 
 const generatorSource = readFileSync(new URL(
   '../../packages/application/src/use-cases/generate-dashboard-report-materialization.js',
@@ -57,4 +58,16 @@ test('runtime wiring does not invent Chatwoot-specific report ID aliases', () =>
   assert.doesNotMatch(workerRouterSource, /CHATWOOT_REPORT_ID|chatwoot_report_id/u);
   assert.match(generatorSource, /reportType:\s*REPORT_TYPE/u);
   assert.match(generatorSource, /platform:\s*input\.contract\.platformScope/u);
+});
+
+test('Chatwoot 30-day report admits the proved Production fact volume without widening other channels', () => {
+  assert.equal(resolveDashboardReportMaxFactRows({}, 'chatwoot'), 25_000);
+  assert.equal(resolveDashboardReportMaxFactRows({}, 'youtube'), 10_000);
+  assert.equal(resolveDashboardReportMaxFactRows({}, 'meta_ads'), 10_000);
+  assert.throws(
+    () => resolveDashboardReportMaxFactRows({ MKT_REPORT_D1_MAX_FACT_ROWS: '15_000' }, 'chatwoot'),
+    (error) => error?.code === 'MKT_RELIABILITY_CONFIG_INVALID',
+  );
+  assert.equal(resolveDashboardReportMaxFactRows({ MKT_REPORT_D1_MAX_FACT_ROWS: '15000' }, 'chatwoot'), 15_000);
+  assert.match(workerRouterSource, /maxFactRows: resolveDashboardReportMaxFactRows\(input\.env, platformScope\)/u);
 });
