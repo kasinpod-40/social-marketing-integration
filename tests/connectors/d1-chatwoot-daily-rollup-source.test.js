@@ -34,9 +34,11 @@ test('Chatwoot rollup source overlays authoritative Reporting events by local da
   assert.equal(page.rows[0].resolvedCount, 1);
   assert.equal(page.rows[0].resolution.sum, 1314);
   assert.equal(page.rows[0].coverageRunId, 'coverage:reporting');
+  assert.equal(page.rows[0].sourceRevision, '1789568332922');
   assert.match(calls[0].sql, /FROM chatwoot_reporting_event_facts/u);
   assert.match(calls[0].sql, /event_end_at >= \? AND event_end_at < \?/u);
   assert.match(calls[0].sql, /MAX\(CASE WHEN event_name IN/u);
+  assert.match(calls[0].sql, /CAST\(MAX\([\s\S]+AS TEXT\)/u);
   assert.equal(calls[0].values[0], 'chemistry_k');
   assert.equal(calls[0].values[2] - calls[0].values[1], 86_400_000);
 });

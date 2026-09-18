@@ -112,8 +112,9 @@ export class D1ChatwootDailyRollupSource {
           COALESCE(r.reply_business_count, 0) AS reply_business_count,
           COALESCE(d.coverage_run_id, r.coverage_run_id) AS coverage_run_id,
           d.created_at AS created_at,
-          MAX(COALESCE(CAST(d.source_revision AS INTEGER), 0),
-              COALESCE(r.source_updated_at, 0), COALESCE(s.source_updated_at, 0)) AS source_revision
+          CAST(MAX(COALESCE(CAST(d.source_revision AS INTEGER), 0),
+              COALESCE(r.source_updated_at, 0), COALESCE(s.source_updated_at, 0)) AS TEXT)
+            AS source_revision
         FROM keys
         LEFT JOIN chatwoot_conversation_daily_facts d
           ON d.conversation_daily_key = keys.conversation_daily_key
