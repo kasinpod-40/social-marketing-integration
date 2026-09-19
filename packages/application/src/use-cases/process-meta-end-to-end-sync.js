@@ -64,6 +64,12 @@ export async function processMetaEndToEndSync(input = {}) {
     input.organicContentSnapshotMode,
     connectorKey,
   );
+  const organicContentSince = normalizeOrganicContentSince(
+    input.organicContentSince,
+    connectorKey,
+    organicContentSnapshotMode,
+    dateRange,
+  );
   const limits = normalizeLimits(input.limits);
   const assertLockActive = typeof input.assertLockActive === 'function'
     ? input.assertLockActive
@@ -85,6 +91,7 @@ export async function processMetaEndToEndSync(input = {}) {
     ...(organicContentSnapshotMode === META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT
       ? { organicContentSnapshotMode }
       : {}),
+    ...(organicContentSince ? { organicContentSince } : {}),
     generation: operation.generation,
   });
   const begun = await workStore.beginWork({
@@ -141,6 +148,7 @@ export async function processMetaEndToEndSync(input = {}) {
         state,
         dateRange,
         organicContentSnapshotMode,
+        organicContentSince,
       });
       const unit = await collectMetaEndToEndSourceUnit({
         connectorKey,
@@ -426,6 +434,7 @@ function resolveSourceRequest({
   state,
   dateRange,
   organicContentSnapshotMode,
+  organicContentSince,
 }) {
   const pageState = state.pageState ?? { pageNumber: 1 };
   const fullInventoryCurrent = connectorKey === 'instagram'
@@ -439,8 +448,12 @@ function resolveSourceRequest({
       return {
         datasetKey: `${connectorKey}.content.inventory`,
         state: pageState,
-        dateRange: fullInventoryCurrent ? {} : dateRange,
-        ...(fullInventoryCurrent ? { contentInventoryMode: 'full_inventory' } : {}),
+        dateRange: fullInventoryCurrent && organicContentSince
+          ? { since: organicContentSince, until: dateRange.until }
+          : fullInventoryCurrent ? {} : dateRange,
+        ...(fullInventoryCurrent && !organicContentSince
+          ? { contentInventoryMode: 'full_inventory' }
+          : {}),
       };
     }
     if (state.stage === 'account_insights') {
@@ -1105,6 +1118,25 @@ function normalizeOrganicContentSnapshotMode(value, connectorKey) {
     });
   }
   return mode;
+}
+
+function normalizeOrganicContentSince(value, connectorKey, mode, dateRange) {
+  if (value === null || value === undefined || value === '') return null;
+  if (connectorKey !== 'instagram'
+    || mode !== META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT) {
+    throw permanentError('Instagram content floor requires full-inventory current snapshots', {
+      code: 'META_ORGANIC_CONTENT_SINCE_INVALID',
+      details: { connectorKey, mode },
+    });
+  }
+  const since = requireDate(value, 'organicContentSince');
+  if (!dateRange.until || since > dateRange.until) {
+    throw permanentError('Instagram content floor cannot be after the observation date', {
+      code: 'META_ORGANIC_CONTENT_SINCE_INVALID',
+      details: { since, until: dateRange.until ?? null },
+    });
+  }
+  return since;
 }
 
 function normalizePageState(value) {

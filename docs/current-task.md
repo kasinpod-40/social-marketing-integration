@@ -96,9 +96,10 @@ enable and verify one connector schedule at a time before Report/AI/Notification
 - Scheduled YouTube now explicitly requests the existing full-inventory path. This removes the prior logical
   latest-100 ceiling while retaining bounded Provider pagination, durable continuation, D1-first writes and the
   existing bounded Lark cache.
-- Scheduled Instagram now uses an explicit `full_inventory_current` snapshot mode. Media discovery and per-media
-  current/lifetime insights cover old and new posts without a publication-date filter, while account insights
-  remain scoped to the exact completed report date. Manual/history operations retain `report_range` semantics.
+- Scheduled Instagram now uses an explicit `full_inventory_current` snapshot mode bounded to media published on
+  or after `2026-06-19`. Per-media current/lifetime insights cover that complete business universe every day,
+  while account insights remain scoped to the exact completed report date. Manual/history operations retain
+  `report_range` semantics and media older than the approved floor are excluded.
 - The Meta durable operation fingerprint includes the non-default snapshot mode, so a resumed operation cannot
   silently change from report-range to full-inventory behavior. Explicit full-inventory collection also bypasses
   a configured historical publication range without weakening the default adapter boundary.
@@ -137,9 +138,25 @@ enable and verify one connector schedule at a time before Report/AI/Notification
 - Final local gates pass: focused Meta/config 22/22; `npm run check`; full `npm test` (3,412 Node + 18 Workers);
   Report reliability 106/106; `npm audit --audit-level=high` with zero vulnerabilities; deploy dry-run; and
   `git diff --check`.
-- Live operation `instagram-organic-full-inventory-repair-20260918-v1` must remain the only repair generation and
-  resume from its existing checkpoint. Completion requires `full_inventory` coverage, zero failed rows/DLQ, and
-  exact D1/Lark stable-key readback; no replay or historical value fabrication is allowed.
+- The initial all-history sizing operation is staging-only and must be superseded before any Business write. The
+  replacement generation carries the immutable `2026-06-19` publication floor in its Queue body and operation
+  fingerprint. Completion requires `full_inventory` coverage for that configured universe, zero failed rows/DLQ,
+  and exact D1/Lark stable-key readback; no historical value fabrication is allowed.
+
+### Implementation result — Instagram configured daily universe floor (2026-09-19)
+
+- Scheduled jobs fail closed unless `MKT_META_INSTAGRAM_DAILY_CONTENT_SINCE` is a valid date not later than the
+  completed reporting day. Customer Production pins it to `2026-06-19`.
+- The scheduled Queue body serializes that floor and the durable fingerprint includes it. Provider inventory
+  remains newest-first, stops once it crosses the floor, and current/lifetime insights are still collected for
+  every admitted media identity before D1/Lark writes begin.
+- Legacy in-flight payloads without the field retain their original fingerprint so they can be superseded safely;
+  they are not reinterpreted mid-generation. The replacement bounded-floor generation must claim the same cursor
+  before the old staging-only generation reaches any Business write.
+- Focused Organic tests pass 28/28; `npm run check`; full Node tests 3,413/3,413; Workers-runtime tests 18/18;
+  Report reliability 106/106; audit zero vulnerabilities; deploy dry-run; and `git diff --check` all pass.
+- **Live completion pending:** reviewed merge/deploy, one exact replacement Queue admission, old-generation
+  supersession, and exact D1/Lark/Coverage readback.
 
 ### Implementation result — Chatwoot 30-day Report fact bound (2026-09-18)
 

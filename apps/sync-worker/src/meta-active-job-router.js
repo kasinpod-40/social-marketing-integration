@@ -149,6 +149,9 @@ async function processMetaJob(input, connectorKey, metaConfig) {
       organicContentSnapshotMode: connectorKey === 'instagram' && scheduled
         ? META_ORGANIC_CONTENT_SNAPSHOT_MODES.FULL_INVENTORY_CURRENT
         : META_ORGANIC_CONTENT_SNAPSHOT_MODES.REPORT_RANGE,
+      organicContentSince: connectorKey === 'instagram'
+        ? input.job.body?.organicContentSince
+        : null,
       adsSourceMode: connectorKey === 'meta_ads' ? input.job.body?.sourceMode : null,
       sourceReadOnly: input.job.body?.dryRun === true,
       d1WriteEnabled: metaConfig.flags.d1Write === true && input.job.body?.dryRun !== true,
