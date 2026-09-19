@@ -7,13 +7,13 @@ could classify a valid next-day run as incremental when the previous completion 
 limiting the logical snapshot to the latest 100 videos. Full mode still uses the existing durable pagination,
 five-row D1 batches and bounded Lark destination batches; it changes completeness, not per-invocation limits.
 
-Scheduled Instagram must page the complete current media inventory and read current/lifetime insights for every
-media item, while its account insights remain bound to the completed Bangkok report date. This makes an old post
-whose cumulative metrics changed produce a stable `content_id:metric_date` Daily snapshot for the current report
-day. Manual/history operations keep their exact publication-date range. The full-inventory mode is included in
-the durable operation fingerprint so an in-progress range generation cannot silently change scope. D1 remains
-the historical authority and `MKT_Content_Daily` remains a bounded 10,000-record compatibility cache governed by
-retention. No pre-collection Instagram/TikTok history is fabricated.
+Scheduled Instagram must page the complete current media inventory published on or after `2026-06-19` and read
+current/lifetime insights for every media item in that configured business universe, while its account insights
+remain bound to the completed Bangkok report date. This makes an older retained post whose cumulative metrics
+changed produce a stable `content_id:metric_date` Daily snapshot for the current report day. The publication floor
+is serialized in the Queue body and included in the durable operation fingerprint; manual/history operations keep
+their exact publication-date range. D1 remains the historical authority and `MKT_Content_Daily` remains a bounded
+10,000-record compatibility cache governed by retention. No pre-collection Instagram/TikTok history is fabricated.
 
 ## Chatwoot retained-event reprojection revision — 2026-09-18
 

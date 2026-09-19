@@ -10,9 +10,9 @@
 - make every scheduled YouTube run request a full current-video snapshot while preserving the existing bounded
   uploads pagination, D1-first persistence and continuation batches; this removes the accidental latest-100
   logical cutoff caused by a less-than-24-hour `auto` checkpoint interval;
-- make scheduled Instagram page the full current media inventory and collect current/lifetime insight values for
-  old and new media on the completed report date, while keeping account insights and manual/history operations
-  on their exact reviewed date ranges;
+- make scheduled Instagram page every current media item published on or after `2026-06-19` and collect its
+  current/lifetime insights on the completed report date, while excluding older media and keeping account insights
+  and manual/history operations on their exact reviewed date ranges;
 - bind the Instagram scope to the durable operation fingerprint, preserve Facebook/TikTok behavior and the
   10,000-row Lark cache/retention contract, and never fabricate snapshots before collection began.
 - pass YouTube's validated completed reporting date into the durable Content history writer, so scheduled

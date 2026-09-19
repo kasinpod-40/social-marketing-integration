@@ -94,6 +94,7 @@ test('Instagram schedule is staggered to Bangkok 07:30 and uses its own stable i
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_FACEBOOK_ENABLED: 'false',
       MKT_SCHEDULE_INSTAGRAM_ENABLED: 'true',
+      MKT_META_INSTAGRAM_DAILY_CONTENT_SINCE: '2026-06-19',
     },
   });
 
@@ -105,6 +106,20 @@ test('Instagram schedule is staggered to Bangkok 07:30 and uses its own stable i
   assert.equal(jobs[0].periodEnd, '2026-08-08');
   assert.equal(jobs[0].operationId, 'instagram-scheduled-20260808');
   assert.equal(jobs[0].workKey, 'instagram:instagram-scheduled-20260808');
+  assert.equal(jobs[0].organicContentSince, '2026-06-19');
+});
+
+test('Instagram schedule fails closed without a valid daily content floor', () => {
+  for (const floor of [undefined, '2026/06/19', '2026-08-09']) {
+    assert.throws(() => buildPrimary({
+      scheduledAt: '2026-08-09T00:30:00.000Z',
+      env: {
+        DEFAULT_TIMEZONE: 'Asia/Bangkok',
+        MKT_SCHEDULE_INSTAGRAM_ENABLED: 'true',
+        ...(floor ? { MKT_META_INSTAGRAM_DAILY_CONTENT_SINCE: floor } : {}),
+      },
+    }), (error) => error?.code === 'MKT_SCHEDULE_CONFIG_INVALID');
+  }
 });
 
 test('Meta Organic schedules remain disabled by default and support explicit 5-minute time overrides', () => {

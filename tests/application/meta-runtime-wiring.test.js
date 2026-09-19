@@ -466,7 +466,7 @@ test('forwards the reviewed period to Instagram content inventory staging', asyn
   assert.equal(contentCalls[0].until, '2026-07-26');
 });
 
-test('scheduled Instagram full-inventory snapshots observe old media on the completed day', async () => {
+test('scheduled Instagram snapshots observe every media item published since the configured floor', async () => {
   const workStore = createWorkStore();
   const calls = { content: [], accountInsights: [], contentInsights: [] };
   const operation = Object.freeze({
@@ -513,6 +513,7 @@ test('scheduled Instagram full-inventory snapshots observe old media on the comp
     larkWriteEnabled: false,
     dateRange: { since: '2026-07-26', until: '2026-07-26' },
     organicContentSnapshotMode: 'full_inventory_current',
+    organicContentSince: '2026-06-19',
     limits: {
       ...baseInput().limits,
       sourceUnitsPerInvocation: 3,
@@ -529,9 +530,9 @@ test('scheduled Instagram full-inventory snapshots observe old media on the comp
 
   assert.equal(result.status, 'source_validated');
   assert.equal(calls.content.length, 1);
-  assert.equal(calls.content[0].since, undefined);
-  assert.equal(calls.content[0].until, undefined);
-  assert.equal(calls.content[0].contentInventoryMode, 'full_inventory');
+  assert.equal(calls.content[0].since, '2026-06-19');
+  assert.equal(calls.content[0].until, '2026-07-26');
+  assert.equal(calls.content[0].contentInventoryMode, undefined);
   assert.deepEqual(
     calls.contentInsights.map((call) => ({ mediaId: call.mediaId, since: call.since, until: call.until })),
     [

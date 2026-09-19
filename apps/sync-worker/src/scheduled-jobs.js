@@ -208,6 +208,10 @@ export function buildScheduledJobs(input = {}) {
         type: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
         requestedAt,
         periodEnd: completedPeriodEnd,
+        organicContentSince: readRequiredDate(
+          env.MKT_META_INSTAGRAM_DAILY_CONTENT_SINCE,
+          'MKT_META_INSTAGRAM_DAILY_CONTENT_SINCE',
+        ),
       }));
     }
   }
@@ -421,8 +425,20 @@ function requireEnabledScheduleFlags(env, fieldNames) {
   }
 }
 
-function createMetaOrganicScheduledJob({ platform, type, requestedAt, periodEnd }) {
+function createMetaOrganicScheduledJob({
+  platform,
+  type,
+  requestedAt,
+  periodEnd,
+  organicContentSince = null,
+}) {
   const dateKey = requireJobText(periodEnd, 'periodEnd').replaceAll('-', '');
+  if (organicContentSince && organicContentSince > periodEnd) {
+    throw permanentError('Instagram daily content floor cannot be after the completed period', {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName: 'MKT_META_INSTAGRAM_DAILY_CONTENT_SINCE' },
+    });
+  }
   return createStableQueueOperationBody({
     schemaVersion: 1,
     type,
@@ -431,10 +447,23 @@ function createMetaOrganicScheduledJob({ platform, type, requestedAt, periodEnd 
     d1Only: false,
     periodStart: periodEnd,
     periodEnd,
+    ...(organicContentSince ? { organicContentSince } : {}),
   }, {
     operationId: `${platform}-scheduled-${dateKey}`,
     originalRequestedAt: Date.parse(requestedAt),
   });
+}
+
+function readRequiredDate(value, fieldName) {
+  const text = value === null || value === undefined ? '' : String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)
+    || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
+    throw permanentError(`${fieldName} must use YYYY-MM-DD`, {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName },
+    });
+  }
+  return text;
 }
 
 /** อ่านเวลาและวันตาม Timezone จาก scheduledTime ของ Cloudflare โดยไม่พึ่ง Timezoneเครื่อง */
