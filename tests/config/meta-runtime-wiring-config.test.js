@@ -69,8 +69,18 @@ test('Meta runtime gates and bounded staging limits default fail-closed', () => 
     reportRead: false,
   });
   assert.equal(config.limits.sourceMaxUnits, 500);
+  assert.equal(config.limits.sourceUnitsPerInvocation, 1);
   assert.equal(config.limits.sourceMaxRows, 50_000);
   assert.equal(config.limits.sourceMaxUnitBytes, 524_288);
+});
+
+test('Meta runtime bounds provider source units per Queue invocation', () => {
+  const config = loadMetaEndToEndRuntimeConfig({ MKT_META_SOURCE_UNITS_PER_INVOCATION: '5' });
+  assert.equal(config.limits.sourceUnitsPerInvocation, 5);
+  assert.throws(
+    () => loadMetaEndToEndRuntimeConfig({ MKT_META_SOURCE_UNITS_PER_INVOCATION: '26' }),
+    (error) => error instanceof TypeError && /1 to 25/u.test(error.message),
+  );
 });
 
 test('Meta runtime accepts a bounded large-inventory unit ceiling without changing the default', () => {

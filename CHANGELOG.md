@@ -2,6 +2,11 @@
 
 ## 2026-09-18 — Scheduled Organic Daily growth completeness
 
+- bound Meta provider source work per Queue invocation with a default of one unit and an explicit maximum of 25;
+  Customer Production uses five sequential units per invocation so the 1,929-item Instagram inventory can resume
+  safely without increasing Queue concurrency or weakening the durable per-unit checkpoint;
+- raise only the Customer Production Meta operation ceiling from 500 to 2,500 durable source units after live
+  sizing proved the first complete Instagram inventory requires more than 500 units;
 - make every scheduled YouTube run request a full current-video snapshot while preserving the existing bounded
   uploads pagination, D1-first persistence and continuation batches; this removes the accidental latest-100
   logical cutoff caused by a less-than-24-hour `auto` checkpoint interval;

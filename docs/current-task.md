@@ -124,6 +124,23 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   Report reliability 106/106; `npm audit --audit-level=high` with zero vulnerabilities; deploy dry-run; and
   `git diff --check`. Live completion still requires reviewed merge/deploy and a new-generation scheduled readback.
 
+### Implementation result — Instagram large-inventory bounded source batches (2026-09-19)
+
+- The first controlled full-inventory run proved the Customer Instagram account currently exposes 1,929 media
+  identities. The prior Production ceiling of 500 durable source units was insufficient because each media insight
+  is independently checkpointed; the exact Customer ceiling is now 2,500 while the global default remains 500.
+- Meta source collection now supports an explicit `MKT_META_SOURCE_UNITS_PER_INVOCATION` bound. Its default remains
+  one and its hard maximum is 25. Customer Production uses five sequential units, preserving per-unit D1 checkpoints,
+  Queue concurrency `1`, rate-limit classification and idempotent resume while removing avoidable Queue overhead.
+- Regression proves a three-unit Instagram invocation durably advances Account, full Content inventory and Account
+  Insights, then the next invocation completes both media insights without changing the operation fingerprint.
+- Final local gates pass: focused Meta/config 22/22; `npm run check`; full `npm test` (3,412 Node + 18 Workers);
+  Report reliability 106/106; `npm audit --audit-level=high` with zero vulnerabilities; deploy dry-run; and
+  `git diff --check`.
+- Live operation `instagram-organic-full-inventory-repair-20260918-v1` must remain the only repair generation and
+  resume from its existing checkpoint. Completion requires `full_inventory` coverage, zero failed rows/DLQ, and
+  exact D1/Lark stable-key readback; no replay or historical value fabrication is allowed.
+
 ### Implementation result — Chatwoot 30-day Report fact bound (2026-09-18)
 
 - Customer PROD read-only sizing for `2026-08-19..2026-09-17` found 12,106 distinct Conversation Daily identities across 30 dates. The shared Report Worker passed a 10,000-row default to the Chatwoot D1 reader, so a 30 Days refresh would fail closed even after the Daily reprojection completed.
