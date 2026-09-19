@@ -155,8 +155,15 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   before the old staging-only generation reaches any Business write.
 - Focused Organic tests pass 28/28; `npm run check`; full Node tests 3,413/3,413; Workers-runtime tests 18/18;
   Report reliability 106/106; audit zero vulnerabilities; deploy dry-run; and `git diff --check` all pass.
-- **Live completion pending:** reviewed merge/deploy, one exact replacement Queue admission, old-generation
-  supersession, and exact D1/Lark/Coverage readback.
+- PR `#866` passed all three Branch Verification jobs and merged as `main@fb9a1ed1`. Customer Production Worker
+  version `d51becda-1e83-4cb4-992c-ea0665b2372a` is active with the `2026-06-19` floor.
+- Controlled operation `instagram-organic-since-20260619-repair-20260918-v1` completed successfully: source
+  inventory `120`, D1 observations `120/120` on `2026-09-18`, full-inventory Coverage `120/120`, failed rows `0`,
+  Lark destination phase complete with `242` processed rows/units, and new DLQ `0`. Joined D1 readback proves the
+  earliest admitted publication is `2026-06-19 10:01:00 UTC` and no row is before the Bangkok floor.
+- The old all-history sizing operation failed before Business writes with `MKT_ORGANIC_HISTORY_INPUT_INVALID`;
+  exact readback confirms it wrote `0` observations. Its one DLQ remains retained forensic evidence and must not
+  be redriven; the replacement operation is the successful Business authority.
 
 ### Implementation result — Chatwoot 30-day Report fact bound (2026-09-18)
 
