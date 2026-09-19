@@ -12,7 +12,8 @@
 ## Reviewed contract
 
 - Scheduled YouTube always requests `full`. The existing source pagination, durable phases, D1 batch size and
-  Lark batch size remain bounded and resumable.
+  Lark batch size remain bounded and resumable. The validated latest-completed `metricDate` is passed through
+  to both the durable Content observation and Coverage writer; the later processing timestamp remains separate.
 - Scheduled Instagram uses `full_inventory_current` for Content inventory and Content insights only. It pages
   every currently available media item and records the Provider's current/lifetime metrics against the latest
   completed Bangkok report date. Account insights retain the exact one-day range.
@@ -30,6 +31,9 @@ must not be copied backward or replaced with zero.
 
 ## Release boundary
 
-Repository completion does not equal Customer Production completion. Production still requires reviewed merge,
-deploy with unchanged ownership/bindings, one natural scheduled run for each affected connector, D1/Lark stable-key
-reconciliation, Dashboard 1/3/7/30-day readback, and no-regression checks for Facebook and TikTok.
+PR `#863` merged and Worker version `6a34a6ee-4b11-41ee-a01f-bfe592d2e628` received 100% Production traffic with
+unchanged ownership, bindings and schedules. Read-only D1 validation then found the pre-existing YouTube Content
+history writer defaulted to the run date even though the scheduler and end-to-end contract had already validated
+the latest completed date. The follow-up must merge/deploy before the next YouTube schedule. Live completion still
+requires one new-generation scheduled run for each affected connector, D1/Lark stable-key reconciliation,
+Dashboard 1/3/7/30-day readback, and no-regression checks for Facebook and TikTok.
