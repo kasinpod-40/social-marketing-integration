@@ -17,6 +17,8 @@
   10,000-row Lark cache/retention contract, and never fabricate snapshots before collection began.
 - pass YouTube's validated completed reporting date into the durable Content history writer, so scheduled
   Content observations and Coverage no longer fall forward to the run date while Account Daily remains correct.
+- deploy the Instagram floor contract and complete the first Customer snapshot with exact `120/120` D1/Coverage
+  identities, completed Lark delivery, zero failed rows and zero new DLQ; the earliest admitted post is 19 June.
 
 ## 2026-09-18 — Chatwoot historical reprojection revision
 

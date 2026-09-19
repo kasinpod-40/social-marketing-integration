@@ -15,6 +15,12 @@ is serialized in the Queue body and included in the durable operation fingerprin
 their exact publication-date range. D1 remains the historical authority and `MKT_Content_Daily` remains a bounded
 10,000-record compatibility cache governed by retention. No pre-collection Instagram/TikTok history is fabricated.
 
+PR `#866` merged as `main@fb9a1ed1` and Production version
+`d51becda-1e83-4cb4-992c-ea0665b2372a` completed the first bounded-floor snapshot. D1 and Coverage reconcile
+`120/120` Instagram media identities on `2026-09-18`, Lark destination processing completed, failed rows and new
+DLQ are zero, and the earliest admitted publication is `2026-06-19`. The prior all-history sizing operation wrote
+zero Business observations and its failed DLQ is retained only as non-redrivable forensic evidence.
+
 ## Chatwoot retained-event reprojection revision — 2026-09-18
 
 The bounded PROD repair pins `requestedAt` to 2026-09-17 23:59:59 Bangkok to retain the exact 2026-08-19..09-17 reporting window. Normal scheduled Chatwoot runs can later write the same Conversation Daily identities with a newer `fetched_at`. A repair using the pinned timestamp for D1 revision then silently loses those upserts even when the work reports complete. The narrow follow-up keeps the pinned window/generation but uses actual processing time as `fetched_at` only for `REPORTING_DAILY_REPROJECTION`; normal Daily keeps its original revision contract. The current v4 run is diagnostic and cannot prove completion; a fresh exact v5 rerun, raw-event/D1 reconciliation, Lark readback, and 1/3/7/30-day Report refresh remain required after the fix is deployed.
