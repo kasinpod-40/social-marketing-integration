@@ -22,6 +22,9 @@
   switch from range scope to full inventory after work begins.
 - D1 is the historical authority. `MKT_Content_Daily` remains a bounded cache with the existing retention job;
   increasing daily completeness does not authorize a larger table or deletion outside the reviewed retention plan.
+- Live sizing found 1,929 Instagram media identities. Production therefore uses a 2,500-unit operation ceiling and
+  five sequential provider units per invocation. Every unit is checkpointed before the next one; Queue concurrency
+  remains one, the global per-invocation default remains one, and the hard per-invocation maximum is 25.
 
 ## Historical boundary
 
@@ -36,4 +39,5 @@ unchanged ownership, bindings and schedules. Read-only D1 validation then found 
 history writer defaulted to the run date even though the scheduler and end-to-end contract had already validated
 the latest completed date. The follow-up must merge/deploy before the next YouTube schedule. Live completion still
 requires one new-generation scheduled run for each affected connector, D1/Lark stable-key reconciliation,
-Dashboard 1/3/7/30-day readback, and no-regression checks for Facebook and TikTok.
+Dashboard 1/3/7/30-day readback, and no-regression checks for Facebook and TikTok. The controlled Instagram
+generation is `instagram-organic-full-inventory-repair-20260918-v1`; it must resume rather than be replayed.

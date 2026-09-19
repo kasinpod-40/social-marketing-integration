@@ -513,13 +513,19 @@ test('scheduled Instagram full-inventory snapshots observe old media on the comp
     larkWriteEnabled: false,
     dateRange: { since: '2026-07-26', until: '2026-07-26' },
     organicContentSnapshotMode: 'full_inventory_current',
+    limits: {
+      ...baseInput().limits,
+      sourceUnitsPerInvocation: 3,
+    },
   });
 
-  let result;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    result = await processMetaEndToEndSync(input);
-    if (result.status === 'source_validated') break;
-  }
+  const first = await processMetaEndToEndSync(input);
+  assert.equal(first.status, 'source_continuation');
+  assert.equal(calls.content.length, 1);
+  assert.equal(calls.accountInsights.length, 1);
+  assert.equal(calls.contentInsights.length, 0);
+
+  const result = await processMetaEndToEndSync(input);
 
   assert.equal(result.status, 'source_validated');
   assert.equal(calls.content.length, 1);

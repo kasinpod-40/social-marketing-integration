@@ -122,61 +122,69 @@ export async function processMetaEndToEndSync(input = {}) {
   state = prepareFacebookDailyContentResume({ connectorKey, dateRange, state });
 
   if (state.stage !== 'complete') {
-    if (state.unitCount >= limits.sourceMaxUnits) {
-      throw limitError(
-        'Meta source reached the durable unit limit before completion',
-        'META_END_TO_END_SOURCE_UNIT_LIMIT',
-        { maximum: limits.sourceMaxUnits },
-      );
-    }
-    await assertLockActive();
-    const request = resolveSourceRequest({
-      connectorKey,
-      state,
-      dateRange,
-      organicContentSnapshotMode,
-    });
-    const unit = await collectMetaEndToEndSourceUnit({
-      connectorKey,
-      datasetKey: request.datasetKey,
-      adapters: { [connectorKey]: adapter },
-      identities: { sourceAccountId },
-      state: request.state,
-      dateRange: request.dateRange,
-      contentInventoryMode: request.contentInventoryMode,
-      maxPages: limits.sourceMaxPages,
-    });
-    const payload = createStagedPayload(unit);
-    assertUnitSize(payload, limits.sourceMaxUnitBytes);
-    state = await advanceState({
-      connectorKey,
-      state,
-      unit,
-      payload,
-      workStore,
-      workKey: operation.workKey,
-      limits,
-      dateRange,
-    });
-    await assertLockActive();
-    await workStore.savePhase({
-      workKey: operation.workKey,
-      phase: SOURCE_PHASE,
-      state,
-      expectedItems: state.stage === 'complete' ? state.unitCount : limits.sourceMaxUnits,
-      processedItems: state.unitCount,
-      pagesProcessed: state.unitCount,
-      chunksProcessed: state.unitCount,
-      complete: state.stage === 'complete',
-      unit: {
-        unitKey: unit.unitKey,
-        sequence: state.unitCount - 1,
+    let lastUnit = null;
+    for (
+      let sourceUnitIndex = 0;
+      sourceUnitIndex < limits.sourceUnitsPerInvocation && state.stage !== 'complete';
+      sourceUnitIndex += 1
+    ) {
+      if (state.unitCount >= limits.sourceMaxUnits) {
+        throw limitError(
+          'Meta source reached the durable unit limit before completion',
+          'META_END_TO_END_SOURCE_UNIT_LIMIT',
+          { maximum: limits.sourceMaxUnits },
+        );
+      }
+      await assertLockActive();
+      const request = resolveSourceRequest({
+        connectorKey,
+        state,
+        dateRange,
+        organicContentSnapshotMode,
+      });
+      const unit = await collectMetaEndToEndSourceUnit({
+        connectorKey,
+        datasetKey: request.datasetKey,
+        adapters: { [connectorKey]: adapter },
+        identities: { sourceAccountId },
+        state: request.state,
+        dateRange: request.dateRange,
+        contentInventoryMode: request.contentInventoryMode,
+        maxPages: limits.sourceMaxPages,
+      });
+      const payload = createStagedPayload(unit);
+      assertUnitSize(payload, limits.sourceMaxUnitBytes);
+      state = await advanceState({
+        connectorKey,
+        state,
+        unit,
         payload,
-      },
-    });
+        workStore,
+        workKey: operation.workKey,
+        limits,
+        dateRange,
+      });
+      await assertLockActive();
+      await workStore.savePhase({
+        workKey: operation.workKey,
+        phase: SOURCE_PHASE,
+        state,
+        expectedItems: state.stage === 'complete' ? state.unitCount : limits.sourceMaxUnits,
+        processedItems: state.unitCount,
+        pagesProcessed: state.unitCount,
+        chunksProcessed: state.unitCount,
+        complete: state.stage === 'complete',
+        unit: {
+          unitKey: unit.unitKey,
+          sequence: state.unitCount - 1,
+          payload,
+        },
+      });
+      lastUnit = unit;
+    }
 
     if (state.stage !== 'complete') {
-      return sourceContinuation({ connectorKey, operation, state, unit });
+      return sourceContinuation({ connectorKey, operation, state, unit: lastUnit });
     }
   }
 
@@ -1116,6 +1124,12 @@ function normalizeLimits(value) {
   return Object.freeze({
     sourceMaxPages: boundedInteger(source.sourceMaxPages ?? 100, 'sourceMaxPages', 1, 2_500),
     sourceMaxUnits: boundedInteger(source.sourceMaxUnits ?? 500, 'sourceMaxUnits', 1, 2_500),
+    sourceUnitsPerInvocation: boundedInteger(
+      source.sourceUnitsPerInvocation ?? 1,
+      'sourceUnitsPerInvocation',
+      1,
+      25,
+    ),
     sourceMaxRows: boundedInteger(source.sourceMaxRows ?? 50_000, 'sourceMaxRows', 1, 50_000),
     sourceMaxUnitBytes: boundedInteger(
       source.sourceMaxUnitBytes ?? 524_288,
