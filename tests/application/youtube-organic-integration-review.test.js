@@ -211,6 +211,22 @@ test('YouTube D1-first storage batches more than 1,000 Content identities within
   assert.equal([...durable.accountFacts.values()][0].followers, null);
 });
 
+test('YouTube D1 content observations use the completed reporting date instead of the run date', async () => {
+  const durable = createDurableState();
+  const result = await writeYouTubeOrganicStorageFirst({
+    ...context(durable),
+    metricDate: '2026-07-26',
+  }, createCaptured(2));
+
+  assert.equal(result.status, 'complete');
+  assert.deepEqual(
+    [...durable.observations.values()].map((row) => row.metric_date),
+    ['2026-07-26', '2026-07-26'],
+  );
+  assert.equal(durable.coverage.get(result.contentCoverageRunId).period_start, '2026-07-26');
+  assert.equal(durable.coverage.get(result.contentCoverageRunId).period_end, '2026-07-26');
+});
+
 test('completed YouTube account Coverage is never downgraded to partial by a failed retry', async () => {
   const durable = createDurableState();
   const captured = createCaptured(2);

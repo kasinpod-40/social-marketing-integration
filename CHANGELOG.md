@@ -10,6 +10,8 @@
   on their exact reviewed date ranges;
 - bind the Instagram scope to the durable operation fingerprint, preserve Facebook/TikTok behavior and the
   10,000-row Lark cache/retention contract, and never fabricate snapshots before collection began.
+- pass YouTube's validated completed reporting date into the durable Content history writer, so scheduled
+  Content observations and Coverage no longer fall forward to the run date while Account Daily remains correct.
 
 ## 2026-09-18 — Chatwoot historical reprojection revision
 

@@ -305,6 +305,7 @@ function createWriter(context, ids, gateway) {
     accountKey: context.accountKey,
     sourceAccountId: context.sourceAccountId,
     sourceTimezone: context.sourceTimezone,
+    metricDate: context.metricDate,
     observedAt: context.observedAt,
     fetchedAt: context.fetchedAt,
     historySyncRunId: ids.historySyncRunId,

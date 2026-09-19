@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = ORGANIC_DAILY_GROWTH_REPAIR_CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
+TASK_STATUS                              = YOUTUBE_ORGANIC_COMPLETED_DATE_FIX_CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 74ecaf22
-CURRENT_BRANCH                           = codex/organic-daily-growth-repair
+BASE_MAIN_SHA                            = f97ba075
+CURRENT_BRANCH                           = codex/youtube-organic-metric-date-fix
 CUSTOMER_WORKERS_PLAN                    = PAID_BASE_PLAN_NO_ADD_ON
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = add06f21-b539-43e4-a0aa-c926451314b4
+PRODUCTION_WORKER_HEAD                   = f97ba075_VERSION_6a34a6ee_100_PERCENT
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -106,8 +106,23 @@ enable and verify one connector schedule at a time before Report/AI/Notification
   YouTube is full-inventory, scheduled Instagram includes old/current media, and Facebook/TikTok behavior remains
   unchanged. Final gates pass: `npm run check`; full `npm test` (3,410 Node + 18 Workers); Report reliability
   106/106; `npm audit --audit-level=high` with zero vulnerabilities; deploy dry-run; and `git diff --check`.
-- **Production remains unchanged.** Live completion requires review/merge, a reviewed Customer Production deploy,
-  one natural scheduled run, and D1/Lark/Dashboard readback. No historical Instagram/TikTok values were fabricated.
+- The initial repair is merged/deployed as recorded below. Full live completion still requires the follow-up
+  YouTube date fix plus one new-generation D1/Lark/Dashboard readback. No historical Instagram/TikTok values were
+  fabricated.
+
+### Implementation result — YouTube completed reporting-date propagation (2026-09-19)
+
+- PR `#863` merged as `main@f97ba075`; its three Branch Verification jobs passed. Customer Production Worker
+  version `6a34a6ee-4b11-41ee-a01f-bfe592d2e628` is active at 100% with unchanged bindings and schedules.
+- Post-deploy D1 readback proved no active Organic lock or new YouTube/Instagram DLQ/Alert. It also exposed a
+  pre-existing boundary defect: the YouTube scheduler and end-to-end validator selected the completed date, but
+  `youtube-organic-history-storage` omitted `metricDate` when constructing the shared durable history writer.
+  Content observations therefore defaulted to the processing date while Account Daily used the correct date.
+- The writer now receives the already validated `context.metricDate`. Regression asserts every Content observation
+  and its Coverage period use the completed reporting date even when the run occurs on the following day.
+- Final local gates pass: focused YouTube 34/34; full `npm test` (3,411 Node + 18 Workers); `npm run check`;
+  Report reliability 106/106; `npm audit --audit-level=high` with zero vulnerabilities; deploy dry-run; and
+  `git diff --check`. Live completion still requires reviewed merge/deploy and a new-generation scheduled readback.
 
 ### Implementation result — Chatwoot 30-day Report fact bound (2026-09-18)
 
