@@ -126,7 +126,7 @@ async function executeCollector() {
       timeZone: 'Asia/Bangkok',
       platformScope: 'youtube',
       accountKey: EXPECTED_ACCOUNT_KEY,
-      formulaVersion: 'youtube-organic-v1',
+      formulaVersion: 'youtube-organic-v2',
     }).filter((candidate) => YOUTUBE_REPORT_WINDOWS.includes(candidate.windowDays))
     : [];
   const d1Windows = candidates.length > 0

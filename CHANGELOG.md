@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-09-21 — Organic Content chart single-source Metric Values
+
+- mirror bounded Organic Content ranks into `MKT_Report_Metric_Values` with chart label, period Views and period
+  Engagement, including explicit clearing for unused historical ranks;
+- update the existing Organic Views/Engagement chart in place to use the same table as the KPI cards and
+  Channel/Period slicers, removing its cross-table data dependency;
+- deploy Production Worker `54ba99cb-9fab-4624-83d9-52fdccf2a814` and rematerialize all 16 Organic
+  platform/window combinations for `2026-09-20`; final health is zero active locks, failed runs, DLQ and Alerts.
+
+## 2026-09-19 — Organic and Paid Ads period comparison
+
+- restrict Organic Top Content to posts whose canonical publication date is inside the selected inclusive window,
+  while preserving account/report KPI totals across all tracked Content observations;
+- hydrate only D1-ranked Content/Ad display metadata from existing Lark Master tables by stable key, so comparison
+  rows show captions and Ad names without adding a table or Field;
+- keep Paid Ads activity-based inclusion independent from current Ad status and preserve aggregate-then-derive
+  CTR/CPC/CPM semantics;
+- define YouTube Organic Engagement v2 as observable Likes + Comments while Shares remains null/N/A;
+- enable honest Google Campaign-grain ranking alongside Meta Ad-grain ranking, mirror ranked Clicks into the
+  existing Metric table, and update the Paid Ads bar chart in place so the existing Channel and Period slicers
+  control it. Top Content and Top Ads now expose the same 1/3/7/30 Single Select compatibility field as Metric
+  Values for Period Multi-source; Channel maps `platform`. The authorized Production refresh completed
+  Meta/Google 1D/3D/7D/30D with exact Lark API readback.
+- add bounded Paid Ads daily Impressions/CPC/CPM materialization to the existing Report Metric table and replace the
+  old Paid comparison visualization with a date-grouped Combo chart controlled by the same Channel and 1/3/7/30
+  Period slicers. Customer Production refresh and exact Lark readback prove 82 expected day rows, with zero new
+  failed runs, DLQ or Alerts.
+- replace the interim Paid Ads charts with one dual-line Impressions/Clicks trend and one all-active-Ads block over
+  the existing Metric table. The Ads block has no Top-10 limit, includes only Ads/Campaigns with delivery in the
+  selected Channel/Period, shows Spend/Clicks/CTR together and sorts by Spend. Production version
+  `4f79e122-3cb0-4a59-b4c8-f58521b3ebbe` is active at 100% and the final eight-report refresh completed with zero
+  failed runs, DLQ or Alerts.
+
+## 2026-09-19 — Bounded Lark Daily detail retention
+
+- add a default-off daily retention job for the six Chatwoot/WooCommerce Daily detail tables, keeping a
+  90-day window while starting oldest-first pressure trimming at 17,000 rows toward 15,000;
+- cap each invocation at 500 total Lark deletes, block around active sync locks, require exact Stable-key/date
+  agreement and Customer D1 identity proof, and verify deleted keys are absent afterward;
+- keep D1 immutable as full history and preserve the existing specialized policies for Content Daily, Ads Daily
+  and long-term Account Daily. No Production deploy or live deletion is part of this code change.
+
 ## 2026-09-17 — Deferred Customer Meta Ads retry
 
 - classify only the observed scheduled Meta Ads Graph `2/1504044` response as retryable, preserving

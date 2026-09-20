@@ -1,5 +1,32 @@
 # Project Brain — Social Marketing Data Integration
 
+## Organic and Paid Ads period comparison — 2026-09-19
+
+Organic Top Content now ranks only posts whose canonical publication date is inside the selected inclusive window,
+while account/report KPI totals still use all tracked observations. D1 selects the metric identities first; Lark
+`MKT_Content` and `MKT_Ads_Ads` are queried only for bounded display metadata by stable key so the comparison shows
+Content captions and Ad names. Paid Ads inclusion is based on selected-period fact activity, not current active or
+paused status, and derived rates are calculated after additive totals are summed. YouTube Engagement v2 uses its
+observable Likes + Comments while Shares stays null/N/A. Paid Ads also materializes bounded daily
+Impressions/CPC/CPM rows into the existing Report Metric table for each selected 1D/3D/7D/30D window. The Customer
+Dashboard uses a dual-line Impressions/Clicks trend plus one all-active-Ads block containing Spend, Clicks and CTR.
+The Ads block is not Top 10: it includes every Ad/Campaign with delivered activity inside the selected window and
+sorts by Spend. Both blocks read the existing Metric table and reuse the exact Period and Channel Multi-source
+slicer fields. The Organic Content Views/Engagement chart also reads `MKT_Report_Metric_Values`: ranked Content
+rows are mirrored there with a chart label, period Views and period Engagement, so the chart and its Channel/Period
+controls no longer need cross-table field mapping. See `docs/project-brain/organic-paid-period-comparison-2026-09-19.md`.
+
+## Bounded Lark Daily detail retention — 2026-09-19
+
+Chatwoot and WooCommerce Daily detail tables are customer-facing recent caches; D1 remains the historical
+authority. Each managed table keeps a 90-day date window, but pressure retention starts early at 17,000 rows
+and trims the oldest D1-proven identities toward 15,000 instead of waiting for 90 days. One invocation deletes
+at most 500 Lark rows in total, stops around active sync locks, verifies Stable-key/date agreement before every
+delete and performs a post-delete absence readback. D1 is read-only. `MKT_Content_Daily` and `MKT_Ads_Daily`
+retain their existing specialized policies, while `MKT_Account_Daily` keeps its separate long-term aggregate
+contract. The runtime flag remains default-off pending reviewed release and controlled live activation. See
+`docs/project-brain/lark-bounded-daily-retention-2026-09-19.md`.
+
 ## Customer Meta Ads deferred retry — 2026-09-17
 
 The observed scheduled Meta K2/K3 Graph HTTP 400 `code=2/subcode=1504044` is treated as a bounded,
@@ -1240,6 +1267,7 @@ MKT_SCHEDULE_TIKTOK_ENABLED=false
 MKT_SCHEDULE_YOUTUBE_ENABLED=false
 MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
+MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED=false
 ```
 
 Storage, Source-read and Report flags never implicitly enable schedules.

@@ -94,6 +94,7 @@ test('Report platform registry, Settings seed and Lark schema remain aligned', (
     'summary',
     ...commerceDimensionTypes,
     ...chatwootDimensionTypes,
+    'day',
   ];
   const dimensionTypeField = metricTable.fields.find((field) => field.fieldName === 'dimension_type');
   assert.ok(dimensionTypeField);
@@ -106,6 +107,12 @@ test('Report platform registry, Settings seed and Lark schema remain aligned', (
     dimensionTypeField.property.options.map((option) => option.name),
     expectedDimensionTypes,
   );
+  for (const fieldName of ['metric_date', 'daily_impressions', 'daily_clicks', 'daily_cpc', 'daily_cpm']) {
+    assert.ok(metricTable.fields.find((field) => field.fieldName === fieldName), fieldName);
+  }
+  for (const fieldName of ['content_chart_label', 'content_period_views', 'content_period_engagement']) {
+    assert.ok(metricTable.fields.find((field) => field.fieldName === fieldName), fieldName);
+  }
 
   const topContent = LARK_REPORT_SCHEMA_V2.find((table) => table.key === 'mktReportTopContent');
   const topContentPlatform = topContent.fields.find((field) => field.fieldName === 'platform');

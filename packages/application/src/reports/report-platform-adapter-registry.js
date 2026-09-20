@@ -55,7 +55,7 @@ const PLATFORM_CONTRACTS = Object.freeze({
     datasetKey: 'organic_content_cumulative',
     coverageDatasetKeys: ['organic_content_cumulative'],
     organicReadinessMode: ORGANIC_READINESS_MODE.CONTENT,
-    formulaVersion: 'youtube-organic-v1',
+    formulaVersion: 'youtube-organic-v2',
   }),
   meta_ads: freezeContract({
     platformScope: 'meta_ads',
@@ -79,12 +79,14 @@ const PLATFORM_CONTRACTS = Object.freeze({
     datasetKey: 'campaignDailyMetrics',
     coverageDatasetKeys: ['campaignDailyMetrics'],
     summaryReportLevels: ['campaign'],
-    rankingReportLevels: [],
+    // Google source facts are reviewed at Campaign grain. Reuse the shared ranked Paid Ads
+    // projection without pretending that a Campaign is an Ad.
+    rankingReportLevels: ['campaign'],
     summaryBreakdownFamily: 'all',
     summarySegmentFamily: 'all',
-    rankingBreakdownFamily: null,
-    rankingSegmentFamily: null,
-    topAdsRequired: false,
+    rankingBreakdownFamily: 'all',
+    rankingSegmentFamily: 'all',
+    topAdsRequired: true,
     formulaVersion: 'google-ads-v1',
   }),
   tiktok_ads: freezeContract({

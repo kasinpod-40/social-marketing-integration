@@ -93,13 +93,20 @@ test('all four executable Report schemas expose additive Shared dimensions with 
   );
 });
 
-test('schema preview against the prior complete schema plans only 18 additive fields', async () => {
+test('schema preview against the prior complete schema plans only reviewed additive fields', async () => {
   const priorSchema = structuredClone(LARK_REPORT_SCHEMA_V2);
   const additions = new Map([
     ['mktReportSnapshots', new Set(['customer_key', 'capability', 'coverage_rate'])],
-    ['mktReportMetricValues', new Set(['customer_key', 'capability', 'period_kind', 'window_days', 'coverage_rate'])],
+    ['mktReportMetricValues', new Set([
+      'customer_key', 'capability', 'period_kind', 'window_days', 'coverage_rate',
+      'metric_date', 'daily_impressions', 'daily_clicks', 'daily_cpc', 'daily_cpm',
+      'content_chart_label', 'content_period_views', 'content_period_engagement',
+    ])],
     ['mktReportTopContent', new Set(['customer_key', 'capability', 'period_kind', 'window_days', 'coverage_rate'])],
-    ['mktReportTopAds', new Set(['customer_key', 'capability', 'period_kind', 'window_days', 'coverage_rate'])],
+    ['mktReportTopAds', new Set([
+      'customer_key', 'capability', 'period_kind', 'window_days', 'coverage_rate',
+      'ad_chart_label', 'spend_amount', 'ctr_percent',
+    ])],
   ]);
   for (const table of priorSchema) {
     const removed = additions.get(table.key);
@@ -131,7 +138,7 @@ test('schema preview against the prior complete schema plans only 18 additive fi
   });
   assert.equal(preview.readyToApply, true);
   assert.equal(preview.summary.createTables, 0);
-  assert.equal(preview.summary.createFields, 18);
+  assert.equal(preview.summary.createFields, 29);
   assert.equal(preview.summary.updateFields, 0);
   assert.equal(preview.summary.conflicts, 0);
   assert.deepEqual(new Set(preview.actions.map((action) => action.kind)), new Set(['create_field']));
@@ -171,6 +178,8 @@ test('materialization writer maps Shared dimensions to Snapshot, Metric and Top 
   const captured = await captureWrite(materialization);
   const snapshot = captured.get('snapshots')[0];
   const metric = captured.get('metrics')[0];
+  const rankedContentMetric = captured.get('metrics')
+    .find((row) => row.dimension_value === 'organic_content_rank:1');
   const topContent = captured.get('top_content')[0];
 
   assertSharedDimensions([snapshot, metric, topContent], {
@@ -183,6 +192,10 @@ test('materialization writer maps Shared dimensions to Snapshot, Metric and Top 
   assert.equal(snapshot.baseline_coverage_rate, null);
   assert.equal(metric.current_value, 0);
   assert.equal(metric.compare_value, null);
+  assert.equal(rankedContentMetric.metric_key, 'youtube:content_performance');
+  assert.equal(rankedContentMetric.content_chart_label, '001 · Clip 1');
+  assert.equal(rankedContentMetric.content_period_views, 0);
+  assert.equal(rankedContentMetric.content_period_engagement, 3);
   assert.equal(topContent.period_views, 0);
   assert.equal(snapshot.report_id, materialization.row.report_id);
   assert.equal(metric.report_metric_key, `${materialization.row.report_id}::youtube%3Aviews::summary::all`);
@@ -193,7 +206,10 @@ test('materialization writer maps Shared dimensions to Top Ads and mirrors the I
   const materialization = paidAdsMaterialization();
   const captured = await captureWrite(materialization);
   const snapshot = captured.get('snapshots')[0];
-  const metric = captured.get('metrics')[0];
+  const metricRows = captured.get('metrics');
+  const metric = metricRows.find((row) => row.dimension_type === 'summary');
+  const rankedAdMetric = metricRows.find((row) => row.dimension_value === 'paid_ad_rank:1');
+  const dailyTrendMetric = metricRows.find((row) => row.dimension_value === 'paid_ads_day:1');
   const topAd = captured.get('top_ads')[0];
 
   assertSharedDimensions([snapshot, metric, topAd], {
@@ -206,12 +222,29 @@ test('materialization writer maps Shared dimensions to Top Ads and mirrors the I
   assert.equal(metric.window_days, 3);
   assert.equal(metric[LEGACY_WINDOW], '3');
   assert.equal(topAd.window_days, 3);
+  assert.equal(topAd[LEGACY_WINDOW], '3');
   assert.deepEqual(snapshot.platform, ['meta_ads']);
   assert.equal(snapshot.baseline_coverage_rate, materialization.payload.coverageRate);
   assert.equal(metric.current_value, 0);
+  assert.equal(rankedAdMetric.metric_key, 'meta_ads:ad_clicks');
+  assert.equal(rankedAdMetric.dimension_type, 'summary');
+  assert.equal(rankedAdMetric.display_name, 'Ad 1');
+  assert.equal(rankedAdMetric.current_value, 100);
+  assert.equal(rankedAdMetric.dimension_value, 'paid_ad_rank:1');
+  assert.equal(rankedAdMetric[LEGACY_WINDOW], '3');
+  assert.equal(dailyTrendMetric.dimension_type, 'day');
+  assert.equal(dailyTrendMetric.metric_key, 'meta_ads:ads_daily_trend');
+  assert.equal(dailyTrendMetric.metric_date, Date.parse('2026-07-25T00:00:00+07:00'));
+  assert.equal(dailyTrendMetric.daily_impressions, 1_000);
+  assert.equal(dailyTrendMetric.daily_clicks, 100);
+  assert.equal(dailyTrendMetric.daily_cpc, 5.5);
+  assert.equal(dailyTrendMetric.daily_cpm, 25);
+  assert.equal(dailyTrendMetric[LEGACY_WINDOW], '3');
   assert.equal(topAd.impressions, 0);
   assert.equal(topAd.conversions, null);
   assert.equal(topAd.ctr, 0);
+  assert.equal(topAd.spend_amount, 5.5);
+  assert.equal(topAd.ctr_percent, 0);
   assert.equal(topAd.report_ad_key, `${materialization.row.report_id}::rank:1`);
 });
 
@@ -272,16 +305,123 @@ test('same validated materialization rerun is idempotent across every Organic ou
   const second = await writeDashboardMaterializationToLark(input);
   assert.deepEqual(
     [first.results.reportSnapshot.created, first.results.reportMetricValues.created, first.results.reportTopContent.created],
-    [1, 1, 1],
+    [1, 2, 1],
   );
   assert.deepEqual(
     [second.results.reportSnapshot.skipped, second.results.reportMetricValues.skipped, second.results.reportTopContent.skipped],
-    [1, 1, 1],
+    [1, 2, 1],
   );
   assert.deepEqual(
     [...repository.tables.values()].map((rows) => rows.length),
-    [1, 1, 1, 0],
+    [1, 2, 1, 0],
   );
+});
+
+test('Top Content keeps only real ranked rows and deletes unused current-slot ranks', async () => {
+  const repository = memoryRepository();
+  const firstMaterialization = organicMaterialization();
+  firstMaterialization.payload.topContent = [
+    firstMaterialization.payload.topContent[0],
+    { ...firstMaterialization.payload.topContent[0], content_key: 'youtube:account-new:video-2', external_content_id: 'video-2' },
+    { ...firstMaterialization.payload.topContent[0], content_key: 'youtube:account-new:video-3', external_content_id: 'video-3' },
+  ];
+  let current = firstMaterialization;
+  const input = {
+    reader: { async readById() { return current; } },
+    repository,
+    syncEngine: new TableSyncEngine(),
+    reportId: 'report-organic',
+    customerProfile: 'chemistry_k',
+    utcOffset: '+07:00',
+    topContentLimit: 5,
+    tables: TABLES,
+  };
+
+  const first = await writeDashboardMaterializationToLark(input);
+  assert.equal(first.rows.topContent, 3);
+  assert.equal(first.deleted.topContent, 0);
+  assert.equal(repository.tables.get('top_content').length, 3);
+  assert.equal(repository.tables.get('top_content').some((record) => (
+    String(record.fields.content_key).startsWith('no_data:')
+  )), false);
+
+  current = organicMaterialization();
+  const second = await writeDashboardMaterializationToLark(input);
+  assert.equal(second.rows.topContent, 1);
+  assert.equal(second.deleted.topContent, 2);
+  assert.equal(repository.tables.get('top_content').length, 1);
+  assert.equal(repository.tables.get('top_content')[0].fields.external_content_id, 'video-1');
+});
+
+test('Top Content default keeps every materialized row and removes stale ranks after the window shrinks', async () => {
+  const repository = memoryRepository();
+  const firstMaterialization = organicMaterialization();
+  firstMaterialization.payload.topContent = Array.from({ length: 7 }, (_, index) => ({
+    ...firstMaterialization.payload.topContent[0],
+    content_key: `youtube:account-new:video-${index + 1}`,
+    external_content_id: `video-${index + 1}`,
+  }));
+  let current = firstMaterialization;
+  const input = {
+    reader: { async readById() { return current; } },
+    repository,
+    syncEngine: new TableSyncEngine(),
+    reportId: 'report-organic',
+    customerProfile: 'chemistry_k',
+    utcOffset: '+07:00',
+    tables: TABLES,
+  };
+
+  const first = await writeDashboardMaterializationToLark(input);
+  assert.equal(first.rows.topContent, 7);
+  assert.equal(repository.tables.get('top_content').length, 7);
+
+  current = organicMaterialization();
+  current.payload.topContent.push({
+    ...current.payload.topContent[0],
+    content_key: 'youtube:account-new:video-2',
+    external_content_id: 'video-2',
+  });
+  const second = await writeDashboardMaterializationToLark(input);
+  assert.equal(second.rows.topContent, 2);
+  assert.equal(second.deleted.topContent, 5);
+  assert.equal(repository.tables.get('top_content').length, 2);
+});
+
+test('Paid Ads keeps every ranked row while bounding Snapshot JSON and cleans ranks above 100', async () => {
+  const repository = memoryRepository();
+  const firstMaterialization = paidAdsMaterialization();
+  firstMaterialization.payload.topAds = Array.from({ length: 120 }, (_, index) => ({
+    ...firstMaterialization.payload.topAds[0],
+    external_ad_id: `ad-${index + 1}`,
+    ad_name: `Ad ${index + 1}`,
+  }));
+  let current = firstMaterialization;
+  const input = {
+    reader: { async readById() { return current; } },
+    repository,
+    syncEngine: new TableSyncEngine(),
+    reportId: 'report-paid',
+    customerProfile: 'chemistry_k',
+    utcOffset: '+07:00',
+    tables: TABLES,
+  };
+
+  const first = await writeDashboardMaterializationToLark(input);
+  assert.equal(first.rows.topAds, 120);
+  assert.equal(repository.tables.get('top_ads').length, 120);
+  assert.equal(JSON.parse(repository.tables.get('snapshots')[0].fields.top_ads_json).length, 100);
+
+  current = paidAdsMaterialization();
+  current.payload.topAds.push({
+    ...current.payload.topAds[0],
+    external_ad_id: 'ad-2',
+    ad_name: 'Ad 2',
+  });
+  const second = await writeDashboardMaterializationToLark(input);
+  assert.equal(second.rows.topAds, 2);
+  assert.equal(second.deleted.topAds, 118);
+  assert.equal(repository.tables.get('top_ads').length, 2);
 });
 
 test('D1 reader rejects row dimensions that disagree with the checksummed payload', async () => {
@@ -358,7 +498,7 @@ function assertSharedDimensions(rows, expected) {
     assert.equal(row.report_type, 'dashboard_performance_report');
     assert.equal(row.period_kind, expected.windowDays === null ? 'custom_range' : 'rolling_days');
     assert.equal(row.window_days, expected.windowDays);
-    if (row.report_metric_key) {
+    if (row.report_metric_key || row.report_ad_key || row.report_content_key) {
       assert.equal(
         row[LEGACY_WINDOW],
         expected.windowDays === null ? null : String(expected.windowDays),
@@ -403,8 +543,10 @@ function organicMaterialization() {
       topContent: [{
         content_key: 'youtube:account-new:video-1',
         external_content_id: 'video-1',
+        caption: 'Clip 1',
         period_views: 0,
         period_likes: null,
+        period_engagement: 3,
         data_status: 'partial',
       }],
     }),
@@ -439,9 +581,21 @@ function paidAdsMaterialization() {
           sortOrder: 1,
         },
       },
+      collections: {
+        ads_daily_trend: [{
+          metric_date: '2026-07-25',
+          impressions: 1_000,
+          clicks: 100,
+          cpc_micros: 5_500_000,
+          cpm_micros: 25_000_000,
+          data_status: 'complete',
+        }],
+      },
       topAds: [{
         external_ad_id: 'ad-1',
         ad_name: 'Ad 1',
+        spend_micros: 5_500_000,
+        clicks: 100,
         impressions: 0,
         conversions: null,
         ctr: 0,
@@ -532,6 +686,13 @@ function memoryRepository() {
         tables.get(tableId).find((record) => record.recordId === row.recordId).fields = structuredClone(row.fields);
       }
       return { updated: rows.length };
+    },
+    async deleteMany(tableId, recordIds) {
+      const selected = new Set(recordIds);
+      const retained = tables.get(tableId).filter((record) => !selected.has(record.recordId));
+      const deleted = tables.get(tableId).length - retained.length;
+      tables.set(tableId, retained);
+      return { deleted };
     },
   };
 }

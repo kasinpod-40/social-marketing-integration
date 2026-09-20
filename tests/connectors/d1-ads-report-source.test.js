@@ -18,7 +18,7 @@ test('Meta Ads aggregates reviewed publisher partitions once and builds Top Ads 
       };
     }
     if (sql.includes('ads_entity_state')) {
-      return [{ external_entity_id: 'ad-1', entity_name: 'Ad One', currency: 'THB' }];
+      return [{ external_entity_id: 'ad-1', entity_name: 'Ad One', currency: 'THB', status: 'PAUSED' }];
     }
     return [
       fact({
@@ -55,12 +55,28 @@ test('Meta Ads aggregates reviewed publisher partitions once and builds Top Ads 
   const entityCall = calls.find((call) => call.sql.includes('FROM ads_entity_state'));
   assert.doesNotMatch(coverageCall.sql, /SELECT\s+\*/u);
   assert.doesNotMatch(entityCall.sql, /SELECT\s+\*/u);
+  assert.doesNotMatch(factCalls[0].sql, /\bstatus\s*=|effective_status/u);
+  assert.doesNotMatch(entityCall.sql, /status\s*=|effective_status/u);
   assert.equal(result.metrics.spend_micros, 200);
   assert.equal(result.metrics.ctr, 0.1);
   assert.equal(result.metrics.cpc_micros, 20);
   assert.equal(result.metrics.cpm_micros, 2_000);
   assert.equal(result.metrics.cpa_micros, 200);
   assert.equal(result.metrics.roas, 1.5);
+  assert.deepEqual(result.dailyMetrics, [
+    {
+      metric_date: '2026-07-01', impressions: 100, clicks: 10, cpc_micros: 20,
+      cpm_micros: 2_000, data_status: 'complete',
+    },
+    {
+      metric_date: '2026-07-02', impressions: null, clicks: null, cpc_micros: null,
+      cpm_micros: null, data_status: 'no_data_confirmed',
+    },
+    {
+      metric_date: '2026-07-03', impressions: null, clicks: null, cpc_micros: null,
+      cpm_micros: null, data_status: 'no_data_confirmed',
+    },
+  ]);
   assert.equal(result.topAds[0].external_ad_id, 'ad-1');
   assert.equal(result.topAds[0].ad_name, 'Ad One');
   assert.equal(result.readSummary.coverageDatasetKey, 'meta_ads.performance.daily');
@@ -68,7 +84,7 @@ test('Meta Ads aggregates reviewed publisher partitions once and builds Top Ads 
   assert.equal(result.readSummary.discardedFactRows, 1);
   assert.equal(result.readSummary.sourceWatermark, 'wm-meta');
   assert.equal(result.readSummary.entityQueryCount, 1);
-  assert.equal(result.readSummary.entityQueryMaxIds, 97);
+  assert.equal(result.readSummary.entityQueryMaxIds, 96);
 });
 
 test('Meta Ads reviewed projections exclude large retained JSON columns from D1 result rows', async () => {
@@ -136,7 +152,7 @@ test('Meta Ads chunks entity lookups to stay within the 100-bound D1 contract', 
       };
     }
     if (sql.includes('ads_entity_state')) {
-      return bindings.slice(3).map((externalEntityId) => ({
+      return bindings.slice(4).map((externalEntityId) => ({
         external_entity_id: externalEntityId,
         entity_name: `Name ${externalEntityId}`,
         currency: 'THB',
@@ -155,10 +171,10 @@ test('Meta Ads chunks entity lookups to stay within the 100-bound D1 contract', 
 
   const entityCalls = calls.filter((call) => call.sql.includes('FROM ads_entity_state'));
   assert.equal(entityCalls.length, 2);
-  assert.deepEqual(entityCalls.map((call) => call.bindings.length), [100, 4]);
+  assert.deepEqual(entityCalls.map((call) => call.bindings.length), [100, 6]);
   assert.equal(entityCalls.every((call) => call.bindings.length <= 100), true);
   assert.equal(result.readSummary.entityQueryCount, 2);
-  assert.equal(result.readSummary.entityQueryMaxIds, 97);
+  assert.equal(result.readSummary.entityQueryMaxIds, 96);
   assert.equal(result.readSummary.entityRows, 98);
   assert.equal(result.topAds.length, 98);
   assert.equal(result.topAds.every((row) => row.ad_name === `Name ${row.external_ad_id}`), true);
@@ -191,7 +207,84 @@ test('Meta Ads Top Ads order is deterministic for equal detailed totals', async 
   assert.deepEqual(result.topAds.map((row) => row.rank), [1, 2]);
 });
 
-test('Google Ads aggregates campaign all/all facts without fabricating Top Ads', async () => {
+test('Meta Ads returns every ad with activity in the selected window by default', async () => {
+  const facts = Array.from({ length: 7 }, (_, index) => fact({
+    key: `ad-${index + 1}`,
+    level: 'ad',
+    adId: `ad-${index + 1}`,
+    breakdown: 'publisher_platform=facebook',
+    segment: 'none',
+    spend: index + 1,
+    impressions: (index + 1) * 10,
+    clicks: index + 1,
+    conversions: 0,
+    value: 0,
+  }));
+  const db = createD1((sql, bindings) => {
+    if (sql.includes('data_coverage_runs')) {
+      return { dataset_key: 'meta_ads.performance.daily', status: 'complete', expected_rows: 7, observed_rows: 7 };
+    }
+    if (sql.includes('ads_entity_state')) {
+      return bindings.slice(4).map((externalEntityId) => ({
+        external_entity_id: externalEntityId,
+        entity_name: externalEntityId,
+        currency: 'THB',
+      }));
+    }
+    return facts;
+  });
+
+  const result = await new D1AdsReportSource({ db, platform: 'meta_ads' }).load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-07-03',
+  });
+
+  assert.equal(result.topAds.length, 7);
+  assert.deepEqual(
+    new Set(result.topAds.map((row) => row.external_ad_id)),
+    new Set(facts.map((row) => row.external_ad_id)),
+  );
+});
+
+test('Meta Ads excludes ads whose selected-window delivery metrics are all zero', async () => {
+  const active = fact({
+    key: 'active-ad', level: 'ad', adId: 'active-ad',
+    breakdown: 'publisher_platform=facebook', segment: 'none',
+    spend: 10, impressions: 100, clicks: 2, conversions: 0, value: 0,
+  });
+  const inactive = fact({
+    key: 'inactive-ad', level: 'ad', adId: 'inactive-ad',
+    breakdown: 'publisher_platform=facebook', segment: 'none',
+    spend: 0, impressions: 0, clicks: 0, conversions: 0, value: 0,
+  });
+  const db = createD1((sql, bindings) => {
+    if (sql.includes('data_coverage_runs')) {
+      return { dataset_key: 'meta_ads.performance.daily', status: 'complete', expected_rows: 2, observed_rows: 2 };
+    }
+    if (sql.includes('ads_entity_state')) {
+      return bindings.slice(4).map((externalEntityId) => ({
+        external_entity_id: externalEntityId,
+        entity_name: externalEntityId,
+        currency: 'THB',
+      }));
+    }
+    return [active, inactive];
+  });
+
+  const result = await new D1AdsReportSource({ db, platform: 'meta_ads' }).load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-07-01',
+  });
+
+  assert.deepEqual(result.topAds.map((row) => row.external_ad_id), ['active-ad']);
+  assert.equal(result.metrics.impressions, 100);
+});
+
+test('Google Ads aggregates and ranks active Campaign facts without fabricating Ad identity', async () => {
   const calls = [];
   const db = createD1((sql, bindings) => {
     calls.push({ sql, bindings });
@@ -206,7 +299,14 @@ test('Google Ads aggregates campaign all/all facts without fabricating Top Ads',
         failed_rows: 0,
       };
     }
-    if (sql.includes('ads_entity_state')) throw new Error('Google campaign facts must not query ad entities');
+    if (sql.includes('ads_entity_state')) {
+      assert.equal(bindings[3], 'campaign');
+      return [{
+        external_entity_id: 'campaign-1',
+        entity_name: 'Search Campaign',
+        currency: 'THB',
+      }];
+    }
     return [
       fact({
         key: 'campaign-1-day-1', level: 'campaign', campaignId: 'campaign-1',
@@ -235,12 +335,16 @@ test('Google Ads aggregates campaign all/all facts without fabricating Top Ads',
   assert.deepEqual(factCall.bindings.slice(3, 4), ['campaign']);
   assert.equal(result.metrics.spend_micros, 150);
   assert.equal(result.metrics.impressions, 150);
-  assert.deepEqual(result.topAds, []);
-  assert.equal(result.readSummary.rankingReportLevel, null);
-  assert.equal(result.readSummary.topAdsAvailability, 'not_observed');
+  assert.equal(result.topAds.length, 1);
+  assert.equal(result.topAds[0].external_ad_id, null);
+  assert.equal(result.topAds[0].external_campaign_id, 'campaign-1');
+  assert.equal(result.topAds[0].ad_name, 'Search Campaign');
+  assert.equal(result.topAds[0].spend_micros, 150);
+  assert.equal(result.readSummary.rankingReportLevel, 'campaign');
+  assert.equal(result.readSummary.topAdsAvailability, 'available');
   assert.equal(result.readSummary.discardedFactRows, 1);
   assert.equal(result.readSummary.sourceWatermark, 'wm-google');
-  assert.equal(result.readSummary.entityQueryCount, 0);
+  assert.equal(result.readSummary.entityQueryCount, 1);
 });
 
 function fact(input) {

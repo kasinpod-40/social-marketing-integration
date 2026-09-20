@@ -35,7 +35,7 @@ test('registry covers every Report platform and keeps only TikTok Ads planned', 
   assert.equal(contracts.find((item) => item.platformScope === 'chatwoot').capability, 'customer_service');
   assert.deepEqual(
     contracts.find((item) => item.platformScope === 'google_ads').rankingReportLevels,
-    [],
+    ['campaign'],
   );
 });
 
@@ -176,7 +176,7 @@ test('active Organic adapter produces current and previous equal-length values f
   const metric = result.metricPayload['youtube:period_views'];
   assert.equal(metric.current, 30);
   assert.equal(metric.compare, 10);
-  assert.equal(result.topContent[0].period_views, 30);
+  assert.deepEqual(result.topContent, []);
   assert.equal(writes[0].window_days, null);
 });
 
@@ -297,6 +297,115 @@ test('Facebook Account scope preserves Content metrics as N/A without fabricated
   assert.equal(result.metricPayload['facebook:period_views'].availabilityStatus, 'not_observed');
   assert.deepEqual(result.topContent, []);
   assert.equal(JSON.parse(writes[0].payload_json).topContent.length, 0);
+});
+
+test('Organic Top Content keeps only posts published inside the selected window and hydrates their captions', async () => {
+  const metadataReads = [];
+  const source = {
+    contents: [content('old', '2026-06-01'), content('new', '2026-07-11')],
+    observations: [
+      observation('old', '2026-07-09', 100),
+      observation('old', '2026-07-12', 200),
+      observation('new', '2026-07-12', 20),
+    ],
+    accountDailyFacts: [],
+    readSummary: {
+      sourceScope: 'content',
+      coverageStatus: 'complete',
+      accountCoverageStatus: 'not_observed',
+      sourceWatermark: 'youtube-window-watermark',
+    },
+  };
+  const registry = createReportPlatformAdapterRegistry({
+    adapters: { youtube: { async load() { return source; } } },
+  });
+  const result = await generateDashboardReportMaterialization({
+    registry,
+    materializationStore: { async saveReportMaterialization() { return { status: 'written' }; } },
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    platformScope: 'youtube',
+    reportSettingKey: 'chemistry_k:youtube:rolling:3d',
+    periodKind: 'rolling_days',
+    windowDays: 3,
+    periodEnd: '2026-07-12',
+    comparisonMode: 'none',
+    sourceWatermark: 'youtube-window-watermark',
+    generatedAt: GENERATED_AT,
+    displayMetadata: {
+      contentTableId: 'mkt-content',
+      repository: {
+        async listByFieldValues(tableId, fieldName, values) {
+          metadataReads.push({ tableId, fieldName, values: [...values] });
+          return [{
+            fields: {
+              content_key: 'youtube:chemistry_k:new',
+              caption: 'ชื่อโพสต์ใหม่',
+              content_url: 'https://example.com/new',
+              thumbnail_url: 'https://example.com/new.jpg',
+            },
+          }];
+        },
+      },
+    },
+  });
+
+  assert.equal(result.metricPayload['youtube:period_views'].current, 120);
+  assert.deepEqual(result.topContent.map((row) => row.external_content_id), ['new']);
+  assert.equal(result.topContent[0].caption, 'ชื่อโพสต์ใหม่');
+  assert.deepEqual(metadataReads, [{
+    tableId: 'mkt-content',
+    fieldName: 'content_key',
+    values: ['youtube:chemistry_k:new'],
+  }]);
+});
+
+test('Organic Dashboard materializes every post published inside the selected window by default', async () => {
+  const contents = Array.from({ length: 7 }, (_, index) => (
+    content(`video-${index + 1}`, `2026-07-${String(20 + index).padStart(2, '0')}`)
+  ));
+  const observations = contents.map((item, index) => (
+    observation(item.externalContentId, '2026-07-27', (index + 1) * 10)
+  ));
+  const registry = createReportPlatformAdapterRegistry({
+    adapters: {
+      youtube: {
+        async load() {
+          return {
+            contents,
+            observations,
+            accountDailyFacts: [],
+            readSummary: {
+              sourceScope: 'content',
+              coverageStatus: 'complete',
+              accountCoverageStatus: 'not_observed',
+              sourceWatermark: 'youtube-all-in-window',
+            },
+          };
+        },
+      },
+    },
+  });
+  const result = await generateDashboardReportMaterialization({
+    registry,
+    materializationStore: { async saveReportMaterialization() { return { status: 'written' }; } },
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    platformScope: 'youtube',
+    reportSettingKey: 'chemistry_k:youtube:rolling:30d',
+    periodKind: 'rolling_days',
+    windowDays: 30,
+    periodEnd: '2026-07-27',
+    comparisonMode: 'none',
+    sourceWatermark: 'youtube-all-in-window',
+    generatedAt: GENERATED_AT,
+  });
+
+  assert.equal(result.topContent.length, 7);
+  assert.deepEqual(
+    new Set(result.topContent.map((row) => row.external_content_id)),
+    new Set(contents.map((row) => row.externalContentId)),
+  );
 });
 
 test('active Commerce adapter materializes neutral metrics and discovered collections', async () => {

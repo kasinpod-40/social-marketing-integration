@@ -11,7 +11,7 @@ import {
 import { escapeReportIdentityPart } from '../use-cases/build-report-snapshot.js';
 import { resolveReportMetricDisplayValue } from './report-metric-display-value.js';
 
-const MAX_RANK_LIMIT = 100;
+const MAX_RANK_LIMIT = 50_000;
 const GENERIC_NO_DATA_URL = 'https://invalid.example/';
 
 export function buildReportMetricValueRows(input = {}) {
@@ -86,6 +86,13 @@ export function buildReportMetricValueRows(input = {}) {
         dimension_type: dimensionType,
         dimension_value: dimensionValue,
         rank,
+        ad_chart_label: optionalText(metric.adChartLabel),
+        ad_spend_amount: optionalFinite(metric.adSpendAmount),
+        ad_clicks: optionalFinite(metric.adClicks),
+        ad_ctr_percent: optionalFinite(metric.adCtrPercent),
+        content_chart_label: optionalText(metric.contentChartLabel),
+        content_period_views: optionalFinite(metric.contentPeriodViews),
+        content_period_engagement: optionalFinite(metric.contentPeriodEngagement),
         period_start: dateOnlyToEpochMilliseconds(period.periodStart, { utcOffset }),
         period_end: dateOnlyToEpochMilliseconds(period.periodEnd, { utcOffset }),
         compare_start: period.compareStart ? dateOnlyToEpochMilliseconds(period.compareStart, { utcOffset }) : null,
@@ -167,11 +174,14 @@ export function buildReportTopAdsRows(input = {}) {
       platform,
       account_id: requireText(input.accountId, 'accountId'),
       rank,
-      external_ad_id: row?.external_ad_id ?? `no_data_${rank}`,
+      // Google is ranked at Campaign grain, so a missing Ad ID is an honest null rather than
+      // a fabricated Ad identity. Empty legacy slots still retain their deterministic marker.
+      external_ad_id: row ? (row.external_ad_id ?? null) : `no_data_${rank}`,
       external_campaign_id: row?.external_campaign_id ?? null,
       external_ad_group_id: row?.external_ad_group_id ?? null,
       external_creative_id: row?.external_creative_id ?? null,
       ad_name: row?.ad_name ?? 'ไม่มีข้อมูล',
+      ad_chart_label: `${String(rank).padStart(3, '0')} · ${row?.ad_name ?? 'ไม่มีข้อมูล'}`,
       currency: row?.currency ?? null,
       spend_micros: optionalFinite(row?.spend_micros),
       impressions: optionalFinite(row?.impressions),
@@ -183,6 +193,8 @@ export function buildReportTopAdsRows(input = {}) {
       cpc_micros: optionalFinite(row?.cpc_micros),
       cpm_micros: optionalFinite(row?.cpm_micros),
       cpa_micros: optionalFinite(row?.cpa_micros),
+      spend_amount: microsToCurrency(row?.spend_micros),
+      ctr_percent: ratioToPercent(row?.ctr),
       roas: optionalFinite(row?.roas),
       data_status: row?.data_status ?? 'no_data',
       period_start: dateOnlyToEpochMilliseconds(period.periodStart, { utcOffset }),
@@ -190,6 +202,16 @@ export function buildReportTopAdsRows(input = {}) {
       generated_at: generatedAt,
     }, sharedDimensions);
   }));
+}
+
+function microsToCurrency(value) {
+  const number = optionalFinite(value);
+  return number === null ? null : number / 1_000_000;
+}
+
+function ratioToPercent(value) {
+  const number = optionalFinite(value);
+  return number === null ? null : number * 100;
 }
 
 function freezeWithSharedDimensions(row, sharedDimensions) {

@@ -196,6 +196,9 @@ export function createOrganicContentOwnershipRoutingRepository(input = {}) {
     async updateMany(tableId, records, options = {}) {
       return writeRoute(tableId).updateMany(tableId, records, options);
     },
+    async deleteMany(tableId, recordIds, options = {}) {
+      return requireMethod(base, 'deleteMany')(tableId, recordIds, options);
+    },
     async getTableFields(tableId) {
       return requireMethod(base, 'getTableFields')(tableId);
     },

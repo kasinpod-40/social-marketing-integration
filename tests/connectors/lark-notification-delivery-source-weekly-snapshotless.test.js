@@ -20,7 +20,7 @@ const PLATFORM_SCOPES = Object.freeze([
   ['meta_ads', 'meta-ads-v1'],
   ['tiktok', 'tiktok-organic-v1'],
   ['woocommerce', 'woocommerce-commerce-v1'],
-  ['youtube', 'youtube-organic-v1'],
+  ['youtube', 'youtube-organic-v2'],
 ]);
 const SOURCE_REPORT_IDS = Object.freeze(PLATFORM_SCOPES.map(([scope, formula]) => (
   `integration_workspace:${scope}:rolling:7d:chemistry_k:rolling_days:2026-08-03:2026-08-09:${formula}`

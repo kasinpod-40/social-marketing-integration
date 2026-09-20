@@ -81,7 +81,7 @@ test('exact period selection keeps a retained Weekly recovery on its scheduled p
     tableId: 'tbl_snapshots',
     fieldName: 'report_id',
     values: [
-      'chemistry_k:youtube:rolling:7d:chemistry_k:rolling_days:2026-08-31:2026-09-06:youtube-organic-v1',
+      'chemistry_k:youtube:rolling:7d:chemistry_k:rolling_days:2026-08-31:2026-09-06:youtube-organic-v2',
     ],
   });
 

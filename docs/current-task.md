@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = add06f21-b539-43e4-a0aa-c926451314b4
+PRODUCTION_WORKER_HEAD                   = eed2ed10-45f4-433d-8635-29fe0128584f
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -73,6 +73,184 @@ Cut over every reviewed customer-owned connector from the Integration Workspace 
 customer Production ownership tuple. Reuse the migrated D1 state and customer Base mappings, preserve the
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
+
+### Active scope — Organic and Paid Ads period comparison (2026-09-19)
+
+Objective:
+
+- make Organic Top Content compare only content whose `published_at` falls inside the selected 1D/3D/7D/30D
+  window, while preserving the existing account-level period KPI calculation;
+- make the bounded comparison rows display the canonical Content caption and Ad name;
+- preserve Paid Ads inclusion by proven activity in the selected period, regardless of the Ad's current active,
+  paused or stopped status;
+- complete YouTube Engagement with the platform-observable definition `Likes + Comments`; YouTube Shares remains
+  `null`/N/A because the source API does not expose it.
+
+In scope:
+
+- the existing `MKT_Report_Top_Content`, `MKT_Report_Top_Ads`, `MKT_Content` and `MKT_Ads_Ads` contracts inside
+  the exact Customer Base `✨Marketing Content Calendar` under `Social MKT Data Hub`;
+- bounded read-only display-metadata hydration after D1 has selected the ranked identities;
+- Report calculation/runtime tests and Thai presentation guidance for the two Dashboard blocks.
+
+Out of scope:
+
+- any Lark folder or Base outside `Social MKT Data Hub`;
+- new Lark tables, Field rename, source-fact mutation, Dashboard Block API mutation, deployment, Production traffic,
+  Queue admission, schedule change, commit, push or release;
+- fabricated Google Ad-level identity while the reviewed Google source remains Campaign-grain only.
+
+Acceptance criteria:
+
+- a 3-day Organic Top Content result contains only content published within those exact three reporting dates;
+- overall Organic KPI totals continue to use all tracked content observations for the period;
+- Content/Ad display metadata is queried only for the bounded ranked identities by stable key and duplicate metadata
+  identities fail closed;
+- Meta Top Ads includes every Ad with selected-period facts and does not filter on current entity status; additive
+  facts are summed first and CTR/CPC/CPM are derived from those totals;
+- YouTube `period_engagement` and `latest_total_engagement` equal Likes + Comments when both are observed, while
+  Shares remains N/A;
+- no new Lark table or Field is required and focused/full repository gates pass before any separately authorized
+  live apply.
+
+Implementation result:
+
+- Organic Top Content now applies the inclusive publication-date window only to the ranked comparison projection;
+  the existing KPI calculation remains account/report-wide;
+- the Shared Report runtime hydrates only the D1-ranked `content_key` / `ads_ad_key` identities from the existing
+  `MKT_Content` / `MKT_Ads_Ads` Master tables. Content lookup first uses the exact Stable key, then a bounded
+  `platform + external_content_id` fallback because Customer D1 and Lark use different account segments in the
+  Facebook/Instagram Content key. Duplicate fallback identities fail closed;
+- Meta Top Ads continues to use selected-period facts without any current-status predicate and keeps
+  aggregate-then-derive rates. Google uses the same ranked output table at honest Campaign grain with
+  `external_campaign_id`, a null `external_ad_id`, and no fabricated Ad identity;
+- YouTube Engagement uses Likes + Comments under `youtube-organic-v2`; Shares remains N/A;
+- no Lark table, Field or Dashboard Block was created or renamed. Suggested manual block names are
+  `เปรียบเทียบคอนเทนต์ที่เผยแพร่ในช่วงเวลาที่เลือก` and
+  `เปรียบเทียบโฆษณาที่มีผลงานในช่วงเวลาที่เลือก`;
+- focused tests pass 24/24; `npm run check` passes at 851 source files / 2,628 local dependencies / zero cycles;
+  full tests pass 3,407 Node + 18 Workers-runtime; Report reliability passes 106/106; audit reports zero
+  vulnerabilities; deploy dry-run and `git diff --check` pass;
+- Customer Production deployment was explicitly authorized. The final Worker version
+  `eed2ed10-45f4-433d-8635-29fe0128584f` is active at 100% traffic with the existing schedules and Queue topology
+  unchanged. Focused metadata/materialization tests pass 4/4, deploy dry-run passes, and the post-deploy
+  `npm run check` passes at 852 source files / 2,640 local dependencies / zero cycles;
+- a guarded serial Production operator rematerialized exactly 20 reports for the closed Bangkok reporting day
+  `2026-09-18`: Facebook, Instagram, TikTok, YouTube and Meta Ads at 1D/3D/7D/30D. All 20 completed through the
+  Worker after the D1 and Lark commits. Organic ranked rows are inside each selected publication window and all
+  returned Content captions are populated; Meta ranked Ads have names and are selected from period activity;
+- YouTube reports use `youtube-organic-v2`, validate Engagement as Likes + Comments and keep Shares null/N/A.
+  Final exact-scope health is active locks 0, new failed runs 0, new DLQ 0 and new Alerts 0. `partial`/`revisable`
+  remains the intentional source-coverage status for platforms/windows whose historical baseline can still change;
+- Top Content and Top Ads now write only the ranked rows that really exist. They no longer pad every
+  Platform/window to five rows with `no_data`. The writer deletes only unused current-profile rank slots after an
+  exact Stable-key lookup, validates the delete count and proves those slots absent on readback. Focused regression
+  tests pass `23/23`; `npm run check`, deploy dry-run and `git diff --check` pass;
+- the controlled post-deploy rematerialization completed `20/20` again. Customer Top Content now has exactly 50
+  real rows: YouTube 7, Instagram 17, Facebook 15 and TikTok 11. The saved `Top Content` and
+  `Dashboard Top Content` views exclude `no_data` and require `customer_profile=chemistry_k`;
+- the saved `Top Ads` and `Dashboard Top Ads` views exclude `no_data` and require
+  `customer_profile=chemistry_k`. A later live readback proved that the earlier claim of Google rows was wrong:
+  the table contained only Meta Ads because Google Campaign ranking had still been disabled. The implementation
+  now admits Google Campaign-grain rows explicitly. Production rematerialization for period end `2026-09-19`
+  completed Meta/Google at 1D/3D/7D/30D. Exact Lark API readback is Meta `123/173/189/365` ranked rows and
+  Google `7/7/7/11`, with zero foreign profiles and zero missing names. The Paid Ads Dashboard retains the global
+  `MKT_Report_Metric_Values.customer_profile=chemistry_k` filter;
+- on 2026-09-20 an isolated zero-traffic Worker Preview deleted exactly 1,462 obsolete
+  `customer_profile=integration_workspace` rows from the Customer Base Report tables only: Settings 74,
+  Snapshots 32, Metric Values 1,236, Top Content 80 and Top Ads 40. Exact API readback proves zero remaining
+  target rows and unchanged `chemistry_k` counts in every table. Production stayed on version
+  `cc30b226-b9d8-466e-b625-854135bc2f76`; AI Report Runs, Sync Log and System Alerts were not mutated. The
+  Production scheduler derives new Report keys from `MKT_CUSTOMER_PROFILE=chemistry_k`, so normal sync does not
+  recreate the removed profile;
+- after explicit live-apply authorization, the existing Paid Ads block
+  `🏆 คลิกตามโฆษณาและแคมเปญ` (`chtlgP5ea7O15hj6uKrXq3iCsoh`) was updated in place through the Lark API. It is a
+  full-width bar chart over `MKT_Report_Metric_Values`, groups by Platform and Ad/Campaign name, and has no fixed
+  window filter. API readback returned 193 positive-click rows and both `meta_ads` and `google_ads`; there is exactly
+  one target block. `MKT_Report_Top_Content` and `MKT_Report_Top_Ads` now also carry the exact Single Select field
+  `__mkt_legacy_window_days_single_select_v1` with options 1/3/7/30, so Period Multi-source can map the same field
+  across all three Report tables; `platform` remains the matching Multi-source field for Channel;
+- Production Worker version `4620eab2-c3e5-489e-8743-b2ba293bf952` is active at 100%. Focused regressions pass
+  `34/34`; the successful eight-job refresh ended with active locks 0, new failed runs 0, new DLQ 0 and new Alerts
+  0. The one Meta preflight incident from the rejected first attempt was retained as history, its DLQ marked
+  `redriven` with the successful operation reference and its Alert marked `resolved`. The unrelated TikTok Alert
+  was not changed. No Lark table or Field was added or renamed.
+- the Paid Ads daily-trend repair is live on Production Worker version
+  `e84ce114-49f5-4802-b42a-2df28fa03f61` at 100%. The D1 Ads source emits one bounded day row for every date in
+  the selected report window; existing table `MKT_Report_Metric_Values` now stores `metric_date`,
+  `daily_impressions`, `daily_cpc` and `daily_cpm` with `dimension_type=day`. No new Lark table was created;
+- a controlled refresh completed Meta Ads and Google Ads at 1D/3D/7D/30D for period end `2026-09-19`. Exact Lark
+  readback contains `1/3/7/30` daily rows for each platform (82 rows total), while health ended at active locks 0,
+  new failed runs 0, new DLQ 0 and new Alerts 0;
+- the Customer Paid Ads Dashboard now has the full-width Combo block
+  `📈 แนวโน้ม Impressions, CPM และ CPC` (`chtlgbj9oUdshNJTDXlMFLeppEP`) at the former comparison position. It groups
+  by `metric_date` and shares the exact Period and Platform fields used by the existing Multi-source slicers. Lark
+  computed-data readback succeeded. The Customer Bot lacks `base:dashboard:delete`, so the replaced block could not
+  be deleted by API and was safely reduced to a 1x1 `·` block after the new chart was verified. After a later
+  manual chart edit, the same Combo block was restored in place through its exact Block ID with the canonical
+  three-series/date configuration and full-width `12x6` position; computed-data readback returned 7 rows for the
+  selected 7-day period, three measures, one date dimension and finite numeric values;
+- final gates pass: focused daily-trend tests, `npm run check`, full `npm test` (`3,417` Node and `18`
+  Workers-runtime tests), Report reliability `107/107`, audit with zero vulnerabilities, deploy dry-run and
+  `git diff --check`. Preview URLs were restored disabled after every isolated operator run and Production traffic
+  never changed during the Lark mutations.
+- the final Customer Paid Ads layout is live on Production Worker version
+  `4f79e122-3cb0-4a59-b4c8-f58521b3ebbe` at 100% traffic. The Dashboard now uses one full-width dual-line
+  `📈 แนวโน้ม Impressions และ Clicks` block and one full-width
+  `📣 Ads ที่มีการใช้งานในช่วงที่เลือก` block. The latter has no Top-10 cap: it reads the existing
+  `MKT_Report_Metric_Values` table, includes only Ads/Campaigns with delivered activity in the selected window,
+  exposes Spend/Clicks/CTR together and sorts by Spend descending. Because the block uses the same table and the
+  exact same `platform` and `__mkt_legacy_window_days_single_select_v1` fields as the Channel/Period slicers, both
+  slicers control it directly. The final Meta/Google 1D/3D/7D/30D refresh completed with Top Ads counts
+  Meta `123/173/189/365` and Google `7/7/7/11`; post-run health is active locks 0, failed runs 0, DLQ 0 and
+  Alerts 0. The two obsolete Top-10 blocks were deleted. The superseded Impressions-only block could not be
+  deleted because the Customer Bot lacks `base:dashboard:delete`, so it is archived as a 1x1 block below the
+  active layout and does not participate in the customer-facing section.
+- final API correction after the stale Safari layout report verified the exact Customer Dashboard
+  `💰 Paid Ads Performance` (`blkl15jbXDuaqJoM`). Its active dual-line block is
+  `chtlg9Pi60TwflLqg9CpOs9Ub6S`, full-width at `y=7`, with exactly the two series `daily_impressions` and
+  `daily_clicks`; computed-data readback returned 30 date rows, two measures and finite numeric values. The
+  superseded Combo block `chtlgbj9oUdshNJTDXlMFLeppEP` remains archived at 1x1 / `y=34`. Production traffic was
+  unchanged and Preview URLs were restored disabled.
+- the Paid Ads detail graph is now bounded by a persistent numeric filter `rank <= 10` after the selected Channel
+  and Period slicers are applied, then sorted by Spend descending. This changes only the Dashboard presentation;
+  all source and materialized rows remain retained, and a normal daily sync cannot remove or bypass the filter.
+  Exact Lark API readback returned the saved `rank isLessEqual 10` condition and computed data returned exactly
+  10 rows, three measures and finite numeric values. Preview URLs were restored and Production remained on
+  `4f79e122-3cb0-4a59-b4c8-f58521b3ebbe` at unchanged traffic.
+- the Customer Organic Dashboard `🌱 Organic Performance` (`blkt0bHcXAGTxphz`) now keeps the same full-width
+  dual-line block `📈 Views เทียบ Engagement ตาม Content` (`chtlg1NTDevgSJkgbwkniwjYyte`) but reads only
+  `MKT_Report_Metric_Values`. The writer mirrors each bounded Content rank into that table with
+  `content_chart_label`, `content_period_views` and `content_period_engagement`, so the chart, KPI cards, Channel
+  and Period slicers share one physical source. Unused historical ranks are cleared explicitly and normal daily
+  materialization refreshes the rows automatically. The existing chart was updated in place with `rank <= 10`;
+  exact Lark computed-data readback returned four rows, two measures, one dimension and finite numeric values;
+- Production Worker version `54ba99cb-9fab-4624-83d9-52fdccf2a814` is active at 100%. The controlled Organic
+  refresh completed all `16/16` Facebook/Instagram/TikTok/YouTube 1D/3D/7D/30D reports for period end
+  `2026-09-20`. Final health is active locks 0, new failed runs 0, new DLQ 0 and new Alerts 0. Full gates pass:
+  focused 18/18, Node 3,420, Workers-runtime 18, Report reliability 108/108, audit 0 vulnerabilities,
+  `npm run check`, deploy dry-run and `git diff --check`.
+
+### Implementation result — bounded Lark Daily detail retention (2026-09-19)
+
+- added a separate default-off scheduled job for six detail caches: `MKT_Conversation_Daily`,
+  `MKT_Agent_Daily`, `MKT_Inbox_Daily`, `MKT_Conversation_Account_Daily`, `MKT_Commerce_Daily` and
+  `MKT_Commerce_Product_Daily`;
+- normal retention keeps 90 calendar dates by `metric_date`. If any managed table reaches 17,000 rows before
+  90 days, pressure retention starts immediately and removes the oldest exact D1-proven rows toward 15,000;
+- one invocation deletes at most 500 Lark rows across all managed tables, prioritizes pressured/larger tables,
+  blocks while any sync lock is active, validates Stable key and date, proves the same Customer row in D1 and
+  reads back deleted keys as absent. D1 performs zero mutation and remains full history;
+- existing Content Daily, Ads Daily and Account Daily retention/long-term contracts are unchanged. Customer
+  Lark Base UI evidence on 2026-09-19 shows `MKT_Conversation_Daily` at 15,313 rows. The earlier 7,327 count
+  came from the Integration Workspace mapping and must not be used as Customer Production evidence. The
+  Customer table remains below the 17,000 pressure gate but is already within 1,687 rows of it;
+- focused retention/routing/config tests pass `74/74`; full Node tests pass `3,402/3,402`, Workers-runtime tests
+  pass `18/18`, Report reliability passes `106/106`, `npm run check`, zero-vulnerability audit and deploy dry-run
+  pass. Customer Production was deployed on 2026-09-19 as Worker version
+  `aef38b99-b7c1-4c44-a950-807a6b6d3af9`; Cloudflare readback confirms 100% traffic and
+  `MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED=true`. The first automatic live execution is scheduled for
+  2026-09-20 08:05 Asia/Bangkok; no out-of-schedule Queue admission or Lark deletion was performed during rollout.
 
 ### Implementation result — deferred Customer Meta Ads retry (2026-09-17)
 

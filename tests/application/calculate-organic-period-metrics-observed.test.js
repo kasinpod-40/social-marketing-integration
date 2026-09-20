@@ -123,6 +123,31 @@ test('keeps an entirely unobserved metric null and marks it not observed', () =>
   assert.equal(payload['facebook:latest_total_likes'].availabilityStatus, 'not_observed');
 });
 
+test('YouTube engagement uses observable Likes plus Comments while Shares remains null', () => {
+  const report = calculateOrganicPeriodMetrics({
+    platform: 'youtube',
+    contents: [{
+      ...content('video-1', '2026-08-15'),
+      contentKey: 'youtube:page:video-1',
+      platform: 'youtube',
+    }],
+    observations: [
+      { ...observation('video-1', '2026-08-13', { views: 100, likes: 10, comments: 2, shares: null }), platform: 'youtube' },
+      { ...observation('video-1', '2026-08-20', { views: 150, likes: 16, comments: 5, shares: null }), platform: 'youtube' },
+    ],
+    periodStart: '2026-08-14',
+    periodEnd: '2026-08-20',
+    coverageStatus: 'complete',
+  });
+
+  assert.equal(report.metrics.period_shares, null);
+  assert.equal(report.metrics.period_engagement, 9);
+  assert.equal(report.metrics.latest_total_shares, null);
+  assert.equal(report.metrics.latest_total_engagement, 21);
+  assert.equal(report.contentRows[0].periodEngagement, 9);
+  assert.equal(report.contentRows[0].latestEngagement, 21);
+});
+
 test('preserves strict null aggregate evidence when source coverage is not complete', () => {
   const report = calculateOrganicPeriodMetrics({
     platform: 'facebook',

@@ -124,6 +124,15 @@ export class LarkRecordRepository {
     });
   }
 
+  /** ลบเฉพาะ Record IDs ที่ Use case ตรวจขอบเขตและตัวตนแล้ว */
+  async deleteMany(tableId, recordIds, options = {}) {
+    return this.client.batchDeleteRecords({
+      tableId: requireText(tableId, 'tableId'),
+      recordIds: requireArray(recordIds, 'recordIds'),
+      beforeChunk: options?.beforeChunk,
+    });
+  }
+
   /**
    * โหลด Schema หนึ่งครั้งต่อ Table ต่อ Runtime และแชร์ Promise ให้คำขอพร้อมกัน
    * หากโหลดล้มเหลวจะลบ Cache เพื่อให้รอบถัดไปขอใหม่ได้

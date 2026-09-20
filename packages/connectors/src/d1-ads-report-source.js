@@ -1,13 +1,23 @@
 import { calculateAdsPeriodMetrics } from '../../application/src/reports/calculate-ads-period-metrics.js';
 import { getReportPlatformContract } from '../../application/src/reports/report-platform-adapter-registry.js';
+import { addDaysDateOnly, inclusiveDayCount } from '../../application/src/reports/report-period.js';
 import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_MAX_FACTS = 10_000;
 const MAX_FACTS = 50_000;
-const DEFAULT_TOP_ADS_LIMIT = 5;
+const DEFAULT_TOP_ADS_LIMIT = DEFAULT_MAX_FACTS;
 const D1_MAX_BOUND_PARAMETERS = 100;
-const ENTITY_QUERY_FIXED_BINDINGS = 3;
+const ENTITY_QUERY_FIXED_BINDINGS = 4;
 const MAX_ENTITY_IDS_PER_QUERY = D1_MAX_BOUND_PARAMETERS - ENTITY_QUERY_FIXED_BINDINGS;
+const AD_ACTIVITY_FIELDS = Object.freeze([
+  'spend_micros',
+  'impressions',
+  'reach',
+  'clicks',
+  'conversions',
+  'conversion_value_micros',
+  'video_views',
+]);
 
 /**
  * Bounded D1 Ads reader that selects one reviewed source grain and aggregates its partitions.
@@ -67,7 +77,11 @@ export class D1AdsReportSource {
     const periodEnd = requireDate(input.periodEnd, 'periodEnd');
     if (periodStart > periodEnd) throw invalidQuery('periodStart cannot be after periodEnd');
     const factLimit = boundedPositiveInteger(input.maxFactRows ?? DEFAULT_MAX_FACTS, 'maxFactRows', MAX_FACTS);
-    const topAdsLimit = boundedPositiveInteger(input.topAdsLimit ?? DEFAULT_TOP_ADS_LIMIT, 'topAdsLimit', 100);
+    const topAdsLimit = boundedPositiveInteger(
+      input.topAdsLimit ?? DEFAULT_TOP_ADS_LIMIT,
+      'topAdsLimit',
+      MAX_FACTS,
+    );
     const queryLevels = [...new Set([...this.summaryReportLevels, ...this.rankingReportLevels])];
 
     const [factRows, coverage] = await Promise.all([
@@ -100,13 +114,14 @@ export class D1AdsReportSource {
     const summaryRows = summarySelection.rows;
     const rankingRows = rankingSelection.rows;
 
+    const rankingReportLevel = rankingSelection.reportLevel ?? this.rankingReportLevels[0] ?? null;
     const entityIds = [...new Set(rankingRows.map(entityIdentity).filter(Boolean))].sort();
     const entityIdChunks = chunkValues(entityIds, MAX_ENTITY_IDS_PER_QUERY);
     const entityRows = [];
     for (const entityIdChunk of entityIdChunks) {
       entityRows.push(...await this.#all(
         entitySql(entityIdChunk.length),
-        [customerKey, this.platform, accountKey, ...entityIdChunk],
+        [customerKey, this.platform, accountKey, rankingReportLevel, ...entityIdChunk],
       ));
     }
     const entityById = new Map(entityRows.map((row) => [row.external_entity_id, row]));
@@ -119,13 +134,21 @@ export class D1AdsReportSource {
       coverageStatus,
       coverageRate,
     });
+    const dailyMetrics = buildDailyMetrics({
+      rows: summaryRows,
+      reportLevel: summaryReportLevel,
+      coverageStatus,
+      coverageRate,
+      periodStart,
+      periodEnd,
+    });
     const topAds = this.rankingReportLevels.length === 0
       ? Object.freeze([])
       : buildTopAds({
         rows: rankingRows,
         entityById,
         platform: this.platform,
-        reportLevel: rankingSelection.reportLevel ?? this.rankingReportLevels[0],
+        reportLevel: rankingReportLevel,
         coverageStatus,
         coverageRate,
         limit: topAdsLimit,
@@ -134,6 +157,7 @@ export class D1AdsReportSource {
     return Object.freeze({
       platform: this.platform,
       metrics,
+      dailyMetrics,
       topAds,
       readSummary: Object.freeze({
         strategy: 'd1_ads_daily_facts_reviewed_grain',
@@ -180,6 +204,36 @@ export class D1AdsReportSource {
       throw readError(this.platform, cause);
     }
   }
+}
+
+function buildDailyMetrics(input) {
+  const rowsByDate = new Map();
+  for (const row of input.rows) {
+    const date = requireDate(row.metric_date, 'metric_date');
+    const rows = rowsByDate.get(date) ?? [];
+    rows.push(row);
+    rowsByDate.set(date, rows);
+  }
+  return Object.freeze(Array.from(
+    { length: inclusiveDayCount(input.periodStart, input.periodEnd) },
+    (_, index) => {
+      const metricDate = addDaysDateOnly(input.periodStart, index);
+      const metrics = calculateAdsPeriodMetrics({
+        rows: rowsByDate.get(metricDate) ?? [],
+        reportLevel: input.reportLevel,
+        coverageStatus: input.coverageStatus,
+        coverageRate: input.coverageRate,
+      });
+      return Object.freeze({
+        metric_date: metricDate,
+        impressions: metrics.impressions,
+        clicks: metrics.clicks,
+        cpc_micros: metrics.cpc_micros,
+        cpm_micros: metrics.cpm_micros,
+        data_status: metrics.data_status,
+      });
+    },
+  ));
 }
 
 function factSql(levelCount) {
@@ -237,7 +291,7 @@ function entitySql(entityIdCount) {
   return `SELECT external_entity_id, external_creative_id, entity_name, currency
     FROM ads_entity_state
     WHERE customer_key = ? AND platform = ? AND account_key = ?
-      AND entity_type = 'ad' AND external_entity_id IN (${placeholders(entityIdCount)})
+      AND entity_type = ? AND external_entity_id IN (${placeholders(entityIdCount)})
     ORDER BY external_entity_id ASC`;
 }
 
@@ -290,29 +344,41 @@ function buildTopAds(input) {
     group.push(row);
     byEntity.set(id, group);
   }
-  return Object.freeze([...byEntity.entries()].map(([externalAdId, rows]) => {
+  return Object.freeze([...byEntity.entries()].map(([externalEntityId, rows]) => {
     const metrics = calculateAdsPeriodMetrics({
       rows,
       reportLevel: input.reportLevel,
       coverageStatus: input.coverageStatus,
       coverageRate: input.coverageRate,
     });
-    const entity = input.entityById.get(externalAdId) ?? null;
+    const entity = input.entityById.get(externalEntityId) ?? null;
+    const isAdGrain = input.reportLevel === 'ad';
+    const isCampaignGrain = input.reportLevel === 'campaign';
     return Object.freeze({
       platform: input.platform,
-      external_ad_id: externalAdId,
-      external_campaign_id: firstKnown(rows, 'external_campaign_id'),
+      external_ad_id: isAdGrain ? externalEntityId : firstKnown(rows, 'external_ad_id'),
+      external_campaign_id: isCampaignGrain
+        ? externalEntityId
+        : firstKnown(rows, 'external_campaign_id'),
       external_ad_group_id: firstKnown(rows, 'external_ad_group_id'),
       external_creative_id: firstKnown(rows, 'external_creative_id') ?? entity?.external_creative_id ?? null,
       ad_name: entity?.entity_name ?? null,
       currency: firstKnown(rows, 'currency') ?? entity?.currency ?? null,
       ...metrics,
     });
-  }).sort((left, right) => compareDesc(left.spend_micros, right.spend_micros)
+  }).filter(hasActivityInSelectedWindow)
+    .sort((left, right) => compareDesc(left.spend_micros, right.spend_micros)
     || compareDesc(left.impressions, right.impressions)
-    || left.external_ad_id.localeCompare(right.external_ad_id))
+    || rankedEntityIdentity(left).localeCompare(rankedEntityIdentity(right)))
     .slice(0, input.limit)
     .map((row, index) => Object.freeze({ rank: index + 1, ...row })));
+}
+
+function hasActivityInSelectedWindow(row) {
+  return AD_ACTIVITY_FIELDS.some((field) => {
+    const value = normalizeNumber(row?.[field]);
+    return value !== null && value !== 0;
+  });
 }
 
 function chunkValues(values, size) {
@@ -323,6 +389,9 @@ function chunkValues(values, size) {
   return Object.freeze(chunks);
 }
 function entityIdentity(row) { return optionalText(row?.external_ad_id) ?? optionalText(row?.external_entity_id); }
+function rankedEntityIdentity(row) {
+  return optionalText(row?.external_ad_id) ?? optionalText(row?.external_campaign_id) ?? '';
+}
 function firstKnown(rows, field) { return rows.find((row) => row?.[field] !== null && row?.[field] !== undefined)?.[field] ?? null; }
 function compareDesc(left, right) { return (normalizeNumber(right) ?? -Infinity) - (normalizeNumber(left) ?? -Infinity); }
 function normalizeNumber(value) {

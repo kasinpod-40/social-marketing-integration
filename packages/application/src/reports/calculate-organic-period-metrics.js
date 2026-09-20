@@ -73,12 +73,12 @@ export function calculateOrganicPeriodMetrics(input = {}) {
       outputField,
       baseline.covered ? subtractKnown(current[sourceField], baseline.snapshot[sourceField]) : null,
     ]));
-    const periodEngagement = sumStrict([
-      deltas.periodLikes,
-      deltas.periodComments,
-      deltas.periodShares,
-    ]);
-    const latestEngagement = sumStrict([current.likes, current.comments, current.shares]);
+    const periodEngagement = sumStrict(engagementComponents(platform, {
+      likes: deltas.periodLikes,
+      comments: deltas.periodComments,
+      shares: deltas.periodShares,
+    }));
+    const latestEngagement = sumStrict(engagementComponents(platform, current));
     usedObservationIds.add(observationIdentity(current));
     if (baseline.sourceObservation) usedObservationIds.add(observationIdentity(baseline.sourceObservation));
     rows.push(Object.freeze({
@@ -111,18 +111,20 @@ export function calculateOrganicPeriodMetrics(input = {}) {
   const periodLikes = sumField(rows, 'periodLikes', periodSubtotalAllowed);
   const periodComments = sumField(rows, 'periodComments', periodSubtotalAllowed);
   const periodShares = sumField(rows, 'periodShares', periodSubtotalAllowed);
-  const periodEngagement = sumComponents(
-    [periodLikes, periodComments, periodShares],
-    periodSubtotalAllowed,
-  );
+  const periodEngagement = sumComponents(engagementComponents(platform, {
+    likes: periodLikes,
+    comments: periodComments,
+    shares: periodShares,
+  }), periodSubtotalAllowed);
   const latestTotalViews = sumCurrentField(rows, 'views', sourceCoverageComplete);
   const latestTotalLikes = sumCurrentField(rows, 'likes', sourceCoverageComplete);
   const latestTotalComments = sumCurrentField(rows, 'comments', sourceCoverageComplete);
   const latestTotalShares = sumCurrentField(rows, 'shares', sourceCoverageComplete);
-  const latestTotalEngagement = sumComponents(
-    [latestTotalLikes, latestTotalComments, latestTotalShares],
-    sourceCoverageComplete,
-  );
+  const latestTotalEngagement = sumComponents(engagementComponents(platform, {
+    likes: latestTotalLikes,
+    comments: latestTotalComments,
+    shares: latestTotalShares,
+  }), sourceCoverageComplete);
   const metrics = Object.freeze({
     period_views: periodViews,
     period_likes: periodLikes,
@@ -195,9 +197,12 @@ export function buildOrganicMetricPayload(input = {}) {
   })));
 }
 
-export function buildOrganicTopContentPayload(rows, limit = 5) {
-  const maximum = positiveInteger(limit, 'limit');
-  return Object.freeze(rows.slice(0, maximum).map((row, index) => Object.freeze({
+export function buildOrganicTopContentPayload(rows, limit = 5, period = null) {
+  const candidates = filterTopContentByPublishedPeriod(rows, period);
+  const maximum = limit === null || limit === undefined
+    ? candidates.length
+    : positiveInteger(limit, 'limit');
+  return Object.freeze(candidates.slice(0, maximum).map((row, index) => Object.freeze({
     rank: index + 1,
     platform: row.content.platform,
     content_key: row.content.contentKey,
@@ -216,6 +221,20 @@ export function buildOrganicTopContentPayload(rows, limit = 5) {
     performance_status: row.performanceStatus,
     data_status: row.dataStatus,
   })));
+}
+
+function filterTopContentByPublishedPeriod(rows, period) {
+  if (period === null || period === undefined) return rows;
+  const input = requireObject(period, 'period');
+  const periodStart = requireDateOnly(input.periodStart, { label: 'period.periodStart' });
+  const periodEnd = requireDateOnly(input.periodEnd, { label: 'period.periodEnd' });
+  if (periodStart > periodEnd) throw new RangeError('period.periodStart must not be after period.periodEnd');
+  return rows.filter((row) => {
+    const publishedDate = row?.content?.publishedDate;
+    return typeof publishedDate === 'string'
+      && publishedDate >= periodStart
+      && publishedDate <= periodEnd;
+  });
 }
 
 function resolveMetricAvailability(input) {
@@ -331,6 +350,13 @@ function sumCurrentField(rows, fieldName, allowObservedSubtotal) {
 }
 function sumComponents(values, allowObservedSubtotal) {
   return sumAggregate(values, allowObservedSubtotal);
+}
+function engagementComponents(platform, values) {
+  // YouTube Data API does not expose video share counts. Engagement is therefore
+  // the sum of the two observable interaction components, without inventing Shares=0.
+  return platform === 'youtube'
+    ? [values.likes, values.comments]
+    : [values.likes, values.comments, values.shares];
 }
 function sumAggregate(values, allowObservedSubtotal) {
   return allowObservedSubtotal ? sumObserved(values) : sumStrict(values);

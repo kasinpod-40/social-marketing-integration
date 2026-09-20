@@ -24,7 +24,7 @@ const SOURCE_REPORT_IDS = Object.freeze([
   'integration_workspace:meta_ads:rolling:7d:chemistry_k:rolling_days:2026-08-03:2026-08-09:meta-ads-v1',
   'integration_workspace:tiktok:rolling:7d:chemistry_k:rolling_days:2026-08-03:2026-08-09:tiktok-organic-v1',
   'integration_workspace:woocommerce:rolling:7d:chemistry_k:rolling_days:2026-08-03:2026-08-09:woocommerce-commerce-v1',
-  'integration_workspace:youtube:rolling:7d:chemistry_k:rolling_days:2026-08-03:2026-08-09:youtube-organic-v1',
+  'integration_workspace:youtube:rolling:7d:chemistry_k:rolling_days:2026-08-03:2026-08-09:youtube-organic-v2',
 ]);
 
 test('rebuilds the exact accepted Fresh v4 Report identities through shared Report contracts', () => {

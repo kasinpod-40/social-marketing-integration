@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildReportMetricValueRows,
+  buildReportTopAdsRows,
   buildReportTopContentRows,
 } from '../../packages/application/src/reports/build-report-output-rows.js';
 
@@ -33,6 +34,31 @@ test('builds normalized metric rows with stable report keys', () => {
   assert.equal(rows[0].client_visible, true);
 });
 
+test('metric rows preserve Organic chart-only label, Views and Engagement fields', () => {
+  const [row] = buildReportMetricValueRows({
+    ...common,
+    dataStatus: 'complete',
+    metrics: [{
+      metricKey: 'youtube:content_performance',
+      displayName: 'Clip 1',
+      current: 100,
+      unit: 'count',
+      formulaVersion: 'organic-v1',
+      clientVisible: true,
+      dimensionType: 'summary',
+      dimensionValue: 'organic_content_rank:1',
+      rank: 1,
+      contentChartLabel: '001 · Clip 1',
+      contentPeriodViews: 100,
+      contentPeriodEngagement: 13,
+    }],
+  });
+
+  assert.equal(row.content_chart_label, '001 · Clip 1');
+  assert.equal(row.content_period_views, 100);
+  assert.equal(row.content_period_engagement, 13);
+});
+
 test('top content rows use fixed rank keys and fill unused slots deterministically', () => {
   const contentRows = [{
     content: {
@@ -55,9 +81,32 @@ test('top content rows use fixed rank keys and fill unused slots deterministical
   assert.equal(rows[1].content_url, 'https://www.tiktok.com/');
 });
 
-test('top content output rejects limits above the production safety cap', () => {
+test('top content output rejects limits above the bounded production safety cap', () => {
   assert.throws(
-    () => buildReportTopContentRows({ ...common, contentRows: [], limit: 101 }),
-    /between 1 and 100/,
+    () => buildReportTopContentRows({ ...common, contentRows: [], limit: 50_001 }),
+    /between 1 and 50000/,
   );
+});
+
+test('Google campaign ranking keeps Campaign identity without fabricating an Ad ID', () => {
+  const rows = buildReportTopAdsRows({
+    ...common,
+    platform: 'google_ads',
+    adRows: [{
+      external_ad_id: null,
+      external_campaign_id: 'campaign-1',
+      ad_name: 'Search Campaign',
+      spend_micros: 5_500_000,
+      ctr: 0.0126,
+      data_status: 'complete',
+    }],
+    limit: 1,
+  });
+
+  assert.equal(rows[0].external_ad_id, null);
+  assert.equal(rows[0].external_campaign_id, 'campaign-1');
+  assert.equal(rows[0].ad_name, 'Search Campaign');
+  assert.equal(rows[0].ad_chart_label, '001 · Search Campaign');
+  assert.equal(rows[0].spend_amount, 5.5);
+  assert.equal(rows[0].ctr_percent, 1.26);
 });

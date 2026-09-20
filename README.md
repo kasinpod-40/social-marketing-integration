@@ -10,11 +10,27 @@ Storage direction ปัจจุบันคือ API Provider → D1 source/h
 `RAW_TikTok_Creator_Videos` เป็น protected Lark Native source แบบ read-only. Exact retirement scope
 และ safe deletion gate อยู่ที่ `docs/project-brain/non-tiktok-lark-raw-retirement-2026-08-14.md`.
 
+Organic Top Content ใช้วันเผยแพร่เป็นขอบเขตของช่วงที่เลือก: เมื่อเลือก 3 วัน กราฟเปรียบเทียบจะแสดงเฉพาะ
+โพสต์ที่เผยแพร่ในสามวันนั้น ขณะที่ KPI รวมยังคำนวณจากข้อมูล Organic ทั้งบัญชีตามเดิม. Paid Ads เลือก Ad
+จากกิจกรรมจริงในช่วงเวลา จึงรวม Ad ที่หยุดแล้วแต่เคยรันในช่วงนั้น. ชื่อ Content/Ad ถูกเติมแบบ bounded จาก
+Master table เดิมหลัง D1 จัดอันดับแล้ว โดยไม่เพิ่ม Lark table ใหม่. ดู
+`docs/project-brain/organic-paid-period-comparison-2026-09-19.md`.
+
+กราฟ Organic `Views เทียบ Engagement ตาม Content` ใช้ `MKT_Report_Metric_Values` ตารางเดียวกับ KPI และตัวเลือก
+Channel/Period โดยระบบ mirror เฉพาะอันดับ Content ที่ต้องแสดงพร้อม Views/Engagement ทุกครั้งที่ materialize รายวัน.
+จึงไม่ต้องพึ่งการ map ตัวเลือกข้าม `MKT_Report_Top_Content` กับ Metric table.
+
 Paid Ads ใช้ PROD D1 เป็นแหล่งประวัติถาวร และมี `MKT_Ads_Campaign_Summary` เป็น Lark MTD projection ระดับ
 Campaign พร้อม Views แยก Meta/Google/TikTok และจัดกลุ่มด้วยป้ายสีแบบ Single Select เช่น `กันยายน 2569`
 โดยซ่อนคอลัมน์เดือนที่ซ้ำในแต่ละแถว. `MKT_Ads_Daily` เป็น bounded Lark cache เท่านั้น: retention
 ลบได้สูงสุด 500 แถวต่อรอบและต้องพิสูจน์ exact identity กับ D1 ก่อนทุกแถว โดยไม่ลบ D1 หรือแตะ Organic.
 ดู `docs/project-brain/paid-ads-campaign-summary-retention-2026-09-10.md`.
+
+ตาราง Daily รายละเอียดของ Chatwoot และ WooCommerce ใช้นโยบาย Lark recent-cache แบบสองชั้น:
+เก็บไม่เกิน 90 วันตาม `metric_date` และเริ่มลดแถวเก่าสุดทันทีเมื่อแต่ละตารางแตะ 17,000 แถว
+จนมุ่งกลับสู่ 15,000 แถว โดยลบรวมไม่เกิน 500 แถวต่อรอบและต้องพิสูจน์ Stable key เดียวกันใน D1 ก่อนลบ.
+ดังนั้นหากตารางโตเร็วจนใกล้เต็มก่อนครบ 90 วัน ระบบไม่ต้องรอวันหมดอายุ; D1 ยังคงเก็บประวัติเต็มและไม่ถูกลบ.
+ดู `docs/project-brain/lark-bounded-daily-retention-2026-09-19.md`.
 
 `MKT_Accounts` ใน Integration Workspace มี Organic master ครบ 4 ช่องทางแล้ว: Facebook, Instagram,
 TikTok และ YouTube. TikTok ใช้ stable key `tiktok:${accountId}` และ permanent sync implementation
@@ -448,6 +464,7 @@ MKT_REPORT_D1_SHADOW_READ_ENABLED=false
 MKT_REPORT_D1_READ_ENABLED=false
 MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
+MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED=false
 MKT_NOTIFICATION_RUNTIME_ENABLED=false
 MKT_TIKTOK_AUDIT_HTTP_ENABLED=false
 MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED=false

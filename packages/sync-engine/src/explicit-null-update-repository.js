@@ -85,6 +85,10 @@ class ExplicitNullUpdateRepository {
     );
   }
 
+  async deleteMany(...args) {
+    return requireRepositoryMethod(this.repository, 'deleteMany').apply(this.repository, args);
+  }
+
   async listByFieldValues(...args) {
     return requireRepositoryMethod(this.repository, 'listByFieldValues').apply(this.repository, args);
   }

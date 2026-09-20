@@ -93,8 +93,12 @@ async function processDashboardReportJob(input) {
   const infrastructure = input.getInfrastructure();
   const requiredTables = [
     'mktReportSnapshots', 'mktReportMetricValues',
-    ...(contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC ? ['mktReportTopContent'] : []),
-    ...(contract.capability === REPORT_PLATFORM_CAPABILITY.PAID_ADS ? ['mktReportTopAds'] : []),
+    ...(contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC
+      ? ['mktContent', 'mktReportTopContent']
+      : []),
+    ...(contract.capability === REPORT_PLATFORM_CAPABILITY.PAID_ADS
+      ? ['mktAdsAds', 'mktReportTopAds']
+      : []),
     'mktSyncLog', 'mktSystemAlerts',
   ];
   const tableIds = readLarkTableIdsFromEnv(input.env, requiredTables);
@@ -156,6 +160,11 @@ async function processDashboardReportJob(input) {
           generatedAt: Date.parse(body.requestedAt),
           maxContentRecords: readPositiveInteger(input.env?.MKT_REPORT_D1_MAX_CONTENT_RECORDS, 10_000),
           maxFactRows: readPositiveInteger(input.env?.MKT_REPORT_D1_MAX_FACT_ROWS, 10_000),
+          displayMetadata: {
+            repository: infrastructure.repository,
+            contentTableId: tableIds.mktContent,
+            adsTableId: tableIds.mktAdsAds,
+          },
         });
         const ai = await generateReportAiSummary({
           enabled: storageConfig.reportAiSummaryEnabled,

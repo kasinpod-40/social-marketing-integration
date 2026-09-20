@@ -15,6 +15,10 @@ import {
   calculateOrganicPeriodMetrics,
 } from '../reports/calculate-organic-period-metrics.js';
 import {
+  hydrateReportTopAdsMetadata,
+  hydrateReportTopContentMetadata,
+} from '../reports/hydrate-report-display-metadata.js';
+import {
   REPORT_PLATFORM_CAPABILITY,
   REPORT_SOURCE_STATUS,
   reportSourceUnavailable,
@@ -62,6 +66,7 @@ export async function generateDashboardReportMaterialization(input = {}) {
       topAdsLimit: input.topAdsLimit,
       maxContentRecords: input.maxContentRecords,
       maxFactRows: input.maxFactRows,
+      displayMetadata: input.displayMetadata,
     });
   const materialization = await saveDashboardReportMaterialization({
     store,
@@ -333,7 +338,18 @@ async function buildOrganicResult(input) {
     periodEnd: input.period.compareEnd,
     coverageStatus: accountCoverageStatus,
   });
-  const topContent = buildOrganicTopContentPayload(current.contentRows, input.topContentLimit ?? 5);
+  const rankedTopContent = buildOrganicTopContentPayload(
+    current.contentRows,
+    input.topContentLimit ?? null,
+    input.period,
+  );
+  const topContent = input.displayMetadata?.repository && input.displayMetadata?.contentTableId
+    ? await hydrateReportTopContentMetadata({
+      repository: input.displayMetadata.repository,
+      tableId: input.displayMetadata.contentTableId,
+      rows: rankedTopContent,
+    })
+    : rankedTopContent;
   return Object.freeze({
     platform: input.contract.platformScope,
     capability: input.contract.capability,
@@ -376,7 +392,7 @@ async function buildAdsResult(input) {
       periodStart: input.period.periodStart,
       periodEnd: input.period.periodEnd,
       maxFactRows: input.maxFactRows,
-      topAdsLimit: input.topAdsLimit ?? 5,
+      topAdsLimit: input.topAdsLimit,
     }),
     input.period.comparisonMode === 'none' ? Promise.resolve(null) : input.adapter.load({
       customerKey: input.customerKey,
@@ -384,7 +400,7 @@ async function buildAdsResult(input) {
       periodStart: input.period.compareStart,
       periodEnd: input.period.compareEnd,
       maxFactRows: input.maxFactRows,
-      topAdsLimit: input.topAdsLimit ?? 5,
+      topAdsLimit: input.topAdsLimit,
     }),
   ]);
   assertWatermark(input.sourceWatermark, currentSource.readSummary?.sourceWatermark, input.contract.platformScope);
@@ -392,6 +408,15 @@ async function buildAdsResult(input) {
     assertWatermark(input.sourceWatermark, compareSource.readSummary?.sourceWatermark, input.contract.platformScope);
   }
   const metrics = currentSource.metrics;
+  const topAds = input.displayMetadata?.repository && input.displayMetadata?.adsTableId
+    ? await hydrateReportTopAdsMetadata({
+      repository: input.displayMetadata.repository,
+      tableId: input.displayMetadata.adsTableId,
+      platform: input.contract.platformScope,
+      accountId: input.accountKey,
+      rows: currentSource.topAds,
+    })
+    : currentSource.topAds;
   return Object.freeze({
     platform: input.contract.platformScope,
     capability: input.contract.capability,
@@ -409,10 +434,13 @@ async function buildAdsResult(input) {
       current: metrics,
       compare: compareSource?.metrics ?? null,
     }),
+    collections: Object.freeze({
+      ads_daily_trend: currentSource.dailyMetrics ?? Object.freeze([]),
+    }),
     topContent: Object.freeze([]),
-    topAds: currentSource.topAds,
+    topAds,
     topContentCount: 0,
-    topAdsCount: currentSource.topAds.length,
+    topAdsCount: topAds.length,
   });
 }
 

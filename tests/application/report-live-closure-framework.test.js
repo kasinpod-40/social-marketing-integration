@@ -31,7 +31,7 @@ const TARGET = Object.freeze({
   accountId: 'UCAwEENovvqZWosKhJWTS5Kg',
 });
 
-function candidatesFor(platform = 'youtube', formulaVersion = 'youtube-organic-v1') {
+function candidatesFor(platform = 'youtube', formulaVersion = 'youtube-organic-v2') {
   return buildReportRuntimeCloseoutCandidates({
     requestedAt: REQUESTED_AT,
     periodEnd: PERIOD_END,
@@ -196,7 +196,7 @@ test('uses existing candidate and output-row authorities for exact identities an
     reportSettingKey: candidate.reportSettingKey,
     metrics: [{
       metricKey: 'views', stableMetricKey: 'views', displayName: 'Views', current: 0,
-      unit: 'count', formulaVersion: 'youtube-organic-v1', clientVisible: true,
+      unit: 'count', formulaVersion: 'youtube-organic-v2', clientVisible: true,
     }],
     period: candidate.period,
     generatedAt: REQUESTED_AT,
@@ -247,7 +247,7 @@ test('hard rejects 9/15/90 from the closure Metric path without changing shared 
     sourceWatermark: SOURCE_WATERMARK,
     platformScope: 'youtube',
     accountKey: 'chemistry_k',
-    formulaVersion: 'youtube-organic-v1',
+    formulaVersion: 'youtube-organic-v2',
   });
   assert.ok(allCandidates.some((candidate) => candidate.windowDays === 9));
   assert.throws(
@@ -275,7 +275,7 @@ test('preserves missing, partial, covered-empty and observed-zero semantics', ()
 
 test('binds Organic, Paid Ads, Commerce and Chatwoot planning to reviewed authorities', async () => {
   for (const [platform, capability, formulaVersion] of [
-    ['youtube', 'organic', 'youtube-organic-v1'],
+    ['youtube', 'organic', 'youtube-organic-v2'],
     ['meta_ads', 'paid_ads', 'meta-ads-v1'],
     ['woocommerce', 'commerce', 'woocommerce-commerce-v1'],
     ['chatwoot', 'customer_service', 'chatwoot-customer-service-v1'],

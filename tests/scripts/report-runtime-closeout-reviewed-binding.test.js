@@ -248,7 +248,7 @@ test('multiwindow planner filters shared presets to exact reviewed 1/3/7/30 orde
     sourceWatermark: 'youtube-watermark',
     platformScope: 'youtube',
     accountKey: 'chemistry_k',
-    formulaVersion: 'youtube-organic-v1',
+    formulaVersion: 'youtube-organic-v2',
   });
   const required = candidates.filter((row) => [1, 3, 7, 30].includes(row.windowDays));
   const existing = required.filter((row) => [3, 7].includes(row.windowDays)).map((row) => row.reportId);

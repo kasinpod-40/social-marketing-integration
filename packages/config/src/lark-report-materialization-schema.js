@@ -28,13 +28,14 @@ export const REPORT_METRIC_DIMENSION_TYPE_OPTIONS = Object.freeze([
   'shipping_method',
   'inbox',
   'agent',
+  'day',
 ]);
 
 /**
  * Additive repository contract for the materialization consumer tables.
  * It is intentionally plan-only; applying it to a Live Base requires a separate authorization.
  */
-export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v8';
+export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v10';
 export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
   sharedOptionExtensions: {
     platforms: PLATFORM_OPTIONS,
@@ -70,6 +71,18 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
         select('metric_scope', DASHBOARD_METRIC_SCOPE_OPTIONS),
         select('availability_status', DASHBOARD_METRIC_AVAILABILITY_OPTIONS),
         text('availability_message'),
+        dateTime('metric_date'),
+        number('daily_impressions', '1,000'),
+        number('daily_clicks', '1,000'),
+        number('daily_cpc', '1,000.00'),
+        number('daily_cpm', '1,000.00'),
+        text('ad_chart_label'),
+        number('ad_spend_amount', '1,000.00'),
+        number('ad_clicks', '1,000'),
+        number('ad_ctr_percent', '0.00'),
+        text('content_chart_label'),
+        number('content_period_views', '1,000'),
+        number('content_period_engagement', '1,000'),
       ],
       platformField: { fieldName: 'platform', type: 3, uiType: 'SingleSelect', options: PLATFORM_OPTIONS },
       dataStatusField: { fieldName: 'data_status', type: 3, uiType: 'SingleSelect', options: DATA_STATUS_OPTIONS },
@@ -77,7 +90,11 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     },
     mktReportTopContent: {
       keyField: 'report_content_key',
-      additiveFields: [text('lark_slot_key'), ...sharedRowAdditiveFields()],
+      additiveFields: [
+        text('lark_slot_key'),
+        ...sharedRowAdditiveFields(),
+        select('__mkt_legacy_window_days_single_select_v1', DASHBOARD_WINDOW_DAY_OPTIONS),
+      ],
       platformField: {
         fieldName: 'platform',
         type: 3,
@@ -100,11 +117,13 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
         select('report_type', ['dashboard_performance_report']),
         select('platform', PAID_ADS_PLATFORM_OPTIONS), text('account_id'),
         select('period_kind', PERIOD_KIND_OPTIONS), number('window_days', '0'),
+        select('__mkt_legacy_window_days_single_select_v1', DASHBOARD_WINDOW_DAY_OPTIONS),
         number('rank'), text('external_ad_id'), text('external_campaign_id'),
-        text('external_ad_group_id'), text('external_creative_id'), text('ad_name'),
+        text('external_ad_group_id'), text('external_creative_id'), text('ad_name'), text('ad_chart_label'),
         text('currency'), number('spend_micros'), number('impressions'), number('reach'),
         number('clicks'), number('conversions'), number('conversion_value_micros'),
         number('ctr'), number('cpc_micros'), number('cpm_micros'), number('cpa_micros'),
+        number('spend_amount', '1,000.00'), number('ctr_percent', '0.00'),
         number('roas'), select('data_status', DATA_STATUS_OPTIONS),
         number('coverage_rate', '0.0000'), dateTime('period_start'),
         dateTime('period_end'), dateTime('generated_at'),
