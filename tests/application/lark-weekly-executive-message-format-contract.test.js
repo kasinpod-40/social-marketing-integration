@@ -124,8 +124,9 @@ test('quality rejects wrong-channel Views and missing percent then repairs only 
   assert.equal(repaired.repaired, true);
   assert.equal(repaired.repairCode, 'bounded_weekly_fact_format_v2');
   assert.equal(repaired.qualityGate.passed, true);
-  assert.match(repaired.outputs.insight_summary, /YouTube Organic.*Views gained 17,508 ครั้ง \(เพิ่ม 0\.4743%\)/u);
-  assert.doesNotMatch(repaired.outputs.insight_summary, /Facebook Organic.*Views gained 17,508/u);
+  assert.match(repaired.outputs.insight_summary, /Facebook Organic มี ผู้ติดตาม 181,448 คน/u);
+  assert.match(repaired.outputs.insight_summary, /YouTube Organic มี Views gained 17,508 ครั้ง \(เพิ่ม 0\.4743%\)/u);
+  assert.doesNotMatch(repaired.outputs.insight_summary, /Facebook Organic มี Views gained 17,508/u);
   assert.equal(repaired.outputs.strengths, bad.strengths);
   assert.equal(repaired.outputs.weaknesses, bad.weaknesses);
 });
