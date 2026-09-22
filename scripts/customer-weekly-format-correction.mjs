@@ -30,9 +30,8 @@ const PREVIEW_ENTRYPOINT = resolve(
   'apps/sync-worker/src/customer-weekly-format-correction-preview-entry.js',
 );
 const PREVIEW_PATH = '/__codex/customer-weekly-format-correction-v1';
-const CONFIG_PATH = resolve(
-  process.env.MKT_CUSTOMER_WRANGLER_CONFIG ?? '.customer-youtube-uat.wrangler.jsonc',
-);
+const CONFIG_PATH_INPUT = process.env.MKT_CUSTOMER_WRANGLER_CONFIG?.trim() ?? '';
+const CONFIG_PATH = CONFIG_PATH_INPUT ? resolve(CONFIG_PATH_INPUT) : null;
 const SEND_CONFIRMATION = 'SEND_ONE_WEEKLY_20260920_FORMAT_CORRECTION_V2';
 const SEND_CONFIRMATION_ENV = 'CONFIRM_CUSTOMER_WEEKLY_FORMAT_CORRECTION';
 
@@ -76,6 +75,12 @@ if (primaryError || restoreError) {
 }
 
 async function main() {
+  if (!CONFIG_PATH) {
+    throw operatorError(
+      'MKT_CUSTOMER_WRANGLER_CONFIG is required for the exact Customer PROD config',
+      'CUSTOMER_WEEKLY_FORMAT_CORRECTION_CONFIG_REQUIRED',
+    );
+  }
   if (mode === 'send' && process.env[SEND_CONFIRMATION_ENV] !== SEND_CONFIRMATION) {
     throw operatorError(
       `${SEND_CONFIRMATION_ENV} must equal the exact reviewed confirmation`,
@@ -104,12 +109,16 @@ async function main() {
   });
   const accountSubdomain = await readAccountSubdomain(auth.token);
   const productionBaselineVersion = readActiveVersion(commandEnv);
+  const activePlainTextBindings = await readActivePlainTextBindings(
+    auth.token,
+    productionBaselineVersion,
+  );
   const token = randomBytes(48).toString('base64url');
   const previewAlias = `weekly-format-${randomBytes(4).toString('hex')}`;
 
   runtimeRoot = await mkdtemp(join(tmpdir(), 'customer-weekly-format-correction-'));
   const runtimeConfigPath = join(runtimeRoot, 'wrangler.preview.json');
-  const runtimeConfig = buildPreviewConfig(config, sha256(token));
+  const runtimeConfig = buildPreviewConfig(config, activePlainTextBindings, sha256(token));
   await writeFile(runtimeConfigPath, `${JSON.stringify(runtimeConfig, null, 2)}\n`, { mode: 0o600 });
   await chmod(runtimeConfigPath, 0o600);
   target = Object.freeze({ token: auth.token, commandEnv, productionBaselineVersion });
@@ -154,7 +163,7 @@ async function main() {
   const body = await response.json().catch(() => null);
   if (!response.ok || body?.ok !== true) {
     throw operatorError(
-      `Weekly format correction failed with HTTP ${response.status}`,
+      body?.error || `Weekly format correction failed with HTTP ${response.status}`,
       body?.code ?? 'CUSTOMER_WEEKLY_FORMAT_CORRECTION_HTTP_FAILED',
       body?.details ?? {},
     );
@@ -179,15 +188,29 @@ function parseMode(args) {
   );
 }
 
-function buildPreviewConfig(input, tokenSha256) {
+function buildPreviewConfig(input, activePlainTextBindings, tokenSha256) {
   const config = structuredClone(input);
   config.main = PREVIEW_ENTRYPOINT;
   config.workers_dev = false;
   config.preview_urls = true;
   config.vars = {
     ...config.vars,
+    ...activePlainTextBindings,
     MKT_WEEKLY_FORMAT_CORRECTION_TOKEN_SHA256: tokenSha256,
   };
+  requireExact(config.vars.MKT_ENV, 'production', 'MKT_ENV');
+  requireExact(config.vars.MKT_CUSTOMER_PROFILE, CUSTOMER_PROFILE, 'MKT_CUSTOMER_PROFILE');
+  requireExact(config.vars.LARK_TABLE_MKT_AI_REPORT_RUNS, AI_TABLE_ID, 'AI table');
+  requireExact(
+    config.vars.MKT_NOTIFICATION_DESTINATION_CHAT_NAME,
+    'Chemistry K — Marketing Alerts',
+    'Notification destination name',
+  );
+  requireExact(
+    config.vars.MKT_NOTIFICATION_DESTINATION_KEY_HASH,
+    '6f60448415fedffbb1717f466fcd93895bf4a6bdf550ec9fc6ce4932f562f425',
+    'Notification destination hash',
+  );
   for (const name of Object.keys(config.vars)) {
     if (/^MKT_[A-Z0-9_]+_ENABLED$/u.test(name)) config.vars[name] = 'false';
   }
@@ -203,6 +226,49 @@ function buildPreviewConfig(input, tokenSha256) {
     throw operatorError('Generated Preview config is not isolated', 'CUSTOMER_WEEKLY_FORMAT_CORRECTION_CONFIG_INVALID');
   }
   return config;
+}
+
+async function readActivePlainTextBindings(token, versionId) {
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${WORKER}/versions/${encodeURIComponent(versionId)}`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.success !== true || !body?.result?.resources) {
+    throw operatorError(
+      'Active Production Worker version bindings could not be read',
+      'CUSTOMER_WEEKLY_FORMAT_CORRECTION_ACTIVE_BINDINGS_FAILED',
+      { status: response.status },
+    );
+  }
+  const raw = body.result.resources.bindings ?? [];
+  const bindings = Array.isArray(raw) ? raw : Object.values(raw);
+  const plainText = {};
+  for (const binding of bindings) {
+    if (binding?.type !== 'plain_text') continue;
+    const name = String(binding?.name ?? '').trim();
+    if (!/^[A-Z][A-Z0-9_]*$/u.test(name) || typeof binding?.text !== 'string') continue;
+    plainText[name] = binding.text;
+  }
+  const required = [
+    'MKT_ENV',
+    'MKT_CUSTOMER_PROFILE',
+    'LARK_TABLE_MKT_AI_REPORT_RUNS',
+    'MKT_NOTIFICATION_DESTINATION_CHAT_NAME',
+    'MKT_NOTIFICATION_DESTINATION_KEY_HASH',
+  ];
+  const missing = required.filter((name) => typeof plainText[name] !== 'string' || plainText[name] === '');
+  if (missing.length > 0) {
+    throw operatorError(
+      'Active Production Worker version is missing required plain-text bindings',
+      'CUSTOMER_WEEKLY_FORMAT_CORRECTION_ACTIVE_BINDINGS_INVALID',
+      { missingBindingNames: missing },
+    );
+  }
+  return Object.freeze(plainText);
 }
 
 async function waitForRoute(url) {
