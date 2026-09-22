@@ -448,9 +448,16 @@ async function prepare(mode) {
   const sourceStateSha256 = hashRecordState(sourceRecord.fields, SOURCE_HASH_FIELDS);
 
   stage = 'collect-exact-aligned-factual-report-source';
-  const collected = await collectLarkNativeAiWeekly7dControlledUatSource({ client });
   const expectedSourceReportIds = parseSourceReportIds(sourceRecord.fields.source_report_ids_json);
   const expectedPeriod = sourcePeriod(sourceRecord.fields);
+  const currentPeriodSource = await collectLarkNativeAiWeekly7dControlledUatSource({
+    client,
+    targetPeriodEnd: expectedPeriod.periodEnd,
+  });
+  const collected = selectAcceptedSourceBundles(
+    currentPeriodSource,
+    expectedSourceReportIds,
+  );
   assertLarkWeekly7dFullChannelSourceAlignment({
     expectedSourceReportIds,
     collectedSourceReportIds: collected.sourceReportIds,
@@ -780,6 +787,39 @@ function hashRecordState(fields, fieldNames) {
       ? readBoolean(fields?.[name])
       : optionalText(readScalar(fields?.[name])),
   ]))));
+}
+
+function selectAcceptedSourceBundles(collected, expectedSourceReportIds) {
+  const expected = [...expectedSourceReportIds].sort();
+  const expectedSet = new Set(expected);
+  const reportBundles = collected.reportBundles.filter(
+    (bundle) => expectedSet.has(bundle.reportId),
+  );
+  const sourceReportIds = reportBundles.map((bundle) => bundle.reportId).sort();
+
+  if (reportBundles.length !== expected.length
+      || JSON.stringify(sourceReportIds) !== JSON.stringify(expected)) {
+    fail(
+      'Could not reconstruct exact accepted V9 factual source from historical Reports',
+      'LARK_WEEKLY_7D_FULL_CHANNEL_ACCEPTED_SOURCE_UNAVAILABLE',
+      {
+        expectedCount: expected.length,
+        matchedCount: reportBundles.length,
+        collectedCount: collected.reportBundles.length,
+      },
+    );
+  }
+
+  return Object.freeze({
+    ...collected,
+    reportBundles: Object.freeze(reportBundles),
+    sourceReportIds: Object.freeze(sourceReportIds),
+    selectedChannelCount: reportBundles.length,
+    selectedChannels: Object.freeze(
+      reportBundles.map((bundle) => bundle.channelKey).sort(),
+    ),
+    selectionPolicy: 'accepted_v9_source_report_ids',
+  });
 }
 
 function sourcePeriod(fields) {
