@@ -200,7 +200,7 @@ async function mirrorSentDelivery(input) {
     throw transientError('Lark notification was sent but Notification Log mirror is pending', {
       code: 'LARK_NOTIFICATION_LOG_MIRROR_FAILED',
       cause,
-      details: { notificationAttemptKey },
+      details: { notificationAttemptKey: input.notificationAttemptKey },
     });
   }
   return Object.freeze({
