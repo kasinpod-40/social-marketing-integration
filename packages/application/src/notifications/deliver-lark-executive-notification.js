@@ -4,6 +4,7 @@ const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const LEGACY_TEMPLATE_VERSION = 'executive_report_notification_v1';
 const BUSINESS_FIRST_TEMPLATE_VERSION = 'executive_report_notification_v2';
 const WEEKLY_7D_AI_TEMPLATE_VERSION = 'executive_weekly_7d_notification_v1';
+const CORRECTED_FULL_CHANNEL_WEEKLY_PREFIX = 'notification-weekly-7d:full-channel:';
 const MAX_MESSAGE_BYTES = 24_000;
 
 /**
@@ -199,7 +200,7 @@ async function mirrorSentDelivery(input) {
     throw transientError('Lark notification was sent but Notification Log mirror is pending', {
       code: 'LARK_NOTIFICATION_LOG_MIRROR_FAILED',
       cause,
-      details: { notificationAttemptKey: input.notificationAttemptKey },
+      details: { notificationAttemptKey },
     });
   }
   return Object.freeze({
@@ -311,8 +312,10 @@ function buildExecutiveMessage(request, templateVersion) {
 
 function buildBusinessFirstExecutiveMessage(request) {
   const weekly = request.aiRun.windowDays === 7;
+  const correctedWeekly = weekly
+    && request.aiRun.aiRunKey.startsWith(CORRECTED_FULL_CHANNEL_WEEKLY_PREFIX);
   const title = weekly
-    ? '📊 Social MKT Weekly Executive Report — 7D'
+    ? `📊 Social MKT Weekly Executive Report — 7D${correctedWeekly ? ' (ฉบับแก้ไข)' : ''}`
     : `📊 Social MKT Executive Report — ${request.aiRun.windowDays}D`;
   const text = [
     title,
