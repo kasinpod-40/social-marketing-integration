@@ -29,6 +29,19 @@ const NO_SCALE_LANGUAGE = /\[NO-SCALE\]/iu;
 const DECISION_LINE_START = /^\[(?:CONTENT|SCALE|TEST|KEEP|REDUCE|STOP|NO-SCALE)\]\s+/iu;
 const DECISION_ACTION_VERB = /(?:ทดลอง|ทดสอบ|ต่อยอด|คงไว้|รักษา|หยุด|พัก|ปรับ|จำกัด|ย้าย|ขยาย|ไม่เพิ่ม(?:งบ|budget)|ไม่ขยาย|คำนวณ|เปรียบเทียบ|ติดตาม|ใช้(?:งบ|เป็น|เพื่อ)|ทำ(?:ต่อ|คอนเทนต์|แคมเปญ)|วัด|เก็บ(?:ข้อมูล|ผล)|เพิ่มงบ|ลดงบ)/iu;
 const DIRECT_LINKAGE_CLAIM = /(?:คอนเทนต์|โพสต์|organic).{0,50}(?:เดียวกัน|ตัวเดียวกัน|ชิ้นเดียวกัน).{0,50}(?:ad|ads|โฆษณา|creative)/iu;
+const PARENTHETICAL_COMPARISON_WITHOUT_PERCENT = /\((?:เพิ่ม|ลด)(?:ขึ้น|ลง)?\s+[+-]?\d[\d,]*(?:\.\d+)?\s*\)/iu;
+const VIEW_COUNT_CLAIM = /(?:Views gained|Total views|Account views|ยอดดู)\s+(?:เท่ากับ\s+)?[\d,]+(?:\.\d+)?(?:\s*(ครั้ง|เท่า))?/giu;
+const OVERVIEW_CHANNEL_PRIORITY = Object.freeze([
+  'woocommerce',
+  'facebook_organic',
+  'youtube_organic',
+  'meta_ads',
+  'google_ads',
+  'instagram_organic',
+  'tiktok_organic',
+  'chatwoot',
+  'tiktok_ads',
+]);
 
 export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const factual = parseLarkWeeklyExecutiveFactualReport(input.factualReport);
@@ -160,6 +173,13 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   if (INTERNAL_METRIC_LANGUAGE.test(allText)) violations.push('internal_metric_field_language');
   if (NON_BUSINESS_METRIC_LANGUAGE.test(allText)) violations.push('non_business_metric_language');
   if (NON_EXECUTIVE_COMPARISON_LANGUAGE.test(allText)) violations.push('non_executive_comparison_language');
+  if (PARENTHETICAL_COMPARISON_WITHOUT_PERCENT.test(insight)) {
+    violations.push('insight_comparison_percent_unit_missing');
+  }
+  if (hasInvalidViewCountUnit(insight)) violations.push('insight_view_count_unit_invalid');
+  if (hasRequiredFactChannelMismatch(insight, evidence)) {
+    violations.push('insight_fact_channel_mismatch');
+  }
 
   const businessNames = Array.isArray(evidence.businessEvidenceChannelNames)
     ? evidence.businessEvidenceChannelNames
@@ -298,22 +318,38 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   });
 }
 
-const REPAIRABLE_RECOMMENDATION_VIOLATIONS = new Set([
+const REPAIRABLE_FORMAT_VIOLATIONS = new Set([
+  'insight_comparison_percent_unit_missing',
+  'insight_view_count_unit_invalid',
+  'insight_fact_channel_mismatch',
+  'insight_missing_cross_channel_coverage',
+  'insight_missing_business_channel_name',
+  'insight_missing_business_metric_value',
+  'insight_ctr_inconsistent_with_components',
+  'insight_contains_action',
   'recommendations_missing_action_detail',
   'recommendations_unsupported_no_scale',
 ]);
 
 /**
- * Repair only the two proven Lark-Native-AI recommendation formatting failures.
- * The generated source row stays immutable; callers may use the repaired in-memory
- * projection only when the unchanged full quality gate accepts it.
+ * Repair only proven Weekly delivery-format failures from retained factual evidence.
+ * The generated source row stays immutable; callers use the repaired in-memory
+ * projection only when the unchanged complete quality gate accepts it.
  */
 export function repairLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, evidence = {}) {
   const original = validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs, evidence);
   if (original.passed) {
     return deepFreeze({ repaired: false, outputs: { ...outputs }, qualityGate: original });
   }
-  if (original.violations.some((code) => !REPAIRABLE_RECOMMENDATION_VIOLATIONS.has(code))) {
+  if (original.violations.some((code) => !REPAIRABLE_FORMAT_VIOLATIONS.has(code))) {
+    return deepFreeze({ repaired: false, outputs: { ...outputs }, qualityGate: original });
+  }
+
+  const insightViolation = original.violations.some((code) => code.startsWith('insight_'));
+  const deterministicInsight = insightViolation
+    ? buildLarkWeeklyExecutiveDeterministicInsightSummary(evidence)
+    : null;
+  if (insightViolation && !deterministicInsight) {
     return deepFreeze({ repaired: false, outputs: { ...outputs }, qualityGate: original });
   }
 
@@ -334,6 +370,7 @@ export function repairLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, evid
 
   const repairedOutputs = Object.freeze({
     ...outputs,
+    ...(deterministicInsight ? { insight_summary: deterministicInsight } : {}),
     recommendations: lines.join('\n'),
   });
   const repairedGate = validateLarkWeeklyExecutiveFullChannelAiOutputs(repairedOutputs, evidence);
@@ -347,10 +384,32 @@ export function repairLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, evid
   }
   return deepFreeze({
     repaired: true,
-    repairCode: 'bounded_recommendation_format_v1',
+    repairCode: deterministicInsight
+      ? 'bounded_weekly_fact_format_v2'
+      : 'bounded_recommendation_format_v1',
     outputs: repairedOutputs,
     qualityGate: repairedGate,
   });
+}
+
+export function buildLarkWeeklyExecutiveDeterministicInsightSummary(evidence = {}) {
+  const channels = Array.isArray(evidence.channelBusinessEvidence)
+    ? evidence.channelBusinessEvidence
+    : [];
+  const facts = channels
+    .filter((channel) => channel?.businessEvidencePresent === true)
+    .filter((channel) => Array.isArray(channel.availableMetrics) && channel.availableMetrics.length > 0)
+    .sort((left, right) => overviewChannelPriority(left.channelKey) - overviewChannelPriority(right.channelKey))
+    .map((channel) => {
+      const metric = channel.availableMetrics.find(({ current_value: value }) => Number.isFinite(value));
+      return metric ? Object.freeze({ channel, metric }) : null;
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+  if (facts.length === 0) return null;
+  return facts.map(({ channel, metric }) => (
+    `${channel.displayName} มี ${metric.display_name} ${formatExecutiveMetricValue(metric)}${formatExecutiveComparison(metric)}`
+  )).join(' ');
 }
 
 function ensureDecisionActionDetail(line) {
@@ -444,7 +503,7 @@ function buildCompactDecisionSummary(input, labelLimit) {
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
     legend: 'm=[n,v,%,sig];c=[n,r,v,e,ER];a=[n,r,s,cl,CTR,cv,val,ROAS,S]',
     writerContract: Object.freeze({
-      overview: '2-4s; exact ch+m+value from m; 2+ ch; no action',
+      overview: '2-4s; exact ch+m+value from m; 2+ ch; numeric change always %; Views count uses ครั้ง never เท่า; no action',
       recommendations: recommendationBlueprints.length > 0
         ? 'COPY rb exactly as separate lines; no rewrite; no extra labels/text'
         : '2-4 lines;1 label/line;verb+anchor;ตรวจสอบ-only invalid;c=[]=>no CONTENT/Organic;a=>Paid name,never CONTENT;c=[]+a+funnel=>paid+NO-SCALE only;SCALE iff scale=1;no same-creative',
@@ -703,6 +762,81 @@ function presentationValue(value, metricKey, unit) {
 
 function microsToUnit(value) {
   return Number.isFinite(value) ? round(value / 1_000_000, 4) : null;
+}
+
+function hasInvalidViewCountUnit(insight) {
+  VIEW_COUNT_CLAIM.lastIndex = 0;
+  let match;
+  while ((match = VIEW_COUNT_CLAIM.exec(insight)) !== null) {
+    if (match[1] !== 'ครั้ง') return true;
+  }
+  return false;
+}
+
+function hasRequiredFactChannelMismatch(insight, evidence) {
+  const requiredFacts = Array.isArray(evidence.summaryRequiredFacts) ? evidence.summaryRequiredFacts : [];
+  const businessNames = Array.isArray(evidence.businessEvidenceChannelNames)
+    ? evidence.businessEvidenceChannelNames
+    : [];
+  for (const fact of requiredFacts) {
+    if (!fact?.channel || !Number.isFinite(fact?.value) || Math.abs(fact.value) < 10) continue;
+    const tokens = numericFactTokens(fact.value);
+    for (const token of tokens) {
+      let offset = insight.indexOf(token);
+      while (offset !== -1) {
+        const start = Math.max(0, offset - 96);
+        const end = Math.min(insight.length, offset + token.length + 48);
+        const window = insight.slice(start, end);
+        const mentioned = businessNames.filter((name) => window.includes(name));
+        if (mentioned.length > 0 && !mentioned.includes(fact.channel)) return true;
+        offset = insight.indexOf(token, offset + token.length);
+      }
+    }
+  }
+  return false;
+}
+
+function numericFactTokens(value) {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) return Object.freeze([]);
+  const raw = Number.isInteger(normalized) ? String(normalized) : String(round(normalized, 4));
+  const formatted = formatNumber(normalized, 4);
+  return Object.freeze([...new Set([raw, formatted])]);
+}
+
+function overviewChannelPriority(channelKey) {
+  const index = OVERVIEW_CHANNEL_PRIORITY.indexOf(channelKey);
+  return index === -1 ? OVERVIEW_CHANNEL_PRIORITY.length : index;
+}
+
+function formatExecutiveMetricValue(metric) {
+  const value = metric.current_value;
+  const unit = String(metric.unit ?? 'count').toLowerCase();
+  const identity = `${metric.metric_key ?? ''} ${metric.display_name ?? ''}`;
+  if (unit === 'currency') return `${formatNumber(value, 4)} บาท`;
+  if (unit === 'percent' || unit === 'percentage' || unit === '%') return `${formatNumber(value, 4)}%`;
+  if (unit === 'seconds') return `${formatNumber(value, 4)} วินาที`;
+  if (unit === 'minutes') return `${formatNumber(value, 4)} นาที`;
+  if (unit === 'count' && /(?:views?|ยอดดู)/iu.test(identity)) return `${formatNumber(value, 4)} ครั้ง`;
+  if (unit === 'count' && /(?:followers?|follows?|subscribers?|ผู้ติดตาม)/iu.test(identity)) {
+    return `${formatNumber(value, 4)} คน`;
+  }
+  return formatNumber(value, 4);
+}
+
+function formatExecutiveComparison(metric) {
+  if (!Number.isFinite(metric.change_percent)) return '';
+  const change = round(metric.change_percent, 4);
+  if (change > 0) return ` (เพิ่ม ${formatNumber(change, 4)}%)`;
+  if (change < 0) return ` (ลด ${formatNumber(Math.abs(change), 4)}%)`;
+  return ' (ทรงตัว 0%)';
+}
+
+function formatNumber(value, maximumFractionDigits) {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  }).format(value);
 }
 
 function compactStatusVectorRows(rows) {
