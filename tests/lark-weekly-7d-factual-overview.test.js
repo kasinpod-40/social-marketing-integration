@@ -100,8 +100,8 @@ test('weekly factual overview keeps Facebook and YouTube Views gained bound to t
 
   const overview = buildLarkWeekly7dFactualOverview(factualReport(channels));
 
-  assert.match(overview, /📘 Facebook Organic — Views gained: 17,508 \(-35\.62% เทียบช่วงก่อน\)/u);
-  assert.match(overview, /▶️ YouTube Organic — Views gained: 268,129 \(\+58\.85% เทียบช่วงก่อน\)/u);
+  assert.match(overview, /📘 Facebook Organic — Views gained: 17,508 ครั้ง \(-35\.62% เทียบช่วงก่อน\)/u);
+  assert.match(overview, /▶️ YouTube Organic — Views gained: 268,129 ครั้ง \(\+58\.85% เทียบช่วงก่อน\)/u);
   assert.doesNotMatch(overview, /YouTube Organic[^\n]*17,508/u);
   assert.doesNotMatch(overview, /Views gained:\s*[\d,.]+\s*เท่า/iu);
 });
@@ -151,14 +151,14 @@ test('weekly display keeps KPI metrics and only the highest-ranked content for e
   const facebookSection = sections.find((section) => section.channelKey === 'facebook_organic');
   const youtubeSection = sections.find((section) => section.channelKey === 'youtube_organic');
 
-  assert.ok(facebookSection.lines.includes('• Views gained: 17,508 (-35.62% เทียบช่วงก่อน)'));
+  assert.ok(facebookSection.lines.includes('• Views gained: 17,508 ครั้ง (-35.62% เทียบช่วงก่อน)'));
   assert.ok(facebookSection.lines.includes('• Content #1: Facebook best content — Views 120,000'));
   assert.ok(!facebookSection.lines.includes('• Facebook best content: 120,000'));
   assert.equal(facebookSection.lines.filter((line) => line.includes('Facebook best content')).length, 1);
   assert.ok(!facebookSection.lines.some((line) => line.includes('Content #2:')));
   assert.ok(!facebookSection.lines.some((line) => line.includes('Content #3:')));
 
-  assert.ok(youtubeSection.lines.includes('• Views gained: 268,129 (+58.85% เทียบช่วงก่อน)'));
+  assert.ok(youtubeSection.lines.includes('• Views gained: 268,129 ครั้ง (+58.85% เทียบช่วงก่อน)'));
   assert.ok(youtubeSection.lines.includes('• Content #1: YouTube best content — Views 310,000'));
   assert.ok(!youtubeSection.lines.some((line) => line.includes('Content #2:')));
 });
@@ -220,7 +220,7 @@ test('factual report builder removes ranked content rows from KPI metrics before
 
   const section = buildLarkWeekly7dDisplaySections(report)
     .find((item) => item.channelKey === 'tiktok_organic');
-  assert.ok(section.lines.includes('• Views gained: 50,000 (+25% เทียบช่วงก่อน)'));
+  assert.ok(section.lines.includes('• Views gained: 50,000 ครั้ง (+25% เทียบช่วงก่อน)'));
   assert.ok(section.lines.includes(`• Content #1: ${caption} — Views 9,147 | Engagement 100 | ER 0.01% | Shares 2`));
   assert.ok(!section.lines.includes(`• ${caption}: 9,147`));
   assert.equal(section.lines.filter((line) => line.includes(caption)).length, 1);
