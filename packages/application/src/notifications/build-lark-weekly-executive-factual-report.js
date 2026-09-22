@@ -41,7 +41,7 @@ export function buildLarkWeeklyExecutiveFactualReport(input = {}) {
     const bundle = byChannel.get(channel.channelKey) ?? null;
     if (!bundle) return emptyChannel(channel);
     const metrics = bundle.metricValues
-      .filter(isUsableExecutiveMetric)
+      .filter((metric) => isUsableExecutiveMetric(metric, bundle))
       .sort(compareMetric)
       .slice(0, MAX_METRICS_PER_CHANNEL)
       .map(normalizeFactualMetric);
@@ -117,9 +117,6 @@ function normalizeFactualReport(value) {
     if (!contract || item.displayName !== contract.displayName) {
       throw new TypeError('Weekly Executive factual channel identity is invalid');
     }
-    const metrics = requireArray(item.metrics ?? [], 'factualReport.channel.metrics')
-      .slice(0, MAX_METRICS_PER_CHANNEL)
-      .map(normalizeFactualMetric);
     const contentCandidates = normalizeCandidateCollection(
       item.contentCandidates,
       item.topContent,
@@ -134,6 +131,10 @@ function normalizeFactualReport(value) {
       normalizeTopAd,
       'factualReport.channel.adCandidates',
     );
+    const metrics = requireArray(item.metrics ?? [], 'factualReport.channel.metrics')
+      .filter((metric) => !isRankedEntityMetric(metric, contentCandidates, adCandidates))
+      .slice(0, MAX_METRICS_PER_CHANNEL)
+      .map(normalizeFactualMetric);
     const topContent = contentCandidates[0] ?? null;
     const topAd = adCandidates[0] ?? null;
     return deepFreeze({
@@ -210,7 +211,7 @@ function emptyChannel(channel) {
   });
 }
 
-function isUsableExecutiveMetric(metric) {
+function isUsableExecutiveMetric(metric, bundle) {
   if (!metric || typeof metric !== 'object') return false;
   const scope = metric.metric_scope ?? metric.metricScope ?? 'summary';
   const dimension = metric.dimension_type ?? metric.dimensionType ?? 'summary';
@@ -220,7 +221,35 @@ function isUsableExecutiveMetric(metric) {
     && dimension === 'summary'
     && !metricKey.includes(':dimension:')
     && availability === 'available'
-    && finiteOrNull(metric.current_value ?? metric.currentValue) !== null;
+    && finiteOrNull(metric.current_value ?? metric.currentValue) !== null
+    && !isRankedEntityMetric(metric, bundle?.topContent, bundle?.topAds);
+}
+
+function isRankedEntityMetric(metric, contentRows = [], adRows = []) {
+  if (!metric || typeof metric !== 'object') return false;
+  const displayName = comparableText(metric.displayName ?? metric.display_name);
+  const metricKey = String(metric.metricKey ?? metric.metric_key ?? '');
+  const labels = new Set();
+  const identifiers = [];
+  for (const row of Array.isArray(contentRows) ? contentRows : []) {
+    const label = comparableText(row?.caption);
+    const identifier = optionalText(row?.externalContentId ?? row?.external_content_id);
+    if (label) labels.add(label);
+    if (identifier) identifiers.push(identifier);
+  }
+  for (const row of Array.isArray(adRows) ? adRows : []) {
+    const label = comparableText(row?.adName ?? row?.ad_name);
+    const identifier = optionalText(row?.externalAdId ?? row?.external_ad_id);
+    if (label) labels.add(label);
+    if (identifier) identifiers.push(identifier);
+  }
+  if (displayName && labels.has(displayName)) return true;
+  return identifiers.some((identifier) => metricKey.includes(identifier));
+}
+
+function comparableText(value) {
+  const text = optionalText(value);
+  return text ? text.replace(/\s+/gu, ' ').trim() : null;
 }
 
 function compareMetric(left, right) {
