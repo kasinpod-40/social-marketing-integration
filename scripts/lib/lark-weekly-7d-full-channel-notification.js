@@ -17,7 +17,7 @@ import {
 } from './lark-weekly-7d-notification-admission.js';
 
 export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONTRACT_VERSION =
-  'lark_weekly_7d_full_channel_notification_v3';
+  'lark_weekly_7d_full_channel_notification_v4';
 export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION',
   value: 'SEND_ONE_CORRECTED_FULL_CHANNEL_WEEKLY_7D',
@@ -28,6 +28,13 @@ export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_PREFIX =
 const HASH = /^[a-f0-9]{64}$/u;
 const FACTUAL_BULLET = /^•\s+/u;
 const NON_KPI_BULLET = /^•\s+(?:Content|Ad)\s+#/u;
+const CONTENT_BULLET = /^•\s+Content\s+#\d+:/u;
+const ORGANIC_CHANNEL_KEYS = new Set([
+  'tiktok_organic',
+  'facebook_organic',
+  'instagram_organic',
+  'youtube_organic',
+]);
 
 export function assertLarkWeekly7dFullChannelNotificationConfirmation(env = {}) {
   const confirmation = LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONFIRMATION;
@@ -82,6 +89,21 @@ export function buildLarkWeekly7dFactualOverview(value) {
   return lines.join('\n');
 }
 
+export function buildLarkWeekly7dDisplaySections(value) {
+  const sections = renderLarkWeeklyExecutiveChannelSections(value);
+  return Object.freeze(sections.map((section) => {
+    if (!ORGANIC_CHANNEL_KEYS.has(section.channelKey)) return section;
+    const topContent = section.lines.find((line) => CONTENT_BULLET.test(line)) ?? null;
+    const lines = section.lines.filter((line) => !CONTENT_BULLET.test(line));
+    if (topContent) lines.push(topContent);
+    return Object.freeze({
+      channelKey: section.channelKey,
+      heading: section.heading,
+      lines: Object.freeze(lines),
+    });
+  }));
+}
+
 export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
   const base = buildLarkWeekly7dNotificationAdmissionRow(input.sourceRecord);
   const factual = parseLarkWeeklyExecutiveFactualReport(input.factualReport);
@@ -123,7 +145,7 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
   );
 
   const factualJson = serializeLarkWeeklyExecutiveFactualReport(factual);
-  const sections = renderLarkWeeklyExecutiveChannelSections(factual);
+  const sections = buildLarkWeekly7dDisplaySections(factual);
   const factualOverview = buildLarkWeekly7dFactualOverview(factual);
   const sourceInsight = acceptedSynthesis.outputs.insight_summary;
   const strengths = acceptedSynthesis.outputs.strengths;
@@ -201,11 +223,18 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
 export function assertFullChannelMessage(input = {}) {
   const admission = requireObject(input.admission, 'admission');
   const text = requireText(input.messageText, 'messageText');
-  const sections = renderLarkWeeklyExecutiveChannelSections(admission.factualReport);
+  const sections = buildLarkWeekly7dDisplaySections(admission.factualReport);
   const invalid = [];
   if (sections.length !== 9) invalid.push('channelSectionCount');
   for (const section of sections) {
     if (!text.includes(section.heading)) invalid.push(`missing:${section.channelKey}`);
+    const contentLines = section.lines.filter((line) => CONTENT_BULLET.test(line));
+    if (ORGANIC_CHANNEL_KEYS.has(section.channelKey) && contentLines.length > 1) {
+      invalid.push(`multipleTopContent:${section.channelKey}`);
+    }
+    for (const line of contentLines) {
+      if (!text.includes(line)) invalid.push(`missingTopContent:${section.channelKey}`);
+    }
   }
   if (!text.includes(admission.factualOverview)) invalid.push('factualOverview');
   if (text.includes(admission.originalAiOutputs.sourceInsight)) invalid.push('unsafeAiOverview');
