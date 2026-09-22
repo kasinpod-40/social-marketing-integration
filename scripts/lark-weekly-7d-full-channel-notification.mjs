@@ -395,7 +395,7 @@ async function prepare(mode) {
   if (mode === 'execute') assertLarkWeekly7dFullChannelNotificationConfirmation(env);
   if (mode === 'recover') assertRecoveryConfirmation(env);
   exact(env.MKT_ENV, 'development', 'MKT_ENV');
-  exact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
+  exact(env.MKT_CUSTOMER_PROFILE, 'chemistry_k', 'MKT_CUSTOMER_PROFILE');
   exact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
 
   stage = 'repository-preflight';
@@ -452,6 +452,7 @@ async function prepare(mode) {
   const expectedPeriod = sourcePeriod(sourceRecord.fields);
   const currentPeriodSource = await collectLarkNativeAiWeekly7dControlledUatSource({
     client,
+    customerProfile: env.MKT_CUSTOMER_PROFILE,
     targetPeriodEnd: expectedPeriod.periodEnd,
   });
   const collected = selectAcceptedSourceBundles(
@@ -579,7 +580,7 @@ function buildPreviewRequest(context) {
     snapshot: Object.freeze({
       reportId: context.admission.reportId,
       reportSettingKey: context.settingsAuthority.settingKeys[0],
-      customerProfile: 'integration_workspace',
+      customerProfile: context.env.MKT_CUSTOMER_PROFILE,
       periodStart: context.factualReport.period.periodStart,
       periodEnd: context.factualReport.period.periodEnd,
     }),
@@ -614,7 +615,7 @@ async function reconcileAdmissionRow(context) {
 
 function assertDeliveryChain(context, request) {
   if (!request.settings.enabled || !request.settings.aiEnabled || !request.settings.notificationEnabled
-      || request.snapshot.customerProfile !== 'integration_workspace'
+      || request.snapshot.customerProfile !== context.env.MKT_CUSTOMER_PROFILE
       || Number(request.aiRun.windowDays) !== 7
       || request.aiRun.aiRunKey !== context.admission.aiRunKey
       || request.aiRun.notificationEligible !== true
