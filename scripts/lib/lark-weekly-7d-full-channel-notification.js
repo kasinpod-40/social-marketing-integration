@@ -17,7 +17,7 @@ import {
 } from './lark-weekly-7d-notification-admission.js';
 
 export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONTRACT_VERSION =
-  'lark_weekly_7d_full_channel_notification_v2';
+  'lark_weekly_7d_full_channel_notification_v3';
 export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION',
   value: 'SEND_ONE_CORRECTED_FULL_CHANNEL_WEEKLY_7D',
@@ -26,6 +26,8 @@ export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_PREFIX =
   'notification-weekly-7d:full-channel:';
 
 const HASH = /^[a-f0-9]{64}$/u;
+const FACTUAL_BULLET = /^•\s+/u;
+const NON_KPI_BULLET = /^•\s+(?:Content|Ad)\s+#/u;
 
 export function assertLarkWeekly7dFullChannelNotificationConfirmation(env = {}) {
   const confirmation = LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONFIRMATION;
@@ -62,6 +64,22 @@ export function assertLarkWeekly7dFullChannelSourceAlignment(input = {}) {
     sourceReportIds: Object.freeze(expectedReportIds),
     period: expectedPeriod,
   });
+}
+
+export function buildLarkWeekly7dFactualOverview(value) {
+  const sections = renderLarkWeeklyExecutiveChannelSections(value);
+  const lines = sections.flatMap((section) => {
+    const metricLine = section.lines.find((line) => FACTUAL_BULLET.test(line) && !NON_KPI_BULLET.test(line));
+    if (!metricLine) return [];
+    return [`• ${section.heading} — ${metricLine.replace(FACTUAL_BULLET, '')}`];
+  });
+  if (lines.length === 0) {
+    throw fullChannelError(
+      'Corrected Weekly factual overview requires at least one factual KPI',
+      'LARK_WEEKLY_7D_FULL_CHANNEL_FACTUAL_OVERVIEW_EMPTY',
+    );
+  }
+  return lines.join('\n');
 }
 
 export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
@@ -106,12 +124,13 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
 
   const factualJson = serializeLarkWeeklyExecutiveFactualReport(factual);
   const sections = renderLarkWeeklyExecutiveChannelSections(factual);
+  const factualOverview = buildLarkWeekly7dFactualOverview(factual);
   const sourceInsight = acceptedSynthesis.outputs.insight_summary;
   const strengths = acceptedSynthesis.outputs.strengths;
   const weaknesses = acceptedSynthesis.outputs.weaknesses;
   const recommendations = acceptedSynthesis.outputs.recommendations;
   const composedInsight = [
-    sourceInsight,
+    factualOverview,
     '',
     ...sections.flatMap((section) => [section.heading, ...section.lines, '']),
   ].join('\n').trim();
@@ -170,6 +189,7 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
     factualReport: factual,
     channelSectionCount: sections.length,
     businessFactChannelCount: factual.businessFactChannelCount,
+    factualOverview,
     composedInsight,
     originalAiOutputs: Object.freeze({ sourceInsight, strengths, weaknesses, recommendations }),
     qualityGate: acceptedSynthesis.qualityGate,
@@ -187,10 +207,12 @@ export function assertFullChannelMessage(input = {}) {
   for (const section of sections) {
     if (!text.includes(section.heading)) invalid.push(`missing:${section.channelKey}`);
   }
-  if (!text.includes(admission.originalAiOutputs.sourceInsight)) invalid.push('sourceInsight');
+  if (!text.includes(admission.factualOverview)) invalid.push('factualOverview');
+  if (text.includes(admission.originalAiOutputs.sourceInsight)) invalid.push('unsafeAiOverview');
   if (!text.includes(admission.originalAiOutputs.strengths)) invalid.push('strengths');
   if (!text.includes(admission.originalAiOutputs.weaknesses)) invalid.push('weaknesses');
   if (!text.includes(admission.originalAiOutputs.recommendations)) invalid.push('recommendations');
+  if (/Views gained:\s*[\d,.]+\s*เท่า/iu.test(text)) invalid.push('countUnitLeak');
   if (/report_partial|report_available|readiness_status|data_status|สถานะข้อมูล/iu.test(text)) {
     invalid.push('internalReadinessLeak');
   }
