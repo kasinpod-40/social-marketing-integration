@@ -46,3 +46,19 @@ test('operator uploads only an isolated Preview version and preserves Production
   assert.match(OPERATOR, /delete config\.queues/u);
   assert.doesNotMatch(OPERATOR, /wrangler', 'deploy/u);
 });
+
+test('operator hydrates Preview vars from exact active Customer PROD version without copying secrets', () => {
+  assert.match(OPERATOR, /readActivePlainTextBindings/u);
+  assert.match(OPERATOR, /workers\/scripts\/\$\{WORKER\}\/versions\/\$\{encodeURIComponent\(versionId\)\}/u);
+  assert.match(OPERATOR, /\.\.\.activePlainTextBindings/u);
+  assert.match(OPERATOR, /binding\?\.type !== 'plain_text'/u);
+  assert.doesNotMatch(OPERATOR, /secret_text.*binding\.text/u);
+  assert.match(OPERATOR, /MKT_NOTIFICATION_DESTINATION_CHAT_NAME/u);
+  assert.match(OPERATOR, /MKT_NOTIFICATION_DESTINATION_KEY_HASH/u);
+});
+
+test('operator requires explicit Customer PROD config and keeps remote runtime failures diagnosable', () => {
+  assert.match(OPERATOR, /MKT_CUSTOMER_WRANGLER_CONFIG is required/u);
+  assert.doesNotMatch(OPERATOR, /\.customer-youtube-uat\.wrangler\.jsonc/u);
+  assert.match(OPERATOR, /body\?\.error \|\| `Weekly format correction failed with HTTP/u);
+});
