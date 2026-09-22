@@ -37,7 +37,10 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     'Report Settings exceeded the bounded weekly UAT inventory',
     'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_SETTINGS_LIMIT_EXCEEDED',
   );
-  const settings = selectWeeklySettings(settingsPage.records, customerProfile);
+  let settings = selectWeeklySettings(settingsPage.records, customerProfile);
+  if (settings.length === 0 && targetPeriodEnd) {
+    settings = buildRetainedExactPeriodSettings(customerProfile);
+  }
   if (settings.length === 0) throw sourceError(
     'No enabled Customer 7D Dashboard Report setting is available',
     'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_SETTINGS_MISSING',
@@ -252,6 +255,19 @@ function selectWeeklySettings(records, customerProfile) {
     }));
   }
   return deepFreeze(output.sort((a, b) => a.channelKey.localeCompare(b.channelKey)));
+}
+
+function buildRetainedExactPeriodSettings(customerProfile) {
+  return deepFreeze(LARK_NATIVE_AI_CHANNELS.map((channel) => deepFreeze({
+    channelKey: channel.channelKey,
+    platform: channel.platform,
+    capability: channel.capability,
+    reportSettingKey: `${customerProfile}:${channel.platform}:rolling:7d`,
+    accountId: null,
+    enabled: true,
+    reportType: REPORT_TYPE,
+    windowDays: 7,
+  })).sort((a, b) => a.channelKey.localeCompare(b.channelKey)));
 }
 
 function assertUniqueChannelSettings(settings) {
