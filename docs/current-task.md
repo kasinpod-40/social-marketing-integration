@@ -74,6 +74,19 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — Customer Weekly factual format and Organic Top 1 (2026-09-23)
+
+- The shared Weekly renderer now shows only the highest-ranked in-period Content (`Content #1`) for each
+  Organic platform. It still retains bounded additional candidates as internal decision evidence, and Paid Ads
+  keep their existing customer-visible maximum of three candidates.
+- Count semantics remain explicit: Views use `ครั้ง`, followers use `คน`, and numeric comparisons include `%`.
+  Overall Organic KPIs remain exact seven-day period metrics and are not replaced by ranked Content totals.
+- The isolated correction Preview remains read-only until a separately confirmed direct send: no Production
+  traffic, routes, triggers, queues, secrets, Report state or Base records are changed.
+- Local gates pass: focused Weekly regressions `29/29`; `npm run check`; full `npm test` with `3,424` Node and
+  `18` Workers tests; Report reliability `106/106`; audit with zero vulnerabilities; deploy dry-run; and
+  `git diff --check`. Branch Verification and exact Customer PROD Preview review remain pending.
+
 ### Authorized repair — Organic Daily growth completeness (2026-09-18)
 
 - Objective: make the normal scheduled Organic Daily path capture cumulative growth for every current

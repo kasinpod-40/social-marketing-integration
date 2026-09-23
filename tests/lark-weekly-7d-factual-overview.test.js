@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildLarkWeeklyExecutiveFactualReport,
+  renderLarkWeeklyExecutiveChannelSections,
 } from '../packages/application/src/notifications/build-lark-weekly-executive-factual-report.js';
 import { LARK_NATIVE_AI_CHANNELS } from '../packages/config/src/lark-native-ai-all-channel-contract.js';
 import {
@@ -147,9 +148,13 @@ test('weekly display keeps KPI metrics and only the highest-ranked content for e
   youtube.topContent = youtube.contentCandidates[0];
   youtube.hasBusinessFacts = true;
 
-  const sections = buildLarkWeekly7dDisplaySections(factualReport(channels));
+  const report = factualReport(channels);
+  const sections = buildLarkWeekly7dDisplaySections(report);
+  const sharedSections = renderLarkWeeklyExecutiveChannelSections(report);
   const facebookSection = sections.find((section) => section.channelKey === 'facebook_organic');
   const youtubeSection = sections.find((section) => section.channelKey === 'youtube_organic');
+  const sharedFacebookSection = sharedSections.find((section) => section.channelKey === 'facebook_organic');
+  const sharedYoutubeSection = sharedSections.find((section) => section.channelKey === 'youtube_organic');
 
   assert.ok(facebookSection.lines.includes('• Views gained: 17,508 ครั้ง (-35.62% เทียบช่วงก่อน)'));
   assert.ok(facebookSection.lines.includes('• Content #1: Facebook best content — Views 120,000'));
@@ -157,10 +162,13 @@ test('weekly display keeps KPI metrics and only the highest-ranked content for e
   assert.equal(facebookSection.lines.filter((line) => line.includes('Facebook best content')).length, 1);
   assert.ok(!facebookSection.lines.some((line) => line.includes('Content #2:')));
   assert.ok(!facebookSection.lines.some((line) => line.includes('Content #3:')));
+  assert.ok(!sharedFacebookSection.lines.some((line) => line.includes('Content #2:')));
+  assert.ok(!sharedFacebookSection.lines.some((line) => line.includes('Content #3:')));
 
   assert.ok(youtubeSection.lines.includes('• Views gained: 268,129 ครั้ง (+58.85% เทียบช่วงก่อน)'));
   assert.ok(youtubeSection.lines.includes('• Content #1: YouTube best content — Views 310,000'));
   assert.ok(!youtubeSection.lines.some((line) => line.includes('Content #2:')));
+  assert.ok(!sharedYoutubeSection.lines.some((line) => line.includes('Content #2:')));
 });
 
 test('factual report builder removes ranked content rows from KPI metrics before rendering', () => {

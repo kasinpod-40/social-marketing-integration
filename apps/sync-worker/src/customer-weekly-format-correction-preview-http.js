@@ -197,6 +197,7 @@ export function createCustomerWeeklyFormatCorrectionPreviewHttpHandler(dependenc
         sourceMode: source.selectionPolicy,
         sourceReportCount: source.sourceReportIds.length,
         businessFactChannelCount: factualReport.businessFactChannelCount,
+        renderedContentLimitPerOrganicChannel: 1,
         renderedAdLimitPerChannel: 3,
         deterministicOverview: true,
         qualityGatePassed: true,

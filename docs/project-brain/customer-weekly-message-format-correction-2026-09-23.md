@@ -19,7 +19,9 @@ Correct the Customer Weekly Executive message for `2026-09-14..2026-09-20` witho
 - Required numeric facts must remain attached to their factual channel.
 - When the AI overview violates those rules, the automatic runtime may replace only the in-memory overview with a deterministic three-channel factual projection and then rerun the unchanged complete quality gate.
 - The deterministic overview preserves up to four decimal places for comparison percentages, so a factual `0.4743` change is rendered as `(เพิ่ม 0.4743%)`.
-- Channel sections and Paid Ads keep the existing maximum of three rendered candidates per channel.
+- Organic channel sections render only the highest-ranked in-period Content (`Content #1`) for each platform.
+  Additional retained candidates remain available as bounded evidence but are not shown to the customer.
+- Paid Ads keep the existing maximum of three rendered candidates per channel.
 
 ## One-off correction transport
 

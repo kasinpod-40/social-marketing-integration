@@ -35,6 +35,7 @@ test('preview is read-only and send has one new idempotent direct-message identi
   assert.ok(sendCall > previewReturn);
   assert.match(HANDLER, /weekly-exec-20260920-format-correction-v2/u);
   assert.match(HANDLER, /already_visible_exact_message/u);
+  assert.match(HANDLER, /renderedContentLimitPerOrganicChannel:\s*1/u);
   assert.doesNotMatch(HANDLER, /MKT_SYNC_QUEUE\.send|queue\.send/u);
 });
 
@@ -44,7 +45,7 @@ test('operator uploads only an isolated Preview version and preserves Production
   assert.match(OPERATOR, /preview_urls = true/u);
   assert.match(OPERATOR, /delete config\.triggers/u);
   assert.match(OPERATOR, /delete config\.queues/u);
-  assert.doesNotMatch(OPERATOR, /wrangler', 'deploy/u);
+  assert.doesNotMatch(OPERATOR, /['"]wrangler['"],\s*['"]deploy['"]/u);
 });
 
 test('operator hydrates Preview vars from exact active Customer PROD version without copying secrets', () => {
