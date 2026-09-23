@@ -9,10 +9,13 @@ const LEGACY_FACTUAL_REPORT_SHAPES = new Set(['executive_notification_full_chann
 const MAX_METRICS_PER_CHANNEL = 4;
 const MAX_CONTENT_CANDIDATES_PER_CHANNEL = 5;
 const MAX_AD_CANDIDATES_PER_CHANNEL = 5;
-const MAX_RENDERED_CANDIDATES_PER_CHANNEL = 3;
+const MAX_RENDERED_CONTENT_CANDIDATES_PER_CHANNEL = 1;
+const MAX_RENDERED_AD_CANDIDATES_PER_CHANNEL = 3;
 const EXECUTIVE_METRIC_SCOPES = new Set(['period_delta', 'summary', 'current_total']);
 const PLACEHOLDER = /^(?:ไม่มีข้อมูล|no[_ -]?data|not[_ -]?available|unavailable|placeholder)$/iu;
 const INVALID_URL = /invalid\.example/iu;
+const VIEW_COUNT_METRIC = /(?:views?|ยอดดู)/iu;
+const FOLLOWER_COUNT_METRIC = /(?:followers?|follows?|subscribers?|ผู้ติดตาม)/iu;
 const CHANNEL_ICONS = Object.freeze({
   tiktok_organic: '🎵',
   facebook_organic: '📘',
@@ -354,10 +357,10 @@ function normalizeTopAd(raw) {
 function renderChannelLines(channel) {
   if (!channel.hasBusinessFacts) return ['ยังไม่พบข้อมูลสำหรับช่วงนี้'];
   const lines = channel.metrics.map((metric) => `• ${metric.displayName}: ${formatMetric(metric)}${formatComparison(metric)}`);
-  for (const item of channel.contentCandidates.slice(0, MAX_RENDERED_CANDIDATES_PER_CHANNEL)) {
+  for (const item of channel.contentCandidates.slice(0, MAX_RENDERED_CONTENT_CANDIDATES_PER_CHANNEL)) {
     lines.push(`• Content #${item.rank}: ${item.caption}${formatTopContentFacts(item)}`);
   }
-  for (const item of channel.adCandidates.slice(0, MAX_RENDERED_CANDIDATES_PER_CHANNEL)) {
+  for (const item of channel.adCandidates.slice(0, MAX_RENDERED_AD_CANDIDATES_PER_CHANNEL)) {
     lines.push(`• Ad #${item.rank}: ${item.adName}${formatTopAdFacts(item)}`);
   }
   return lines.length > 0 ? lines : ['ยังไม่พบข้อมูลสำหรับช่วงนี้'];
@@ -368,10 +371,19 @@ function formatMetric(metric) {
   const unit = metric.unit.toLowerCase();
   if (unit === 'percent' || unit === 'percentage' || unit === '%') return `${formatNumber(value, 2)}%`;
   if (unit === 'currency') return formatNumber(value, 2);
-  if (unit === 'count') return formatNumber(value, Number.isInteger(value) ? 0 : 2);
+  if (unit === 'count') {
+    return `${formatNumber(value, Number.isInteger(value) ? 0 : 2)}${countPresentationSuffix(metric)}`;
+  }
   if (unit === 'seconds') return `${formatNumber(value, 2)} วินาที`;
   if (unit === 'minutes') return `${formatNumber(value, 2)} นาที`;
   return formatNumber(value, 2);
+}
+
+function countPresentationSuffix(metric) {
+  const identity = `${metric.metricKey} ${metric.displayName}`;
+  if (VIEW_COUNT_METRIC.test(identity)) return ' ครั้ง';
+  if (FOLLOWER_COUNT_METRIC.test(identity)) return ' คน';
+  return '';
 }
 
 function formatComparison(metric) {

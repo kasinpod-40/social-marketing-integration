@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-23 — Customer Weekly factual format and Organic Top 1
+
+- render only the highest-ranked in-period Content for each Organic platform in the shared Weekly customer
+  message while retaining additional bounded candidates as internal AI decision evidence;
+- preserve up to three Paid Ads candidates, exact seven-day KPI facts, semantic count units and percentage
+  comparison suffixes across both the one-off correction Preview and future automatic Weekly delivery;
+- resolve an exact retained period across formula-version evolution without changing the stored Report identity,
+  and repair stale recommendation prose only from retained Content, Ad and funnel evidence before rerunning the
+  unchanged complete quality gate;
+- deliver the reviewed `2026-09-14..2026-09-20` correction exactly once through an isolated Preview with eight
+  exact sources, zero Production traffic change, zero D1/Base writes and zero Queue admissions;
+- tighten the Preview-operator safety regression to distinguish the read-only `wrangler deployments status`
+  command from the forbidden exact `wrangler deploy` command without weakening the no-deploy guard.
+
 ## 2026-09-18 — Scheduled Organic Daily growth completeness
 
 - bound Meta provider source work per Queue invocation with a default of one unit and an explicit maximum of 25;

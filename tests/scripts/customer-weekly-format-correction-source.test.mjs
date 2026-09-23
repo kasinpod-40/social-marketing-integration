@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+const HANDLER = await readFile(
+  new URL('../../apps/sync-worker/src/customer-weekly-format-correction-preview-http.js', import.meta.url),
+  'utf8',
+);
+const OPERATOR = await readFile(
+  new URL('../../scripts/customer-weekly-format-correction.mjs', import.meta.url),
+  'utf8',
+);
+
+test('weekly correction uses exact Customer PROD retained D1 facts and shared format quality', () => {
+  assert.match(HANDLER, /collectRetainedD1Weekly7dSource/u);
+  assert.match(HANDLER, /targetPeriodEnd:\s*PERIOD_END/u);
+  assert.match(HANDLER, /buildLarkWeeklyExecutiveFactualReport/u);
+  assert.match(HANDLER, /buildLarkWeeklyExecutiveDeterministicInsightSummary/u);
+  assert.match(HANDLER, /validateLarkWeeklyExecutiveFullChannelAiOutputs/u);
+  assert.match(HANDLER, /PERIOD_START = '2026-09-14'/u);
+  assert.match(HANDLER, /PERIOD_END = '2026-09-20'/u);
+});
+
+test('weekly correction resolves the reviewed customer destination and never persists raw destination', () => {
+  assert.match(HANDLER, /expectedName:\s*env\.MKT_NOTIFICATION_DESTINATION_CHAT_NAME/u);
+  assert.match(HANDLER, /expectedDestinationKeyHash:\s*env\.MKT_NOTIFICATION_DESTINATION_KEY_HASH/u);
+  assert.match(HANDLER, /Chemistry K — Marketing Alerts/u);
+  assert.doesNotMatch(HANDLER, /chat_id\s*[:=]\s*['"][^'"]+['"]/u);
+});
+
+test('preview is read-only and send has one new idempotent direct-message identity', () => {
+  const previewReturn = HANDLER.indexOf("if (body.mode === 'preview')");
+  const sendCall = HANDLER.indexOf('/open-apis/im/v1/messages?receive_id_type=chat_id&uuid=');
+  assert.ok(previewReturn > 0);
+  assert.ok(sendCall > previewReturn);
+  assert.match(HANDLER, /weekly-exec-20260920-format-correction-v2/u);
+  assert.match(HANDLER, /already_visible_exact_message/u);
+  assert.match(HANDLER, /duplicateCheckMode: visibility\.mode/u);
+  assert.match(HANDLER, /LARK_PERMANENT_API_ERROR/u);
+  assert.match(HANDLER, /larkCode\) === 230027/u);
+  assert.match(HANDLER, /fixed_lark_uuid/u);
+  assert.match(HANDLER, /renderedContentLimitPerOrganicChannel:\s*1/u);
+  assert.doesNotMatch(HANDLER, /MKT_SYNC_QUEUE\.send|queue\.send/u);
+});
+
+test('operator uploads only an isolated Preview version and preserves Production traffic', () => {
+  assert.match(OPERATOR, /versions', 'upload/u);
+  assert.match(OPERATOR, /productionTrafficChanged:\s*false/u);
+  assert.match(OPERATOR, /preview_urls = true/u);
+  assert.match(OPERATOR, /delete config\.triggers/u);
+  assert.match(OPERATOR, /delete config\.queues/u);
+  assert.doesNotMatch(OPERATOR, /['"]wrangler['"],\s*['"]deploy['"]/u);
+});
+
+test('operator hydrates Preview vars from exact active Customer PROD version without copying secrets', () => {
+  assert.match(OPERATOR, /readActivePlainTextBindings/u);
+  assert.match(OPERATOR, /workers\/scripts\/\$\{WORKER\}\/versions\/\$\{encodeURIComponent\(versionId\)\}/u);
+  assert.match(OPERATOR, /\.\.\.activePlainTextBindings/u);
+  assert.match(OPERATOR, /binding\?\.type !== 'plain_text'/u);
+  assert.doesNotMatch(OPERATOR, /secret_text.*binding\.text/u);
+  assert.match(OPERATOR, /MKT_NOTIFICATION_DESTINATION_CHAT_NAME/u);
+  assert.match(OPERATOR, /MKT_NOTIFICATION_DESTINATION_KEY_HASH/u);
+  assert.match(OPERATOR, /PREVIEW_AUTH_BINDING = 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR'/u);
+  assert.match(OPERATOR, /\[PREVIEW_AUTH_BINDING\]: tokenSha256/u);
+  assert.match(OPERATOR, /name !== PREVIEW_AUTH_BINDING && plainText\[name\] === ''/u);
+  assert.doesNotMatch(OPERATOR, /MKT_WEEKLY_FORMAT_CORRECTION_TOKEN_SHA256/u);
+  assert.match(HANDLER, /env\?\.\[PREVIEW_AUTH_BINDING\]/u);
+});
+
+test('operator requires explicit Customer PROD config and keeps remote runtime failures diagnosable', () => {
+  assert.match(OPERATOR, /MKT_CUSTOMER_WRANGLER_CONFIG is required/u);
+  assert.doesNotMatch(OPERATOR, /\.customer-youtube-uat\.wrangler\.jsonc/u);
+  assert.match(OPERATOR, /body\?\.error \|\| `Weekly format correction failed with HTTP/u);
+  assert.match(OPERATOR, /const commandStage = \[command, \.\.\.args\.slice\(0, 3\)\]/u);
+  assert.match(OPERATOR, /exitStatus: Number\.isInteger\(result\.status\)/u);
+  assert.doesNotMatch(OPERATOR, /result\.stderr/u);
+});

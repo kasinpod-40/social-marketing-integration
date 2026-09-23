@@ -17,6 +17,46 @@ export class D1ReportMaterializationReader {
     return row ? validateRow(row) : null;
   }
 
+  /**
+   * Read the newest exact period identity without assuming the formula version.
+   *
+   * Historical materializations can legitimately retain an older formula row while a
+   * newer deployed Report contract writes the same setting/period under a new formula
+   * version. The period dimensions remain the immutable lookup boundary; generated_at
+   * selects the authoritative latest formula revision for that exact boundary.
+   */
+  async readLatestForPeriod(input = {}) {
+    const customerKey = requireText(input.customerKey, 'customerKey');
+    const accountKey = requireText(input.accountKey, 'accountKey');
+    const platformScope = requireText(input.platformScope, 'platformScope');
+    const reportSettingKey = requireText(input.reportSettingKey, 'reportSettingKey');
+    const periodKind = requireText(input.periodKind, 'periodKind');
+    const periodStart = requireDateOnly(input.periodStart, 'periodStart');
+    const periodEnd = requireDateOnly(input.periodEnd, 'periodEnd');
+    if (periodStart > periodEnd) throw new RangeError('periodStart must not be after periodEnd');
+    const windowDays = optionalPositiveInteger(input.windowDays, 'windowDays');
+    const windowCondition = windowDays === null ? 'window_days IS NULL' : 'window_days = ?';
+    const bindings = [
+      customerKey,
+      accountKey,
+      platformScope,
+      reportSettingKey,
+      periodKind,
+      periodStart,
+      periodEnd,
+      ...(windowDays === null ? [] : [windowDays]),
+    ];
+    const row = await this.#first(`
+      SELECT * FROM report_materializations
+      WHERE customer_key = ? AND account_key = ? AND platform_scope = ?
+        AND report_setting_key = ? AND period_kind = ?
+        AND period_start = ? AND period_end = ? AND ${windowCondition}
+      ORDER BY generated_at DESC, report_id ASC
+      LIMIT 1
+    `, bindings);
+    return row ? validateRow(row) : null;
+  }
+
   async readLatest(input = {}) {
     const customerKey = requireText(input.customerKey, 'customerKey');
     const accountKey = requireText(input.accountKey, 'accountKey');
@@ -106,4 +146,14 @@ function optionalText(value) { return typeof value === 'string' && value.trim() 
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
   return value.trim();
+}
+function requireDateOnly(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) throw new TypeError(`${fieldName} must be YYYY-MM-DD`);
+  return text;
+}
+function optionalPositiveInteger(value, fieldName) {
+  if (value === null || value === undefined) return null;
+  if (!Number.isInteger(value) || value <= 0) throw new TypeError(`${fieldName} must be a positive integer or null`);
+  return value;
 }

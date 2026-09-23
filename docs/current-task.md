@@ -74,6 +74,32 @@ customer Production ownership tuple. Reuse the migrated D1 state and customer Ba
 Integration Workspace path, reject foreign Production profiles/ownership, deploy dark after review, then
 enable and verify one connector schedule at a time before Report/AI/Notification activation.
 
+### Implementation result — Customer Weekly factual format and Organic Top 1 (2026-09-23)
+
+- The shared Weekly renderer now shows only the highest-ranked in-period Content (`Content #1`) for each
+  Organic platform. It still retains bounded additional candidates as internal decision evidence, and Paid Ads
+  keep their existing customer-visible maximum of three candidates.
+- Count semantics remain explicit: Views use `ครั้ง`, followers use `คน`, and numeric comparisons include `%`.
+  Overall Organic KPIs remain exact seven-day period metrics and are not replaced by ranked Content totals.
+- The isolated correction Preview remains read-only until a separately confirmed direct send: no Production
+  traffic, routes, triggers, queues, secrets, Report state or Base records are changed.
+- Exact-period source resolution now falls back from the canonical formula-version report key to the newest
+  retained formula revision with the same customer/platform/report type/period identity. This recovers the
+  retained YouTube `youtube-organic-v2` row without relabelling it as the branch registry's `v1` semantics.
+- A stale retained recommendation may be repaired in memory only from the exact retained Content, Ad and funnel
+  evidence. The complete existing factual quality gate still has to pass before Preview or delivery.
+- The reviewed Customer PROD correction for `2026-09-14..2026-09-20` was sent exactly once from isolated Preview
+  version `be0d54a9-6e40-49b8-904a-e6dd8c3f7081`. It used eight exact retained Report sources, passed the full
+  quality gate, produced message hash `a08f543023749aa27e2a3a3b5f17dab040ea41fbfc5f3111e0258079ba54a1d7`,
+  and returned `sendDisposition=sent_once` / `messageSendCount=1`. Customer PROD stayed on version
+  `e065d760-30fa-4644-834a-d9ef3325fb95`; D1 writes, Lark Base writes and Queue admissions were all zero.
+- The destination bot lacks visible group-message history scope (`im:message.group_msg`). After explicit user
+  approval, this one-off send used the request's fixed Lark UUID as its duplicate guard; no second send is allowed.
+- Local gates pass: final focused Weekly regressions `16/16`; `npm run check`; full `npm test` with `3,426` Node and
+  `18` Workers tests; Report reliability `106/106`; audit with zero vulnerabilities; deploy dry-run; and
+  `git diff --check`. Branch Verification run `35804174840`, job `107001107274`, passed on implementation
+  commit `d88a25c7`; final-Head Branch Verification will run after the correction-delivery commit is pushed.
+
 ### Authorized repair — Organic Daily growth completeness (2026-09-18)
 
 - Objective: make the normal scheduled Organic Daily path capture cumulative growth for every current
