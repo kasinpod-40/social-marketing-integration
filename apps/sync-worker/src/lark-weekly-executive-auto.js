@@ -407,7 +407,17 @@ export async function collectRetainedD1Weekly7dSource(input = {}) {
       period_end: periodEnd,
       formula_version: contract.formulaVersion,
     });
-    const materialization = await reader.readById(reportId);
+    const materialization = await reader.readById(reportId)
+      ?? await readLatestExactPeriodMaterialization(reader, {
+        customerKey: customerProfile,
+        accountKey: customerProfile,
+        platformScope: contract.platformScope,
+        reportSettingKey,
+        periodKind: 'rolling_days',
+        windowDays: 7,
+        periodStart,
+        periodEnd,
+      });
     if (!materialization) throw autoError(
       'Retained Weekly Executive D1 Report is missing',
       'LARK_WEEKLY_EXECUTIVE_AUTO_RETAINED_SOURCE_INVALID',
@@ -437,6 +447,11 @@ export async function collectRetainedD1Weekly7dSource(input = {}) {
     customerProfile,
     selectionPolicy: 'exact_retained_d1_materializations',
   });
+}
+
+async function readLatestExactPeriodMaterialization(reader, identity) {
+  if (typeof reader?.readLatestForPeriod !== 'function') return null;
+  return reader.readLatestForPeriod(identity);
 }
 
 function buildRetainedD1Bundle({ channel, materialization }) {

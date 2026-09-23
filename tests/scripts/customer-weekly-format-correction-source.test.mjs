@@ -35,6 +35,10 @@ test('preview is read-only and send has one new idempotent direct-message identi
   assert.ok(sendCall > previewReturn);
   assert.match(HANDLER, /weekly-exec-20260920-format-correction-v2/u);
   assert.match(HANDLER, /already_visible_exact_message/u);
+  assert.match(HANDLER, /duplicateCheckMode: visibility\.mode/u);
+  assert.match(HANDLER, /LARK_PERMANENT_API_ERROR/u);
+  assert.match(HANDLER, /larkCode\) === 230027/u);
+  assert.match(HANDLER, /fixed_lark_uuid/u);
   assert.match(HANDLER, /renderedContentLimitPerOrganicChannel:\s*1/u);
   assert.doesNotMatch(HANDLER, /MKT_SYNC_QUEUE\.send|queue\.send/u);
 });
@@ -56,10 +60,18 @@ test('operator hydrates Preview vars from exact active Customer PROD version wit
   assert.doesNotMatch(OPERATOR, /secret_text.*binding\.text/u);
   assert.match(OPERATOR, /MKT_NOTIFICATION_DESTINATION_CHAT_NAME/u);
   assert.match(OPERATOR, /MKT_NOTIFICATION_DESTINATION_KEY_HASH/u);
+  assert.match(OPERATOR, /PREVIEW_AUTH_BINDING = 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR'/u);
+  assert.match(OPERATOR, /\[PREVIEW_AUTH_BINDING\]: tokenSha256/u);
+  assert.match(OPERATOR, /name !== PREVIEW_AUTH_BINDING && plainText\[name\] === ''/u);
+  assert.doesNotMatch(OPERATOR, /MKT_WEEKLY_FORMAT_CORRECTION_TOKEN_SHA256/u);
+  assert.match(HANDLER, /env\?\.\[PREVIEW_AUTH_BINDING\]/u);
 });
 
 test('operator requires explicit Customer PROD config and keeps remote runtime failures diagnosable', () => {
   assert.match(OPERATOR, /MKT_CUSTOMER_WRANGLER_CONFIG is required/u);
   assert.doesNotMatch(OPERATOR, /\.customer-youtube-uat\.wrangler\.jsonc/u);
   assert.match(OPERATOR, /body\?\.error \|\| `Weekly format correction failed with HTTP/u);
+  assert.match(OPERATOR, /const commandStage = \[command, \.\.\.args\.slice\(0, 3\)\]/u);
+  assert.match(OPERATOR, /exitStatus: Number\.isInteger\(result\.status\)/u);
+  assert.doesNotMatch(OPERATOR, /result\.stderr/u);
 });

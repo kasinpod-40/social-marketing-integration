@@ -328,6 +328,8 @@ const REPAIRABLE_FORMAT_VIOLATIONS = new Set([
   'insight_ctr_inconsistent_with_components',
   'insight_contains_action',
   'recommendations_missing_action_detail',
+  'recommendations_missing_funnel_divergence',
+  'recommendations_missing_evidence_anchor',
   'recommendations_unsupported_no_scale',
 ]);
 
@@ -353,20 +355,13 @@ export function repairLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, evid
     return deepFreeze({ repaired: false, outputs: { ...outputs }, qualityGate: original });
   }
 
-  const divergences = Array.isArray(evidence.funnelDivergences) ? evidence.funnelDivergences : [];
-  let lines = text(outputs.recommendations)
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (divergences.length === 0) {
-    lines = lines.filter((line) => !NO_SCALE_LANGUAGE.test(line));
-  }
-  lines = lines.map(ensureDecisionActionDetail);
-  while (lines.filter((line) => DECISION_LINE_START.test(line)).length < 2) {
-    const fallback = buildBoundedRepairDecision(evidence, lines.join('\n'));
-    if (!fallback) break;
-    lines.push(fallback);
-  }
+  const needsEvidenceRebuild = original.violations.some((code) => (
+    code === 'recommendations_missing_funnel_divergence'
+    || code === 'recommendations_missing_evidence_anchor'
+  ));
+  const lines = needsEvidenceRebuild
+    ? buildDeterministicRecommendations(evidence)
+    : repairRecommendationLines(outputs.recommendations, evidence);
 
   const repairedOutputs = Object.freeze({
     ...outputs,
@@ -390,6 +385,53 @@ export function repairLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, evid
     outputs: repairedOutputs,
     qualityGate: repairedGate,
   });
+}
+
+function repairRecommendationLines(value, evidence) {
+  const divergences = Array.isArray(evidence.funnelDivergences) ? evidence.funnelDivergences : [];
+  let lines = text(value)
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (divergences.length === 0) {
+    lines = lines.filter((line) => !NO_SCALE_LANGUAGE.test(line));
+  }
+  lines = lines.map(ensureDecisionActionDetail);
+  while (lines.filter((line) => DECISION_LINE_START.test(line)).length < 2) {
+    const fallback = buildBoundedRepairDecision(evidence, lines.join('\n'));
+    if (!fallback) break;
+    lines.push(fallback);
+  }
+  return lines;
+}
+
+function buildDeterministicRecommendations(evidence) {
+  const lines = [];
+  const content = compactCandidateLabel(evidence.contentCandidateNames?.[0], 80);
+  const ad = compactCandidateLabel(evidence.adCandidateNames?.[0], 80);
+  if (content) lines.push(`[CONTENT] ${content} ทำคอนเทนต์แนวนี้ต่อเพื่อวัดผลสัปดาห์ถัดไป`);
+  if (ad) lines.push(`[TEST] ${ad} ทดสอบต่อแบบจำกัดงบเพื่อวัดผลสัปดาห์ถัดไป`);
+
+  const divergence = evidence.funnelDivergences?.[0];
+  const positive = divergence?.positiveFacts?.[0];
+  const negative = divergence?.negativeFacts?.[0];
+  if (positive?.channel && positive?.metric && negative?.channel && negative?.metric) {
+    lines.push(
+      `[NO-SCALE] ${positive.channel} ไม่เพิ่มงบรวม เพราะ ${positive.metric} ${signedPercent(positive.changePercent)}`
+      + ` แต่ ${negative.channel} ${negative.metric} ${signedPercent(negative.changePercent)}`,
+    );
+  }
+
+  const facts = [
+    ...(Array.isArray(evidence.positiveComparisonFacts) ? evidence.positiveComparisonFacts : []),
+    ...(Array.isArray(evidence.negativeComparisonFacts) ? evidence.negativeComparisonFacts : []),
+  ];
+  for (const fact of facts) {
+    if (lines.length >= 2) break;
+    if (!fact?.channel || !fact?.metric) continue;
+    lines.push(`[KEEP] ${fact.channel} คงไว้ติดตาม ${fact.metric} ในสัปดาห์ถัดไป`);
+  }
+  return lines.slice(0, 4);
 }
 
 export function buildLarkWeeklyExecutiveDeterministicInsightSummary(evidence = {}) {

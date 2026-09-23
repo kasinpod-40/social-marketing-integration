@@ -204,6 +204,7 @@ test('retained Weekly source rebuilds the eight active channels from exact D1 ma
     reader: {
       async readById(reportId) {
         reportIds.push(reportId);
+        if (reportId.endsWith(':youtube-organic-v1')) return null;
         const platform = reportId.match(/^chemistry_k:([^:]+):rolling:7d:/u)?.[1];
         const capability = ['meta_ads', 'google_ads'].includes(platform)
           ? 'paid_ads'
@@ -250,6 +251,21 @@ test('retained Weekly source rebuilds the eight active channels from exact D1 ma
           },
         };
       },
+      async readLatestForPeriod(identity) {
+        assert.deepEqual(identity, {
+          customerKey: 'chemistry_k',
+          accountKey: 'chemistry_k',
+          platformScope: 'youtube',
+          reportSettingKey: 'chemistry_k:youtube:rolling:7d',
+          periodKind: 'rolling_days',
+          windowDays: 7,
+          periodStart: '2026-08-31',
+          periodEnd: '2026-09-06',
+        });
+        return this.readById(
+          'chemistry_k:youtube:rolling:7d:chemistry_k:rolling_days:2026-08-31:2026-09-06:youtube-organic-v2',
+        );
+      },
     },
   });
 
@@ -257,6 +273,7 @@ test('retained Weekly source rebuilds the eight active channels from exact D1 ma
   assert.equal(source.reportBundles.length, 8);
   assert.equal(source.settings.length, 8);
   assert.equal(source.selectedChannels.includes('tiktok_ads'), false);
+  assert.equal(source.sourceReportIds.some((reportId) => reportId.endsWith(':youtube-organic-v2')), true);
   assert.equal(reportIds.every((reportId) => reportId.includes(':2026-08-31:2026-09-06:')), true);
   assert.equal(source.reportBundles.every(({ payload }) => (
     payload.source === 'validated_lark_report_output'

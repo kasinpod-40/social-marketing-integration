@@ -34,6 +34,7 @@ const CONFIG_PATH_INPUT = process.env.MKT_CUSTOMER_WRANGLER_CONFIG?.trim() ?? ''
 const CONFIG_PATH = CONFIG_PATH_INPUT ? resolve(CONFIG_PATH_INPUT) : null;
 const SEND_CONFIRMATION = 'SEND_ONE_WEEKLY_20260920_FORMAT_CORRECTION_V2';
 const SEND_CONFIRMATION_ENV = 'CONFIRM_CUSTOMER_WEEKLY_FORMAT_CORRECTION';
+const PREVIEW_AUTH_BINDING = 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR';
 
 let runtimeRoot = null;
 let target = null;
@@ -196,7 +197,7 @@ function buildPreviewConfig(input, activePlainTextBindings, tokenSha256) {
   config.vars = {
     ...config.vars,
     ...activePlainTextBindings,
-    MKT_WEEKLY_FORMAT_CORRECTION_TOKEN_SHA256: tokenSha256,
+    [PREVIEW_AUTH_BINDING]: tokenSha256,
   };
   requireExact(config.vars.MKT_ENV, 'production', 'MKT_ENV');
   requireExact(config.vars.MKT_CUSTOMER_PROFILE, CUSTOMER_PROFILE, 'MKT_CUSTOMER_PROFILE');
@@ -259,8 +260,12 @@ async function readActivePlainTextBindings(token, versionId) {
     'LARK_TABLE_MKT_AI_REPORT_RUNS',
     'MKT_NOTIFICATION_DESTINATION_CHAT_NAME',
     'MKT_NOTIFICATION_DESTINATION_KEY_HASH',
+    PREVIEW_AUTH_BINDING,
   ];
-  const missing = required.filter((name) => typeof plainText[name] !== 'string' || plainText[name] === '');
+  const missing = required.filter((name) => (
+    typeof plainText[name] !== 'string'
+    || (name !== PREVIEW_AUTH_BINDING && plainText[name] === '')
+  ));
   if (missing.length > 0) {
     throw operatorError(
       'Active Production Worker version is missing required plain-text bindings',
@@ -353,7 +358,12 @@ function runText(command, args, env) {
     cwd: process.cwd(), env: { ...process.env, ...env }, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error || result.status !== 0) {
-    throw operatorError(`${command} command failed`, 'CUSTOMER_WEEKLY_FORMAT_CORRECTION_COMMAND_FAILED');
+    const commandStage = [command, ...args.slice(0, 3)].join(' ');
+    throw operatorError(
+      `${commandStage} failed`,
+      'CUSTOMER_WEEKLY_FORMAT_CORRECTION_COMMAND_FAILED',
+      { exitStatus: Number.isInteger(result.status) ? result.status : null },
+    );
   }
   return String(result.stdout ?? '').trim();
 }

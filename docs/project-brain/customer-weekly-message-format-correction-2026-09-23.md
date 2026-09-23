@@ -31,16 +31,33 @@ Preview mode:
 
 - reads Customer PROD D1 and the exact retained AI row;
 - resolves the reviewed `Chemistry K — Marketing Alerts` destination by visible name plus immutable hash;
+- reuses one existing inactive connector-selector plain-text binding for the random Preview authorization hash,
+  so the isolated version stays within Cloudflare's 250 plain-text binding limit without copying a secret;
 - returns the full message preview and hashes;
 - performs zero D1 writes, zero Lark Base writes, zero Queue admissions and zero message sends.
 
 Send mode:
 
 - requires a separate exact confirmation;
-- first checks whether the exact corrected message is already visible;
-- sends at most one direct Lark text message with a new idempotent UUID;
+- checks whether the exact corrected message is already visible when the destination bot has group-message
+  history scope; if that scope is absent, it fails closed unless the operator has explicit approval to use the
+  fixed request UUID as the one-off duplicate guard;
+- sends at most one direct Lark text message with that idempotent UUID;
 - does not delete or recall earlier customer messages;
 - does not alter Report Settings, Automation, Queue/D1 delivery state or Production Worker traffic.
+
+## Completed correction
+
+- Exact-period source selection accepted the newest retained formula revision for the same structural Report
+  identity, recovering the immutable YouTube `youtube-organic-v2` source while the branch registry names `v1`.
+- Isolated Preview version `be0d54a9-6e40-49b8-904a-e6dd8c3f7081` read all eight exact Customer PROD Report
+  materializations and passed the unchanged complete quality gate.
+- After the user reviewed the full message and explicitly approved the fixed-UUID fallback, the correction was
+  delivered exactly once with `sendDisposition=sent_once`, `messageSendCount=1`, message hash
+  `a08f543023749aa27e2a3a3b5f17dab040ea41fbfc5f3111e0258079ba54a1d7` and hashed message receipt
+  `fcad1fbd8805f603c7ae1379224042ab896847ea18c28e949f3b25f51298d23b`.
+- Customer Production traffic remained on `e065d760-30fa-4644-834a-d9ef3325fb95`; the correction performed zero
+  D1 writes, zero Lark Base writes and zero Queue admissions.
 
 ## Completion gates
 

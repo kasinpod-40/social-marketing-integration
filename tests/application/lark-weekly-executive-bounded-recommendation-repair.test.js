@@ -90,3 +90,45 @@ test('automatic Weekly uses only the repaired in-memory projection and preserves
   assert.equal(retained.fields.recommendations, outputs().recommendations);
   assert.doesNotMatch(accepted.record.fields.recommendations, /\[NO-SCALE\]/u);
 });
+
+test('rebuilds stale retained recommendations from exact candidates and funnel evidence', () => {
+  const factualEvidence = {
+    ...evidence(),
+    businessEvidenceChannelCount: 3,
+    businessEvidenceChannelNames: ['Instagram Organic', 'Meta Ads', 'WooCommerce'],
+    positiveComparisonChannelNames: ['Meta Ads'],
+    negativeComparisonChannelNames: ['WooCommerce'],
+    positiveComparisonMetricNames: ['การแสดงผล'],
+    negativeComparisonMetricNames: ['ยอดขายสุทธิ'],
+    positiveComparisonFacts: [
+      { channel: 'Meta Ads', metric: 'การแสดงผล', changePercent: 10.7 },
+    ],
+    negativeComparisonFacts: [
+      { channel: 'WooCommerce', metric: 'ยอดขายสุทธิ', changePercent: -12.3 },
+    ],
+    contentCandidateNames: ['คอนเทนต์ประจำสัปดาห์'],
+    adCandidateNames: ['โฆษณาประจำสัปดาห์'],
+    funnelDivergences: [{
+      positiveFacts: [{ channel: 'Meta Ads', metric: 'การแสดงผล', changePercent: 10.7 }],
+      negativeFacts: [{ channel: 'WooCommerce', metric: 'ยอดขายสุทธิ', changePercent: -12.3 }],
+    }],
+  };
+  const stale = {
+    ...outputs(),
+    insight_summary: 'Meta Ads มีการคลิก 120 ครั้ง และ WooCommerce มียอดขายสุทธิ 90 บาท',
+    strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้น 10.7%',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลง 12.3%',
+    recommendations: [
+      '[CONTENT] คอนเทนต์ประจำสัปดาห์',
+      '[TEST] โฆษณาประจำสัปดาห์',
+      '[KEEP] เฝ้าดูต่อ',
+    ].join('\n'),
+  };
+
+  const rejected = repairLarkWeeklyExecutiveFullChannelAiOutputs(stale, factualEvidence);
+  assert.equal(rejected.repaired, true, JSON.stringify(rejected));
+  assert.equal(rejected.qualityGate.passed, true);
+  assert.match(rejected.outputs.recommendations, /\[CONTENT\] คอนเทนต์ประจำสัปดาห์/u);
+  assert.match(rejected.outputs.recommendations, /\[TEST\] โฆษณาประจำสัปดาห์/u);
+  assert.match(rejected.outputs.recommendations, /\[NO-SCALE\].*การแสดงผล \+10\.7%.*ยอดขายสุทธิ -12\.3%/u);
+});

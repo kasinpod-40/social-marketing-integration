@@ -37,6 +37,7 @@ const DESTINATION_KEY_HASH = '6f60448415fedffbb1717f466fcd93895bf4a6bdf550ec9fc6
 const SEND_CONFIRMATION = 'SEND_ONE_WEEKLY_20260920_FORMAT_CORRECTION_V2';
 const SEND_UUID = 'weekly-exec-20260920-format-correction-v2';
 const TEMPLATE_VERSION = 'executive_weekly_7d_notification_v1';
+const PREVIEW_AUTH_BINDING = 'MKT_PRODUCTION_CONNECTOR_UAT_CONNECTOR';
 
 export function createCustomerWeeklyFormatCorrectionPreviewHttpHandler(dependencies = {}) {
   const infrastructureFactory = dependencies.createInfrastructure ?? createInfrastructure;
@@ -191,6 +192,12 @@ export function createCustomerWeeklyFormatCorrectionPreviewHttpHandler(dependenc
       });
       const messageBytes = new TextEncoder().encode(message.text).byteLength;
       const messageSha256 = await digest(message.text);
+      const visibility = await findExactVisibleMessage({
+        client,
+        destination,
+        messageText: message.text,
+      });
+      const existing = visibility.message;
       const common = {
         periodStart: PERIOD_START,
         periodEnd: PERIOD_END,
@@ -208,6 +215,9 @@ export function createCustomerWeeklyFormatCorrectionPreviewHttpHandler(dependenc
         d1WriteCount: 0,
         larkBaseWriteCount: 0,
         queueAdmissionCount: 0,
+        duplicateCheckMode: visibility.mode,
+        exactMessageAlreadyVisible: visibility.mode === 'visible_history' ? Boolean(existing) : null,
+        visibleMessageIdSha256: existing ? await digest(existing.messageId) : null,
       };
 
       if (body.mode === 'preview') {
@@ -222,7 +232,6 @@ export function createCustomerWeeklyFormatCorrectionPreviewHttpHandler(dependenc
         }, { status: 200, headers: noStoreHeaders() });
       }
 
-      const existing = await findExactVisibleMessage({ client, destination, messageText: message.text });
       if (existing) {
         return json({
           ok: true,
@@ -272,18 +281,30 @@ export function createCustomerWeeklyFormatCorrectionPreviewHttpHandler(dependenc
 }
 
 async function findExactVisibleMessage({ client, destination, messageText }) {
-  const response = await client.requestBitableJson(
-    `/open-apis/im/v1/messages?container_id_type=chat&container_id=${encodeURIComponent(destination.chatId)}&sort_type=ByCreateTimeDesc&page_size=50`,
-    { method: 'GET' },
-  );
+  let response;
+  try {
+    response = await client.requestBitableJson(
+      `/open-apis/im/v1/messages?container_id_type=chat&container_id=${encodeURIComponent(destination.chatId)}&sort_type=ByCreateTimeDesc&page_size=50`,
+      { method: 'GET' },
+    );
+  } catch (error) {
+    if (error?.code === 'LARK_PERMANENT_API_ERROR'
+        && Number(error?.details?.larkCode) === 230027) {
+      return Object.freeze({ mode: 'fixed_lark_uuid', message: null });
+    }
+    throw error;
+  }
   for (const item of response?.data?.items ?? []) {
     let text = '';
     try { text = String(JSON.parse(item?.body?.content ?? '{}')?.text ?? ''); } catch { text = ''; }
     if (text === messageText) {
-      return Object.freeze({ messageId: requireTextCell(item.message_id, 'message_id') });
+      return Object.freeze({
+        mode: 'visible_history',
+        message: Object.freeze({ messageId: requireTextCell(item.message_id, 'message_id') }),
+      });
     }
   }
-  return null;
+  return Object.freeze({ mode: 'visible_history', message: null });
 }
 
 function assertExactCustomerRuntime(env) {
@@ -308,8 +329,8 @@ async function requireAuthorization(request, env, digest) {
   const supplied = match?.[1]?.trim() ?? '';
   const suppliedDigest = supplied ? await digest(supplied) : '';
   const expectedDigest = requireHash(
-    env?.MKT_WEEKLY_FORMAT_CORRECTION_TOKEN_SHA256,
-    'MKT_WEEKLY_FORMAT_CORRECTION_TOKEN_SHA256',
+    env?.[PREVIEW_AUTH_BINDING],
+    PREVIEW_AUTH_BINDING,
   );
   if (!match || !(await timingSafeEqualText(suppliedDigest, expectedDigest))) {
     throw correctionError('Correction authorization was rejected', 'CUSTOMER_WEEKLY_FORMAT_CORRECTION_UNAUTHORIZED');

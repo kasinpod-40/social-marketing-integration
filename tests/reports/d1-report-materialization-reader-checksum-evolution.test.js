@@ -112,3 +112,69 @@ test('reader accepts current payloads that already contain collections', async (
   );
   assert.deepEqual(result.payload.collections, {});
 });
+
+test('reader selects the latest formula revision for one exact retained period identity', async () => {
+  const period = {
+    periodKind: 'rolling_days',
+    windowDays: 7,
+    periodStart: '2026-09-14',
+    periodEnd: '2026-09-20',
+    comparisonMode: 'previous_period',
+    compareStart: '2026-09-07',
+    compareEnd: '2026-09-13',
+  };
+  const payload = createLegacyPayload({ platformScope: 'youtube', period });
+  const row = {
+    ...await createRow(payload),
+    report_id: 'chemistry_k:youtube:rolling:7d:chemistry_k:rolling_days:2026-09-14:2026-09-20:youtube-organic-v2',
+    report_setting_key: 'chemistry_k:youtube:rolling:7d',
+    platform_scope: 'youtube',
+    account_key: 'chemistry_k',
+    window_days: 7,
+    period_start: period.periodStart,
+    period_end: period.periodEnd,
+    compare_start: period.compareStart,
+    compare_end: period.compareEnd,
+    formula_version: 'youtube-organic-v2',
+  };
+  let capturedSql = '';
+  let capturedBindings = [];
+  const reader = new D1ReportMaterializationReader({
+    db: {
+      prepare(sql) {
+        capturedSql = sql;
+        return {
+          bind(...bindings) {
+            capturedBindings = bindings;
+            return { async first() { return row; } };
+          },
+        };
+      },
+    },
+  });
+
+  const result = await reader.readLatestForPeriod({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    platformScope: 'youtube',
+    reportSettingKey: 'chemistry_k:youtube:rolling:7d',
+    periodKind: 'rolling_days',
+    windowDays: 7,
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
+  });
+
+  assert.equal(result.row.formula_version, 'youtube-organic-v2');
+  assert.match(capturedSql, /period_start = \? AND period_end = \? AND window_days = \?/u);
+  assert.match(capturedSql, /ORDER BY generated_at DESC, report_id ASC/u);
+  assert.deepEqual(capturedBindings, [
+    'chemistry_k',
+    'chemistry_k',
+    'youtube',
+    'chemistry_k:youtube:rolling:7d',
+    'rolling_days',
+    '2026-09-14',
+    '2026-09-20',
+    7,
+  ]);
+});
