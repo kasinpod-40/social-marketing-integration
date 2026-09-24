@@ -17,6 +17,7 @@ import {
 import { isReviewedConnectorRuntime } from '../../../packages/config/src/customer-profiles.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { createMetaTokenConnectionRuntime } from '../../../packages/connectors/src/meta/meta-token-connection-runtime.js';
+import { resolveInstagramAccessToken } from './instagram-access-token.js';
 import { normalizeMetaAdAccountId } from '../../../packages/connectors/src/meta/meta-business-source.helpers.js';
 import { META_ADS_SOURCE_MODES } from '../../../packages/config/src/meta-business-ingestion-contract.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
@@ -79,8 +80,12 @@ async function processMetaJob(input, connectorKey, metaConfig) {
   const operation = requireStableOperation(input.operation);
   const dateRange = readDateRange(input.job.body);
   const infrastructure = input.getInfrastructure();
+  const instagramToken = connectorKey === 'instagram'
+    ? await resolveInstagramAccessToken(input.env)
+    : input.env.META_INSTAGRAM_ACCESS_TOKEN;
   const sourceRuntime = createMetaTokenConnectionRuntime({
     ...input.env,
+    META_INSTAGRAM_ACCESS_TOKEN: instagramToken,
     META_PAGE_SIZE: String(metaConfig.limits.sourcePageSize),
     META_MAX_PAGES: String(metaConfig.limits.sourceMaxPages),
   });

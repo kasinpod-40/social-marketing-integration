@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                              = YOUTUBE_20260923_D1_LARK_PASS_INSTAGRAM_META_190_BLOCKED_REPORT_REPAIR_REVIEW_PENDING
+TASK_STATUS                              = YOUTUBE_20260923_D1_LARK_PASS_INSTAGRAM_TOKEN_VALIDATED_RENEWAL_CODE_REVIEW_PENDING
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
 BASE_MAIN_SHA                            = 865a7919
 CURRENT_BRANCH                           = codex/pilot-organic-daily-completeness-20260923
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = f97ba075_VERSION_6a34a6ee_100_PERCENT
+PRODUCTION_WORKER_HEAD                   = CUSTOMER_SECRET_UPDATE_VERSION_74d31de4_100_PERCENT
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -68,6 +68,32 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 ```
 
 ## Objective
+
+### Instagram Login token renewal — 2026-09-24
+
+- Customer supplied a new Instagram token in the Customer Cloudflare Worker Secret. An isolated GET-only
+  Production-bound Preview confirmed the current grant can read the exact Instagram account and media; it
+  wrote zero D1/Lark rows and left Production traffic unchanged. The Customer dashboard Secret update itself
+  deployed a new Worker version at 100% traffic.
+- The customer's Meta Token Debugger screenshot gives two distinct current deadlines in Bangkok time:
+  token expiry 2026-11-23 11:50:22 and data-access expiry 2026-12-23 11:50:20. The latter is not proven to
+  extend when the token refreshes; monitor it separately and do not claim perpetual access until live
+  validation of a refreshed grant and subsequent Debugger metadata.
+- Add automatic renewal of the Instagram Login long-lived token before expiry. The customer's latest
+  explicit instruction authorizes storing this one credential encrypted in D1, an exception to the default
+  Repository Secret-store-only rule. Encrypt with existing AES-256-GCM code and versioned Worker Secret key;
+  persist no plaintext, log no token or provider body. Validate the refreshed grant's exact Instagram account.
+- Use the existing Sync Worker and D1 binding. Gate the new read path and renewal by
+  `MKT_INSTAGRAM_D1_TOKEN_ENABLED`; keep it false until migration, reviewed deployment and readback. Bootstrap
+  the existing Worker Secret once into D1 when enabled, then read D1 for each Instagram Queue invocation.
+  Unknown/missing key or damaged row fails closed.
+- Check expiry daily at 06:00 Bangkok and refresh five days before it (about day 55 of a 60-day grant). Retry
+  daily on failure without blocking normal scheduled sync. D1 stores encrypted credential, key version,
+  initial expiry, separate data-access expiry, attempt/refresh times, status and sanitized error code.
+  A revoked or expired grant still needs a new account authorization. Meta Token Debugger must be checked
+  after the first live rotation to determine whether data-access expiry moves.
+- Required tests: schedule eligibility, identity validation, encryption/readback, wrong key, compare-and-swap,
+  retry, sanitized errors, and scheduled Worker regression. Run full repository gates before review.
 
 ### Live repair — Pilot Organic Daily completeness (2026-09-23)
 
@@ -133,6 +159,22 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 
 ### Live continuation — 2026-09-24 reporting date 2026-09-23
 
+- Customer clarified a desired per-day snapshot history starting around 2025-09-01 for **every channel except
+  Chatwoot**. This is a new cross-channel data-availability requirement, not proof that the sources retain all
+  historical point-in-time snapshots. Read-only Customer Production D1 inventory (first retained date / distinct
+  dates): Facebook Content 2026-06-19 / 53, Instagram Content 2026-06-30 / 40, TikTok Content 2026-07-24 / 42,
+  YouTube Content 2026-06-19 / 83; Facebook Account Daily 2026-06-20 / 55, Instagram Account Daily
+  2026-06-30 / 45, TikTok Account Daily 2026-09-16 / 8, YouTube Account Daily 2026-07-28 / 42;
+  Meta Ads and Google Ads Daily both 2026-06-19 / 97, WooCommerce Sales Daily 2026-01-01 / 266, YouTube
+  Analytics Daily 2026-08-04 / 48. TikTok Ads has no active Connector/D1 Daily facts. These counts show retained
+  rows, not complete one-year coverage. Existing source audits established dated historical Facebook Daily
+  Insights and YouTube Analytics, but Instagram/TikTok Content observations are current/lifetime values.
+  Any one-year delivery must separate exact retained observations, independently validated dated provider
+  metrics, reconstructible transactions, and unavailable point-in-time snapshots. It must not fill missing dates
+  with today's cumulative totals or zero. Customer-supplied dated exports from another system can be assessed
+  separately. WooCommerce's approved transaction scope currently starts 2026-01-01 and would require an exact
+  scope extension before reading or writing 2025 orders.
+
 - Customer Production D1 shows YouTube `organic_content_cumulative` as exact `full_inventory`, 850/850,
   zero failed entities, with matching Account Coverage 1/1. A scoped isolated Worker Preview read only
   `MKT_Content_Daily` in the Customer `Social MKT Data Hub` Base: 850 YouTube rows for 2026-09-23,
@@ -141,9 +183,30 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   `30d6071a-a479-4b60-8066-7f5a23ef55d0`.
 - Instagram scheduled Work for 2026-09-23 failed at `instagram.account.latest` before Content Coverage or Lark
   writes. Sanitized D1 error evidence is Meta Graph HTTP 401, code 190, subcode 0; the existing connection
-  preflight maps code 190 to `TOKEN_INVALID`. The Production source uses the Cloudflare Secret
-  `META_INSTAGRAM_ACCESS_TOKEN` and has no automatic Meta refresh path. Account owner must renew the grant and
-  update the Secret through a secure channel; no token value was read, logged, or requested in chat.
+  preflight maps code 190 to `TOKEN_INVALID` for that failed request. The Production source uses the Cloudflare
+  Secret `META_INSTAGRAM_ACCESS_TOKEN` and has no automatic Meta refresh path. This single failure does not prove
+  the current grant remains invalid or that reauthorization is required. No token value was read, logged, or
+  requested in chat. The preceding scheduled run for 2026-09-22 succeeded on 2026-09-23 09:45 ICT and wrote
+  126 Instagram Content Daily rows plus Account Daily. Four newer `dashboard_performance_report` runs succeeded
+  after the failed ingestion, but each pulled and wrote 0 source records; they generated reports from stored data.
+  As of the latest readback, 2026-09-23 has no Instagram Content or Account Coverage and no observation rows.
+  A fresh read-only Meta connection preflight using the active Production Worker credential returned
+  `token_invalid` with Graph code 190 on 2026-09-24; a second isolated check categorized the Meta error as
+  `expired` for both identity and refresh requests. The ignored local fallback token gave the same expired
+  result. Neither refresh request returned a replacement token. The isolated Previews were closed and Production
+  traffic stayed on its original version. The credential currently needs a new Instagram Login grant from an
+  Instagram account holder or a person explicitly granted access to that Instagram account, followed by rotation
+  in Cloudflare Worker Secret storage. Developer access to the Meta app alone does not grant access to the
+  customer's Instagram data; a developer-owned token is not a substitute. No credential is
+  available in this workspace that can self-renew the expired token.
+  The missing date still needs an exact-scope rerun and D1/Lark reconciliation after the connection is restored.
+- An isolated read-only feasibility check confirmed the mapped Facebook Page is linked to the same Instagram
+  account, but both the local Facebook discovery credential and the active Production Facebook Page credential
+  received Meta Graph `code 10` when reading that Instagram account's media edge. Account metadata returned 200.
+  Existing Facebook credentials cannot replace the expired Instagram Login token for the current media/insights
+  contract. A Facebook Login/System User migration would require separate permissions, exact dataset parity,
+  code review and live validation; no such migration or Production change was applied. Preview URLs were restored
+  disabled and Production Worker traffic/version stayed unchanged.
 - The 09:00 Report materializations for Instagram 1D/3D still say `complete` despite no 2026-09-23 Coverage;
   these were produced by the active old Worker. The branch's exact-day Coverage gate makes them `partial` and
   withholds aggregate current totals. It now also suppresses YouTube/Instagram Top Content rankings until
@@ -1500,6 +1563,24 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   intended period and exact customer group mapping is read back.
 
 ## Implementation result
+
+### 2026-09-24 — Instagram encrypted D1 token renewal
+
+- Customer-approved exception: store only AES-256-GCM Instagram token ciphertext/IV in Customer D1; keep the
+  versioned encryption key in the existing Worker Secret. Migration 0022 creates one `chemistry_k` row with
+  token expiry, separate data-access expiry and sanitized renewal status.
+- Existing Sync Worker bootstraps the verified Worker Secret into D1 after an opt-in flag is enabled, then
+  decrypts the D1 value for each Instagram job. The daily 06:00 Bangkok check refreshes when expiry is within
+  five days, verifies Meta account identity, compare-and-swap rotates the encrypted row, and retries daily
+  after sanitized failures. The default flag remains false; Production has not been migrated or activated.
+- `npm ci --no-audit --no-fund` succeeds; focused SQLite/D1 tests `6/6`; `npm run check` passes (0 architecture cycles and hygiene clean);
+  full `npm test` passes (`3,436` Node / `18` Workers runtime); `npm run test:report-reliability`
+  passes `106/106`; `npm audit --audit-level=high` reports zero vulnerabilities;
+  `npm run deploy:dry-run` and `git diff --check` pass. Wrangler printed a nonfatal sandbox log-write warning.
+- Live Meta credential validation was GET-only before this change. No live D1 migration, reviewed deployment,
+  flag activation or first token rotation has occurred. Exact Customer D1 readback and Meta Debugger data-access
+  recheck remain required after reviewed activation. Current token expiry is 2026-11-23 11:50:22 ICT.
+
 
 ### 2026-09-05 — Chatwoot revision filter and Meta K2 activity-scoped Daily source
 

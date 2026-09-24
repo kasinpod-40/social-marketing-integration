@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-24 — Instagram token renewal preparation
+
+- validate the new Customer Instagram Worker Secret with GET-only source reads and no business writes;
+- add customer-approved AES-256-GCM D1 credential storage, the existing Sync Worker daily day-55 renewal
+  check with identity validation and retry, and an opt-in D1 read path for Instagram jobs;
+- keep Production migration, review, activation and live rotation validation pending.
+
 ## 2026-09-24 — Pilot Organic Daily source and Report follow-up
 
 - verify YouTube 2026-09-23 full-inventory Coverage and Customer Lark Daily parity at 850/850 with zero

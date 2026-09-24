@@ -1,13 +1,26 @@
 # Project Brain — Social Marketing Data Integration
 
+## Instagram token renewal — 2026-09-24
+
+The new Customer Worker Secret passed isolated GET-only Production-bound identity and media reads, with no
+D1/Lark writes. The customer's later instruction explicitly authorizes encrypted D1 token storage, overriding
+the repository's default Secret-store-only policy for this credential. The implementation uses the existing
+Sync Worker, AES-256-GCM with the existing versioned Worker Secret key, a D1 credential row, an opt-in flag,
+and a daily 06:00 Bangkok due check with retry. Local tests pass; production migration, reviewed deployment,
+activation, and live rotation readback remain pending. The current token expires 2026-11-23 11:50:22 ICT.
+Data access separately expires 2026-12-23 11:50:20 ICT; whether a refresh extends it is unverified.
+Historical Instagram values never captured on a past day cannot be reconstructed by renewal.
+
 ## Pilot Organic Daily continuation — 2026-09-24
 
 For report date 2026-09-23, Customer Production YouTube completed exact full-inventory Coverage 850/850
 and the scoped `Social MKT Data Hub` Lark `MKT_Content_Daily` readback has 850/850 rows. Instagram's
 scheduled Work failed before Content Coverage and Lark writes at `instagram.account.latest` with Meta Graph
-HTTP 401/code 190. The Production Connector reads `META_INSTAGRAM_ACCESS_TOKEN` from Cloudflare Secret;
-the codebase's preflight classifies 190 as `TOKEN_INVALID` and no Meta auto-refresh path exists. A new grant
-and secure Secret rotation are required before an exact-day rerun. The active old Worker generated Instagram
+HTTP 401/code 190. A fresh isolated Production credential check classified Meta's response as `expired` for
+both identity and refresh requests; the local fallback token also returned `expired`. Neither request returned
+a replacement token. The Production Connector reads `META_INSTAGRAM_ACCESS_TOKEN` from Cloudflare Secret;
+the codebase has no Meta auto-refresh path. A new valid Instagram Login grant and secure Secret rotation are
+required before an exact-day rerun. The active old Worker generated Instagram
 1D/3D Reports marked complete despite no current-day Coverage. The local repair enforces exact-day full-inventory
 Coverage, null aggregate current totals, and no ranked Top Content while period coverage is incomplete. It is
 not deployed. Read-only `MKT_Content_Daily` retention planning found 9,817 rows, 0 duplicates and 0 delete
