@@ -116,8 +116,10 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   Coverage is for the exact requested end date, `full_inventory`, zero failed rows, and equal known expected and
   observed entities. A completed latest-100 or report-range scan is `partial`. The Organic calculator withholds
   account-wide current totals when source inventory is incomplete; per-content observations remain available.
-- An isolated read-only Preview fetched all 9,039 `MKT_Content_Daily` records across 19 pages. The previous
-  Lark `1254002` retention failure did not reproduce. The Lark client now treats this code as transient only on
+- An isolated read-only Preview fetched all 9,039 `MKT_Content_Daily` records across 19 pages. Lark `1254002`
+  did not reproduce on this table, but the retained `lark.bounded-daily.retention` DLQ is a **different** job
+  managing six Conversation/Commerce Daily tables, not `MKT_Content_Daily`; this readback cannot close that DLQ.
+  The Lark client now treats the code as transient only on
   safe GET/record-search requests, with existing bounded retry; ambiguous writes are not retried.
 - `npm ci` passes. Focused regressions pass 64/64. `npm run check`, Node unit tests (3,429), Worker tests
   (18/18, rerun with local Miniflare bind permission after sandbox `EPERM`), Report
@@ -146,9 +148,10 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   these were produced by the active old Worker. The branch's exact-day Coverage gate makes them `partial` and
   withholds aggregate current totals. It now also suppresses YouTube/Instagram Top Content rankings until
   the period inventory and baseline are complete, preventing stale posts from being presented as a ranked day.
-- Today's bounded retention operation was admitted with one Queue attempt and created no new retention DLQ.
-  Read-only Lark retention planning found 9,817 retained records and zero delete candidates. The 2026-09-23
-  retention DLQ remains open; it was not blind-redriven or declared resolved from a missing DLQ alone.
+- Today's `MKT_Content_Daily` retention operation was admitted with one Queue attempt and created no new DLQ.
+  Read-only Content Daily planning found 9,817 retained records and zero delete candidates. The 2026-09-23
+  `lark.bounded-daily.retention` DLQ is a separate six-table Conversation/Commerce incident; it remains open,
+  and the Content Daily plan is not used to infer its resolution. It was not blind-redriven.
 - The branch is undeployed. GitHub CLI authentication is invalid, but a separate Keychain credential passed a
   read-only GitHub API check and can be used for reviewed PR submission. Instagram source recovery requires its Meta credential
   renewal, then a fresh exact-day full-inventory run, D1/Lark reconciliation, and Report regeneration.

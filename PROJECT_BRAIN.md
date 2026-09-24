@@ -10,8 +10,9 @@ the codebase's preflight classifies 190 as `TOKEN_INVALID` and no Meta auto-refr
 and secure Secret rotation are required before an exact-day rerun. The active old Worker generated Instagram
 1D/3D Reports marked complete despite no current-day Coverage. The local repair enforces exact-day full-inventory
 Coverage, null aggregate current totals, and no ranked Top Content while period coverage is incomplete. It is
-not deployed. Read-only Lark retention planning found 9,817 rows, 0 duplicates and 0 delete candidates;
-the older retention DLQ remains open without blind redrive. The isolated Preview was disabled again and active
+not deployed. Read-only `MKT_Content_Daily` retention planning found 9,817 rows, 0 duplicates and 0 delete
+candidates. The older `lark.bounded-daily.retention` DLQ instead belongs to six Conversation/Commerce tables;
+the Content Daily plan cannot close it. It remains open without blind redrive. The isolated Preview was disabled again and active
 Production Worker version stayed unchanged.
 
 ## Pilot Organic Daily live correction — 2026-09-23
@@ -33,7 +34,8 @@ those dates. The next natural scheduled generation and Report-window refresh
 remain the live acceptance gates; sync Work success alone is not a completeness claim. The current branch adds an
 exact-day/full-inventory Coverage gate to the D1 Organic report reader for YouTube and Instagram, withholds aggregate
 current totals when inventory is partial, and retries Lark `1254002` only for safe reads. The read retry follows a
-successful 9,039-record/19-page isolated Preview; the earlier retention DLQ is still open and the Worker is unchanged.
+successful 9,039-record/19-page Content Daily isolated Preview; the separate six-table bounded Daily retention
+DLQ is still open and the Worker is unchanged.
 
 ## Scheduled Organic Daily growth completeness — 2026-09-18
 

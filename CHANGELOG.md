@@ -6,8 +6,9 @@
   duplicate stable keys; Instagram failed before current-day Coverage/Lark at Meta Graph HTTP 401/code 190;
 - suppress YouTube/Instagram ranked Top Content when period inventory or baseline is incomplete, alongside
   the pending exact-day Coverage and aggregate N/A gates, so stale Instagram Report rows cannot claim a complete day;
-- verify the Customer Lark retention plan is 9,817 retained records and zero deletes; keep the older DLQ
-  open pending exact closeout rather than blind redrive.
+- verify the Customer `MKT_Content_Daily` retention plan is 9,817 retained records and zero deletes; the older
+  bounded Daily retention DLQ targets six separate Conversation/Commerce tables and remains open pending exact
+  scope validation rather than blind redrive.
 
 ## 2026-09-23 — Pilot Organic Daily data correction
 
@@ -19,7 +20,8 @@
   `report_range`; preserve unobserved 16/19 and partial 15/17 September as unavailable historical
   snapshots, along with YouTube's 15/17/19/21 September latest-100 dates that lack a complete source reconstruction;
 - gate YouTube/Instagram Report completeness on exact-day full-inventory Coverage, withhold aggregate current totals
-  for partial inventories, and retry Lark `1254002` only on bounded safe reads; the existing retention DLQ remains open;
+  for partial inventories, and retry Lark `1254002` only on bounded safe reads; the separate six-table retention
+  DLQ remains open;
 - retain the next natural scheduled run and 1D/3D/7D/30D Report readback as the remaining acceptance gates.
 
 ## 2026-09-23 — Customer Weekly factual format and Organic Top 1
