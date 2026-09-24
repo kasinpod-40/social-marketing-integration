@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                              = YOUTUBE_20260923_D1_LARK_PASS_INSTAGRAM_TOKEN_VALIDATED_RENEWAL_CODE_REVIEW_PENDING
+TASK_STATUS                              = INSTAGRAM_20260923_REPAIRED_D1_LARK_DAILY_SYNC_WARNINGS_REMAIN
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
 BASE_MAIN_SHA                            = 865a7919
 CURRENT_BRANCH                           = codex/pilot-organic-daily-completeness-20260923
@@ -12,12 +12,12 @@ PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_C
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
 PRODUCTION_D1_PROVISIONED                = TRUE
-PRODUCTION_D1_MIGRATIONS                 = 21_OF_21
+PRODUCTION_D1_MIGRATIONS                 = 22_OF_22
 PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = CUSTOMER_SECRET_UPDATE_VERSION_74d31de4_100_PERCENT
+PRODUCTION_WORKER_HEAD                   = RESTORED_DAILY_FLAGS_VERSION_480b4024_100_PERCENT
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -1572,14 +1572,40 @@ reviewed repair makes the same logical read proceed successfully. The retained f
 - Existing Sync Worker bootstraps the verified Worker Secret into D1 after an opt-in flag is enabled, then
   decrypts the D1 value for each Instagram job. The daily 06:00 Bangkok check refreshes when expiry is within
   five days, verifies Meta account identity, compare-and-swap rotates the encrypted row, and retries daily
-  after sanitized failures. The default flag remains false; Production has not been migrated or activated.
+  after sanitized failures. The default repository flag remains false; Customer Production has migration 0022
+  applied and `MKT_INSTAGRAM_D1_TOKEN_ENABLED=true` on active version `480b4024`.
 - `npm ci --no-audit --no-fund` succeeds; focused SQLite/D1 tests `6/6`; `npm run check` passes (0 architecture cycles and hygiene clean);
   full `npm test` passes (`3,436` Node / `18` Workers runtime); `npm run test:report-reliability`
   passes `106/106`; `npm audit --audit-level=high` reports zero vulnerabilities;
   `npm run deploy:dry-run` and `git diff --check` pass. Wrangler printed a nonfatal sandbox log-write warning.
-- Live Meta credential validation was GET-only before this change. No live D1 migration, reviewed deployment,
-  flag activation or first token rotation has occurred. Exact Customer D1 readback and Meta Debugger data-access
-  recheck remain required after reviewed activation. Current token expiry is 2026-11-23 11:50:22 ICT.
+- PR #874 merged at `main@a2dffc77`; migration 0022 and reviewed dark/active deploy passed. Source-read-only
+  bootstrap wrote one encrypted AES-256-GCM `v2` D1 credential row with no business writes. A fresh exact
+  2026-09-23 Instagram rerun completed with D1 Coverage Account 1/1 and Content 127/127, failed rows 0.
+  Direct read-only Worker Preview against the two scoped `Social MKT Data Hub` Lark tables confirmed
+  `MKT_Account_Daily` 1 row and `MKT_Content_Daily` 127 distinct stable keys, no blanks or duplicates.
+  Preview URLs were restored disabled after each invocation.
+- The Customer dashboard Secret update at 2026-09-24 04:52 UTC unexpectedly deployed version `74d31de4`
+  with previously active daily connector/source/write/schedule flags false. The reviewed restore version
+  `480b4024` now runs at 100% with all 46 prior true flags from version `30d6071a`, plus the new D1 token flag;
+  current nonflag bindings and Worker Secrets were preserved. Two retired Lark view-order bindings were removed
+  to stay within Cloudflare's 250 text binding limit. Subsequent deployment status confirms `480b4024` active.
+- Daily 2026-09-24 Bangkok run audit for report date 2026-09-23: D1 source runs succeeded for YouTube,
+  TikTok, Facebook, Instagram (fresh repair), Meta Ads K2/K3, Google Ads, WooCommerce and Chatwoot;
+  no pending/running/partial sync runs or active locks. Direct Lark Organic readback: Facebook 108,
+  Instagram 127, TikTok 272, YouTube 850 distinct Content Daily keys and one Account Daily row each.
+  Remaining open evidence: YouTube video reconciliation warning for two retained prior metrics and six
+  DLQ rows (three Instagram failed attempts superseded by repair, two Meta Ads and one Google Ads), plus
+  related alerts. These were not blindly replayed or marked resolved. Therefore the daily run has source and
+  Organic destination coverage, but not a clean all-channel alert/DLQ closeout.
+- The Instagram 1D/3D/7D/30D Report materializations initially predated the repair. Four exact
+  post-repair Queue reruns now have `success` sync runs and later `generated_at` values in D1; the
+  Report writer completed its Lark step in each run. Direct scoped Lark API readback confirmed four
+  unique Report IDs for 1D/3D/7D/30D, all generated after the source repair; Preview URLs were
+  restored disabled. Final data status is complete for 1D/3D and partial for 7D/30D because
+  historical dates remain incomplete. The all-channel alert/DLQ closeout remains qualified.
+- Live first token rotation has not occurred. The row records token expiry 2026-11-23 11:50:22 ICT and
+  separate data-access expiry 2026-12-23 11:50:20 ICT. Verify refreshed expiry and data-access behavior
+  after the first scheduled due check; do not describe the grant as permanent.
 
 
 ### 2026-09-05 — Chatwoot revision filter and Meta K2 activity-scoped Daily source
