@@ -11,8 +11,9 @@ Lark API readback found 1 Account Daily and 127 unique Content Daily stable keys
 Organic Lark Daily counts were 108/272/850, all with unique keys. The daily source runs for all eight
 platforms succeeded, but a YouTube reconciliation warning for two retained prior video metrics and six open
 DLQ rows remain. Four exact Instagram Report reruns after the source repair completed the Lark writer and
-updated D1 1D/3D/7D/30D materializations. 1D/3D are complete and 7D/30D remain partial from historical
-gaps; direct Lark Report row parity remains unverified. Do not label the entire daily cycle cleanly closed.
+updated D1 1D/3D/7D/30D materializations. Direct scoped Lark API readback confirmed four unique Report
+IDs, all generated after the source repair. 1D/3D are complete and 7D/30D remain partial from historical
+gaps; do not label the entire daily cycle cleanly closed.
 First live token rotation and whether
 Meta extends data-access expiry remain unverified.
 

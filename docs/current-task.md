@@ -1599,9 +1599,10 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   Organic destination coverage, but not a clean all-channel alert/DLQ closeout.
 - The Instagram 1D/3D/7D/30D Report materializations initially predated the repair. Four exact
   post-repair Queue reruns now have `success` sync runs and later `generated_at` values in D1; the
-  Report writer completed its Lark step in each run. Final data status is complete for 1D/3D and
-  partial for 7D/30D because historical dates remain incomplete. Direct Lark Report row parity
-  has not yet been checked independently, so the all-channel closeout remains qualified.
+  Report writer completed its Lark step in each run. Direct scoped Lark API readback confirmed four
+  unique Report IDs for 1D/3D/7D/30D, all generated after the source repair; Preview URLs were
+  restored disabled. Final data status is complete for 1D/3D and partial for 7D/30D because
+  historical dates remain incomplete. The all-channel alert/DLQ closeout remains qualified.
 - Live first token rotation has not occurred. The row records token expiry 2026-11-23 11:50:22 ICT and
   separate data-access expiry 2026-12-23 11:50:20 ICT. Verify refreshed expiry and data-access behavior
   after the first scheduled due check; do not describe the grant as permanent.
