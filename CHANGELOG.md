@@ -7,7 +7,8 @@
 - repair report date 2026-09-23 Instagram account/content snapshots and verify 1/127 rows directly in scoped
   Lark Base tables with 127 unique content stable keys;
 - restore all 46 previously active daily runtime flags after the dashboard Secret update disabled them;
-  preserve current Worker Secrets and report the remaining YouTube reconciliation warning and open DLQ evidence.
+  preserve current Worker Secrets and rerun the four Instagram Report windows after source repair;
+  report the remaining YouTube reconciliation warning and open DLQ evidence.
 
 ## 2026-09-24 — Instagram token renewal preparation
 

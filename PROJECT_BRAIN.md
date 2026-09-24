@@ -10,7 +10,10 @@ The 2026-09-23 Instagram repair completed D1 Coverage Account 1/1 and Content 12
 Lark API readback found 1 Account Daily and 127 unique Content Daily stable keys. Facebook/TikTok/YouTube
 Organic Lark Daily counts were 108/272/850, all with unique keys. The daily source runs for all eight
 platforms succeeded, but a YouTube reconciliation warning for two retained prior video metrics and six open
-DLQ rows remain; do not label the entire daily cycle cleanly closed. First live token rotation and whether
+DLQ rows remain. Four exact Instagram Report reruns after the source repair completed the Lark writer and
+updated D1 1D/3D/7D/30D materializations. 1D/3D are complete and 7D/30D remain partial from historical
+gaps; direct Lark Report row parity remains unverified. Do not label the entire daily cycle cleanly closed.
+First live token rotation and whether
 Meta extends data-access expiry remain unverified.
 
 ## Instagram token renewal — 2026-09-24
