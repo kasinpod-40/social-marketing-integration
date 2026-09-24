@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-24 — Instagram renewal live activation and daily repair
+
+- merge PR #874, apply D1 migration 0022, bootstrap the current Instagram grant into encrypted D1 storage,
+  and activate daily day-55 renewal checks on Customer Worker version `480b4024`;
+- repair report date 2026-09-23 Instagram account/content snapshots and verify 1/127 rows directly in scoped
+  Lark Base tables with 127 unique content stable keys;
+- restore all 46 previously active daily runtime flags after the dashboard Secret update disabled them;
+  preserve current Worker Secrets and report the remaining YouTube reconciliation warning and open DLQ evidence.
+
 ## 2026-09-24 — Instagram token renewal preparation
 
 - validate the new Customer Instagram Worker Secret with GET-only source reads and no business writes;

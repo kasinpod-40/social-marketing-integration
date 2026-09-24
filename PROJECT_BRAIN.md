@@ -1,5 +1,18 @@
 # Project Brain — Social Marketing Data Integration
 
+## Instagram renewal and daily sync live result — 2026-09-24
+
+PR #874 is merged (`main@a2dffc77`). Customer D1 migration 0022 is applied, the Instagram grant is stored
+as AES-256-GCM ciphertext with the key in Worker Secret, and the active production version `480b4024`
+retains the prior 46 enabled runtime flags plus `MKT_INSTAGRAM_D1_TOKEN_ENABLED=true`. The dashboard Secret
+rotation had deployed version `74d31de4` with daily flags off; the exact previous flag set was restored.
+The 2026-09-23 Instagram repair completed D1 Coverage Account 1/1 and Content 127/127, then direct scoped
+Lark API readback found 1 Account Daily and 127 unique Content Daily stable keys. Facebook/TikTok/YouTube
+Organic Lark Daily counts were 108/272/850, all with unique keys. The daily source runs for all eight
+platforms succeeded, but a YouTube reconciliation warning for two retained prior video metrics and six open
+DLQ rows remain; do not label the entire daily cycle cleanly closed. First live token rotation and whether
+Meta extends data-access expiry remain unverified.
+
 ## Instagram token renewal — 2026-09-24
 
 The new Customer Worker Secret passed isolated GET-only Production-bound identity and media reads, with no
@@ -7,11 +20,11 @@ D1/Lark writes. The customer's later instruction explicitly authorizes encrypted
 the repository's default Secret-store-only policy for this credential. The implementation uses the existing
 Sync Worker, AES-256-GCM with the existing versioned Worker Secret key, a D1 credential row, an opt-in flag,
 and a daily 06:00 Bangkok due check with retry. Local tests pass; production migration, reviewed deployment,
-activation, and live rotation readback remain pending. The current token expires 2026-11-23 11:50:22 ICT.
+activation and bootstrap are complete; live rotation readback remains pending. The current token expires 2026-11-23 11:50:22 ICT.
 Data access separately expires 2026-12-23 11:50:20 ICT; whether a refresh extends it is unverified.
 Historical Instagram values never captured on a past day cannot be reconstructed by renewal.
 
-## Pilot Organic Daily continuation — 2026-09-24
+## Pilot Organic Daily continuation — 2026-09-24 (pre-renewal diagnosis)
 
 For report date 2026-09-23, Customer Production YouTube completed exact full-inventory Coverage 850/850
 and the scoped `Social MKT Data Hub` Lark `MKT_Content_Daily` readback has 850/850 rows. Instagram's
@@ -19,8 +32,8 @@ scheduled Work failed before Content Coverage and Lark writes at `instagram.acco
 HTTP 401/code 190. A fresh isolated Production credential check classified Meta's response as `expired` for
 both identity and refresh requests; the local fallback token also returned `expired`. Neither request returned
 a replacement token. The Production Connector reads `META_INSTAGRAM_ACCESS_TOKEN` from Cloudflare Secret;
-the codebase has no Meta auto-refresh path. A new valid Instagram Login grant and secure Secret rotation are
-required before an exact-day rerun. The active old Worker generated Instagram
+the codebase at that time had no Meta auto-refresh path. A new valid Instagram Login grant and secure Secret rotation were
+required before an exact-day rerun at that point. The active old Worker generated Instagram
 1D/3D Reports marked complete despite no current-day Coverage. The local repair enforces exact-day full-inventory
 Coverage, null aggregate current totals, and no ranked Top Content while period coverage is incomplete. It is
 not deployed. Read-only `MKT_Content_Daily` retention planning found 9,817 rows, 0 duplicates and 0 delete
