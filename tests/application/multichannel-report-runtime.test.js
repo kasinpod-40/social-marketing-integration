@@ -180,6 +180,38 @@ test('active Organic adapter produces current and previous equal-length values f
   assert.equal(writes[0].window_days, null);
 });
 
+test('Instagram with stale Content coverage exposes N/A totals and no ranked Content', async () => {
+  const registry = createReportPlatformAdapterRegistry({
+    adapters: {
+      instagram: {
+        async load() {
+          return {
+            contents: [{ ...content('post-1', '2026-09-01'), platform: 'instagram' }],
+            observations: [{ ...observation('post-1', '2026-09-22', 20), platform: 'instagram' }],
+            accountDailyFacts: [],
+            readSummary: {
+              sourceScope: 'content', coverageStatus: 'partial',
+              accountCoverageStatus: 'not_observed', sourceWatermark: 'stale-coverage',
+            },
+          };
+        },
+      },
+    },
+  });
+  const result = await generateDashboardReportMaterialization({
+    registry,
+    materializationStore: { async saveReportMaterialization() { return { status: 'written' }; } },
+    customerKey: 'chemistry_k', accountKey: 'chemistry_k', platformScope: 'instagram',
+    reportSettingKey: 'chemistry_k:instagram:rolling:1d',
+    periodKind: 'rolling_days', windowDays: 1, periodEnd: '2026-09-23',
+    comparisonMode: 'none', sourceWatermark: 'stale-coverage',
+    generatedAt: Date.parse('2026-09-24T02:00:00Z'),
+  });
+  assert.equal(result.dataStatus, 'partial');
+  assert.equal(result.metricPayload['instagram:latest_total_views'].current, null);
+  assert.deepEqual(result.topContent, []);
+});
+
 test('TikTok runtime materializes a high-coverage observed subtotal without enabling it for other Organic platforms', async () => {
   const source = {
     contents: [

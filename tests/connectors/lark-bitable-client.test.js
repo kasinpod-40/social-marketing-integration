@@ -30,6 +30,48 @@ test('retries Lark 1254290 with backoff and then succeeds', async () => {
   assert.deepEqual(delays, [10]);
 });
 
+test('retries Lark Base internal error 1254002 within the bounded policy', async () => {
+  let calls = 0;
+  const delays = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token',
+    maxAttempts: 3, minRequestIntervalMs: 0, retryBaseDelayMs: 10,
+    randomImpl: () => 0,
+    sleepImpl: async (delay) => delays.push(delay),
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(JSON.stringify(calls === 1
+        ? { code: 1254002, msg: 'Fail' }
+        : { code: 0, data: { items: [] } }), { status: 200 });
+    },
+  });
+
+  assert.equal((await client.requestJson('/test', { method: 'GET', token: 'token' })).code, 0);
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [10]);
+});
+
+test('does not retry ambiguous Lark writes after internal error 1254002', async () => {
+  let calls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token',
+    maxAttempts: 3, minRequestIntervalMs: 0,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ code: 1254002, msg: 'Fail' }), { status: 200 });
+    },
+  });
+
+  await assert.rejects(
+    client.requestJson('/open-apis/bitable/v1/apps/app/tables/table/records/batch_create', {
+      method: 'POST', token: 'token', body: { records: [] },
+    }),
+    (error) => error.code === 'LARK_PERMANENT_API_ERROR'
+      && error.details.larkCode === 1254002,
+  );
+  assert.equal(calls, 1);
+});
+
 test('preserves the Cloudflare global fetch context instead of binding it to the client instance', async () => {
   const originalFetch = globalThis.fetch;
   let observedThis = null;

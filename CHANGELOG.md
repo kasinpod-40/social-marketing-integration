@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-24 — Pilot Organic Daily source and Report follow-up
+
+- verify YouTube 2026-09-23 full-inventory Coverage and Customer Lark Daily parity at 850/850 with zero
+  duplicate stable keys; Instagram failed before current-day Coverage/Lark at Meta Graph HTTP 401/code 190;
+- suppress YouTube/Instagram ranked Top Content when period inventory or baseline is incomplete, alongside
+  the pending exact-day Coverage and aggregate N/A gates, so stale Instagram Report rows cannot claim a complete day;
+- verify the Customer Lark retention plan is 9,817 retained records and zero deletes; keep the older DLQ
+  open pending exact closeout rather than blind redrive.
+
+## 2026-09-23 — Pilot Organic Daily data correction
+
+- correct the exact Customer YouTube 2026-09-22 Production D1 run: 455 Content observation dates and one
+  850/850 Content Coverage period now match the completed reporting date; correct 11 earlier mismatched runs with
+  another 3,003 observations and 11 Coverage periods; readback found zero remaining YouTube date-mismatched runs;
+- verify Customer Instagram Lark Daily counts of 120/122/125/126 for 18/20/21/22 September,
+  with zero duplicate stable keys; D1 proves full inventory only for 18 September, while 20/21/22 remain
+  `report_range`; preserve unobserved 16/19 and partial 15/17 September as unavailable historical
+  snapshots, along with YouTube's 15/17/19/21 September latest-100 dates that lack a complete source reconstruction;
+- gate YouTube/Instagram Report completeness on exact-day full-inventory Coverage, withhold aggregate current totals
+  for partial inventories, and retry Lark `1254002` only on bounded safe reads; the existing retention DLQ remains open;
+- retain the next natural scheduled run and 1D/3D/7D/30D Report readback as the remaining acceptance gates.
+
 ## 2026-09-23 — Customer Weekly factual format and Organic Top 1
 
 - render only the highest-ranked in-period Content for each Organic platform in the shared Weekly customer

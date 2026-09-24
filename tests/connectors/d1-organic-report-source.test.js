@@ -174,6 +174,48 @@ test('Facebook keeps strict null evidence when full-inventory coverage cannot be
   assert.equal(calculated.metrics.latest_total_likes, null);
 });
 
+test('YouTube and Instagram never call a limited or stale Content scan complete', async () => {
+  for (const platform of ['youtube', 'instagram']) {
+    for (const [scopeMode, coverageDate, expectedStatus] of [
+      ['latest_100', '2026-09-22', 'partial'],
+      ['report_range', '2026-09-22', 'partial'],
+      ['full_inventory', '2026-09-21', 'partial'],
+      ['full_inventory', '2026-09-22', 'complete'],
+    ]) {
+      const db = createD1((sql, bindings, method) => {
+        if (sql.includes('organic_content_state')) return [{ content_key: `${platform}:a:video` }];
+        if (sql.includes('organic_content_observations')) {
+          return sql.includes('metric_date < ?') ? [] : [{
+            ...observation('video', '2026-09-22', 100),
+            observation_key: `${platform}:a:video:100`,
+            content_key: `${platform}:a:video`,
+          }];
+        }
+        if (sql.includes('data_coverage_entities')) {
+          return [{ external_entity_id: 'video', observation_status: 'observed' }];
+        }
+        if (sql.includes('data_coverage_runs')) return {
+          coverage_run_id: `${platform}-coverage`,
+          status: 'complete', scope_mode: scopeMode, period_end: coverageDate,
+          expected_entities: 1, observed_entities: 1, failed_rows: 0,
+        };
+        return method === 'all' ? [] : null;
+      });
+      const result = await new D1OrganicReportSource({ db, platform }).load({
+        customerKey: 'chemistry_k', accountKey: 'a',
+        periodStart: '2026-09-22', periodEnd: '2026-09-22',
+      });
+      assert.equal(result.readSummary.coverageStatus, expectedStatus, `${platform} ${scopeMode} ${coverageDate}`);
+      const calculated = calculateOrganicPeriodMetrics({
+        platform, contents: result.contents, observations: result.observations,
+        periodStart: '2026-09-22', periodEnd: '2026-09-22',
+        coverageStatus: result.readSummary.coverageStatus,
+      });
+      assert.equal(calculated.metrics.latest_total_views, expectedStatus === 'complete' ? 10 : null);
+    }
+  }
+});
+
 function accountFact(metricDate, views, followers) {
   return Object.freeze({
     account_daily_key: `facebook:chemistry_k:${metricDate}`,

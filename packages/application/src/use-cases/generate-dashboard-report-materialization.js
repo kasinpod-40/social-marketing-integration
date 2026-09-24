@@ -333,7 +333,12 @@ async function buildOrganicResult(input) {
     periodEnd: input.period.compareEnd,
     coverageStatus: accountCoverageStatus,
   });
-  const topContent = buildOrganicTopContentPayload(current.contentRows, input.topContentLimit ?? 5);
+  // A ranked list implies the whole source universe was compared. Suppress Pilot Organic
+  // rankings when the current period lacks complete inventory or its dated baseline.
+  const topContent = (['youtube', 'instagram'].includes(input.contract.platformScope)
+      && current.periodCoverageComplete !== true)
+    ? Object.freeze([])
+    : buildOrganicTopContentPayload(current.contentRows, input.topContentLimit ?? 5);
   return Object.freeze({
     platform: input.contract.platformScope,
     capability: input.contract.capability,
