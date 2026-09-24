@@ -1,5 +1,37 @@
 # Social Marketing Data Integration
 
+## Instagram token renewal
+
+Customer Production currently reads `META_INSTAGRAM_ACCESS_TOKEN` from the Sync Worker Secret. The customer
+explicitly requested encrypted D1 storage for automatic renewal. Migration
+`0022_instagram_token_renewal_status.sql` creates `instagram_token_credentials`; the token is stored only as
+AES-256-GCM ciphertext with a random IV and account-specific authenticated context. The existing
+`MKT_CONNECTION_ENCRYPTION_KEY_V2` remains a Worker Secret. No plaintext token is stored in D1 or logged.
+
+Apply the migration and deploy reviewed code with `MKT_INSTAGRAM_D1_TOKEN_ENABLED=false`. Set the production
+`MKT_INSTAGRAM_INITIAL_EXPIRES_AT=2026-11-23T04:50:22Z` from the customer's Meta Token Debugger, confirm
+both the existing Instagram token and matching versioned encryption key are configured as Worker Secrets, then
+enable `MKT_INSTAGRAM_D1_TOKEN_ENABLED=true`. The first Instagram job or 06:00 Bangkok check encrypts the
+existing Worker Secret into D1. Subsequent Instagram jobs read and decrypt the D1 row; if the row or key is
+invalid, they fail closed. Keep the bootstrap Worker Secret until the D1 readback is verified.
+
+The existing five-minute Worker Cron checks once each day at 06:00 Bangkok. It refreshes when the stored token
+expiry is five days away (about day 55 of a 60-day grant), validates the refreshed account identity, and
+atomically replaces only the matching encrypted credential. A failed attempt keeps the last token and retries
+on the next daily check. Regular sync scheduling continues on a renewal failure. Inspect status without
+revealing the token:
+
+```sql
+SELECT token_expires_at, data_access_expires_at, last_refresh_at,
+       last_attempt_at, status, last_error_code
+FROM instagram_token_credentials
+WHERE customer_profile = 'chemistry_k';
+```
+
+Timestamps are Unix milliseconds. The customer's screenshot gives a separate data-access deadline of
+2026-12-23 11:50:20 Bangkok time; token refresh has not been shown to extend that deadline. Check Meta Token
+Debugger again after the first rotation. A revoked or already expired grant still needs a new authorization.
+
 ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base สำหรับ Dashboard, Reporting, AI Summary, Insight, Alert และ Notification โดยใช้ JavaScript ES Modules, Cloudflare Workers, D1, Queues และ Lark Open API
 
 คู่มือสำหรับลูกค้า: [`docs/customer-social-mkt-data-hub-manual.md`](docs/customer-social-mkt-data-hub-manual.md) ·

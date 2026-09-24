@@ -72,6 +72,8 @@
     "MKT_GOOGLE_ADS_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/google-ads/callback",
     "MKT_YOUTUBE_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/youtube/callback",
     "GOOGLE_OAUTH_CLIENT_ID": "replace-with-google-oauth-client-id",
+    "MKT_INSTAGRAM_D1_TOKEN_ENABLED": "false",
+    "MKT_INSTAGRAM_INITIAL_EXPIRES_AT": "2026-11-23T04:50:22Z",
     "MKT_CONNECTION_ENCRYPTION_KEY_VERSION": "v1",
     "MKT_CONNECTION_ENCRYPTION_KEY_PREVIOUS_VERSIONS": "",
     "MKT_YOUTUBE_CREDENTIAL_REWRAP_ENABLED": "false",

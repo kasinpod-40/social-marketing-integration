@@ -883,7 +883,7 @@ export class LarkBitableClient {
         });
 
         if (!response.ok || payload?.code !== 0) {
-          throw createLarkResponseError({ response, payload, text, path });
+          throw createLarkResponseError({ response, payload, text, path, method: options.method ?? 'GET' });
         }
 
         this.onRequest({
@@ -1375,7 +1375,12 @@ function withSafeViewMutationDetails(error, body) {
 function createLarkResponseError(input) {
   const status = input.response.status;
   const larkCode = input.payload?.code;
-  const retryable = status === 429 || status >= 500 || larkCode === 1254290;
+  // Base can return a generic internal failure for a read that succeeds on retry.
+  // Keep ambiguous writes outside this retry to preserve their stable-key reconciliation boundary.
+  const safeRead = input.method === 'GET'
+    || (input.method === 'POST' && /\/records\/search(?:\?|$)/u.test(input.path));
+  const retryable = status === 429 || status >= 500 || larkCode === 1254290
+    || (larkCode === 1254002 && safeRead);
   const remoteMessage = safeRemoteMessage(input.payload?.msg ?? input.text ?? 'Unknown error');
   const message = !input.response.ok
     ? `Lark HTTP ${status}: ${remoteMessage}`

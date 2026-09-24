@@ -327,7 +327,9 @@ function sumField(rows, fieldName, allowObservedSubtotal) {
   return sumAggregate(rows.map((row) => row[fieldName]), allowObservedSubtotal);
 }
 function sumCurrentField(rows, fieldName, allowObservedSubtotal) {
-  return sumAggregate(rows.map((row) => row.current?.[fieldName]), allowObservedSubtotal);
+  // A strict sum of observed rows still understates the account total when the source
+  // inventory is incomplete. Keep per-content observations but withhold the aggregate.
+  return allowObservedSubtotal ? sumObserved(rows.map((row) => row.current?.[fieldName])) : null;
 }
 function sumComponents(values, allowObservedSubtotal) {
   return sumAggregate(values, allowObservedSubtotal);

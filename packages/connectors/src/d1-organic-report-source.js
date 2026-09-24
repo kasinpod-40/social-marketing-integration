@@ -114,11 +114,15 @@ export class D1OrganicReportSource {
       `, [contentCoverage.coverage_run_id, limit + 1])
       : [];
     assertWithinLimit(coverageEntities.length, limit, 'coverage entity rows', this.platform);
-
     const authoritativeInventoryIds = authoritativeFullInventoryIds({
       coverage: contentCoverage,
       coverageEntities,
       periodEnd,
+    });
+    const contentCoverageStatus = effectiveContentCoverageStatus({
+      platform: this.platform,
+      coverage: contentCoverage,
+      authoritativeInventoryIds,
     });
     const scopedCurrentRows = scopeObservationRows(currentRows, authoritativeInventoryIds);
     const scopedCompareRows = scopeObservationRows(compareRows, authoritativeInventoryIds);
@@ -162,8 +166,10 @@ export class D1OrganicReportSource {
         accountFactRecords: accountDailyFacts.length,
         currentAccountFactRecords: currentAccountFacts.length,
         coverageDatasetKey: selectedCoverage?.dataset_key ?? null,
-        coverageStatus: normalizeCoverageStatus(selectedCoverage?.status),
-        contentCoverageStatus: normalizeCoverageStatus(contentCoverage?.status),
+        coverageStatus: sourceScope === 'account'
+          ? normalizeCoverageStatus(selectedCoverage?.status)
+          : contentCoverageStatus,
+        contentCoverageStatus,
         accountCoverageStatus: normalizeCoverageStatus(accountCoverage?.status),
         coverageRunId: selectedCoverage?.coverage_run_id ?? null,
         expectedEntities: nullableInteger(selectedCoverage?.expected_entities),
@@ -204,6 +210,14 @@ export class D1OrganicReportSource {
       throw readError(this.platform, cause);
     }
   }
+}
+
+function effectiveContentCoverageStatus({ platform, coverage, authoritativeInventoryIds }) {
+  const status = normalizeCoverageStatus(coverage?.status);
+  if (status !== 'complete' || (platform !== 'youtube' && platform !== 'instagram')) return status;
+  // Cumulative totals are complete only for an exact-day full inventory, not a latest-100
+  // or publication-day scan that happened to finish without API errors.
+  return authoritativeInventoryIds !== null ? 'complete' : 'partial';
 }
 
 function authoritativeFullInventoryIds(input) {

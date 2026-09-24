@@ -1,5 +1,55 @@
 # Project Brain — Social Marketing Data Integration
 
+## Instagram token renewal — 2026-09-24
+
+The new Customer Worker Secret passed isolated GET-only Production-bound identity and media reads, with no
+D1/Lark writes. The customer's later instruction explicitly authorizes encrypted D1 token storage, overriding
+the repository's default Secret-store-only policy for this credential. The implementation uses the existing
+Sync Worker, AES-256-GCM with the existing versioned Worker Secret key, a D1 credential row, an opt-in flag,
+and a daily 06:00 Bangkok due check with retry. Local tests pass; production migration, reviewed deployment,
+activation, and live rotation readback remain pending. The current token expires 2026-11-23 11:50:22 ICT.
+Data access separately expires 2026-12-23 11:50:20 ICT; whether a refresh extends it is unverified.
+Historical Instagram values never captured on a past day cannot be reconstructed by renewal.
+
+## Pilot Organic Daily continuation — 2026-09-24
+
+For report date 2026-09-23, Customer Production YouTube completed exact full-inventory Coverage 850/850
+and the scoped `Social MKT Data Hub` Lark `MKT_Content_Daily` readback has 850/850 rows. Instagram's
+scheduled Work failed before Content Coverage and Lark writes at `instagram.account.latest` with Meta Graph
+HTTP 401/code 190. A fresh isolated Production credential check classified Meta's response as `expired` for
+both identity and refresh requests; the local fallback token also returned `expired`. Neither request returned
+a replacement token. The Production Connector reads `META_INSTAGRAM_ACCESS_TOKEN` from Cloudflare Secret;
+the codebase has no Meta auto-refresh path. A new valid Instagram Login grant and secure Secret rotation are
+required before an exact-day rerun. The active old Worker generated Instagram
+1D/3D Reports marked complete despite no current-day Coverage. The local repair enforces exact-day full-inventory
+Coverage, null aggregate current totals, and no ranked Top Content while period coverage is incomplete. It is
+not deployed. Read-only `MKT_Content_Daily` retention planning found 9,817 rows, 0 duplicates and 0 delete
+candidates. The older `lark.bounded-daily.retention` DLQ instead belongs to six Conversation/Commerce tables;
+the Content Daily plan cannot close it. It remains open without blind redrive. The isolated Preview was disabled again and active
+Production Worker version stayed unchanged.
+
+## Pilot Organic Daily live correction — 2026-09-23
+
+The Production Worker already includes scheduled full-inventory YouTube/Instagram collection and YouTube
+completed-date propagation, but the 2026-09-22 YouTube run preceded deployment of the date fix. Exact guarded
+Customer D1 repair moved only its 455 Content observations and one 850/850 Content Coverage period from processing
+date 2026-09-23 to reporting date 2026-09-22; readback found no remaining wrong-date rows in that run. The earlier
+Customer Lark direct readback had 850/850 correct YouTube Daily keys for 2026-09-22. Instagram Lark direct readback
+found 120/122/125/126 correct Daily rows for 2026-09-18/20/21/22, matching the recorded Coverage counts, with zero
+duplicate keys. Exact D1 Coverage proves full inventory only for 18 September (120/120); 20/21/22 September still
+carry `report_range` (122/125/126), so those counts do not prove the intended full-inventory snapshot. Historical
+Instagram 2026-09-16 and 2026-09-19 Content values were never observed and cannot be
+reconstructed from today's cumulative metrics; 15/17 September were publication-day partial inventories. A further
+exact correction moved 3,003 YouTube observations and 11 matching Coverage periods to their Account Daily report
+dates, leaving zero mismatched YouTube runs in D1. Report dates 15/17/19/21 September still retain the old
+latest-100 scope, and available Analytics facts cannot reconstruct the full 850-video cumulative inventory for
+those dates. The next natural scheduled generation and Report-window refresh
+remain the live acceptance gates; sync Work success alone is not a completeness claim. The current branch adds an
+exact-day/full-inventory Coverage gate to the D1 Organic report reader for YouTube and Instagram, withholds aggregate
+current totals when inventory is partial, and retries Lark `1254002` only for safe reads. The read retry follows a
+successful 9,039-record/19-page Content Daily isolated Preview; the separate six-table bounded Daily retention
+DLQ is still open and the Worker is unchanged.
+
 ## Scheduled Organic Daily growth completeness — 2026-09-18
 
 The scheduled YouTube job must explicitly request `full`, not `auto`. The prior 24-hour checkpoint decision
