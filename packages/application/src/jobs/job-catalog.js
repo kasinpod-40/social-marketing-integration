@@ -24,6 +24,7 @@ export const JOB_TYPES = Object.freeze({
   WEEKLY_REPORT_GENERATE: 'report.weekly.generate',
   REPORT_MATERIALIZATION_GENERATE: 'report.materialization.generate',
   MKT_CONTENT_DAILY_RETENTION: 'lark.mkt-content-daily.retention',
+  LARK_BOUNDED_DAILY_RETENTION: 'lark.bounded-daily.retention',
   LARK_BASE_VIEW_HYGIENE: 'lark.base.view.hygiene',
   CUSTOMER_META_K2_LARK_SNAPSHOT_IMPORT: 'lark.meta-k2.snapshot.import',
   CUSTOMER_D1_LARK_SNAPSHOT_IMPORT: 'lark.customer-d1.snapshot.import',
@@ -43,6 +44,7 @@ export const JOB_TRIGGERS = Object.freeze({
   DASHBOARD_CUSTOM_RANGE: 'dashboard_custom_range',
   DASHBOARD_SCHEDULED: 'dashboard_scheduled',
   MKT_CONTENT_DAILY_RETENTION_SCHEDULED: 'mkt_content_daily_retention_scheduled',
+  LARK_BOUNDED_DAILY_RETENTION_SCHEDULED: 'lark_bounded_daily_retention_scheduled',
   CUSTOMER_LARK_EMPTY_FIELDS: 'customer_lark_empty_fields',
   CUSTOMER_META_K2_SNAPSHOT_IMPORT: 'customer_meta_k2_snapshot_import',
   CUSTOMER_D1_SNAPSHOT_IMPORT: 'customer_d1_snapshot_import',
@@ -203,6 +205,12 @@ const JOB_CATALOG = Object.freeze({
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: null,
     allowedTriggers: [JOB_TRIGGERS.MKT_CONTENT_DAILY_RETENTION_SCHEDULED],
+  }),
+  [JOB_TYPES.LARK_BOUNDED_DAILY_RETENTION]: freezeJob({
+    type: JOB_TYPES.LARK_BOUNDED_DAILY_RETENTION,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: null,
+    allowedTriggers: [JOB_TRIGGERS.LARK_BOUNDED_DAILY_RETENTION_SCHEDULED],
   }),
   [JOB_TYPES.LARK_BASE_VIEW_HYGIENE]: freezeJob({
     type: JOB_TYPES.LARK_BASE_VIEW_HYGIENE,

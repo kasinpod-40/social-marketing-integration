@@ -22,6 +22,14 @@ import {
   seedReportSettings,
 } from '../../../packages/application/src/use-cases/seed-report-settings.js';
 import { runMktContentDailyRetention } from '../../../packages/application/src/use-cases/mkt-content-daily-retention.js';
+import {
+  LARK_BOUNDED_DAILY_MAX_DELETE_ROWS,
+  LARK_BOUNDED_DAILY_RETENTION_DAYS,
+  LARK_BOUNDED_DAILY_SOFT_LIMIT,
+  LARK_BOUNDED_DAILY_TARGET_LIMIT,
+  LARK_BOUNDED_DAILY_TABLE_CONTRACTS,
+  runLarkBoundedDailyRetention,
+} from '../../../packages/application/src/use-cases/lark-bounded-daily-retention.js';
 import { applyCustomerLarkViewHygiene } from '../../../packages/application/src/use-cases/apply-customer-lark-view-hygiene.js';
 import {
   CUSTOMER_META_K2_LARK_IMPORT_MODE,
@@ -122,6 +130,44 @@ export async function processJob(input) {
       db: infrastructure.getStateDb(),
       tableId: tableIds.mktContentDaily,
       deferredPlatforms: input.job.body?.deferredPlatforms ?? [],
+    });
+  }
+
+  if (definition.type === JOB_TYPES.LARK_BOUNDED_DAILY_RETENTION) {
+    const storage = readStorageRuntimeConfig(input.env);
+    if (!storage.larkBoundedDailyRetentionEnabled) {
+      throw permanentError('Bounded Lark Daily retention is disabled', {
+        code: 'LARK_BOUNDED_DAILY_RETENTION_DISABLED',
+      });
+    }
+    const infrastructure = input.getInfrastructure();
+    const tables = readLarkTableIdsFromEnv(
+      input.env,
+      LARK_BOUNDED_DAILY_TABLE_CONTRACTS.map((contract) => contract.tableKey),
+    );
+    const runtimeConfig = input.getRuntimeConfig();
+    return runLarkBoundedDailyRetention({
+      client: infrastructure.getLarkBitableClient(),
+      db: infrastructure.getStateDb(),
+      tables,
+      customerKey: runtimeConfig.customerKey,
+      timezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
+      retentionDays: readPositiveInteger(
+        input.env?.MKT_BOUNDED_DAILY_RETENTION_DAYS,
+        LARK_BOUNDED_DAILY_RETENTION_DAYS,
+      ),
+      softLimit: readPositiveInteger(
+        input.env?.MKT_BOUNDED_DAILY_SOFT_LIMIT,
+        LARK_BOUNDED_DAILY_SOFT_LIMIT,
+      ),
+      targetLimit: readPositiveInteger(
+        input.env?.MKT_BOUNDED_DAILY_TARGET_LIMIT,
+        LARK_BOUNDED_DAILY_TARGET_LIMIT,
+      ),
+      maxDeleteRows: readPositiveInteger(
+        input.env?.MKT_BOUNDED_DAILY_MAX_DELETE_ROWS,
+        LARK_BOUNDED_DAILY_MAX_DELETE_ROWS,
+      ),
     });
   }
 

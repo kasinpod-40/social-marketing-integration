@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## New-day source closeout and missing retention wiring — 2026-09-25
+
+PR #876 is merged/deployed as version `56d35848`, preserving 252 bindings and schedules. Meta K2 exact
+continuation completed; all nine source Work units for report date 2026-09-24 are complete. Ads Daily matches
+D1 at118/118 and Summary at62/62; eight repaired DLQs and ten Alerts were resolved and mirrored to Lark.
+The remaining six-table retention job was deployed previously from `40ed9627` but absent from main. Its
+existing six-table safety contract is restored in the current branch. Exact live execution and old incident
+closeout remain. All 32 scheduled 09:00 Report IDs are present in Lark; TikTok 1D/3D has one genuinely
+missing pre-period baseline among 2,086 tracked videos, so partial is correct.
+
 ## Ads retention parameter limit — 2026-09-25
 
 A SELECT-only Customer D1 reproduction proves the Paid Ads post-sync DLQ cause: 40 exact identities

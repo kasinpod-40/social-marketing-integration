@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-25 — Restore existing bounded Daily retention
+
+- restore the previously deployed six-table Conversation/Commerce retention job from its separate branch
+  into main, preserving exact D1 proof, idle guards, daily schedule and global 500-delete limit;
+- finish Meta K2, verify Ads D1/Lark 118/118 and Summary62/62, and resolve eight repaired DLQs with ten
+  mirrored Alerts; continue live six-table retention and Report validation.
+
 ## 2026-09-25 — Ads retention D1 parameter bound
 
 - fix the live-reproduced Paid Ads maintenance failure by checking 19 exact identities per D1 SELECT
