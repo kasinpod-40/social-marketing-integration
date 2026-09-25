@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-25 — Ads retention D1 parameter bound
+
+- fix the live-reproduced Paid Ads maintenance failure by checking 19 exact identities per D1 SELECT
+  (96 bindings) instead of 40 (201), preserving full verification before deletion and the 500-row cap;
+- add 500-candidate and later-query-failure regression; preserve unmatched records and fail closed;
+- verify the new scheduled Organic snapshots directly in scoped Lark tables; continue Paid recovery.
+
 ## 2026-09-24 — Instagram renewal live activation and daily repair
 
 - merge PR #874, apply D1 migration 0022, bootstrap the current Instagram grant into encrypted D1 storage,
