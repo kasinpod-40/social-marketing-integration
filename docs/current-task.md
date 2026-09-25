@@ -107,6 +107,8 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 - Final D1 check: no open DLQs created during the 2026-09-24 processing window; current scheduled source
   Work for all eight platforms/two Meta accounts completed. The old read-only Instagram token bootstrap
   Work remains `active` without an active lock and is separate from the completed scheduled daily job.
+  Two YouTube `YOUTUBE_VIDEO_RECONCILIATION_REQUIRED` warning Alerts remain open across the two latest
+  processing dates; they record unavailable source/Analytics observations, not a pending Queue or sync lock.
 
 ### Live result — Ads and Instagram repair (2026-09-25)
 

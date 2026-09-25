@@ -11,7 +11,8 @@ Exact live execution deleted 500 D1-verified old Lark cache rows within the per-
 Daily and 277 Commerce Product Daily), with zero D1 business mutations. The old maintenance DLQ and Alert
 were resolved after this success, with Lark Alert readback; next scheduled runs continue any older backlog.
 All 32 scheduled 09:00 Report IDs are present in Lark; TikTok 1D/3D has one genuinely
-missing pre-period baseline among 2,086 tracked videos, so partial is correct.
+missing pre-period baseline among 2,086 tracked videos, so partial is correct. Two YouTube source
+reconciliation warning Alerts remain open; neither represents a pending Queue or sync lock.
 
 ## Ads retention parameter limit — 2026-09-25
 
