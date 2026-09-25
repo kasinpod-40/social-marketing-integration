@@ -152,7 +152,9 @@
     "prod:mkt-ads-summary-retention": "node scripts/mkt-ads-campaign-summary-retention-one-command.mjs",
     "prod:mkt-ads-summary-retention:apply": "node scripts/mkt-ads-campaign-summary-retention-one-command.mjs --execute",
     "setup:google-ads-view-filters": "node scripts/setup-google-ads-view-filters.mjs",
-    "setup:google-ads-view-filters:apply": "node scripts/setup-google-ads-view-filters.mjs --apply"
+    "setup:google-ads-view-filters:apply": "node scripts/setup-google-ads-view-filters.mjs --apply",
+    "cutover:d1-runtime-config": "node scripts/runtime-config-d1-cutover.mjs",
+    "cutover:d1-runtime-config:apply": "node scripts/runtime-config-d1-cutover.mjs --execute"
   },
   "overrides": {
     "sharp": "0.35.4",

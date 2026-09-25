@@ -1,8 +1,7 @@
-export function readWranglerScalarVars(sourceText) {
+export function parseWranglerJsonc(sourceText) {
   const source = requireText(sourceText, 'sourceText');
-  let parsed;
   try {
-    parsed = JSON.parse(removeTrailingCommas(stripJsoncComments(source)));
+    return JSON.parse(removeTrailingCommas(stripJsoncComments(source)));
   } catch (cause) {
     const error = new Error('Wrangler config JSONC could not be parsed safely');
     error.name = 'WranglerJsoncVarsError';
@@ -10,6 +9,10 @@ export function readWranglerScalarVars(sourceText) {
     error.cause = cause;
     throw error;
   }
+}
+
+export function readWranglerScalarVars(sourceText) {
+  const parsed = parseWranglerJsonc(sourceText);
   const vars = parsed?.vars;
   if (!vars || typeof vars !== 'object' || Array.isArray(vars)) return Object.freeze({});
   const output = {};
