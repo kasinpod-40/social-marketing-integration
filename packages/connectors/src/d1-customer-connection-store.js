@@ -4,6 +4,7 @@ import {
   requireConnectionAccessStatus,
   requireConnectionStatus,
   requireCustomerConnectionConnector,
+  getCustomerConnectionProvider,
 } from '../../application/src/connections/customer-connection-contract.js';
 import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
 
@@ -157,7 +158,7 @@ export class D1CustomerConnectionStore {
       CUSTOMER_CONNECTION_STATUSES.AUTHORIZATION_PENDING,
       row.customerKey,
       row.connectorKey,
-      'google',
+      getCustomerConnectionProvider(row.connectorKey),
       CUSTOMER_CONNECTION_STATUSES.AUTHORIZATION_PENDING,
       CUSTOMER_CONNECTION_ACCESS_STATUSES.NOT_VALIDATED,
       row.createdAt,
