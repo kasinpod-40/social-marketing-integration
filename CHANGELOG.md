@@ -5,7 +5,10 @@
 - restore the previously deployed six-table Conversation/Commerce retention job from its separate branch
   into main, preserving exact D1 proof, idle guards, daily schedule and global 500-delete limit;
 - finish Meta K2, verify Ads D1/Lark 118/118 and Summary62/62, and resolve eight repaired DLQs with ten
-  mirrored Alerts; continue live six-table retention and Report validation.
+  mirrored Alerts; verify all 32 Report IDs in Lark;
+- merge PR #880 and deploy Production `b5b36758` with 252 unchanged bindings; execute one exact six-table
+  run, delete 500 D1-verified old Lark cache rows (223 Conversation, 277 Commerce Product), and resolve
+  the previous maintenance DLQ/Alert with Lark mirror readback. Future daily runs continue the capped backlog.
 
 ## 2026-09-25 — Ads retention D1 parameter bound
 
