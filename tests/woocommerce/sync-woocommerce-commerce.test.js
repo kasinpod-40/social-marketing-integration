@@ -229,6 +229,7 @@ test('bounded Order history persists a closed 2026 Provider window and report-ra
   assert.equal(result.status, 'completed');
   assert.equal(result.reconciliation.scopeMode, 'report_range');
   assert.deepEqual(result.reconciliation.sourceScope, {
+    d1Only: false,
     modifiedAfter: null,
     incrementalBoundary: null,
     orderCreatedAfter: Date.parse('2026-01-01T00:00:00.000Z'),
@@ -259,6 +260,76 @@ test('bounded Order history persists a closed 2026 Provider window and report-ra
     .filter((run) => ['woocommerce_store', 'woocommerce_products', 'woocommerce_categories']
       .includes(run.dataset_key))
     .every((run) => run.scope_mode === 'full_inventory'), true);
+});
+
+test('old bounded Order history keeps its durable facts and Coverage in D1 without Lark cache writes', async () => {
+  const oldOrder = {
+    ...orderFixture(),
+    date_created_gmt: '2025-08-31T17:00:00',
+    date_modified_gmt: '2026-07-25T01:00:00',
+  };
+  const fixture = createDependencies({ orders: [oldOrder] });
+  const result = await syncWooCommerceCommerce({
+    ...fixture.input,
+    d1Only: true,
+    orderCreatedAfter: '2025-08-31T17:00:00.000Z',
+    orderCreatedBefore: '2025-12-31T17:00:00.000Z',
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.reconciliation.sourceScope.d1Only, true);
+  assert.equal(result.reconciliation.datasets.orders.sourceRows, 1);
+  assert.equal(result.reconciliation.totals.larkRows, 0);
+  assert.equal(fixture.events.includes('d1:upsert'), true);
+  assert.equal(fixture.events.some((event) => event.startsWith('lark:')), false);
+  const coverage = fixture.coverageRuns.find((run) => run.dataset_key === 'woocommerce_orders');
+  assert.equal(coverage.period_start, '2025-09-01');
+  assert.equal(coverage.period_end, '2026-01-01');
+  assert.equal(coverage.status, 'complete');
+});
+
+test('D1-only history retains its immutable scope through bounded continuation', async () => {
+  const fixture = createDependencies({
+    maxPagesPerInvocation: 1,
+    orders: [{
+      ...orderFixture(),
+      date_created_gmt: '2025-09-30T16:59:59',
+    }],
+  });
+  const input = {
+    ...fixture.input,
+    d1Only: true,
+    orderCreatedAfter: '2025-08-31T17:00:00.000Z',
+    orderCreatedBefore: '2025-12-31T17:00:00.000Z',
+  };
+  let result;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    result = await syncWooCommerceCommerce(input);
+    assert.equal(fixture.phaseState.value.state.scope.d1Only, true);
+  }
+  assert.equal(result.status, 'completed');
+  assert.equal(fixture.queued.length, 5);
+  assert.equal(result.reconciliation.datasets.orders.sourceRows, 1);
+  assert.equal(result.reconciliation.totals.larkRows, 0);
+  assert.equal(fixture.events.some((event) => event.startsWith('lark:')), false);
+});
+
+test('D1-only old history requires a bounded full window and rejects recent cache dates before Source', async () => {
+  for (const invalid of [
+    { fullReconciliation: false, orderCreatedAfter: '2025-08-31T17:00:00.000Z', orderCreatedBefore: '2025-12-31T17:00:00.000Z' },
+    { orderCreatedAfter: null, orderCreatedBefore: '2025-12-31T17:00:00.000Z' },
+    { orderCreatedAfter: '2026-07-01T00:00:00.000Z', orderCreatedBefore: '2026-07-25T00:00:00.000Z' },
+  ]) {
+    const fixture = createDependencies();
+    await assert.rejects(syncWooCommerceCommerce({
+      ...fixture.input,
+      d1Only: true,
+      orderCreatedAfter: invalid.orderCreatedAfter,
+      orderCreatedBefore: invalid.orderCreatedBefore,
+      ...(invalid.fullReconciliation === false ? { fullReconciliation: false } : {}),
+    }), /d1Only/u);
+    assert.deepEqual(fixture.events, []);
+  }
 });
 
 test('bounded history excludes pre-2026 Customer and Coupon rows from storage', async () => {

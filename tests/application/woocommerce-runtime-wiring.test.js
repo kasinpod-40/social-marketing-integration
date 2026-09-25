@@ -87,6 +87,47 @@ test('Customer Production WooCommerce uses normal scheduled admission after live
   }), (error) => error === sentinel);
 });
 
+test('bounded D1-only history admits only manual full reconciliation while the schedule is paused', async () => {
+  const base = {
+    type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
+    trigger: JOB_TRIGGERS.WOOCOMMERCE_MANUAL_UAT,
+    fullReconciliation: true,
+    d1Only: true,
+    orderCreatedAfter: '2025-08-31T17:00:00.000Z',
+    orderCreatedBefore: '2025-12-31T17:00:00.000Z',
+  };
+  const operation = {
+    stable: true,
+    operationId: OPERATION_ID,
+    workKey: `woocommerce:${OPERATION_ID}`,
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+  };
+  const env = protectedEnv({
+    MKT_ENV: 'production',
+    MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED: 'true',
+  });
+  const sentinel = new Error('MANUAL_HISTORY_ADMITTED');
+  await assert.rejects(processWooCommerceCommerceJob({
+    job: { body: base }, operation, env,
+    getRuntimeConfig: () => loadCustomerRuntimeConfig(env),
+    getInfrastructure: () => { throw sentinel; },
+  }), (error) => error === sentinel);
+
+  for (const invalid of [
+    { ...base, trigger: JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED },
+    { ...base, fullReconciliation: false },
+    { ...base, orderCreatedBefore: null },
+  ]) {
+    await assert.rejects(processWooCommerceCommerceJob({
+      job: { body: invalid }, operation, env,
+      getRuntimeConfig: () => loadCustomerRuntimeConfig(env),
+      getInfrastructure: () => { throw new Error('should not construct infrastructure'); },
+    }), (error) => error?.code === 'WOOCOMMERCE_D1_ONLY_SCOPE_INVALID');
+  }
+});
+
 test('verified Customer Production WooCommerce cannot reuse the controlled-UAT lane', async () => {
   const env = protectedEnv({
     MKT_ENV: 'production',

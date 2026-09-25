@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-25 — WooCommerce 2025 bounded history preparation
+
+- confirm with GET-only Customer WooCommerce API that September–December 2025 contains about 2,085 orders
+  while Customer D1 has no facts for the interval;
+- add an exact manual full-reconciliation D1-only path to the existing resumable WooCommerce job so old
+  facts enter durable history without overflowing the 90-day Lark Daily cache;
+- align the bounded GMT order filter with the existing UTC normalizer at Bangkok day boundaries;
+- retain the normal schedule, other channels and existing 2026+ facts for post-review live backfill.
+
 ## 2026-09-25 — Restore existing bounded Daily retention
 
 - restore the previously deployed six-table Conversation/Commerce retention job from its separate branch
