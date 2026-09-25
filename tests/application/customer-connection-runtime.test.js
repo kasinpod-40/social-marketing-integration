@@ -22,7 +22,21 @@ test('connection runtime locks Integration Workspace and reads exact redirect/ke
   assert.equal(loadGoogleAdsRuntimeConfig(validEnv()).advertiserCustomerId, '5662332033');
   assert.equal(loadGoogleOAuthRuntimeConfig(validEnv()).clientId, 'google-client-id');
   assert.equal(loadTikTokAdsRuntimeConfig(validEnv()).appId, '7670007933899390993');
+  assert.equal(
+    loadTikTokAdsRuntimeConfig(validEnv()).redirectUri,
+    'https://worker.example/oauth/tiktok-ads/callback',
+  );
   assert.equal(loadTikTokAdsRuntimeConfig(validEnv()).approvedAdvertiserId, null);
+});
+
+test('TikTok Ads runtime rejects malformed consolidated app credentials', () => {
+  assert.throws(
+    () => loadTikTokAdsRuntimeConfig({
+      ...validEnv(),
+      TIKTOK_ADS_APP_CREDENTIALS: '{"app_id":"7670007933899390993"}',
+    }),
+    /TIKTOK_ADS_APP_CREDENTIALS\.secret/u,
+  );
 });
 
 test('connection runtime rejects historical profiles and placeholder secrets', () => {
@@ -109,9 +123,10 @@ function validEnv() {
     MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
     MKT_GOOGLE_ADS_REDIRECT_URI: 'https://worker.example/oauth/google-ads/callback',
     MKT_YOUTUBE_REDIRECT_URI: 'https://worker.example/oauth/youtube/callback',
-    MKT_TIKTOK_ADS_REDIRECT_URI: 'https://worker.example/oauth/tiktok-ads/callback',
-    TIKTOK_ADS_APP_ID: '7670007933899390993',
-    TIKTOK_ADS_APP_SECRET: 'tiktok-app-secret',
+    TIKTOK_ADS_APP_CREDENTIALS: JSON.stringify({
+      app_id: '7670007933899390993',
+      secret: 'tiktok-app-secret',
+    }),
     MKT_TIKTOK_ADS_ADVERTISER_ID: '',
     MKT_CONNECTION_OPERATOR_TOKEN: 'operator-secret',
     MKT_CONNECTION_INVITATION_SIGNING_KEY: 'invitation-signing-key',

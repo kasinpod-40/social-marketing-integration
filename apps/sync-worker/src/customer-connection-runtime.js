@@ -15,9 +15,6 @@ const REQUIRED_REDIRECT_ENV_KEYS = Object.freeze({
   [CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS]: 'MKT_GOOGLE_ADS_REDIRECT_URI',
   [CUSTOMER_CONNECTION_CONNECTORS.YOUTUBE]: 'MKT_YOUTUBE_REDIRECT_URI',
 });
-const OPTIONAL_REDIRECT_ENV_KEYS = Object.freeze({
-  [CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS]: 'MKT_TIKTOK_ADS_REDIRECT_URI',
-});
 
 /** สร้าง Shared runtime เฉพาะเมื่อ HTTP connection route ถูกเรียก จึงไม่กระทบ Queue/Cron เดิม */
 export function createCustomerConnectionRuntime(env, dependencies = {}) {
@@ -39,12 +36,13 @@ export function createCustomerConnectionRuntime(env, dependencies = {}) {
 
 export function loadCustomerConnectionRuntimeConfig(env = {}) {
   const credential = loadCustomerCredentialRuntimeConfig(env);
+  const publicOrigin = requireHttpsOrigin(
+    env.MKT_CONNECTION_PUBLIC_ORIGIN,
+    'MKT_CONNECTION_PUBLIC_ORIGIN',
+  );
   return Object.freeze({
     ...credential,
-    publicOrigin: requireHttpsOrigin(
-      env.MKT_CONNECTION_PUBLIC_ORIGIN,
-      'MKT_CONNECTION_PUBLIC_ORIGIN',
-    ),
+    publicOrigin,
     operatorToken: requireSecret(env.MKT_CONNECTION_OPERATOR_TOKEN, 'MKT_CONNECTION_OPERATOR_TOKEN'),
     invitationSigningKey: requireSecret(
       env.MKT_CONNECTION_INVITATION_SIGNING_KEY,
@@ -65,14 +63,10 @@ export function loadCustomerConnectionRuntimeConfig(env = {}) {
           requireHttpsUrl(env[envKey], envKey),
         ]),
       ),
-      ...Object.fromEntries(
-        Object.entries(OPTIONAL_REDIRECT_ENV_KEYS)
-          .filter(([, envKey]) => hasText(env[envKey]))
-          .map(([connectorKey, envKey]) => [
-            connectorKey,
-            requireHttpsUrl(env[envKey], envKey),
-          ]),
-      ),
+      [CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS]: new URL(
+        '/oauth/tiktok-ads/callback',
+        publicOrigin,
+      ).toString(),
     }),
   });
 }
@@ -154,13 +148,15 @@ export function loadGoogleAdsRuntimeConfig(env = {}) {
 }
 
 export function loadTikTokAdsRuntimeConfig(env = {}) {
+  const credentials = readTikTokAdsAppCredentials(env.TIKTOK_ADS_APP_CREDENTIALS);
+  const publicOrigin = requireHttpsOrigin(
+    env.MKT_CONNECTION_PUBLIC_ORIGIN,
+    'MKT_CONNECTION_PUBLIC_ORIGIN',
+  );
   return Object.freeze({
-    appId: requireDigits(env.TIKTOK_ADS_APP_ID, 'TIKTOK_ADS_APP_ID'),
-    appSecret: requireSecret(env.TIKTOK_ADS_APP_SECRET, 'TIKTOK_ADS_APP_SECRET'),
-    redirectUri: requireHttpsUrl(
-      env.MKT_TIKTOK_ADS_REDIRECT_URI,
-      'MKT_TIKTOK_ADS_REDIRECT_URI',
-    ),
+    appId: credentials.appId,
+    appSecret: credentials.appSecret,
+    redirectUri: new URL('/oauth/tiktok-ads/callback', publicOrigin).toString(),
     approvedAdvertiserId: optionalDigits(
       env.MKT_TIKTOK_ADS_ADVERTISER_ID,
       'MKT_TIKTOK_ADS_ADVERTISER_ID',
@@ -209,8 +205,21 @@ function requireHttpsUrl(value, fieldName) {
   return url.toString();
 }
 
-function hasText(value) {
-  return typeof value === 'string' && value.trim() !== '';
+function readTikTokAdsAppCredentials(value) {
+  const raw = requireSecret(value, 'TIKTOK_ADS_APP_CREDENTIALS');
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new TypeError('TIKTOK_ADS_APP_CREDENTIALS must be valid JSON');
+  }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new TypeError('TIKTOK_ADS_APP_CREDENTIALS must be a JSON object');
+  }
+  return Object.freeze({
+    appId: requireDigits(parsed.app_id, 'TIKTOK_ADS_APP_CREDENTIALS.app_id'),
+    appSecret: requireSecret(parsed.secret, 'TIKTOK_ADS_APP_CREDENTIALS.secret'),
+  });
 }
 
 function requireText(value, fieldName) {
