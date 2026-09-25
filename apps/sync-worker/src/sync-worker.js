@@ -4,6 +4,7 @@ import { createInfrastructure, createOperationalStore } from './runtime-infrastr
 import { produceScheduledJobs } from './scheduled-producer.js';
 import { maybeRefreshInstagramToken } from './instagram-token-renewal.js';
 import { createCustomerConnectionHttpHandler } from './customer-connection-http.js';
+import { hydrateRuntimeEnvFromD1 } from './runtime-config-hydration.js';
 
 /** สร้าง Worker instance เพื่อให้ Worker-runtime tests inject use case ได้โดยไม่เปลี่ยน Production default */
 export function createSyncWorker(dependencies = {}) {
@@ -12,20 +13,24 @@ export function createSyncWorker(dependencies = {}) {
   const operationalStoreFactory = dependencies.createOperationalStore ?? createOperationalStore;
   const httpHandler = dependencies.handleHttp
     ?? createCustomerConnectionHttpHandler(dependencies.httpDependencies);
+  const hydrateRuntimeEnv = dependencies.hydrateRuntimeEnv ?? hydrateRuntimeEnvFromD1;
 
   return Object.freeze({
     async fetch(request, env, ctx) {
-      return httpHandler(request, env, ctx);
+      const runtimeEnv = await hydrateRuntimeEnv(env);
+      return httpHandler(request, runtimeEnv, ctx);
     },
 
     async scheduled(event, env) {
-      const result = await produceScheduledJobs(event, env);
-      await (dependencies.maybeRefreshInstagramToken ?? maybeRefreshInstagramToken)(event, env);
+      const runtimeEnv = await hydrateRuntimeEnv(env);
+      const result = await produceScheduledJobs(event, runtimeEnv);
+      await (dependencies.maybeRefreshInstagramToken ?? maybeRefreshInstagramToken)(event, runtimeEnv);
       return result;
     },
 
     async queue(batch, env) {
-      return routeQueueBatch(batch, env, {
+      const runtimeEnv = await hydrateRuntimeEnv(env);
+      return routeQueueBatch(batch, runtimeEnv, {
         processJob: processJobImpl,
         createInfrastructure: infrastructureFactory,
         createOperationalStore: operationalStoreFactory,

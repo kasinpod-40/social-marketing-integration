@@ -148,14 +148,13 @@ export function loadGoogleAdsRuntimeConfig(env = {}) {
 }
 
 export function loadTikTokAdsRuntimeConfig(env = {}) {
-  const credentials = readTikTokAdsAppCredentials(env.TIKTOK_ADS_APP_CREDENTIALS);
   const publicOrigin = requireHttpsOrigin(
     env.MKT_CONNECTION_PUBLIC_ORIGIN,
     'MKT_CONNECTION_PUBLIC_ORIGIN',
   );
   return Object.freeze({
-    appId: credentials.appId,
-    appSecret: credentials.appSecret,
+    appId: requireDigits(env.TIKTOK_ADS_APP_ID, 'TIKTOK_ADS_APP_ID'),
+    appSecret: requireSecret(env.TIKTOK_ADS_APP_SECRET, 'TIKTOK_ADS_APP_SECRET'),
     redirectUri: new URL('/oauth/tiktok-ads/callback', publicOrigin).toString(),
     approvedAdvertiserId: optionalDigits(
       env.MKT_TIKTOK_ADS_ADVERTISER_ID,
@@ -203,23 +202,6 @@ function requireHttpsUrl(value, fieldName) {
   }
   url.hash = '';
   return url.toString();
-}
-
-function readTikTokAdsAppCredentials(value) {
-  const raw = requireSecret(value, 'TIKTOK_ADS_APP_CREDENTIALS');
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new TypeError('TIKTOK_ADS_APP_CREDENTIALS must be valid JSON');
-  }
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new TypeError('TIKTOK_ADS_APP_CREDENTIALS must be a JSON object');
-  }
-  return Object.freeze({
-    appId: requireDigits(parsed.app_id, 'TIKTOK_ADS_APP_CREDENTIALS.app_id'),
-    appSecret: requireSecret(parsed.secret, 'TIKTOK_ADS_APP_CREDENTIALS.secret'),
-  });
 }
 
 function requireText(value, fieldName) {
