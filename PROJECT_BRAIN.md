@@ -1,5 +1,15 @@
 # Project Brain — Social Marketing Data Integration
 
+## Ads retention parameter limit — 2026-09-25
+
+A SELECT-only Customer D1 reproduction proves the Paid Ads post-sync DLQ cause: 40 exact identities
+require 201 bindings and fail at SQL offset 2393. The repaired batch uses 19 identities (96 bindings),
+within D1's 100 limit. All identity queries must succeed before any Lark cache deletion; unmatched rows
+remain protected. The previous Work-cleanup hypothesis was removed without deployment. New-day Organic
+Lark readback for report date 2026-09-24 confirms Facebook 107, Instagram 127, TikTok 275, YouTube 850
+unique Content Daily keys and one Account Daily per platform. Paid maintenance deployment/recovery and
+Meta K2 completion remain pending; do not call the full daily cycle complete.
+
 ## Instagram renewal and daily sync live result — 2026-09-24
 
 PR #874 is merged (`main@a2dffc77`). Customer D1 migration 0022 is applied, the Instagram grant is stored
@@ -9,7 +19,7 @@ rotation had deployed version `74d31de4` with daily flags off; the exact previou
 The 2026-09-23 Instagram repair completed D1 Coverage Account 1/1 and Content 127/127, then direct scoped
 Lark API readback found 1 Account Daily and 127 unique Content Daily stable keys. Facebook/TikTok/YouTube
 Organic Lark Daily counts were 108/272/850, all with unique keys. The daily source runs for all eight
-platforms succeeded, but a YouTube reconciliation warning for two retained prior video metrics and six open
+platforms succeeded, but a YouTube reconciliation warning for one unavailable video and seven missing Analytics rows, plus six open
 DLQ rows remain. Four exact Instagram Report reruns after the source repair completed the Lark writer and
 updated D1 1D/3D/7D/30D materializations. Direct scoped Lark API readback confirmed four unique Report
 IDs, all generated after the source repair. 1D/3D are complete and 7D/30D remain partial from historical

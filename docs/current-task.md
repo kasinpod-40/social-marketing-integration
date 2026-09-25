@@ -69,6 +69,37 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 
 ## Objective
 
+### Ads retention D1 query repair and new-day verification — 2026-09-25
+
+- Continue the authorized daily-sync repair using APIs only, scoped to Social MKT Data Hub. Processing date
+  2026-09-25 means report date 2026-09-24. New scheduled Instagram Coverage is full_inventory 127/127,
+  YouTube 850/850; Meta K2 remains active and two new Paid Ads DLQs require follow-up.
+- Confirmed root cause: Paid Ads post-sync retention checks 40 identities with five parameters each plus
+  customer_key (201 total). A SELECT-only reproduction against Customer D1 returned the exact retained
+  `too many SQL variables at offset 2393` error; 19 identities / 96 parameters succeeded with zero writes.
+  Work cleanup was an earlier hypothesis; its uncommitted containment patch was removed, not deployed.
+- In scope: bound identity queries to D1's 100-parameter limit, preserve complete identity verification before
+  any delete, focused boundary/failure regression, full gates, reviewed merge/deploy preserving active bindings,
+  exact maintenance recovery and current-day D1/Lark readback. No source facts, deletion cap, retention policy,
+  customer folder scope, or Queue success/failure semantics are relaxed.
+- Acceptance: up to 500 candidates are all checked in bounded queries, unmatched candidates survive, any query
+  failure prevents deletion, and live maintenance/readback succeeds. Keep unrelated/historical incidents open.
+
+
+### Implementation result — Ads retention parameter limit (2026-09-25)
+
+- Exact production SELECT reproduction: old query 201 bindings fails at offset 2393; bounded query 96
+  bindings succeeds with zero D1 writes. Correct only the Ads identity batch limit; do not suppress errors.
+- Focused tests 10/10 include 500 candidates with missing identities and a failed later query proving zero
+  deletions. Full gates pass: npm ci, check (855 files, 0 cycles), 3,438 Node + 18 Worker tests,
+  Report reliability 106/106, audit zero vulnerabilities, deploy dry-run, diff check.
+- Read-only isolated Preview `33283a62` confirms report-date 2026-09-24 Lark Content Daily unique counts:
+  Facebook 107, Instagram 127, TikTok 275, YouTube 850; Account Daily one each, zero blank/duplicate keys.
+  Ads Daily currently has Meta 32 / Google 4. Meta K2 is source-staged but projection 55/86 remains active;
+  Meta K3 and Google Work completed before their new retention DLQs. Reports are not yet present before 09:00.
+- Preview URLs restored disabled; production traffic remains version `480b4024` at 100%.
+  Reviewed merge/deployment, controlled maintenance recovery and final daily readback are pending.
+
 ### Instagram Login token renewal — 2026-09-24
 
 - Customer supplied a new Instagram token in the Customer Cloudflare Worker Secret. An isolated GET-only
@@ -1593,7 +1624,7 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   TikTok, Facebook, Instagram (fresh repair), Meta Ads K2/K3, Google Ads, WooCommerce and Chatwoot;
   no pending/running/partial sync runs or active locks. Direct Lark Organic readback: Facebook 108,
   Instagram 127, TikTok 272, YouTube 850 distinct Content Daily keys and one Account Daily row each.
-  Remaining open evidence: YouTube video reconciliation warning for two retained prior metrics and six
+  Remaining open evidence: YouTube reconciliation warning for one unavailable video and seven missing Analytics rows and six
   DLQ rows (three Instagram failed attempts superseded by repair, two Meta Ads and one Google Ads), plus
   related alerts. These were not blindly replayed or marked resolved. Therefore the daily run has source and
   Organic destination coverage, but not a clean all-channel alert/DLQ closeout.

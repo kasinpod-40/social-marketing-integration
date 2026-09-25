@@ -11,7 +11,8 @@ export const MKT_ADS_CAMPAIGN_SUMMARY_PERIOD_KIND = 'mtd';
 export const MKT_ADS_CAMPAIGN_SUMMARY_HISTORY_START = '2026-06-19';
 
 const MAX_CAMPAIGN_SUMMARY_ROWS = 1_000;
-const D1_IDENTITY_BATCH_SIZE = 40;
+// D1 จำกัด 100 bindings: customer_key 1 ค่า และ exact identity อีก 5 ค่าต่อแถว
+const D1_IDENTITY_BATCH_SIZE = Math.floor((100 - 1) / 5);
 const TERMINAL_MAINTENANCE_PLATFORMS = new Set(['meta_ads', 'google_ads', 'tiktok_ads']);
 const CAMPAIGN_SUMMARY_NULLABLE_FIELDS = Object.freeze([
   'campaign_name', 'status', 'currency', 'spend', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm',

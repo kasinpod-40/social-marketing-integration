@@ -354,3 +354,72 @@ test('Ads Daily retention rejects a delete cap above the reviewed 500-row maximu
   }), /maxDeleteRows cannot exceed 500/u);
   assert.equal(client.deleteCalls, 0);
 });
+
+
+for (const failQuery of [null, 2]) {
+  test(`Ads retention verifies all 500 candidates within D1 limits; failure=${failQuery}`, async () => {
+    const records = Array.from({ length: 500 }, (_, index) => {
+      const record = oldDailyRecord();
+      record.recordId = `rec-${index}`;
+      record.fields.external_entity_id = `campaign-${index}`;
+      record.fields.ads_daily_key = `google_ads:3328797186:campaign:campaign-${index}:2026-05-01`;
+      return record;
+    });
+    const verifiedIds = new Set(records.filter((_, i) => i % 11 !== 0).map((r) => r.recordId));
+    const bindings = [];
+    const visited = [];
+    let deleted = [];
+    const db = {
+      prepare(sql) {
+        if (sql.includes('FROM sync_locks')) return retentionDb().prepare(sql);
+        assert.match(sql, /SELECT DISTINCT.*FROM ads_daily_facts/su);
+        return {
+          bind(...values) {
+            assert.ok(values.length <= 100, `D1 limit exceeded: ${values.length}`);
+            assert.equal(values[0], 'chemistry_k');
+            bindings.push(values.length);
+            return {
+              async all() {
+                if (bindings.length === failQuery) throw new Error('identity proof unavailable');
+                const results = [];
+                for (let i = 1; i < values.length; i += 5) {
+                  const [platform, account, level, entity, date] = values.slice(i, i + 5);
+                  visited.push(entity);
+                  if (Number(entity.split('-')[1]) % 11 === 0) continue;
+                  results.push({ platform, source_account_id: account, report_level: level,
+                    external_entity_id: entity, metric_date: date });
+                }
+                return { results };
+              },
+            };
+          },
+        };
+      },
+    };
+    const client = {
+      ...retentionClient(),
+      async searchRecords() { return records; },
+      async requestBitableJson() { return { data: { total: 17000 - deleted.length } }; },
+      async batchDeleteRecords(input) {
+        assert.equal(visited.length, 500, 'all identity proofs must finish before any deletion');
+        await input.beforeChunk();
+        deleted = input.recordIds;
+        return { deleted: deleted.length };
+      },
+    };
+    const run = () => retainAdsDailyCache({ db, client, tableId: 'ads-daily',
+      customerKey: 'chemistry_k', timezone: 'Asia/Bangkok', now: NOW });
+    if (failQuery !== null) {
+      await assert.rejects(run, /identity proof unavailable/u);
+      assert.deepEqual(deleted, []);
+    } else {
+      const result = await run();
+      assert.equal(new Set(visited).size, 500);
+      assert.equal(bindings.length, 27);
+      assert.equal(Math.max(...bindings), 96);
+      assert.deepEqual(new Set(deleted), verifiedIds);
+      assert.equal(result.safetyBlocked, 500 - verifiedIds.size);
+      assert.equal(result.d1Mutations, 0);
+    }
+  });
+}

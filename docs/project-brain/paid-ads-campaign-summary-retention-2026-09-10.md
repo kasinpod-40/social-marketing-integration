@@ -158,3 +158,13 @@ read back all 185 exact rows before and after conversion. The four exact Views r
 and canonical empty Sort while hiding the month column. Current MTD reconciled `45/45`; two full-history passes
 reconciled `185/185` with `0/0/185` create/update/skip and zero duplicates. Daily stayed `5,320→5,320` with zero
 deletes or D1 mutations; Production traffic did not move during the operator and Preview URLs were restored disabled.
+
+
+## D1 parameter-limit incident — 2026-09-25
+
+As retained rows aged into the 90-day deletion window, the identity verifier's 40-row batch required 201
+SQL bindings (one customer + five per identity), exceeding D1's 100 bound. Customer D1 SELECT-only
+reproduction matched the DLQ error exactly at offset 2393; 19 identities / 96 bindings succeeded.
+The repair keeps the same scope, complete identity proof, idle-lock checks and 500-row deletion cap.
+Every verification batch must finish before any delete; an error in a later batch leaves all rows untouched.
+No catch-and-ignore cleanup change is included. Reviewed deployment and live maintenance closeout are pending.
