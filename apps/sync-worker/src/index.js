@@ -26,6 +26,7 @@ export {
   loadCustomerConnectionRuntimeConfig,
 } from './customer-connection-runtime.js';
 export { createCustomerConnectionHttpHandler } from './customer-connection-http.js';
+export { hydrateRuntimeEnvFromD1 } from './runtime-config-hydration.js';
 export {
   createGoogleAdsCustomerConnectionHttpHandler,
   GOOGLE_ADS_CONNECTION_PATHS,

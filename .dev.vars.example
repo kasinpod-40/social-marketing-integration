@@ -26,8 +26,9 @@ MKT_GOOGLE_ADS_SIGNING_KEY_ID=replace-with-non-secret-key-id
 
 # Secret ต่อไปนี้ใช้ local .dev.vars ได้เฉพาะ Development; Runtime จริงต้องตั้งด้วย `wrangler secret put`
 GOOGLE_OAUTH_CLIENT_SECRET=replace-with-google-oauth-client-secret
-# One secret binding keeps TikTok Ads within the Workers text-binding budget.
-TIKTOK_ADS_APP_CREDENTIALS={"app_id":"replace-with-tiktok-app-id","secret":"replace-with-tiktok-app-secret"}
+# Production reads App ID from D1 runtime_config; local Development may provide it here.
+TIKTOK_ADS_APP_ID=replace-with-tiktok-app-id
+TIKTOK_ADS_APP_SECRET=replace-with-tiktok-app-secret
 GOOGLE_ADS_DEVELOPER_TOKEN=replace-with-google-ads-developer-token
 MKT_GOOGLE_ADS_SIGNING_SECRET=replace-with-256-bit-google-ads-signing-secret
 # Previous key ใช้เฉพาะช่วง Manual rotation และต้องตั้ง ID/Secret พร้อมกัน
