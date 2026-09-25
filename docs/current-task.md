@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                              = DAILY_20260924_SOURCES_COMPLETE_ADS_FIXED_REPORT_READBACK_IN_PROGRESS
+TASK_STATUS                              = DAILY_20260924_SYNC_COMPLETE_HISTORICAL_REPORT_GAPS_RETAINED
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 865a7919
-CURRENT_BRANCH                           = codex/pilot-organic-daily-completeness-20260923
+BASE_MAIN_SHA                            = 0b0dbc13
+CURRENT_BRANCH                           = main@0b0dbc13
 CUSTOMER_WORKERS_PLAN                    = PAID_BASE_PLAN_NO_ADD_ON
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
@@ -17,7 +17,7 @@ PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = RESTORED_DAILY_FLAGS_VERSION_480b4024_100_PERCENT
+PRODUCTION_WORKER_HEAD                   = BOUNDED_DAILY_RESTORED_VERSION_b5b36758_100_PERCENT
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -94,8 +94,21 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   generated at the 09:00 schedule. TikTok 1D/3D is partial from one pre-existing video without a
   pre-period observation (coverage 2,085/2,086). Instagram 7D/30D and YouTube 30D remain partial
   from known historical gaps. Ads/WooCommerce reports are revisable by their source contracts.
-- Reviewed PR/merge, deployment and one six-table live maintenance execution still pending at this
-  implementation checkpoint. The 2026-09-23 retained DLQ must not be blind-redriven.
+- PR #880 merged as `0b0dbc13` after both Branch Verification checks passed. Customer Production Worker
+  `b5b36758` is active at 100%; all 252 bindings, runtime, schedules and disabled Preview URLs match the
+  previous active version. One exact six-table API execution completed with no active sync locks, cutoff
+  2026-06-28, 500 D1-verified Lark cache deletes (Conversation Daily 223, Commerce Product Daily 277),
+  zero D1 business mutations and exact Lark count readback. The other four tables had zero eligible rows
+  in that bounded pass. The 500-row per-run cap was reached; subsequent scheduled runs continue the backlog.
+- The 2026-09-23 bounded Daily DLQ and its Alert were resolved only after the successful same-contract
+  execution. D1 recovery metadata was marked complete and the Alert was mirrored to Lark (one exact row
+  read back). Original failure payload is retained; no blind Queue redrive occurred. Preview URLs were
+  disabled again and Production traffic remained on `b5b36758` throughout isolated execution.
+- Final D1 check: no open DLQs created during the 2026-09-24 processing window; current scheduled source
+  Work for all eight platforms/two Meta accounts completed. The old read-only Instagram token bootstrap
+  Work remains `active` without an active lock and is separate from the completed scheduled daily job.
+  Two YouTube `YOUTUBE_VIDEO_RECONCILIATION_REQUIRED` warning Alerts remain open across the two latest
+  processing dates; they record unavailable source/Analytics observations, not a pending Queue or sync lock.
 
 ### Live result — Ads and Instagram repair (2026-09-25)
 
