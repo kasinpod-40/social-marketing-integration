@@ -11,9 +11,12 @@ import {
   loadCustomerRuntimeConfig,
 } from '../../../packages/config/src/customer-profiles.js';
 
-const REDIRECT_ENV_KEYS = Object.freeze({
+const REQUIRED_REDIRECT_ENV_KEYS = Object.freeze({
   [CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS]: 'MKT_GOOGLE_ADS_REDIRECT_URI',
   [CUSTOMER_CONNECTION_CONNECTORS.YOUTUBE]: 'MKT_YOUTUBE_REDIRECT_URI',
+});
+const OPTIONAL_REDIRECT_ENV_KEYS = Object.freeze({
+  [CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS]: 'MKT_TIKTOK_ADS_REDIRECT_URI',
 });
 
 /** สร้าง Shared runtime เฉพาะเมื่อ HTTP connection route ถูกเรียก จึงไม่กระทบ Queue/Cron เดิม */
@@ -55,12 +58,22 @@ export function loadCustomerConnectionRuntimeConfig(env = {}) {
       env.MKT_CONNECTION_SELECTION_SIGNING_KEY,
       'MKT_CONNECTION_SELECTION_SIGNING_KEY',
     ),
-    redirectUris: Object.freeze(Object.fromEntries(
-      Object.entries(REDIRECT_ENV_KEYS).map(([connectorKey, envKey]) => [
-        connectorKey,
-        requireHttpsUrl(env[envKey], envKey),
-      ]),
-    )),
+    redirectUris: Object.freeze({
+      ...Object.fromEntries(
+        Object.entries(REQUIRED_REDIRECT_ENV_KEYS).map(([connectorKey, envKey]) => [
+          connectorKey,
+          requireHttpsUrl(env[envKey], envKey),
+        ]),
+      ),
+      ...Object.fromEntries(
+        Object.entries(OPTIONAL_REDIRECT_ENV_KEYS)
+          .filter(([, envKey]) => hasText(env[envKey]))
+          .map(([connectorKey, envKey]) => [
+            connectorKey,
+            requireHttpsUrl(env[envKey], envKey),
+          ]),
+      ),
+    }),
   });
 }
 
@@ -140,6 +153,21 @@ export function loadGoogleAdsRuntimeConfig(env = {}) {
   });
 }
 
+export function loadTikTokAdsRuntimeConfig(env = {}) {
+  return Object.freeze({
+    appId: requireDigits(env.TIKTOK_ADS_APP_ID, 'TIKTOK_ADS_APP_ID'),
+    appSecret: requireSecret(env.TIKTOK_ADS_APP_SECRET, 'TIKTOK_ADS_APP_SECRET'),
+    redirectUri: requireHttpsUrl(
+      env.MKT_TIKTOK_ADS_REDIRECT_URI,
+      'MKT_TIKTOK_ADS_REDIRECT_URI',
+    ),
+    approvedAdvertiserId: optionalDigits(
+      env.MKT_TIKTOK_ADS_ADVERTISER_ID,
+      'MKT_TIKTOK_ADS_ADVERTISER_ID',
+    ),
+  });
+}
+
 function requireD1(env) {
   const db = env?.MKT_STATE_DB;
   if (typeof db?.prepare !== 'function' || typeof db?.batch !== 'function') {
@@ -181,11 +209,26 @@ function requireHttpsUrl(value, fieldName) {
   return url.toString();
 }
 
+function hasText(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new TypeError(`${fieldName} is required`);
   }
   return value.trim();
+}
+
+function requireDigits(value, fieldName) {
+  const text = requireText(String(value ?? ''), fieldName);
+  if (!/^\d+$/u.test(text)) throw new TypeError(`${fieldName} must contain digits only`);
+  return text;
+}
+
+function optionalDigits(value, fieldName) {
+  if (value === undefined || value === null || value === '') return null;
+  return requireDigits(value, fieldName);
 }
 
 function requireCustomerId(value, fieldName) {

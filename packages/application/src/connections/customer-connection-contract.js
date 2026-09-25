@@ -3,6 +3,13 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 export const CUSTOMER_CONNECTION_CONNECTORS = Object.freeze({
   GOOGLE_ADS: 'google_ads',
   YOUTUBE: 'youtube',
+  TIKTOK_ADS: 'tiktok_ads',
+});
+
+export const CUSTOMER_CONNECTION_PROVIDERS = Object.freeze({
+  [CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS]: 'google',
+  [CUSTOMER_CONNECTION_CONNECTORS.YOUTUBE]: 'google',
+  [CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS]: 'tiktok',
 });
 
 export const CUSTOMER_CONNECTION_STATUSES = Object.freeze({
@@ -41,6 +48,7 @@ export const GOOGLE_OAUTH_SCOPES = Object.freeze({
 export const CONNECTOR_ROUTE_SLUGS = Object.freeze({
   [CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS]: 'google-ads',
   [CUSTOMER_CONNECTION_CONNECTORS.YOUTUBE]: 'youtube',
+  [CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS]: 'tiktok-ads',
 });
 
 export const DEFAULT_INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -59,6 +67,11 @@ export function requireCustomerConnectionConnector(value) {
     });
   }
   return connectorKey;
+}
+
+export function getCustomerConnectionProvider(value) {
+  const connectorKey = requireCustomerConnectionConnector(value);
+  return CUSTOMER_CONNECTION_PROVIDERS[connectorKey];
 }
 
 export function requireConnectionStatus(value) {

@@ -10,6 +10,10 @@ import {
   GOOGLE_ADS_CONNECTION_PATHS,
 } from './google-ads-customer-connection-http.js';
 import {
+  createTikTokAdsCustomerConnectionHttpHandler,
+  TIKTOK_ADS_CONNECTION_PATHS,
+} from './tiktok-ads-customer-connection-http.js';
+import {
   createMetaD1OnlyPartialStagingRecoveryHttpHandler,
   META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PATH,
 } from './meta-d1-only-partial-staging-recovery-http.js';
@@ -45,6 +49,8 @@ KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.select, Object.freeze(['POST']));
+KNOWN_METHODS.set(TIKTOK_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
+KNOWN_METHODS.set(TIKTOK_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CREDENTIAL_REWRAP_PATH, Object.freeze(['POST']));
 
 /** Explicit HTTP boundary; guarded diagnostics and Connector handlers are composed independently. */
@@ -64,6 +70,7 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
       ),
       createGoogleAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
       createYouTubeCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
+      createTikTokAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
     ]);
 
   return async function handleCustomerConnectionHttp(request, env, ctx) {
