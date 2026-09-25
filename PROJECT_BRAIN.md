@@ -1,5 +1,18 @@
 # Project Brain — Social Marketing Data Integration
 
+## WooCommerce September–December 2025 history — 2026-09-25
+
+Customer authorized the first one-year historical channel. GET-only exact-account WooCommerce API probes
+found approximately 2,085 orders created during September–December 2025 (716/568/384/417 by month); Customer
+D1 has no Order or Daily facts in that interval. The existing approved WooCommerce data model, stable keys,
+Coverage and resumable Queue job are reused. The planned bounded manual full reconciliation stores historical
+orders and their derived daily financial facts in D1; the 90-day Lark Daily tables remain bounded caches.
+It represents the current order/refund ledger grouped by the order-created Bangkok date, not an invented
+point-in-time order-status snapshot. A D1-only mode must preserve its exact window across continuations and
+never enter the scheduled lane. Source `date_created_gmt` lacks a timezone suffix; the bounded filter and
+normalizer must both parse it as UTC so the Bangkok day boundary is exact. Live write and reconciliation
+remain pending the reviewed release.
+
 ## New-day source closeout and missing retention wiring — 2026-09-25
 
 PR #876 is merged/deployed as version `56d35848`, preserving 252 bindings and schedules. Meta K2 exact

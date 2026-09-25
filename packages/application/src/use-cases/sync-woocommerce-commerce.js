@@ -40,6 +40,11 @@ export async function syncWooCommerceCommerce(input = {}) {
     generation: reference.generation,
     customerKey: runtime.customerKey,
     accountKey: runtime.accountKey,
+    ...(runtime.d1Only ? {
+      d1Only: true,
+      orderCreatedAfter: runtime.orderCreatedAfter,
+      orderCreatedBefore: runtime.orderCreatedBefore,
+    } : {}),
   });
   const begun = await dependencies.resumableWorkStore.beginWork({
     workKey: reference.workKey,
@@ -126,7 +131,7 @@ export async function syncWooCommerceCommerce(input = {}) {
       now: runtime.now,
     });
 
-    const directPlans = await planLarkRows({
+    const directPlans = state.scope.d1Only ? [] : await planLarkRows({
       output: normalized,
       repository: dependencies.repository,
       syncEngine: dependencies.syncEngine,
@@ -151,7 +156,7 @@ export async function syncWooCommerceCommerce(input = {}) {
       customerAggregateKeys: normalized.impactedCustomers,
     });
     const derivedOutput = createDerivedOutput(derivedRows);
-    const derivedPlans = await planLarkRows({
+    const derivedPlans = state.scope.d1Only ? [] : await planLarkRows({
       output: derivedOutput,
       repository: dependencies.repository,
       syncEngine: dependencies.syncEngine,
@@ -516,9 +521,11 @@ function buildCoverageRun(input) {
     scope_mode: boundedDataset
       ? 'report_range'
       : input.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
-    period_start: boundedDataset ? utcDate(input.scope.orderCreatedAfter) : null,
+    period_start: boundedDataset
+      ? reportingDate(input.scope.orderCreatedAfter, input.state.storeContext.reportingTimezone)
+      : null,
     period_end: boundedDataset && input.scope.orderCreatedBefore !== null
-      ? utcDate(input.scope.orderCreatedBefore)
+      ? reportingDate(input.scope.orderCreatedBefore, input.state.storeContext.reportingTimezone)
       : null,
     source_timezone: input.state.storeContext.reportingTimezone ?? input.scope.reportingTimezone,
     status,
@@ -605,6 +612,7 @@ function createExecutionScope(runtime) {
     customerKey: runtime.customerKey,
     accountKey: runtime.accountKey,
     fullReconciliation: runtime.fullReconciliation,
+    d1Only: runtime.d1Only,
     modifiedAfter: runtime.modifiedAfter,
     incrementalBoundary: runtime.incrementalBoundary,
     orderCreatedAfter: runtime.orderCreatedAfter,
@@ -629,10 +637,19 @@ function normalizeExecutionScope(value, fallback) {
     'scope.orderCreatedBefore',
   );
   assertOrderHistoryWindow(orderCreatedAfter, orderCreatedBefore);
+  const d1Only = source.d1Only === true;
+  assertD1OnlyHistoryScope({
+    d1Only,
+    fullReconciliation: source.fullReconciliation === true,
+    modifiedAfter: source.modifiedAfter,
+    orderCreatedAfter,
+    orderCreatedBefore,
+  });
   return Object.freeze({
     customerKey: requireText(source.customerKey, 'scope.customerKey'),
     accountKey: requireText(source.accountKey, 'scope.accountKey'),
     fullReconciliation: source.fullReconciliation === true,
+    d1Only,
     modifiedAfter: nullableTimestamp(source.modifiedAfter, 'scope.modifiedAfter'),
     incrementalBoundary: optionalText(source.incrementalBoundary),
     orderCreatedAfter,
@@ -689,6 +706,7 @@ function normalizeReference(input) {
 function normalizeRuntime(input) {
   const now = typeof input.now === 'function' ? input.now : () => Date.now();
   const fullReconciliation = input.fullReconciliation === true;
+  const d1Only = input.d1Only === true;
   const modifiedAfter = nullableTimestamp(input.modifiedAfter, 'modifiedAfter');
   const orderCreatedAfter = nullableTimestamp(
     input.orderCreatedAfter,
@@ -699,6 +717,13 @@ function normalizeRuntime(input) {
     'orderCreatedBefore',
   );
   assertOrderHistoryWindow(orderCreatedAfter, orderCreatedBefore);
+  assertD1OnlyHistoryScope({
+    d1Only,
+    fullReconciliation,
+    modifiedAfter,
+    orderCreatedAfter,
+    orderCreatedBefore,
+  }, d1Only ? now() : null);
   return Object.freeze({
     customerKey: requireText(input.customerKey, 'customerKey'),
     accountKey: requireText(input.accountKey, 'accountKey'),
@@ -708,6 +733,7 @@ function normalizeRuntime(input) {
     d1WriteEnabled: input.d1WriteEnabled === true,
     larkWriteEnabled: input.larkWriteEnabled === true,
     fullReconciliation,
+    d1Only,
     modifiedAfter,
     orderCreatedAfter,
     orderCreatedBefore,
@@ -814,6 +840,7 @@ function createReconciliation(reference, state) {
       ? 'report_range'
       : state.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
     sourceScope: Object.freeze({
+      d1Only: state.scope.d1Only,
       modifiedAfter: state.scope.modifiedAfter,
       incrementalBoundary: state.scope.incrementalBoundary,
       orderCreatedAfter: state.scope.orderCreatedAfter,
@@ -834,6 +861,7 @@ function summarizeProgress(state) {
     scopeMode: state.scope.orderCreatedAfter !== null
       ? 'report_range'
       : state.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
+    d1Only: state.scope.d1Only,
     counts: state.counts,
   });
 }
@@ -976,7 +1004,10 @@ function boundedInteger(value, fieldName, minimum, maximum) {
 function nullableTimestamp(value, fieldName = 'timestamp') {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
-  const timestamp = Date.parse(String(value));
+  // WooCommerce *_gmt fields omit Z; the normalizer treats them as UTC, so the
+  // bounded Source filter must use the same instant at Bangkok day boundaries.
+  const text = String(value);
+  const timestamp = Date.parse(/(?:Z|[+-]\d\d:\d\d)$/u.test(text) ? text : `${text}Z`);
   if (!Number.isFinite(timestamp)) {
     throw new TypeError(`${fieldName} must be an ISO timestamp or epoch milliseconds`);
   }
@@ -989,6 +1020,26 @@ function assertOrderHistoryWindow(after, before) {
   }
 }
 
-function utcDate(timestamp) {
-  return new Date(timestamp).toISOString().slice(0, 10);
+function assertD1OnlyHistoryScope(scope, now = null) {
+  if (!scope.d1Only) return;
+  if (!scope.fullReconciliation
+    || (scope.modifiedAfter !== null && scope.modifiedAfter !== undefined)
+    || scope.orderCreatedAfter === null
+    || scope.orderCreatedBefore === null) {
+    throw new TypeError('d1Only requires a bounded full reconciliation without modifiedAfter');
+  }
+  if (now !== null && scope.orderCreatedBefore > now - 90 * 86_400_000) {
+    throw new TypeError('d1Only order history must be older than the 90-day Lark cache');
+  }
+}
+
+function reportingDate(timestamp, timezone) {
+  const parts = new Intl.DateTimeFormat('en-US-u-ca-gregory-nu-latn', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(timestamp));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
 }

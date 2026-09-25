@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                              = DAILY_20260924_SYNC_COMPLETE_HISTORICAL_REPORT_GAPS_RETAINED
+TASK_STATUS                              = WOOCOMMERCE_2025_HISTORY_BACKFILL_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
 BASE_MAIN_SHA                            = 0b0dbc13
 CURRENT_BRANCH                           = main@0b0dbc13
@@ -68,6 +68,42 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 ```
 
 ## Objective
+
+### WooCommerce 2025 order history — 2026-09-25
+
+- The customer authorized the first channel of the one-year historical programme: WooCommerce. Extend the
+  already approved Commerce model and existing resumable Worker job, without adding a Connector or table.
+  Exact new order-created window is Bangkok `2025-09-01` through `2025-12-31` inclusive; UTC boundaries
+  are `[2025-08-31T17:00:00Z, 2025-12-31T17:00:00Z)`. Existing 2026+ facts and normal incremental
+  schedule must not be replaced. The new window contains about 2,085 orders by four monthly GET-only
+  Provider count probes; exact rows/coverage require full pagination. Customer D1 currently has no
+  order or Daily fact in this window.
+- Source contract: use current WooCommerce order/refund records and the existing financial metric definitions,
+  stable keys, D1 history, Coverage, retry and idempotency. These are reconstructed current ledger facts for
+  each order's created date; they are not a claim about the exact as-of status seen on each old day.
+  Keep 2025 detailed Daily history in durable D1. The existing 90-day Lark Daily tables are bounded caches;
+  do not insert expired 2025 Daily rows there or alter the retention policy.
+- Add an exact bounded, manual full-reconciliation D1-only mode using the existing Queue job and durable phase,
+  with explicit start/end, no scheduled admission, no Lark writes and continuation preserving the same scope.
+  Format Coverage period dates in reporting timezone. Do not read or change customer material outside
+  `Social MKT Data Hub` or modify other channels.
+- Acceptance: review and full gates; production configuration preserves all unrelated bindings/schedules;
+  exact Provider total and full pagination reconcile; 2025 D1 Orders and derived Daily facts match stable-key,
+  date and monetary definitions; existing 2026 facts remain unchanged; idempotent replay; no new DLQ, active
+  work or lock. Restore the normal WooCommerce schedule/full-reconciliation flags after the controlled run.
+
+### Implementation result — WooCommerce 2025 order history
+
+- Implementation and full local gates passed; reviewed release and exact live reconciliation pending. GET-only four-month Provider probe returned
+  September 716, October 568, November 384, December 417 orders (2,085 total), with zero Provider,
+  D1, Lark or Queue mutations. The first GET-only probe encountered the known WooCommerce HTML/invalid-JSON
+  contamination; the second used the existing bounded two-retry Worker policy and completed. Preview URLs
+  were restored disabled and Production traffic remained on `b5b36758`.
+- Added D1-only bounded manual admission, immutable continuation scope, 90-day cache guard, and UTC parsing
+  consistency for suffix-free `date_created_gmt`. Focused WooCommerce tests: 22 passed; `npm ci`, `npm run check`
+  (865 files, zero cycles and clean hygiene), `npm test` (3,465 unit and 18 Workers tests),
+  `npm run test:report-reliability` (106), `npm audit --audit-level=high` (zero vulnerabilities), and
+  `npm run deploy:dry-run` passed. Workers tests required localhost/log access outside the restricted sandbox.
 
 ### Restore existing six-table Daily retention — 2026-09-25
 

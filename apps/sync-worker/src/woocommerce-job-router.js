@@ -120,6 +120,7 @@ export async function processWooCommerceCommerceJob(input = {}) {
       d1WriteEnabled: wooConfig.flags.d1Write,
       larkWriteEnabled: wooConfig.flags.larkWrite,
       fullReconciliation,
+      d1Only: input.job.body?.d1Only === true,
       modifiedAfter: input.job.body?.modifiedAfter ?? null,
       orderCreatedAfter: input.job.body?.orderCreatedAfter ?? null,
       orderCreatedBefore: input.job.body?.orderCreatedBefore ?? null,
@@ -202,6 +203,16 @@ function assertWooCommerceJobDefinition(definition, body) {
   if (body?.dryRun === true) {
     throw permanentError('WooCommerce credential preflight is a separate operator gate', {
       code: 'WOOCOMMERCE_DRY_RUN_UNSUPPORTED',
+    });
+  }
+  if (body.d1Only === true
+    && (body.trigger !== JOB_TRIGGERS.WOOCOMMERCE_MANUAL_UAT
+      || body.fullReconciliation !== true
+      || body.orderCreatedAfter == null
+      || body.orderCreatedBefore == null
+      || body.modifiedAfter != null)) {
+    throw permanentError('D1-only WooCommerce history requires an exact bounded manual full reconciliation', {
+      code: 'WOOCOMMERCE_D1_ONLY_SCOPE_INVALID',
     });
   }
   if (body.trigger === JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED
@@ -305,6 +316,7 @@ function createWooCommerceContinuationQueue(input, operation) {
         fullReconciliation: input.job.body?.trigger === JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED
           ? false
           : input.job.body?.fullReconciliation === true,
+        d1Only: input.job.body?.d1Only === true,
         modifiedAfter: input.job.body?.modifiedAfter ?? null,
         orderCreatedAfter: input.job.body?.orderCreatedAfter ?? null,
         orderCreatedBefore: input.job.body?.orderCreatedBefore ?? null,

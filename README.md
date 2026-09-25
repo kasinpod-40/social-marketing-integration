@@ -67,6 +67,12 @@ YouTube เก็บ 32,164 content-day ระหว่าง 19 มิ.ย.–2
 `MKT_Content_Daily` ที่เป็น bounded cache. Instagram และ TikTok ไม่มี historical snapshot ใน Source ปัจจุบัน
 จึงไม่คัดลอกยอดปัจจุบันไปใส่วันเก่าหรือเติมศูนย์แทนข้อมูลที่ไม่มี.
 
+WooCommerce ประวัติ ก.ย.–ธ.ค. 2025 ใช้รายการสั่งซื้อและ refund ที่ WooCommerce ส่งจริงมาแปลงเป็น
+Daily financial facts ตามวันที่สร้างรายการในเวลาไทย แล้วเก็บใน D1 ซึ่งเป็นประวัติถาวร. งานย้อนหลังนี้
+ใช้โหมด manual full reconciliation แบบจำกัดช่วงและ D1-only; ตาราง Daily ใน Lark ยังเป็นแคช 90 วัน.
+สถานะรายการย้อนหลังสะท้อน ledger ปัจจุบันที่อาจแก้ไขย้อนหลังได้ ไม่ใช่ภาพสถานะคำสั่งซื้อที่บันทึกไว้
+ณ ทุกวันในปี 2025.
+
 รอบ Scheduled ปกติเก็บการเติบโตของ Content ปัจจุบันแบบ cumulative snapshot: YouTube ไล่ครบทุกวิดีโอด้วย
 durable continuation แทนการจำกัดเฉพาะ 100 รายการล่าสุด และ Instagram ไล่ครบ media inventory ปัจจุบันเพื่อให้
 โพสต์เก่าที่มียอดเพิ่มเกิด Daily snapshot ของวันรายงานนั้น. การเปลี่ยนนี้มีผลตั้งแต่วันที่เริ่มรัน contract ใหม่
