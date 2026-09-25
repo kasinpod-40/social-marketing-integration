@@ -23,3 +23,12 @@ closed with `TIKTOK_ADS_ADVERTISER_SELECTION_REQUIRED`.
 
 Provider refresh-token rotation, Campaign/Ad Group/Ad ingestion, reporting, D1 Ads writes, Lark Paid Ads
 projection, Report activation and scheduling are separate reviewed phases after OAuth/read-only proof.
+
+
+## Cloudflare binding-budget hotfix
+
+Customer Production is already at the 250 text-binding ceiling. TikTok Ads therefore adds only one
+new text binding: secret `TIKTOK_ADS_APP_CREDENTIALS`, containing JSON with `app_id` and `secret`.
+The callback URI is derived from existing `MKT_CONNECTION_PUBLIC_ORIGIN`, and an advertiser ID is not
+provisioned as a new binding for the normal single-advertiser path. This avoids three extra TikTok
+bindings while preserving the existing shared OAuth/runtime contract.
