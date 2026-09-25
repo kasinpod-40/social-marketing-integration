@@ -122,8 +122,8 @@ test('report schedules stay disabled until D1 report parity is complete', async 
   assert.match(configText, /"MKT_WOOCOMMERCE_SYNC_TIME"\s*:\s*"04:30"/);
   assert.match(configText, /"MKT_WEEKLY_NOTIFICATION_TIME"\s*:\s*"09:30"/);
   assert.match(configText, /"MKT_DAILY_REPORT_SETTING_KEY"\s*:\s*"integration_workspace:tiktok:daily"/);
-  assert.match(configText, /customer-owned D1 runtime_config/u);
-  assert.doesNotMatch(configText, /"LARK_TABLE_[A-Z0-9_]+"\s*:/u);
+  assert.match(configText, /"LARK_TABLE_MKT_REPORT_METRIC_VALUES"/);
+  assert.match(configText, /"LARK_TABLE_MKT_REPORT_TOP_CONTENT"/);
 });
 
 test('sync deployment example enables persisted Workers logs and traces for Integration Workspace observability', async () => {

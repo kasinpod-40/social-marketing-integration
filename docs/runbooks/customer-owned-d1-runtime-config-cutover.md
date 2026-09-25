@@ -6,7 +6,7 @@ Move reviewed non-secret runtime configuration out of Cloudflare Worker text bin
 existing customer-owned D1 database. Secrets remain Worker Secrets. D1 / Queue bindings remain Wrangler
 resource bindings.
 
-The first approved scope is deliberately narrow and high-value:
+The first approved scope is deliberately narrow and high-value. Release example files intentionally keep the historical Lark mappings as review/test fixtures; the controlled cutover removes them only from the real ignored `wrangler.sync.jsonc`:
 
 - every `LARK_TABLE_*` ID;
 - `TIKTOK_ADS_APP_ID`.
