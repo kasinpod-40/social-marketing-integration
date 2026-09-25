@@ -15,6 +15,7 @@ test('all Storage Foundation feature flags default to false', () => {
     reportPresetMaterializationEnabled: false,
     reportAiSummaryEnabled: false,
     larkDailyRetentionEnabled: false,
+    larkBoundedDailyRetentionEnabled: false,
     notificationRuntimeEnabled: false,
   });
 });
@@ -40,6 +41,13 @@ test('invalid storage flags fail closed and retention/AI require D1 reader cutov
     (error) => error.code === 'MKT_STORAGE_RUNTIME_CONFIG_INVALID',
   );
   assert.throws(
+    () => readStorageRuntimeConfig({
+      MKT_REPORT_D1_READ_ENABLED: 'true',
+      MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED: 'true',
+    }),
+    (error) => error.code === 'MKT_STORAGE_RUNTIME_CONFIG_INVALID',
+  );
+  assert.throws(
     () => readStorageRuntimeConfig({ MKT_REPORT_AI_SUMMARY_ENABLED: 'true' }),
     (error) => error.code === 'MKT_STORAGE_RUNTIME_CONFIG_INVALID',
   );
@@ -47,10 +55,12 @@ test('invalid storage flags fail closed and retention/AI require D1 reader cutov
     MKT_REPORT_D1_READ_ENABLED: 'true',
     MKT_REPORT_AI_SUMMARY_ENABLED: 'true',
     MKT_LARK_DAILY_RETENTION_ENABLED: 'true',
+    MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED: 'true',
   });
   assert.equal(allowed.reportD1ReadEnabled, true);
   assert.equal(allowed.reportAiSummaryEnabled, true);
   assert.equal(allowed.larkDailyRetentionEnabled, true);
+  assert.equal(allowed.larkBoundedDailyRetentionEnabled, true);
 });
 
 test('the exact approved flag names are exported for release-example verification', () => {
@@ -62,6 +72,7 @@ test('the exact approved flag names are exported for release-example verificatio
     'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
     'MKT_REPORT_AI_SUMMARY_ENABLED',
     'MKT_LARK_DAILY_RETENTION_ENABLED',
+    'MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED',
     'MKT_NOTIFICATION_RUNTIME_ENABLED',
   ]);
 });

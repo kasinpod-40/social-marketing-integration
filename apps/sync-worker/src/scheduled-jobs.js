@@ -22,6 +22,7 @@ const DEFAULT_TIKTOK_SYNC_TIME = '05:30';
 const DEFAULT_INSTAGRAM_SYNC_TIME = '07:30';
 const DEFAULT_DAILY_REPORT_TIME = '09:00';
 const DEFAULT_CONTENT_DAILY_RETENTION_TIME = '08:05';
+const DEFAULT_BOUNDED_DAILY_RETENTION_TIME = '08:05';
 const DEFAULT_WEEKLY_REPORT_TIME = '09:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
 const DEFAULT_YOUTUBE_ANALYTICS_TIME = '01:30';
@@ -82,6 +83,9 @@ export function buildScheduledJobs(input = {}) {
   const contentDailyRetentionEnabled = includePrimaryJobs
     ? readStorageRuntimeConfig(env).larkDailyRetentionEnabled
     : false;
+  const boundedDailyRetentionEnabled = includePrimaryJobs
+    ? readStorageRuntimeConfig(env).larkBoundedDailyRetentionEnabled
+    : false;
   if (tiktokEnabled && !readBoolean(env.MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED, false)) {
     throw permanentError(
       'TikTok schedule requires watermark admission instead of blind Business sync',
@@ -139,6 +143,7 @@ export function buildScheduledJobs(input = {}) {
     || dailyEnabled
     || weeklyEnabled
     || contentDailyRetentionEnabled
+    || boundedDailyRetentionEnabled
     || youtubeEnabled;
   const timeZone = needsLocalSchedule
     ? requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE')
@@ -160,6 +165,23 @@ export function buildScheduledJobs(input = {}) {
         deferredPlatforms: readDeferredPlatforms(env.MKT_CONTENT_DAILY_RETENTION_DEFERRED_PLATFORMS),
       }, {
         operationId: `mkt-content-daily-retention-${local.date.replaceAll('-', '')}`,
+        originalRequestedAt: Date.parse(requestedAt),
+      }));
+    }
+  }
+
+  if (includePrimaryJobs && boundedDailyRetentionEnabled) {
+    const retentionTime = readScheduleTime(
+      env.MKT_BOUNDED_DAILY_RETENTION_TIME ?? DEFAULT_BOUNDED_DAILY_RETENTION_TIME,
+      'MKT_BOUNDED_DAILY_RETENTION_TIME',
+    );
+    if (local.time === retentionTime) {
+      jobs.push(createStableQueueOperationBody({
+        schemaVersion: 1,
+        type: JOB_TYPES.LARK_BOUNDED_DAILY_RETENTION,
+        trigger: JOB_TRIGGERS.LARK_BOUNDED_DAILY_RETENTION_SCHEDULED,
+      }, {
+        operationId: `lark-bounded-daily-retention-${local.date.replaceAll('-', '')}`,
         originalRequestedAt: Date.parse(requestedAt),
       }));
     }

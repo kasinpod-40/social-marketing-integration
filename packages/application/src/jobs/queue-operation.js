@@ -35,6 +35,7 @@ const STABLE_OPERATION_CONTRACTS = new Map([
     operationIdPattern: SAFE_OPERATION_ID,
   })],
   [JOB_TYPES.MKT_CONTENT_DAILY_RETENTION, Object.freeze({ prefix: 'mkt_content_daily' })],
+  [JOB_TYPES.LARK_BOUNDED_DAILY_RETENTION, Object.freeze({ prefix: 'lark_bounded_daily' })],
 ]);
 
 function resolveStableOperationContract(type, body) {

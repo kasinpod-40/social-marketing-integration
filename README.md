@@ -72,6 +72,10 @@ durable continuation แทนการจำกัดเฉพาะ 100 รา
 โพสต์เก่าที่มียอดเพิ่มเกิด Daily snapshot ของวันรายงานนั้น. การเปลี่ยนนี้มีผลตั้งแต่วันที่เริ่มรัน contract ใหม่
 เท่านั้น ไม่สร้างตัวเลขย้อนหลังที่ Provider ไม่เคยส่ง และไม่เปลี่ยนขอบเขต 10,000 แถวของ Lark cache.
 
+งานเก็บกวาด Daily ของ Conversation/Commerce 6 ตารางใช้ Lark เป็นแคช 90 วัน และ D1 เป็นหลักฐาน
+Stable key ก่อนลบทุกแถว โดยจำกัดการลบรวม 500 แถวต่อรอบและหยุดเมื่อมี Sync lock.
+ดู `docs/project-brain/lark-bounded-daily-retention-2026-09-19.md`.
+
 ## Read first
 
 ```text

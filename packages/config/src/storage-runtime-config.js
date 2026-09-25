@@ -8,6 +8,7 @@ export const STORAGE_FEATURE_FLAG_ENV = Object.freeze({
   reportPresetMaterializationEnabled: 'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
   reportAiSummaryEnabled: 'MKT_REPORT_AI_SUMMARY_ENABLED',
   larkDailyRetentionEnabled: 'MKT_LARK_DAILY_RETENTION_ENABLED',
+  larkBoundedDailyRetentionEnabled: 'MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED',
   notificationRuntimeEnabled: 'MKT_NOTIFICATION_RUNTIME_ENABLED',
 });
 
@@ -45,6 +46,17 @@ export function readStorageRuntimeConfig(env = {}) {
       {
         code: 'MKT_STORAGE_RUNTIME_CONFIG_INVALID',
         details: { fieldName: STORAGE_FEATURE_FLAG_ENV.larkDailyRetentionEnabled },
+      },
+    );
+  }
+
+  if (flags.larkBoundedDailyRetentionEnabled
+    && (!flags.larkDailyRetentionEnabled || !flags.reportD1ReadEnabled)) {
+    throw permanentError(
+      'MKT_LARK_BOUNDED_DAILY_RETENTION_ENABLED requires D1 reader and Lark Daily retention',
+      {
+        code: 'MKT_STORAGE_RUNTIME_CONFIG_INVALID',
+        details: { fieldName: STORAGE_FEATURE_FLAG_ENV.larkBoundedDailyRetentionEnabled },
       },
     );
   }

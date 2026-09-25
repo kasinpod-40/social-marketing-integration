@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                              = INSTAGRAM_20260923_REPAIRED_D1_LARK_DAILY_SYNC_WARNINGS_REMAIN
+TASK_STATUS                              = DAILY_20260924_SOURCES_COMPLETE_ADS_FIXED_REPORT_READBACK_IN_PROGRESS
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
 BASE_MAIN_SHA                            = 865a7919
 CURRENT_BRANCH                           = codex/pilot-organic-daily-completeness-20260923
@@ -68,6 +68,50 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 ```
 
 ## Objective
+
+### Restore existing six-table Daily retention — 2026-09-25
+
+- The outstanding 2026-09-23 `lark.bounded-daily.retention` incident belongs to six Conversation/Commerce
+  tables. Git audit located its previously deployed implementation at `40ed9627` on a separate branch, absent
+  from current main. Production's enabled flag therefore has no scheduler/router consumer in main; D1 has
+  no 24/25 September admissions for that job. Restore only its existing catalog, operation identity, config,
+  scheduler, router, implementation and tests. Do not merge unrelated dashboard/report changes from that branch.
+- Preserve the six-table allowlist, exact customer D1 stable-key/date proof, zero D1 business mutations,
+  no-active-lock gate, oldest-first selection, 90-day / 17,000 / 15,000 limits and global 500-delete cap.
+- Required acceptance: focused config/scheduler/router/safety tests; all repository gates; reviewed merge and
+  deployment with unchanged runtime flags; one exact scoped live execution/readback; resolve the prior incident
+  only if that same six-table work succeeds. Existing Lark safe-read retry handles 1254002 without retrying writes.
+
+### Implementation result — restore six-table Daily retention (2026-09-25)
+
+- Restored the exact previously deployed `40ed9627` six-table implementation and only its catalog,
+  stable operation, config, scheduler, router and focused tests. No dashboard/report code was imported.
+- Tests: focused 10/10; `npm ci`; `npm run check` (856 source files, 0 cycles);
+  `npm test` (3,444 Node, 18 Workers); Report reliability 106/106; audit 0 vulnerabilities;
+  deploy dry-run; diff check. Validation includes global delete cap, D1 key proof, oldest-first
+  pressure path, no delete when proof is absent, and active-lock rejection.
+- New-day direct Lark readback: 32 unique Report IDs, four windows each for eight platforms; all
+  generated at the 09:00 schedule. TikTok 1D/3D is partial from one pre-existing video without a
+  pre-period observation (coverage 2,085/2,086). Instagram 7D/30D and YouTube 30D remain partial
+  from known historical gaps. Ads/WooCommerce reports are revisable by their source contracts.
+- Reviewed PR/merge, deployment and one six-table live maintenance execution still pending at this
+  implementation checkpoint. The 2026-09-23 retained DLQ must not be blind-redriven.
+
+### Live result — Ads and Instagram repair (2026-09-25)
+
+- PR #876 merged as `85e3ba76`; both Branch Verification runs passed. Production version `56d35848` is active
+  at 100%; all 252 bindings, runtime and schedules match the prior version; Preview URLs restored disabled.
+- Exact Meta K2 continuation reused generation 1790271011000 and completed from its retained source staging.
+  All nine source Work units (eight platforms, two Meta accounts) for the new processing day are completed.
+- Isolated Preview `d28c6bbb` proves current-day Ads Daily D1/Lark stable-key parity 118/118 (Meta114, Google4),
+  zero missing/extra/duplicates, Campaign Summary values/keys 62/62 with zero-change rerun, and Ads retention
+  completed at 6,195 retained rows with zero remaining delete candidates. Commerce/Chatwoot Account Daily one each.
+- Direct YouTube API recheck requested the one missing video and returned zero. Preserve source-unavailable
+  semantics and retained prior facts; current Analytics warning has four absent rows, not four missing videos.
+- Exact closeout Preview `bc124c82` resolved eight repaired DLQs and ten associated Alerts; all ten were mirrored
+  to Lark and read back. Original errors/payloads remain for audit. No source replay or business fact mutation.
+  The read-only bootstrap r3 Work was not changed: its newer-fence guard did not pass. Reports are processing at09:00.
+
 
 ### Ads retention D1 query repair and new-day verification — 2026-09-25
 
