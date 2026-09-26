@@ -72,6 +72,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     : null;
   const tableId = scope.larkDestination ? requireText(input.tableId, 'tableId') : null;
   await assertNoConflictingActiveLocks(db, platform);
+  let pendingCoverage = null;
   let state = await loadStateBatch(db, { platform, metricDate, batchIndex, programme: input.programme });
   if (input.programme === YOUTUBE_D1_YEAR_PROGRAMME) {
     state = await retainMissingYearStates(db, state, metricDate);
@@ -85,6 +86,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     });
     const coverageId = `coverage:customer-organic-history-year-v1:${platform}:${metricDate}:batch:${batchIndex}`;
     const sealed = await readCoverage(db, coverageId);
+    pendingCoverage = sealed;
     if (sealed?.completed_at !== null && sealed?.completed_at !== undefined) {
       const readback = await db.prepare('SELECT external_content_id FROM organic_content_observations WHERE coverage_run_id=?')
         .bind(coverageId).all();
@@ -118,6 +120,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     states: state.rows,
     metrics: metrics.values,
     programme: input.programme,
+    fetchedAt: pendingCoverage?.started_at ?? Date.now(),
   });
   const larkPlan = scope.larkDestination
     ? await syncEngine.planByKey({
@@ -210,7 +213,7 @@ export async function buildCustomerOrganicHistoryRows(input = {}) {
     label: 'metricDate',
   });
   const year = input.programme === YOUTUBE_D1_YEAR_PROGRAMME;
-  const fetchedAt = year ? Date.now() : FETCHED_AT;
+  const fetchedAt = year ? input.fetchedAt ?? Date.now() : FETCHED_AT;
   const syncRunId = `${year ? 'customer-organic-history-year-v1' : 'customer-organic-history-v1'}:${platform}:${metricDate}:batch:${batchIndex}`;
   const coverageRunId = `coverage:${syncRunId}`;
   const sourceRevision = `${platform}:provider-history:${metricDate}:${year ? 'year-v1' : 'v1'}`;

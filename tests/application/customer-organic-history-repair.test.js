@@ -334,6 +334,26 @@ test('YouTube year programme preserves prior facts, marks omissions partial, and
   } finally {runtime.d1.close();}
 });
 
+test('YouTube year interrupted writes resume the durable fetch timestamp without conflicting', async () => {
+  const runtime = await createRuntime();
+  try {
+    seedContentState(runtime.d1,{platform:'youtube',sourceAccountId:YOUTUBE_ACCOUNT,
+      externalContentId:'video-a',publishedAt:'2025-01-01'});
+    const input={execute:true,programme:'youtube_d1_year_v1',platform:'youtube',metricDate:'2025-09-01',
+      db:runtime.d1,store:runtime.store,youtubeOwnerClient:{
+        async getChannel(){return {id:YOUTUBE_ACCOUNT};},
+        async queryAnalytics(){return {columnHeaders:[{name:'video'},{name:'views'}],rows:[['video-a',42]]};}}};
+    const save=runtime.store.saveCoverageEntities.bind(runtime.store);
+    runtime.store.saveCoverageEntities=async()=>{throw Error('interrupted');};
+    await assert.rejects(()=>repairCustomerOrganicContentHistoryBatch(input),/interrupted/);
+    const prior=runtime.d1.database.prepare('SELECT fetched_at FROM organic_content_observations').get();
+    runtime.store.saveCoverageEntities=save;
+    const resumed=await repairCustomerOrganicContentHistoryBatch(input);
+    assert.equal(resumed.d1Created,0);assert.equal(resumed.d1Skipped,1);
+    assert.deepEqual(runtime.d1.database.prepare('SELECT fetched_at FROM organic_content_observations').get(),prior);
+  } finally {runtime.d1.close();}
+});
+
 async function createRuntime() {
   const d1 = createSqliteD1();
   d1.exec(await readFile(MIGRATION_URL, 'utf8'));

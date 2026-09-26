@@ -95,9 +95,10 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   No active sync locks at initial preflight. GET-only cumulative capability passed for 2025-09-01, 2026-01-01 and 2026-06-18: two of
   three sampled old videos returned views; the third stays unobserved, never zero-filled.
 - Opt-in programme implementation complete. Gates pass: npm ci; npm run check (865 files,
-  2,666 dependencies, zero cycles/hygiene); npm test (3,467 unit + 18 Workers-runtime);
+  2,666 dependencies, zero cycles/hygiene); npm test (3,468 unit + 18 Workers-runtime);
   report reliability 106 tests; npm audit zero vulnerabilities; deploy dry-run. Reviewed final diff;
-  no migration, source credential change or new Connector/table. Review/merge and live execution pending.
+  no migration, source credential change or new Connector/table. Focused 20 tests include interrupted write/resume and D1-only HTTP admission.
+  PR #883 review/merge and live execution pending.
 
 ### WooCommerce 2025 order history — 2026-09-25
 
