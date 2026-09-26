@@ -300,6 +300,40 @@ test('Facebook empty exact-date result exposes only bounded date/period diagnost
   }
 });
 
+test('YouTube year programme preserves prior facts, marks omissions partial, and replays without API', async () => {
+  const runtime = await createRuntime();
+  try {
+    for (const externalContentId of ['video-a','video-b','video-c']) seedContentState(runtime.d1,
+      {platform:'youtube',sourceAccountId:YOUTUBE_ACCOUNT,externalContentId,publishedAt:'2025-01-01'});
+    runtime.d1.database.prepare(`INSERT INTO organic_content_observations
+      (observation_key,content_key,customer_key,platform,account_key,external_content_id,observed_at,
+      metric_date,source_timezone,observation_kind,metric_semantics,views,metrics_hash,coverage_run_id,
+      fetched_at,sync_run_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      'prior','youtube:chemistry_k:video-a','chemistry_k','youtube','chemistry_k','video-a',1,
+      '2025-09-01','Asia/Bangkok','initial','cumulative',999,'prior','prior',1,'prior',1);
+    let calls=0;
+    const input={execute:true,programme:'youtube_d1_year_v1',platform:'youtube',metricDate:'2025-09-01',
+      db:runtime.d1,store:runtime.store,youtubeOwnerClient:{
+        async getChannel(){return {id:YOUTUBE_ACCOUNT};},
+        async queryAnalytics(q){calls++;assert.equal(q.filters,'video==video-b,video-c');
+          return {columnHeaders:[{name:'video'},{name:'views'}],rows:[['video-b',42]]};}}};
+    const first=await repairCustomerOrganicContentHistoryBatch(input);
+    assert.equal(first.d1Created,2);assert.equal(first.larkCreated,0);
+    const coverage=runtime.d1.database.prepare("SELECT status,expected_rows,observed_rows,written_rows FROM data_coverage_runs").get();
+    assert.deepEqual(coverage,{status:'partial',expected_rows:2,observed_rows:1,written_rows:2});
+    assert.equal(runtime.d1.database.prepare("SELECT views FROM organic_content_observations WHERE observation_key='prior'").get().views,999);
+    assert.equal(runtime.d1.database.prepare("SELECT views FROM organic_content_observations WHERE external_content_id='video-c'").get().views,null);
+    const second=await repairCustomerOrganicContentHistoryBatch(input);
+    assert.equal(second.replay,true);assert.equal(second.d1Created,0);assert.equal(calls,1);
+    assert.equal(second.sourceUnavailable,1);
+    for(const metricDate of ['2025-08-31','2026-09-25']) await assert.rejects(
+      ()=>repairCustomerOrganicContentHistoryBatch({...input,metricDate}),
+      e=>e.code==='CUSTOMER_ORGANIC_HISTORY_DATE_INVALID');
+    await assert.rejects(()=>repairCustomerOrganicContentHistoryBatch({...input,platform:'facebook'}),
+      e=>e.code==='CUSTOMER_ORGANIC_HISTORY_PROGRAMME_INVALID');
+  } finally {runtime.d1.close();}
+});
+
 async function createRuntime() {
   const d1 = createSqliteD1();
   d1.exec(await readFile(MIGRATION_URL, 'utf8'));

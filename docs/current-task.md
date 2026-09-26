@@ -3,21 +3,21 @@
 ## Status
 
 ```text
-TASK_STATUS                              = WOOCOMMERCE_2025_HISTORY_BACKFILL_IN_PROGRESS
+TASK_STATUS                              = WOOCOMMERCE_2025_HISTORY_D1_AND_DAILY_CATCHUP_COMPLETE
 CURRENT_PROGRAM                          = MULTICHANNEL_CUSTOMER_PRODUCTION_RUNTIME_V1
-BASE_MAIN_SHA                            = 0b0dbc13
-CURRENT_BRANCH                           = main@0b0dbc13
+BASE_MAIN_SHA                            = ceaefccb
+CURRENT_BRANCH                           = codex/youtube-year-d1-history-20260926
 CUSTOMER_WORKERS_PLAN                    = PAID_BASE_PLAN_NO_ADD_ON
 PRODUCTION_MUTATION_AUTHORIZED_THIS_BRANCH = REVIEW_MERGE_DARK_DEPLOY_THEN_ONE_CONNECTOR_AT_A_TIME
 CUSTOMER_BASE_RUNTIME_READY              = TRUE
 CUSTOMER_BASE_MANUAL_UI_REMAINDER        = NON_BLOCKING
 PRODUCTION_D1_PROVISIONED                = TRUE
-PRODUCTION_D1_MIGRATIONS                 = 22_OF_22
+PRODUCTION_D1_MIGRATIONS                 = 23_OF_23
 PRODUCTION_D1_QUICK_CHECK                = OK
 PRODUCTION_MAIN_QUEUE_PROVISIONED        = TRUE
 PRODUCTION_DLQ_PROVISIONED               = TRUE
 PRODUCTION_WORKER_DEPLOYED               = TRUE_REVIEWED_ACTIVE
-PRODUCTION_WORKER_HEAD                   = BOUNDED_DAILY_RESTORED_VERSION_b5b36758_100_PERCENT
+PRODUCTION_WORKER_HEAD                   = WOO_DAILY_RESTORED_VERSION_e0e8fbf1_100_PERCENT
 PRODUCTION_QUEUE_CONSUMERS               = MAIN_1_DLQ_1
 PRODUCTION_SCHEDULE_ENABLED              = TIKTOK_FACEBOOK_INSTAGRAM_META_ADS_WOOCOMMERCE_CHATWOOT_YOUTUBE
 PRODUCTION_BUSINESS_TRAFFIC              = SOURCES_REPORT_AI_NOTIFICATION_LIVE
@@ -69,6 +69,36 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 
 ## Objective
 
+### YouTube one-year D1 history — authorized 2026-09-26
+
+- Customer authorized YouTube next after daily source and WooCommerce Report closure. Exact programme
+  date range is 2025-09-01..2026-09-24 inclusive. Extend the existing bounded Customer Organic history
+  operator, not the normal Queue connector. Use customer-owner Analytics cumulative `views` since
+  2005-04-23 through each requested source day; preserve the existing historical reporting-date convention
+  and record that source days are YouTube/Pacific, not an exact Bangkok-midnight as-of snapshot.
+  Existing cumulative observations take precedence: skip any content/date already observed; never update
+  current state, existing observations, platform credentials, normal schedules or Lark business rows.
+- Existing schema/metric/stable-key contract is approved. Missing/unreturned source views must not be
+  zero-filled or claimed complete. Other cumulative metrics stay null because this historical request
+  proves views only. Use exact customer/channel authority, 50-content units, same-platform lock fences,
+  source pagination checks, durable Coverage and create-only readback. The new opt-in programme is
+  YouTube-only and D1-only; the old June/July Facebook and YouTube repair remains unchanged.
+- Required acceptance: GET-only historical capability sample; focused application/HTTP/runtime tests;
+  full repository gates, review/merge before isolated live execution; scoped existing-fact baseline;
+  bounded progress and idempotent rerun; reconcile missing versus observed source entities per date;
+  Production version/config unchanged and Preview disabled after execution. No Lark history materialization.
+
+### Implementation result — YouTube one-year D1 history
+
+- Preparation in progress. Baseline: 853 retained Content states; cumulative observations 49,077 rows
+  across 85 dates, 2026-06-19..2026-09-25; Owner Analytics period facts 16,888 rows across 50 dates.
+  No active sync locks at initial preflight. GET-only cumulative capability passed for 2025-09-01, 2026-01-01 and 2026-06-18: two of
+  three sampled old videos returned views; the third stays unobserved, never zero-filled.
+- Opt-in programme implementation complete. Gates pass: npm ci; npm run check (865 files,
+  2,666 dependencies, zero cycles/hygiene); npm test (3,467 unit + 18 Workers-runtime);
+  report reliability 106 tests; npm audit zero vulnerabilities; deploy dry-run. Reviewed final diff;
+  no migration, source credential change or new Connector/table. Review/merge and live execution pending.
+
 ### WooCommerce 2025 order history — 2026-09-25
 
 - The customer authorized the first channel of the one-year historical programme: WooCommerce. Extend the
@@ -84,17 +114,22 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   Keep 2025 detailed Daily history in durable D1. The existing 90-day Lark Daily tables are bounded caches;
   do not insert expired 2025 Daily rows there or alter the retention policy.
 - Add an exact bounded, manual full-reconciliation D1-only mode using the existing Queue job and durable phase,
-  with explicit start/end, no scheduled admission, no Lark writes and continuation preserving the same scope.
+  with explicit start/end, no scheduled admission, no WooCommerce business-table Lark writes and continuation
+  preserving the same scope. The shared reliability Sync Log mirror may still write operational status inside
+  `Social MKT Data Hub`.
   Format Coverage period dates in reporting timezone. Do not read or change customer material outside
   `Social MKT Data Hub` or modify other channels.
 - Acceptance: review and full gates; production configuration preserves all unrelated bindings/schedules;
   exact Provider total and full pagination reconcile; 2025 D1 Orders and derived Daily facts match stable-key,
   date and monetary definitions; existing 2026 facts remain unchanged; idempotent replay; no new DLQ, active
   work or lock. Restore the normal WooCommerce schedule/full-reconciliation flags after the controlled run.
+- Customer direction on 2026-09-26: keep historical backfills for all channels in D1 only for now. Defer
+  historical business-table writes to Lark until all channel backfills are complete and a separate
+  reconciliation/import plan is reviewed. Normal daily operational Sync Log mirroring remains in scope.
 
 ### Implementation result — WooCommerce 2025 order history
 
-- Implementation and full local gates passed; reviewed release and exact live reconciliation pending. GET-only four-month Provider probe returned
+- Implementation and full local gates passed. GET-only four-month Provider probe returned
   September 716, October 568, November 384, December 417 orders (2,085 total), with zero Provider,
   D1, Lark or Queue mutations. The first GET-only probe encountered the known WooCommerce HTML/invalid-JSON
   contamination; the second used the existing bounded two-retry Worker policy and completed. Preview URLs
@@ -104,6 +139,70 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   (865 files, zero cycles and clean hygiene), `npm test` (3,465 unit and 18 Workers tests),
   `npm run test:report-reliability` (106), `npm audit --audit-level=high` (zero vulnerabilities), and
   `npm run deploy:dry-run` passed. Workers tests required localhost/log access outside the restricted sandbox.
+- PR #882 passed CI and merged as `ceaefccb5c818dc704699c59a3206c9ffc88de90`. Controlled Worker
+  version `a48a4de6-f80a-46e7-b565-dc89f78a79c7` was dark-verified and activated with exactly two
+  WooCommerce flag changes (manual full reconciliation on, WooCommerce scheduled admission off); all other
+  250 bindings, runtime, cron and disabled Preview URLs were preserved. The exact 2026+ Order/Daily baseline
+  was 3,944 Orders / 267 Daily dates and remained unchanged through initial 2025 pages.
+- Initial exact Queue operation `woo-history-2025-sep-dec-v1`, generation `1790340956104`, did not create a
+  Work record because pending additive migration `0023_runtime_config.sql` had not been applied to Customer
+  D1. The Worker rejected Queue and cron before dispatch with `RUNTIME_CONFIG_D1_READ_FAILED`; live D1 API
+  confirmed `no such table: runtime_config`. Remote migration listing showed only 0023 pending, and remote
+  apply completed successfully. Main/DLQ backlog, Work and attempt ledger were all empty, so the *same*
+  operation/generation was sent once again; no new generation was created. Worker cron and Queue resumed.
+- Live D1-only Work completed on 2026-09-25. It read 2,085 Orders in the unfiltered Provider pagination header. The exact Bangkok
+  created-time filter retained 2,084; one API row did not meet the requested half-open window filter.
+  Orders Coverage completed at 2,084/2,084 for `[2025-09-01, 2026-01-01)`; D1 has 2,084 Orders and all
+  122 Daily dates. Exact D1 Bangkok-month counts are 714/569/385/416, whereas the four API headers
+  (716/568/384/417) were only count probes and do not enforce the exact local boundary. Each checkpoint
+  had `d1Only=true`, WooCommerce Lark rows zero, no new DLQ or alert.
+- Final six-dataset Work reconciliation: Orders 2,084/2,084, Products 259/259, Categories 56/56,
+  Coupons 6/6, Store 1/1 and Customers `no_data_confirmed` 0/0. The 2,084 Orders have 2,084 unique
+  stable keys and external IDs; Daily has 122 unique dates, from 2025-09-01 through 2025-12-31.
+  Full D1 verification passed: 2026+ Orders remained 3,944 rows / 15,577,065,000,000 total micros,
+  2026+ Daily remained 267 dates / 12,056,060,000,000 net micros, and both max-updated timestamps
+  were unchanged. No new WooCommerce DLQ, open alert or active lock. A replay of the exact same
+  operation/generation was admitted and the completed Work timestamp stayed unchanged (idempotent).
+- Normal WooCommerce schedule was restored and temporary full reconciliation disabled in active Worker
+  `e0e8fbf1-86f9-43fb-b2c2-f12362582683`; dark and active verification confirmed 252 bindings with
+  only the two expected flag changes, unchanged cron/runtime, and disabled Preview URLs.
+  The scheduled 2026-09-26 04:30 Bangkok run was absent because the flag was paused during backfill.
+  Its exact scheduler-generated job `woocommerce:scheduled-20260926-0430` was queued once for catch-up;
+  Work completed at 09:29:44 Bangkok on 2026-09-26: all six datasets, 254/254 incremental Orders,
+  8 pages, 364 source rows, 1,386 D1 rows, 671 derived rows and 925 Lark writes; failed rows zero.
+  Live D1 readback at 10:07 has the 2026-09-25 Commerce Daily fact, zero active locks and zero new DLQ.
+
+### Read-only daily audit — 2026-09-26
+
+- Customer requested daily sync closure before continuing historical backfills. Audit at 09:23 Bangkok
+  confirms completed Facebook, Instagram, TikTok, both Meta Ads accounts, Google Ads and Chatwoot Work.
+  Scoped Lark readback for metric date 2026-09-25 has Content Daily 107/128/276/850 for
+  Facebook/Instagram/TikTok/YouTube, one Account Daily per Organic platform, Chatwoot Account Daily one,
+  and Ads exact stable-key parity 113/113 (Meta Ads 108, Google Ads 5), missing/extra zero.
+  All 32 Report rows exist; older-range partial statuses remain distinct from latest-day source completion.
+- YouTube Work completed with full-inventory cumulative Coverage 850/850 and zero failed rows/new DLQ.
+  Owner Analytics queried all 851 tracked video IDs with zero failed queries, returning 1,907 rows.
+  Live GET-only source reproduction at 09:29 Bangkok: one missing video is absent from both public and
+  customer-owner Data API responses; three retained Analytics facts dated 2026-09-18, one view each,
+  now return no rows through the customer-owner Analytics API. The exact reason the Provider omits the
+  video/facts is unproven; do not label it deleted/private or zero-fill. Prior D1 facts remain intact.
+  These exceptions do not represent a missing 2026-09-25 cumulative Daily batch.
+- Isolated Preview probes used existing customer encrypted OAuth, zero business writes, unchanged
+  Production version e0e8fbf1; Preview is restored disabled. No token replacement or business rerun.
+  WooCommerce daily catch-up subsequently completed at 09:29:44; all daily source Work is complete.
+  YouTube retained Provider exceptions and older-range Report partial statuses remain explicit.
+
+### Implementation result — WooCommerce post-daily Reports (2026-09-26)
+
+- Customer authorized refreshing the four WooCommerce rolling presets after daily catch-up completed.
+  Queued exactly one fresh operation per 1/3/7/30-day window, suffix `after-daily-v1`, period end
+  2026-09-25; preserved existing schedule identities and admitted no source/backfill operation.
+- All four D1 materializations now use generation time 10:10:29 Bangkok and Coverage 1.0.
+  GET-only scoped Lark readback confirms four unique Report rows with the same fresh timestamp and
+  `revisable` status. The stale 1-day `partial` result is replaced; `revisable` preserves the financial
+  ledger/refund contract rather than claiming immutable sales. No Production deployment or business
+  history mutation; isolated Preview restored disabled. Existing Organic older-range partial statuses
+  and verified YouTube Provider exceptions are unchanged.
 
 ### Restore existing six-table Daily retention — 2026-09-25
 
