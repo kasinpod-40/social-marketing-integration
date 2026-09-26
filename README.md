@@ -72,6 +72,9 @@ Daily financial facts ตามวันที่สร้างรายกา�
 ใช้โหมด manual full reconciliation แบบจำกัดช่วงและ D1-only; ตาราง Daily ใน Lark ยังเป็นแคช 90 วัน.
 สถานะรายการย้อนหลังสะท้อน ledger ปัจจุบันที่อาจแก้ไขย้อนหลังได้ ไม่ใช่ภาพสถานะคำสั่งซื้อที่บันทึกไว้
 ณ ทุกวันในปี 2025.
+คำสั่งลูกค้าวันที่ 26 ก.ย. 2026: เก็บงานย้อนหลังทุกช่องทางไว้ใน D1 ก่อน แล้วค่อยจัดข้อมูลลง Lark
+หลังงานย้อนหลังทั้งหมดเสร็จและตรวจเทียบครบ; รอบนี้ WooCommerce ก.ย.–ธ.ค. 2025 จบแล้วที่
+2,084 คำสั่งซื้อและ Daily 122 วัน โดยไม่มีการเขียนตารางธุรกิจย้อนหลังลง Lark.
 
 รอบ Scheduled ปกติเก็บการเติบโตของ Content ปัจจุบันแบบ cumulative snapshot: YouTube ไล่ครบทุกวิดีโอด้วย
 durable continuation แทนการจำกัดเฉพาะ 100 รายการล่าสุด และ Instagram ไล่ครบ media inventory ปัจจุบันเพื่อให้
@@ -568,3 +571,8 @@ PRODUCTION                blocked
 ```
 
 No fake history, no missing-to-zero conversion, no protected RAW mutation, no cleanup based on legacy Profile names and no secrets in Source or Lark.
+
+YouTube one-year history uses the opt-in `youtube_d1_year_v1` programme on the existing isolated history
+operator. It preserves previously observed content/date facts and records Provider omissions as null with
+partial Coverage. Source cumulative days follow YouTube/Pacific; they are not exact Bangkok-midnight snapshots.
+Historical Lark writes remain deferred.

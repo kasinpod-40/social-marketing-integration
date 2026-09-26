@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-26 — YouTube one-year D1 history preparation
+
+- extend the existing Customer history operator with an explicit YouTube-only 2025-09-01..2026-09-24 programme;
+- preserve prior content/date observations, retain source omissions as null with partial Coverage, and keep
+  all historical business rows in D1 with zero Lark writes; replay sealed batches without Provider reads.
+
+## 2026-09-26 — WooCommerce 2025 D1 history live closeout
+
+- merge PR #882, apply pending additive D1 migration 0023, and run the exact September–December 2025
+  WooCommerce D1-only history work to completion;
+- reconcile 2,084 unique Orders and 122 Daily dates against exact Bangkok boundaries, six Source datasets,
+  2026+ baseline and an idempotent same-generation replay; zero WooCommerce business-table Lark writes;
+- restore the normal WooCommerce schedule and disable temporary full reconciliation, preserving all other
+  bindings, cron, runtime and disabled Preview URLs; queue the missed 2026-09-26 daily run for catch-up;
+- record the customer instruction that all historical channel backfills stay in D1 until the later Lark
+  materialization stage.
+
 ## 2026-09-25 — WooCommerce 2025 bounded history preparation
 
 - confirm with GET-only Customer WooCommerce API that September–December 2025 contains about 2,085 orders

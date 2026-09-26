@@ -3,6 +3,7 @@ import { readYouTubeChannelIdFromEnv } from '../../../packages/config/src/youtub
 import { createMetaTokenConnectionRuntime } from '../../../packages/connectors/src/meta/meta-token-connection-runtime.js';
 import {
   CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE,
+  resolveCustomerOrganicHistoryScope,
   repairCustomerOrganicContentHistoryBatch,
 } from '../../../packages/application/src/use-cases/repair-customer-organic-content-history.js';
 import { sanitizeOperationalError } from '../../../packages/shared/src/errors/runtime-error.js';
@@ -81,7 +82,7 @@ export function createCustomerOrganicHistoryPreviewHttpHandler(dependencies = {}
 
 async function runCustomerOrganicHistoryRepair(input) {
   const platform = requireRepairPlatform(input.body?.platform);
-  const metricDate = requireRepairDate(platform, input.body?.metricDate);
+  const metricDate = requireRepairDate(platform, input.body?.metricDate, input.body?.programme);
   const batchIndex = requireBatchIndex(input.body?.batchIndex);
   const infrastructure = input.infrastructureFactory(input.env);
   let facebookSource = null;
@@ -112,6 +113,7 @@ async function runCustomerOrganicHistoryRepair(input) {
   }
 
   return input.runRepair({
+    programme: input.body.programme,
     execute: input.body.mode === 'execute',
     platform,
     metricDate,
@@ -478,9 +480,9 @@ function requireRepairPlatform(value) {
   return platform;
 }
 
-function requireRepairDate(platform, value) {
+function requireRepairDate(platform, value, programme) {
   const metricDate = requireDate(value, 'metricDate');
-  const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
+  const scope = resolveCustomerOrganicHistoryScope(platform, programme);
   if (metricDate < scope.startDate || metricDate > scope.endDate) {
     throw operatorError('Organic history repair date escapes the reviewed missing range',
       'CUSTOMER_ORGANIC_HISTORY_DATE_INVALID', { platform });

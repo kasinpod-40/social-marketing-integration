@@ -302,3 +302,26 @@ test('Customer Organic history audit preserves other provider evidence when YouT
   assert.equal(body.result.providers.youtube.sourceRead, false);
   assert.equal(body.result.providers.youtube.errorCode, 'YOUTUBE_TRANSIENT_API_ERROR');
 });
+
+test('YouTube year HTTP admission is explicit, D1-only and rejects another platform', async () => {
+  let received;
+  const handler = createCustomerOrganicHistoryPreviewHttpHandler({
+    async digest() { return TOKEN_DIGEST; },
+    createInfrastructure() { return {
+      getStateDb() { return environment().MKT_STATE_DB; },
+      getMarketingHistoryStore() { return {}; },
+      get repository() { throw Error('Lark forbidden'); },
+      get syncEngine() { throw Error('Lark forbidden'); },
+    }; },
+    async createYouTubeRuntimeClients() { return { ownerClient: {} }; },
+    async runRepair(input) { received = input; return { ok: true }; },
+  });
+  const env = {...environment(),YOUTUBE_CHANNEL_ID:'UC1NVIjalyZhB2hqf3sl9GMA'};
+  const invoke = (platform) => handler({request:request({mode:'preview',platform,
+    programme:'youtube_d1_year_v1',metricDate:'2025-09-01',batchIndex:0}),env,
+    url:new URL(`https://preview.invalid${CUSTOMER_ORGANIC_HISTORY_PREVIEW_PATH}`)});
+  assert.equal((await invoke('youtube')).status,200);
+  assert.equal(received.programme,'youtube_d1_year_v1');
+  assert.equal(received.repository,null);
+  assert.equal((await invoke('facebook')).status,400);
+});

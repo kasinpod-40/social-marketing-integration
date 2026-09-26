@@ -10,8 +10,26 @@ orders and their derived daily financial facts in D1; the 90-day Lark Daily tabl
 It represents the current order/refund ledger grouped by the order-created Bangkok date, not an invented
 point-in-time order-status snapshot. A D1-only mode must preserve its exact window across continuations and
 never enter the scheduled lane. Source `date_created_gmt` lacks a timezone suffix; the bounded filter and
-normalizer must both parse it as UTC so the Bangkok day boundary is exact. Live write and reconciliation
-remain pending the reviewed release.
+normalizer must both parse it as UTC so the Bangkok day boundary is exact. PR #882 merged as `ceaefccb`.
+Production initially lacked additive migration `0023_runtime_config.sql`, despite the Worker reading that
+table before cron/Queue dispatch. The only pending migration was applied to Customer D1 on 2026-09-25.
+The first Queue message left no Work/attempt; after both Queue backlogs were verified empty, the same
+operation/generation was requeued and the durable D1-only history run completed. All six datasets reconciled,
+with zero WooCommerce business-table Lark rows, DLQ, new alert, or active lock. A completed-work replay
+kept the same generation and completion timestamp. Normal WooCommerce schedule/full flags were restored
+in Worker `e0e8fbf1` without binding/cron/runtime drift.
+The Provider's unfiltered combined pagination header returned 2,085, while the exact Bangkok
+`[2025-09-01, 2026-01-01)` created-time filter retained 2,084 Orders and excluded one row.
+Orders Coverage is 2,084/2,084 and D1 has 122 Daily dates. Exact month counts are
+714/569/385/416; the monthly header probes were approximate boundary checks, not final row counts.
+The 2,084 D1 Orders have unique stable keys and cover all 122 Daily dates. Existing 2026+ Order and
+Daily totals and max-updated timestamps were unchanged by the historical run. The 2026-09-26 04:30
+Bangkok daily WooCommerce schedule fell inside the controlled pause and was queued separately under
+its original scheduler identity for catch-up.
+
+Customer confirmed on 2026-09-26 that **all channel history remains D1-only until every channel's
+backfill is complete**. Historical Lark business-table materialization is a later, separately
+reconciled stage; routine daily Sync Log mirroring may continue inside `Social MKT Data Hub`.
 
 ## New-day source closeout and missing retention wiring — 2026-09-25
 
@@ -1669,3 +1687,11 @@ invocation budget, and smaller Google/Meta D1 batches. TikTok uses migrated incr
 10-row future source units. The exact retained TikTok forensic terminal
 `terminal:eafd8e43f1ae5113d12905301496fd4e` remains immutable. Production completion must be re-proven by exact
 checkpoint, D1/Lark stable-key parity and zero-new-incident evidence after reviewed merge/deploy.
+
+## YouTube one-year D1 programme — 2026-09-26
+
+Customer authorized YouTube after daily closure. The existing isolated Organic history operator gains an
+explicit YouTube-only programme for 2025-09-01..2026-09-24, create-only for missing content/date facts.
+Provider cumulative views are real; omitted metrics remain null with partial Coverage and no Lark history
+writes. Existing observations, current state, credentials and schedules remain unchanged. Full gates and
+review must precede live execution; this section does not claim the backfill is complete.

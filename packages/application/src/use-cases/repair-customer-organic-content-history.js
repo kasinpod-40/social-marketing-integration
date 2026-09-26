@@ -32,20 +32,36 @@ export const CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE = Object.freeze({
   }),
 });
 
+export const YOUTUBE_D1_YEAR_PROGRAMME = 'youtube_d1_year_v1';
+export const YOUTUBE_D1_YEAR_SCOPE = Object.freeze({
+  ...CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE.youtube,
+  startDate: '2025-09-01', endDate: '2026-09-24',
+});
+
+export function resolveCustomerOrganicHistoryScope(platform, programme) {
+  requirePlatform(platform);
+  if (programme === undefined || programme === null) return CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
+  if (programme !== YOUTUBE_D1_YEAR_PROGRAMME || platform !== 'youtube') {
+    throw repairError('History programme is outside the approved D1-only YouTube scope',
+      'CUSTOMER_ORGANIC_HISTORY_PROGRAMME_INVALID');
+  }
+  return YOUTUBE_D1_YEAR_SCOPE;
+}
+
 /**
  * ซ่อม Content Daily ทีละวันที่/ครั้งละไม่เกิน 50 Content จาก Provider history จริงเท่านั้น.
  * ไม่แก้ current state, ไม่ลบข้อมูล และใช้ Stable key เดิมเพื่อให้ rerun เป็น no-op.
  */
 export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
   const platform = requirePlatform(input.platform);
-  const metricDate = requireScopedDate(platform, input.metricDate);
+  const metricDate = requireScopedDate(platform, input.metricDate, input.programme);
   const batchIndex = nonNegativeInteger(input.batchIndex ?? 0, 'batchIndex');
   const execute = input.execute === true;
   const db = requireDb(input.db);
   const store = requireMethods(input.store, [
     'saveCoverageRun', 'saveOrganicContentObservation', 'saveCoverageEntities',
   ], 'store');
-  const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
+  const scope = resolveCustomerOrganicHistoryScope(platform, input.programme);
   const repository = scope.larkDestination
     ? requireMethods(input.repository, [
       'prepareRows', 'listByFieldValues', 'createMany', 'updateMany',
@@ -56,11 +72,40 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     : null;
   const tableId = scope.larkDestination ? requireText(input.tableId, 'tableId') : null;
   await assertNoConflictingActiveLocks(db, platform);
-  const state = await loadStateBatch(db, { platform, metricDate, batchIndex });
+  let pendingCoverage = null;
+  let state = await loadStateBatch(db, { platform, metricDate, batchIndex, programme: input.programme });
+  if (input.programme === YOUTUBE_D1_YEAR_PROGRAMME) {
+    state = await retainMissingYearStates(db, state, metricDate);
+    if (state.rows.length === 0) return freezeResult({
+      mode: execute ? 'execute' : 'preview', platform, metricDate, batchIndex,
+      batchSize: 0, totalEligible: state.total, hasMore: state.hasMore,
+      providerRows: 0, sourceMetricRows: 0, larkRequired: false,
+      d1Created: 0, d1Skipped: 0, larkCreated: 0, larkSkipped: 0,
+      existingDateSkipped: true,
+      ...(execute ? {readback: {d1: true, lark: null, duplicateStableKeys: 0}} : {}),
+    });
+    const coverageId = `coverage:customer-organic-history-year-v1:${platform}:${metricDate}:batch:${batchIndex}`;
+    const sealed = await readCoverage(db, coverageId);
+    pendingCoverage = sealed;
+    if (sealed?.completed_at !== null && sealed?.completed_at !== undefined) {
+      const readback = await db.prepare('SELECT external_content_id FROM organic_content_observations WHERE coverage_run_id=?')
+        .bind(coverageId).all();
+      const actual = new Set((readback.results ?? readback).map(row => row.external_content_id));
+      if (actual.size !== sealed.written_rows || actual.size !== state.rows.length
+        || state.rows.some(row => !actual.has(row.external_content_id))) throw repairError('Sealed history readback failed',
+        'CUSTOMER_ORGANIC_HISTORY_D1_READBACK_FAILED');
+      return freezeResult({mode: execute ? 'execute' : 'preview', platform, metricDate, batchIndex,
+        batchSize: state.rows.length, totalEligible: state.total, hasMore: state.hasMore,
+        providerRows: state.rows.length, sourceMetricRows: sealed.observed_rows,
+        replay: true, larkRequired: false, d1Created: 0, d1Skipped: sealed.written_rows,
+        larkCreated: 0, larkSkipped: 0, sourceUnavailable: sealed.expected_rows-sealed.observed_rows,
+        ...(execute ? {readback: {d1: true, lark: null, duplicateStableKeys: 0}} : {})});
+    }
+  }
   const metrics = platform === 'facebook'
     ? await loadFacebookMetrics(input.facebookSource, state.rows, metricDate)
     : await loadYouTubeMetrics(input.youtubeOwnerClient, state.rows, metricDate);
-  if (state.rows.length > 0 && metrics.observed === 0) {
+  if (input.programme !== YOUTUBE_D1_YEAR_PROGRAMME && state.rows.length > 0 && metrics.observed === 0) {
     throw repairError('Historical provider returned no metric rows for a non-empty D1 scope',
       'CUSTOMER_ORGANIC_HISTORY_SOURCE_METRICS_EMPTY', {
         platform, metricDate, batchIndex, scopedContent: state.rows.length,
@@ -74,6 +119,8 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
     sourceAccountId: CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform].sourceAccountId,
     states: state.rows,
     metrics: metrics.values,
+    programme: input.programme,
+    fetchedAt: pendingCoverage?.started_at ?? Date.now(),
   });
   const larkPlan = scope.larkDestination
     ? await syncEngine.planByKey({
@@ -145,7 +192,7 @@ export async function repairCustomerOrganicContentHistoryBatch(input = {}) {
   return freezeResult({
     mode: 'execute', platform, metricDate, batchIndex, batchSize: state.rows.length,
     totalEligible: state.total, hasMore: state.hasMore, providerRows: rows.larkRows.length,
-    sourceMetricRows: metrics.observed, replay: false,
+    sourceMetricRows: metrics.observed, sourceUnavailable: state.rows.length-metrics.observed, replay: false,
     larkRequired: scope.larkDestination,
     d1Created, d1Skipped,
     larkCreated: larkWrite.created, larkSkipped: larkWrite.skipped,
@@ -159,15 +206,17 @@ function emptyLarkPlan() {
 
 export async function buildCustomerOrganicHistoryRows(input = {}) {
   const platform = requirePlatform(input.platform);
-  const metricDate = requireScopedDate(platform, input.metricDate);
+  const metricDate = requireScopedDate(platform, input.metricDate, input.programme);
   const batchIndex = nonNegativeInteger(input.batchIndex ?? 0, 'batchIndex');
   const sourceAccountId = requireExactSourceAccount(platform, input.sourceAccountId);
   const observedAt = dateOnlyInTimeZoneToEpochMilliseconds(metricDate, TIME_ZONE, {
     label: 'metricDate',
   });
-  const syncRunId = `customer-organic-history-v1:${platform}:${metricDate}:batch:${batchIndex}`;
+  const year = input.programme === YOUTUBE_D1_YEAR_PROGRAMME;
+  const fetchedAt = year ? input.fetchedAt ?? Date.now() : FETCHED_AT;
+  const syncRunId = `${year ? 'customer-organic-history-year-v1' : 'customer-organic-history-v1'}:${platform}:${metricDate}:batch:${batchIndex}`;
   const coverageRunId = `coverage:${syncRunId}`;
-  const sourceRevision = `${platform}:provider-history:${metricDate}:v1`;
+  const sourceRevision = `${platform}:provider-history:${metricDate}:${year ? 'year-v1' : 'v1'}`;
   const states = requireArray(input.states, 'states');
   const metrics = input.metrics instanceof Map ? input.metrics : new Map();
   const observations = [];
@@ -205,16 +254,16 @@ export async function buildCustomerOrganicHistoryRows(input = {}) {
       external_content_id: externalContentId,
       observed_at: observedAt,
       metric_date: metricDate,
-      source_timezone: TIME_ZONE,
+      source_timezone: year ? 'America/Los_Angeles' : TIME_ZONE,
       observation_kind: 'backfill',
       metric_semantics: 'cumulative',
       ...values,
       metrics_hash: metricsHash,
       source_revision: sourceRevision,
       coverage_run_id: coverageRunId,
-      fetched_at: FETCHED_AT,
+      fetched_at: fetchedAt,
       sync_run_id: syncRunId,
-      created_at: FETCHED_AT,
+      created_at: fetchedAt,
     }));
     coverageEntities.push(validateStorageRow('data_coverage_entities', {
       coverage_entity_key: createCoverageEntityKey({
@@ -225,10 +274,10 @@ export async function buildCustomerOrganicHistoryRows(input = {}) {
       coverage_run_id: coverageRunId,
       entity_type: 'content',
       external_entity_id: externalContentId,
-      observation_status: 'observed',
+      observation_status: year && values.views === null ? 'not_observed' : 'observed',
       source_revision: sourceRevision,
       observed_at: observedAt,
-      created_at: FETCHED_AT,
+      created_at: fetchedAt,
     }));
     larkRows.push(Object.freeze({
       content_daily_key: `${platform}:${sourceAccountId}:${externalContentId}:${metricDate}`,
@@ -261,13 +310,13 @@ export async function buildCustomerOrganicHistoryRows(input = {}) {
     scope_mode: 'report_range',
     period_start: metricDate,
     period_end: metricDate,
-    source_timezone: TIME_ZONE,
+    source_timezone: year ? 'America/Los_Angeles' : TIME_ZONE,
     expected_entities: states.length,
     expected_rows: states.length,
     source_watermark: sourceWatermark,
     revisable_until: null,
-    started_at: FETCHED_AT,
-    created_at: FETCHED_AT,
+    started_at: fetchedAt,
+    created_at: fetchedAt,
   };
   const partialCoverageRun = validateStorageRow('data_coverage_runs', {
     ...baseCoverage,
@@ -278,18 +327,18 @@ export async function buildCustomerOrganicHistoryRows(input = {}) {
     failed_rows: 0,
     completed_at: null,
     error_code: null,
-    updated_at: FETCHED_AT,
+    updated_at: fetchedAt,
   });
   const coverageRun = validateStorageRow('data_coverage_runs', {
     ...baseCoverage,
-    status: 'complete',
-    observed_entities: states.length,
-    observed_rows: states.length,
+    status: year && observations.some(row => row.views === null) ? 'partial' : 'complete',
+    observed_entities: year ? observations.filter(row => row.views !== null).length : states.length,
+    observed_rows: year ? observations.filter(row => row.views !== null).length : states.length,
     written_rows: states.length,
     failed_rows: 0,
-    completed_at: FETCHED_AT,
+    completed_at: fetchedAt,
     error_code: null,
-    updated_at: FETCHED_AT,
+    updated_at: fetchedAt,
   });
   return Object.freeze({
     observations: Object.freeze(observations),
@@ -300,9 +349,23 @@ export async function buildCustomerOrganicHistoryRows(input = {}) {
   });
 }
 
+async function retainMissingYearStates(db, state, metricDate) {
+  if (state.rows.length === 0) return state;
+  const ids = state.rows.map(row => row.external_content_id);
+  const result = await db.prepare(`SELECT external_content_id, source_revision
+    FROM organic_content_observations WHERE customer_key=? AND account_key=? AND platform='youtube'
+    AND metric_date=? AND external_content_id IN (${ids.map(() => '?').join(',')})`)
+    .bind(CUSTOMER_KEY, ACCOUNT_KEY, metricDate, ...ids).all();
+  const ownRevision = `youtube:provider-history:${metricDate}:year-v1`;
+  const prior = new Set((result.results ?? result).filter(row => row.source_revision !== ownRevision)
+    .map(row => row.external_content_id));
+  return {...state, rows: state.rows.filter(row => !prior.has(row.external_content_id))};
+}
+
 async function loadStateBatch(db, input) {
   const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[input.platform];
-  const endExclusive = dateOnlyInTimeZoneToEpochMilliseconds(shiftDate(input.metricDate, 1), TIME_ZONE);
+  const publicationTimeZone = input.programme === YOUTUBE_D1_YEAR_PROGRAMME ? 'America/Los_Angeles' : TIME_ZONE;
+  const endExclusive = dateOnlyInTimeZoneToEpochMilliseconds(shiftDate(input.metricDate, 1), publicationTimeZone);
   const startInclusive = input.platform === 'facebook'
     ? dateOnlyInTimeZoneToEpochMilliseconds(shiftDate(input.metricDate, -29), TIME_ZONE)
     : 0;
@@ -522,9 +585,9 @@ function requirePlatform(value) {
   return platform;
 }
 
-function requireScopedDate(platform, value) {
+function requireScopedDate(platform, value, programme) {
   const date = requireText(value, 'metricDate');
-  const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
+  const scope = resolveCustomerOrganicHistoryScope(platform, programme);
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(date) || date < scope.startDate || date > scope.endDate) {
     throw repairError('Historical repair date escapes the reviewed missing range',
       'CUSTOMER_ORGANIC_HISTORY_DATE_INVALID', { platform });

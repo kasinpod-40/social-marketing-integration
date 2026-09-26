@@ -6,7 +6,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE } from '../packages/application/src/use-cases/repair-customer-organic-content-history.js';
+import { CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE, resolveCustomerOrganicHistoryScope } from '../packages/application/src/use-cases/repair-customer-organic-content-history.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 import { loadSharedTableSchemaContract } from './lib/shared-table-schema-contract.js';
@@ -50,6 +50,7 @@ const organicHistoryRepair = process.argv.includes('--organic-history-repair');
 const organicAccountDaily = process.argv.includes('--organic-account-daily');
 const organicHistoryPlatform = readOption('--organic-history-platform');
 const organicHistoryStartDate = readOption('--organic-history-start-date');
+const organicHistoryProgramme = readOption('--organic-history-programme');
 
 let runtimeRoot = null;
 let target = null;
@@ -99,9 +100,16 @@ async function main() {
     throw operatorError('Organic history platform selector is outside the reviewed repair scope',
       'MKT_ADS_PROD_ARGUMENT_INVALID');
   }
+  if (organicHistoryProgramme !== null) {
+    if (!organicHistoryRepair || organicHistoryPlatform !== 'youtube') {
+      throw operatorError('Year history programme requires the YouTube-only repair selector',
+        'MKT_ADS_PROD_ARGUMENT_INVALID');
+    }
+    resolveCustomerOrganicHistoryScope(organicHistoryPlatform, organicHistoryProgramme);
+  }
   if (organicHistoryStartDate !== null) {
     const scope = organicHistoryPlatform
-      ? CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[organicHistoryPlatform]
+      ? resolveCustomerOrganicHistoryScope(organicHistoryPlatform, organicHistoryProgramme)
       : null;
     if (!organicHistoryRepair || !scope
       || !/^\d{4}-\d{2}-\d{2}$/u.test(organicHistoryStartDate)
@@ -255,7 +263,7 @@ async function runOrganicHistoryRepair(input) {
     ? [organicHistoryPlatform]
     : Object.keys(CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE);
   for (const platform of platforms) {
-    const scope = CUSTOMER_ORGANIC_HISTORY_REPAIR_SCOPE[platform];
+    const scope = resolveCustomerOrganicHistoryScope(platform, organicHistoryProgramme);
     const dates = input.execute
       ? dateRange(organicHistoryStartDate ?? scope.startDate, scope.endDate)
       : [scope.startDate];
@@ -276,6 +284,7 @@ async function runOrganicHistoryRepair(input) {
           token: input.token,
           body: {
             mode: input.execute ? 'execute' : 'preview',
+            ...(organicHistoryProgramme ? {programme: organicHistoryProgramme} : {}),
             platform,
             metricDate,
             batchIndex,
