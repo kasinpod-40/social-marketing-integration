@@ -69,6 +69,44 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 
 ## Objective
 
+### TikTok Ads Production end-to-end — authorized 2026-09-27
+
+- Latest user scope supersedes the historical PR #220 deferral for TikTok Ads only. Start at fetched
+  main `54506f73`; preserve #880+ and unrelated uncommitted history documentation.
+- Exact Customer Production authority: account `154f6bf72740d29d7453cec7fb800d32`, profile
+  `chemistry-k-prod`, Worker `social-mkt-sync-worker`, D1 `social-mkt-state-prod` /
+  `f03ab092-a1aa-4478-8ba2-c20d7b54851f`; tuple production/chemistry_k/chemistry_k.
+- Reuse OAuth v2, encrypted credential repository, Paid canonical/writer/report and durable Queue/schedule.
+  No TikTok Organic, new Ads Base/table, PR #220 revival or unrelated schedule changes.
+- TikTok official v1.3 search documentation states refresh endpoint is deprecated for long-term Ads access
+  tokens. Correct the current callback that requires a refresh token; persist the long-term access token
+  with AES-256-GCM and authenticated credential kind `access_token` in the existing repository.
+  Preserve all existing encrypted payloads, references, foreign keys and one-active constraints.
+- Required tests: real access-only token response; encrypted access-token replacement/read binding; migration
+  preservation with replaced/self-referenced credentials and PKCE state; existing Google/YouTube regression;
+  full default gates before review/merge. No production traffic switch before callback/runtime verification.
+
+### Implementation result — TikTok Ads Production preparation
+
+- Fetch/pull verified main `54506f73c1297da8c9b235bdd601605a3fe7af02`; changes after #879 are #880–#883,
+  no TikTok Ads ingestion. Migration maximum remains 0023. Report adapter remains planned; no TikTok Ads job.
+- Live Worker `e0e8fbf1-86f9-43fb-b2c2-f12362582683` remains 100%; 240 plain-text + 10 secrets = 250 text
+  bindings (252 resources). OAuth origin is placeholder; TikTok App and OAuth signing secrets absent.
+- Exact D1 has migration 0023 table and initially zero runtime_config rows. Whole-database export was rejected
+  by automatic approval review for sensitive Customer payload to a local file; no bypass. Scoped empty
+  runtime_config backup and Time Travel bookmark succeeded. Backup SHA256:
+  `921b35c94124a3e9b7c38febaf7420c092589b5039996c95359372c60abab023`.
+- Additive non-secret config write completed: 34 exact active LARK_TABLE mappings + App ID
+  `7670007933899390993`; exact 35/35 key/value readback, no unexpected rows. Candidate text count 216,
+  headroom 34; active bindings unchanged until reviewed version activation. Focused runtime-config tests 5/5.
+- Customer Worker workers.dev and Preview disabled, routes empty, existing two crons unchanged. Main queue
+  `9d7d29e9a86d49c5a877aeef3494a41d`; DLQ `e09d840f4594465795884235c2994a54`.
+- Long-term Ads access-token callback and shared encrypted kind implemented with migration 0024; SQLite
+  preserves all payloads/replacement/PKCE references, actual Workers D1/Web Crypto test passes.
+  npm ci/check/unit 3471/report 106/audit zero/dry-run pass; Workers runtime 19 pass, final focused 9 pass.
+- Status: IN_PROGRESS, not AWAITING_CUSTOMER_AUTHORIZATION; signing/App secrets and callback rollout pending.
+
+
 ### YouTube one-year D1 history — authorized 2026-09-26
 
 - Customer authorized YouTube next after daily source and WooCommerce Report closure. Exact programme

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-27 — TikTok Ads long-term credential readiness
+
+- correct Marketing API OAuth to accept access-only long-term grants and persist through the existing AES-GCM
+  credential repository; preserve Google/YouTube refresh tokens and validate advertiser metadata before storage;
+- extend the shared credential kind with migration 0024, preserving ciphertext, replacement and PKCE references;
+- verify exact Customer D1 runtime_config 35/35 non-secret mappings and candidate binding headroom 250 → 216;
+  Production traffic, Ads Business writes and schedules remain unchanged.
+
+
 ## 2026-09-26 — YouTube one-year D1 history preparation
 
 - extend the existing Customer history operator with an explicit YouTube-only 2025-09-01..2026-09-24 programme;

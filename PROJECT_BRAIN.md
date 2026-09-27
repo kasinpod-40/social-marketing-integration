@@ -1695,3 +1695,14 @@ explicit YouTube-only programme for 2025-09-01..2026-09-24, create-only for miss
 Provider cumulative views are real; omitted metrics remain null with partial Coverage and no Lark history
 writes. Existing observations, current state, credentials and schedules remain unchanged. Full gates and
 review must precede live execution; this section does not claim the backfill is complete.
+
+## TikTok Ads Production readiness — 2026-09-27
+
+Current main #877–#879 OAuth/runtime-config work has no Ads ingestion or active report adapter. Exact Customer
+Production D1 now holds 35 allowlisted non-secret runtime config rows, verified 35/35 from live active bindings.
+Production e0e8fbf1 is unchanged at 100%, 250 text bindings; candidate prunes 34 Lark mappings for 216 text.
+Official TikTok Ads contract uses long-term access tokens, with refresh endpoint deprecated. The reviewed
+preparation corrects callback persistence through the shared encrypted repository and migration 0024, preserving
+existing ciphertext/references/PKCE constraints. OAuth origin remains placeholder; App/signing secrets and
+public callback rollout are pending. Status IN_PROGRESS, not customer-click-only or COMPLETE.
+Details: `docs/tasks/tiktok-ads-production-readiness-20260927.md`.
