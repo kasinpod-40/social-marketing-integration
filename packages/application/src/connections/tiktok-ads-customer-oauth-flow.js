@@ -75,12 +75,17 @@ export class TikTokAdsCustomerOAuthFlow {
         accessToken: token.accessToken,
         advertiserId,
       });
+      if (identity.advertiserId !== advertiserId || !identity.advertiserName
+        || !identity.timezone || !/^[A-Z]{3}$/u.test(identity.currency ?? '')) {
+        throw connectionError('TikTok Ads advertiser metadata is incomplete',
+          'TIKTOK_ADS_ADVERTISER_IDENTITY_MISMATCH');
+      }
       const existing = await this.store.getConnection(callback.connectionId);
       const credentialReference = await this.credentials.replace({
         connectionId: callback.connectionId,
         connectorKey: CONNECTOR,
-        credentialKind: 'refresh_token',
-        plaintext: token.refreshToken,
+        credentialKind: 'access_token',
+        plaintext: token.accessToken,
         previousReference: existing?.credentialReference ?? null,
       });
       const validatedAt = this.now();
@@ -101,7 +106,8 @@ export class TikTokAdsCustomerOAuthFlow {
           advertiserId: identity.advertiserId,
           currency: identity.currency,
           timezone: identity.timezone,
-          refreshTokenExpiresAt: token.refreshExpiresAt,
+          credentialKind: 'access_token',
+          tokenLifecycle: 'long_term_until_revoked',
           authorizedAdvertiserCount: authorized.length,
         },
         updatedAt: validatedAt,

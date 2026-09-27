@@ -32,18 +32,13 @@ export class TikTokAdsOAuthClient {
     });
     const data = payload.data ?? {};
     const accessToken = requireText(data.access_token, 'access_token');
-    const refreshToken = requireText(data.refresh_token, 'refresh_token');
     const now = this.now();
     return Object.freeze({
       accessToken,
-      refreshToken,
       tokenType: 'Bearer',
       expiresAt: expiryFromSeconds(data, ['expires_in', 'access_token_expires_in'], now),
-      refreshExpiresAt: expiryFromSeconds(
-        data,
-        ['refresh_expires_in', 'refresh_token_expires_in'],
-        now,
-      ),
+      credentialKind: 'access_token',
+      tokenLifecycle: 'long_term_until_revoked',
     });
   }
 

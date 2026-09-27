@@ -21,7 +21,7 @@ test('TikTok Ads authorization URL binds app, state and exact redirect URI', () 
   );
 });
 
-test('TikTok Ads code exchange returns access and refresh token lifecycle without leaking secret', async () => {
+test('TikTok Ads code exchange accepts the Marketing API access-only long-term token without leaking secret', async () => {
   const calls = [];
   const client = new TikTokAdsOAuthClient({
     appId: '7670007933899390993',
@@ -33,18 +33,16 @@ test('TikTok Ads code exchange returns access and refresh token lifecycle withou
         code: 0,
         data: {
           access_token: 'access-private',
-          refresh_token: 'refresh-private',
-          expires_in: 86_400,
-          refresh_expires_in: 31_536_000,
         },
       });
     },
   });
   const token = await client.exchangeAuthorizationCode({ code: 'auth-code' });
   assert.equal(token.accessToken, 'access-private');
-  assert.equal(token.refreshToken, 'refresh-private');
-  assert.equal(token.expiresAt, 86_401_000);
-  assert.equal(token.refreshExpiresAt, 31_536_001_000);
+  assert.equal(token.refreshToken, undefined);
+  assert.equal(token.expiresAt, null);
+  assert.equal(token.credentialKind, 'access_token');
+  assert.equal(token.tokenLifecycle, 'long_term_until_revoked');
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     app_id: '7670007933899390993',
     auth_code: 'auth-code',
@@ -65,4 +63,14 @@ test('TikTok Ads rejected exchange exposes only safe provider status', async () 
       && JSON.stringify(error).includes('private-secret') === false
     ),
   );
+});
+
+test('TikTok Ads malformed or missing access token cannot create a grant', async () => {
+  for (const data of [{}, { access_token: '' }]) {
+    const client = new TikTokAdsOAuthClient({
+      appId: '7670007933899390993', appSecret: 'private-secret',
+      fetchImpl: async () => Response.json({ code: 0, data }),
+    });
+    await assert.rejects(() => client.exchangeAuthorizationCode({ code: 'auth-code' }));
+  }
 });

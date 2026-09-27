@@ -423,7 +423,7 @@ export class D1CustomerConnectionStore {
         row.credentialKind,
       ));
     }
-    if (row.credentialKind === 'refresh_token') {
+    if (['refresh_token', 'access_token'].includes(row.credentialKind)) {
       statements.push(this.db.prepare(`
         UPDATE connections
         SET credential_reference = ?, updated_at = ?
@@ -657,7 +657,7 @@ function normalizeEncryptedCredential(input) {
 }
 
 function requireCredentialKind(value) {
-  if (!new Set(['refresh_token', 'pkce_verifier']).has(value)) {
+  if (!new Set(['refresh_token', 'pkce_verifier', 'access_token']).has(value)) {
     throw new TypeError('credentialKind is unsupported');
   }
   return value;

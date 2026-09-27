@@ -16,7 +16,7 @@ test('TikTok Ads begin reuses shared invitation/state authority', async () => {
   });
 });
 
-test('TikTok Ads callback stores only encrypted Refresh Token and validates one advertiser read-only', async () => {
+test('TikTok Ads callback stores only encrypted long-term Access Token and validates one advertiser read-only', async () => {
   const fixture = createFixture();
   const result = await fixture.flow.complete({ state: 'signed-state', code: 'auth-code' });
   assert.equal(result.connectionStatus, 'connected');
@@ -24,11 +24,11 @@ test('TikTok Ads callback stores only encrypted Refresh Token and validates one 
   assert.equal(result.externalIdentity.accountId, '***************6789');
   assert.equal(result.queued, false);
   assert.equal(result.larkWrite, false);
-  assert.equal(fixture.calls.encrypt[0].credentialKind, 'refresh_token');
-  assert.equal(fixture.calls.encrypt[0].plaintext, 'refresh-private');
+  assert.equal(fixture.calls.encrypt[0].credentialKind, 'access_token');
+  assert.equal(fixture.calls.encrypt[0].plaintext, 'access-private');
   assert.equal(fixture.calls.update[0].externalAccountId, '1234567890123456789');
   assert.equal(fixture.calls.order.join(','), 'exchange,list,info,encrypt,update,complete');
-  assert.equal(JSON.stringify(result).includes('refresh-private'), false);
+  assert.equal(JSON.stringify(result).includes('access-private'), false);
 });
 
 test('TikTok Ads multiple advertisers fail closed until exact advertiser is configured', async () => {
@@ -57,6 +57,13 @@ test('TikTok Ads configured advertiser must be inside the authorized account set
   );
   assert.equal(fixture.calls.encrypt.length, 0);
   assert.equal(fixture.calls.update.at(-1).connectionStatus, 'identity_mismatch');
+});
+
+test('TikTok Ads incomplete advertiser metadata is rejected before credential storage', async () => {
+  const fixture = createFixture({ identity: { currency: null } });
+  await assert.rejects(() => fixture.flow.complete({ state: 'signed-state', code: 'auth-code' }),
+    { code: 'TIKTOK_ADS_ADVERTISER_IDENTITY_MISMATCH' });
+  assert.equal(fixture.calls.encrypt.length, 0);
 });
 
 function createFixture(options = {}) {
@@ -91,10 +98,8 @@ function createFixture(options = {}) {
       calls.order.push('exchange');
       return {
         accessToken: 'access-private',
-        refreshToken: 'refresh-private',
         tokenType: 'Bearer',
-        expiresAt: 86_401_000,
-        refreshExpiresAt: 31_536_001_000,
+        expiresAt: null,
       };
     },
   };
@@ -114,6 +119,7 @@ function createFixture(options = {}) {
         advertiserName: 'Chemistry K',
         currency: 'THB',
         timezone: 'Asia/Bangkok',
+        ...options.identity,
       };
     },
   };
