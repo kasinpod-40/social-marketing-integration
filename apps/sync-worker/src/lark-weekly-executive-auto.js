@@ -39,6 +39,7 @@ import {
 import {
   LARK_NOTIFICATION_RUNTIME_MODES,
 } from '../../../packages/config/src/lark-notification-runtime-config.js';
+import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import {
   createLarkBitableClientFromEnv,
 } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
@@ -197,6 +198,7 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
 
     const collected = await collectSource({
       client,
+      tableIds: readWeeklySourceTableIds(jobInput.env),
       customerProfile: jobInput.config.customerProfile,
       targetPeriodEnd: periodEnd,
     });
@@ -331,6 +333,25 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
       throw error;
     }
   };
+}
+
+function readWeeklySourceTableIds(env) {
+  const ids = readLarkTableIdsFromEnv(env, [
+    'mktReportSettings',
+    'mktReportSnapshots',
+    'mktReportMetricValues',
+    'mktReportTopContent',
+    'mktReportTopAds',
+    'mktAiReportRuns',
+  ]);
+  return Object.freeze({
+    settings: ids.mktReportSettings,
+    snapshots: ids.mktReportSnapshots,
+    metrics: ids.mktReportMetricValues,
+    topContent: ids.mktReportTopContent,
+    topAds: ids.mktReportTopAds,
+    aiRuns: ids.mktAiReportRuns,
+  });
 }
 
 export function acceptGeneratedWeeklyRecord({ record, expected, assertGenerated }) {

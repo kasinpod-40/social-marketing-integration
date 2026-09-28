@@ -2461,3 +2461,10 @@ child identity after reviewed merge/deploy.
 - final Cloudflare readback confirms Worker Preview URLs disabled and Production version
   `54b80d1b-80f8-45dd-907f-7d9bcd0877db` unchanged at 100%. Instagram and TikTok remain correctly unmodified
   because their current sources cannot prove historical Daily values.
+
+### Implementation result — Weekly Executive Thai table names (2026-09-28)
+
+- The scheduled 2026-09-21..27 report stopped before Work creation or group delivery with `LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLE_INVALID`; its DLQ remains open.
+- The customer-provided Base export has the exact Production Worker Base token. All six Production D1-configured Report table IDs match one table in that export; their display names are Thai. Only these six scoped tables were matched. This reproduces the exact-name failure without needing permission to any other customer table.
+- The candidate Weekly processor now passes the six IDs from hydrated Production D1 runtime config to the source collector. It reads only those tables by ID, performs no whole-Base table inventory in this path and rejects missing, malformed or duplicate IDs before record reads.
+- Focused tests 7/7, full unit 3473/3473, Worker runtime 19/19, Report reliability 106/106, `npm run check`, deploy dry-run and dependency audit pass. No Production deployment, Lark write, notification send, DLQ redrive, schedule or flag change occurred. Live Lark API readback remains unavailable to the local App (HTTP 403).
