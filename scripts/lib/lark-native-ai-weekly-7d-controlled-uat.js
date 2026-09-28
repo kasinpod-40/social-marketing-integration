@@ -27,7 +27,7 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     input.customerProfile ?? 'integration_workspace',
     'customerProfile',
   );
-  const tables = await resolveTables(client);
+  const tables = await resolveTables(client, input.tableIds);
   const settingsPage = await client.listRecordsPage({
     tableId: tables.settings,
     pageSize: LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_LIMITS.maximumSettingsRows,
@@ -211,7 +211,24 @@ export function createLarkNativeAiWeekly7dControlledUatFetchGuard(fetchImpl) {
   });
 }
 
-function resolveTables(client) {
+function resolveTables(client, configuredTableIds) {
+  if (configuredTableIds !== undefined) {
+    const resolved = {};
+    const ids = new Set();
+    for (const key of Object.keys(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)) {
+      const tableId = configuredTableIds?.[key];
+      if (typeof tableId !== 'string' || !/^tbl[A-Za-z0-9]+$/u.test(tableId) || ids.has(tableId)) {
+        throw sourceError(
+          `Weekly 7D AI UAT configured table ID is invalid for ${key}`,
+          'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLE_INVALID',
+          { key },
+        );
+      }
+      ids.add(tableId);
+      resolved[key] = tableId;
+    }
+    return Promise.resolve(Object.freeze(resolved));
+  }
   return client.listTables().then((inventory) => {
     const resolved = {};
     for (const [key, name] of Object.entries(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)) {

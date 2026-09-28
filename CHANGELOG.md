@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-28 — Weekly Executive Thai table names
+
+- resolve the six scoped Weekly Report tables through the approved D1 runtime table IDs, so Thai display-name changes do not stop Monday delivery;
+- reject missing, malformed or duplicate IDs before record reads and skip whole-Base table enumeration in the automatic Weekly path;
+- preserve the existing notification, AI quality, idempotency and send gates. Production deployment and failed-job recovery remain pending review.
+
 ## 2026-09-27 — TikTok Ads long-term credential readiness
 
 - correct Marketing API OAuth to accept access-only long-term grants and persist through the existing AES-GCM

@@ -32,9 +32,9 @@ function retainedSnapshot() {
   };
 }
 
-function client(searches = []) {
+function client(searches = [], idForKey = (key) => `tbl_${key}`) {
   const ids = Object.fromEntries(Object.keys(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)
-    .map((key) => [key, `tbl_${key}`]));
+    .map((key) => [key, idForKey(key)]));
   return {
     listTables: async () => Object.entries(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)
       .map(([key, name]) => ({ tableId: ids[key], name })),
@@ -73,5 +73,37 @@ test('current/latest collection still fails closed when enabled settings are abs
       customerProfile: 'chemistry_k',
     }),
     (error) => error?.code === 'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_SETTINGS_MISSING',
+  );
+});
+
+test('weekly source reads only configured report table IDs after Thai display-name changes', async () => {
+  const tableIds = Object.fromEntries(Object.keys(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)
+    .map((key) => [key, `tbl${key}`]));
+  const configuredClient = client([], (key) => `tbl${key}`);
+  configuredClient.listTables = async () => { throw new Error('whole-Base inventory must not be read'); };
+  const result = await collectLarkNativeAiWeekly7dControlledUatSource({
+    client: configuredClient,
+    tableIds,
+    customerProfile: 'chemistry_k',
+    targetPeriodEnd: PERIOD_END,
+  });
+  assert.deepEqual(result.sourceReportIds, [YOUTUBE_REPORT_ID]);
+});
+
+test('weekly source rejects duplicate configured table IDs before reading records', async () => {
+  const tableIds = Object.fromEntries(Object.keys(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)
+    .map((key) => [key, `tbl${key}`]));
+  tableIds.metrics = tableIds.snapshots;
+  const configuredClient = client();
+  configuredClient.listRecordsPage = async () => { throw new Error('records must not be read'); };
+  await assert.rejects(
+    () => collectLarkNativeAiWeekly7dControlledUatSource({
+      client: configuredClient,
+      tableIds,
+      customerProfile: 'chemistry_k',
+      targetPeriodEnd: PERIOD_END,
+    }),
+    (error) => error?.code === 'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLE_INVALID'
+      && error?.details?.key === 'metrics',
   );
 });
