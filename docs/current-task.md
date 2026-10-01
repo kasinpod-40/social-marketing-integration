@@ -1835,8 +1835,9 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   to the existing read-only invitation preview, which shows when retry is available. Operator/API errors retain
   their JSON contract. No Ads Business write, flag, cron, queue or secret changes are part of this patch.
 - `npm run check`, 3,474 unit tests, 19 Workers-runtime tests, 106 report-reliability tests and
-  `npm run deploy:dry-run` pass. Production dependency audit (`npm audit --omit=dev`) reports zero findings;
-  full audit retains 3 moderate and 1 high existing Cloudflare development-tooling advisories.
+  `npm run deploy:dry-run` pass after clean install. The first CI runs failed because existing Cloudflare
+  development tooling locked a vulnerable `undici`. Wrangler/Workers test pool were updated and `undici`
+  pinned to patched 7.29.1; full `npm audit --audit-level=high` now reports zero findings.
   Active-version binding parity and reviewed Production deployment remain pending. Customer authorization
   and callback validation are not yet proven.
 
