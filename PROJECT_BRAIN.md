@@ -1706,3 +1706,10 @@ preparation corrects callback persistence through the shared encrypted repositor
 existing ciphertext/references/PKCE constraints. OAuth origin remains placeholder; App/signing secrets and
 public callback rollout are pending. Status IN_PROGRESS, not customer-click-only or COMPLETE.
 Details: `docs/tasks/tiktok-ads-production-readiness-20260927.md`.
+
+## TikTok Ads customer retry UX — 2026-10-01
+
+The first Customer TikTok Ads OAuth attempt began but had no consumed callback or validated connection.
+A repeated browser POST during that attempt returned an active-attempt JSON error. The shared confirmation
+page now uses the connector name and redirects such repeat browser POSTs to the read-only invitation preview.
+This does not prove the original authorization completed, and it changes no Paid Ads Business path.

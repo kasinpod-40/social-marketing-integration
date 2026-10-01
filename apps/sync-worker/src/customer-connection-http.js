@@ -34,6 +34,7 @@ import {
   YOUTUBE_CREDENTIAL_REWRAP_PATH,
 } from './youtube-credential-rewrap-http.js';
 import {
+  connectionSecurityHeaders,
   connectionRequestError,
   readBoundedConnectionJson,
   requireConnectionText,
@@ -125,6 +126,21 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
         code: operational.code,
         error: operational.message,
       })));
+      if (
+        operational.code === 'CONNECTION_INVITATION_ATTEMPT_ACTIVE'
+        && request.method === 'POST'
+        && [
+          GOOGLE_ADS_CONNECTION_PATHS.connect,
+          YOUTUBE_CONNECTION_PATHS.connect,
+          TIKTOK_ADS_CONNECTION_PATHS.connect,
+        ].includes(url.pathname)
+      ) {
+        // Browser POST ซ้ำต้องกลับไปดูสถานะคำเชิญ ไม่แสดง JSON error ที่ลูกค้าอ่านไม่รู้เรื่อง
+        return new Response(null, {
+          status: 303,
+          headers: connectionSecurityHeaders({ location: url.toString() }),
+        });
+      }
       const status = statusForError(operational.code);
       return json({
         ok: false,

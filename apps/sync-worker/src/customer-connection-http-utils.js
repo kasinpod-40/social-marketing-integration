@@ -53,7 +53,7 @@ export function connectionConfirmationPage(input = {}) {
     ? `
       <form method="post">
         <input type="hidden" name="confirm" value="connect">
-        <button type="submit">ดำเนินการต่อด้วย Google</button>
+        <button type="submit">ดำเนินการต่อด้วย ${escapeHtml(connectorLabel)}</button>
       </form>`
     : `<p>มีการเชื่อมต่อที่กำลังดำเนินการอยู่ กรุณาลองใหม่หลัง ${escapeHtml(retryAvailableAt)} น.</p>`;
   const html = `<!doctype html>

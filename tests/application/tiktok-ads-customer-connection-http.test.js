@@ -10,6 +10,9 @@ test('TikTok Ads GET is preview-only and POST starts provider authorization', as
   const url = new URL('https://worker.example/connect/tiktok-ads?invitation=signed');
   const preview = await handler({ request: new Request(url), env: {}, url });
   assert.equal(preview.status, 200);
+  const previewHtml = await preview.text();
+  assert.match(previewHtml, /ดำเนินการต่อด้วย TikTok Ads/);
+  assert.doesNotMatch(previewHtml, /ดำเนินการต่อด้วย Google/);
   assert.deepEqual(calls, [{ type: 'preview', invitation: 'signed' }]);
 
   calls.length = 0;
