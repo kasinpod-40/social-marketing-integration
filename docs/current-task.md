@@ -1838,8 +1838,17 @@ reviewed repair makes the same logical read proceed successfully. The retained f
   `npm run deploy:dry-run` pass after clean install. The first CI runs failed because existing Cloudflare
   development tooling locked a vulnerable `undici`. Wrangler/Workers test pool were updated and `undici`
   pinned to patched 7.29.1; full `npm audit --audit-level=high` now reports zero findings.
-  Active-version binding parity and reviewed Production deployment remain pending. Customer authorization
-  and callback validation are not yet proven.
+  PR #886 passed both Branch Verification checks and merged to `main` as `1e160aec`. Before deployment, the
+  active Production version changed to `e64c55d1` for the guarded Customer Lark daily readback route. The
+  final candidate retained that live route, queue recovery and all 223 active bindings (including 15 Secrets),
+  with exact binding/runtime parity read back before traffic promotion. Version `b577e538` now serves 100%.
+  Live readback confirmed the invitation preview returns HTTP 200 with the TikTok Ads button, the guarded Lark
+  route still returns HTTP 401 without authorization, and the callback rejects a missing state with HTTP 400.
+  The active invitation remains unconsumed and valid until 2026-10-01 23:19 Asia/Bangkok. Read-only D1 check
+  at 13:46 showed attempt_count 1/3, the prior attempt expired, `authorization_pending`/`not_validated`, and
+  no callback consumption or error. Customer authorization and token validation still require customer action.
+  The preserved Lark route source is awaiting its separate repository integration; do not replace the deployed
+  composite version with a build from `main` until that source is included.
 
 ### 2026-09-24 — Instagram encrypted D1 token renewal
 
