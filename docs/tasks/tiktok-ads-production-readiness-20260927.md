@@ -62,3 +62,13 @@ Local validation: npm ci PASS; npm run check PASS (865 source files, 2666 depend
 final unit suite 3471 PASS plus focused 9 PASS; Workers runtime 19 PASS including the new
 access-token test; report reliability 106 PASS; npm audit zero vulnerabilities; deploy dry-run PASS.
 Workers tests required localhost access outside sandbox; npm audit required registry network access.
+
+## Customer retry UX — 2026-10-01
+
+Exact Customer D1 readback showed one OAuth attempt at 11:28 Asia/Bangkok without a consumed callback or
+validated connection. A duplicate browser POST during the active window exposed raw JSON. The shared
+confirmation button now says TikTok Ads for this connector, and active repeat POSTs redirect to the
+read-only invitation preview. No Ads Business or credential write is introduced; customer authorization
+still requires live callback proof. A subsequent CI run found a high-severity advisory in the existing
+Cloudflare development-tooling dependency graph. Wrangler and Workers test pool were updated, with undici
+pinned to the patched 7.29.1; clean install, all gates and full audit now pass.

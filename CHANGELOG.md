@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-01 — TikTok Ads customer retry UX
+
+- Label the shared OAuth confirmation button with the selected connector and send duplicate active browser
+  submissions back to the read-only retry preview instead of raw JSON.
+
 ## 2026-09-28 — Weekly Executive Thai table names
 
 - resolve the six scoped Weekly Report tables through the approved D1 runtime table IDs, so Thai display-name changes do not stop Monday delivery;

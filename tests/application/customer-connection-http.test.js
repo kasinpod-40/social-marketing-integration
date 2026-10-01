@@ -111,6 +111,28 @@ test('connect routes allow confirmation GET/POST only and reject scanner HEAD wi
   assert.deepEqual(connectorCalls, []);
 });
 
+test('active OAuth attempt redirects a repeated browser POST to its read-only invitation preview', async () => {
+  const url = 'https://worker.example/connect/tiktok-ads?invitation=signed';
+  const handler = createCustomerConnectionHttpHandler({
+    async handleConnectorRequest() {
+      const error = new Error('active attempt');
+      error.code = 'CONNECTION_INVITATION_ATTEMPT_ACTIVE';
+      throw error;
+    },
+  });
+  const original = console.error;
+  console.error = () => {};
+  try {
+    const response = await handler(new Request(url, { method: 'POST' }), {});
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get('location'), url);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  } finally {
+    console.error = original;
+  }
+});
+
 test('adding fetch keeps scheduled and queue handlers independently injectable', async () => {
   const { createSyncWorker } = await import('../../apps/sync-worker/src/sync-worker.js');
   const events = [];

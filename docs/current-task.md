@@ -1826,6 +1826,21 @@ reviewed repair makes the same logical read proceed successfully. The retained f
 
 ## Implementation result
 
+### 2026-10-01 — TikTok Ads invitation retry UI
+
+- Customer D1 readback showed one TikTok Ads OAuth attempt started 11:28 Asia/Bangkok, no consumed callback,
+  `authorization_pending` connection and no validated access. A repeated POST during that attempt returned
+  `CONNECTION_INVITATION_ATTEMPT_ACTIVE` as raw JSON; the attempt expired at 11:38.
+- The shared confirmation button now names its connector. A repeated browser POST with an active attempt returns
+  to the existing read-only invitation preview, which shows when retry is available. Operator/API errors retain
+  their JSON contract. No Ads Business write, flag, cron, queue or secret changes are part of this patch.
+- `npm run check`, 3,474 unit tests, 19 Workers-runtime tests, 106 report-reliability tests and
+  `npm run deploy:dry-run` pass after clean install. The first CI runs failed because existing Cloudflare
+  development tooling locked a vulnerable `undici`. Wrangler/Workers test pool were updated and `undici`
+  pinned to patched 7.29.1; full `npm audit --audit-level=high` now reports zero findings.
+  Active-version binding parity and reviewed Production deployment remain pending. Customer authorization
+  and callback validation are not yet proven.
+
 ### 2026-09-24 — Instagram encrypted D1 token renewal
 
 - Customer-approved exception: store only AES-256-GCM Instagram token ciphertext/IV in Customer D1; keep the
