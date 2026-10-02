@@ -55,6 +55,26 @@ export class TikTokAdsApiClient {
     });
   }
 
+  /** ตรวจสิทธิ์ Campaign ด้วยหน้าแรกขนาดหนึ่งรายการ โดยไม่ส่ง payload ออกนอก Worker */
+  async probeCampaigns(input = {}) {
+    const accessToken = requireText(input.accessToken, 'accessToken');
+    const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
+    const url = new URL(`${this.baseUrl}/campaign/get/`);
+    url.searchParams.set('advertiser_id', advertiserId);
+    url.searchParams.set('page', '1');
+    url.searchParams.set('page_size', '1');
+    const payload = await this.#get(url, accessToken, 'TIKTOK_ADS_CAMPAIGN_PROBE');
+    if (!Array.isArray(payload.data?.list)) {
+      throw transientError('TikTok Ads campaign response is malformed', {
+        code: 'TIKTOK_ADS_CAMPAIGN_PROBE_INVALID_RESPONSE',
+      });
+    }
+    return Object.freeze({
+      campaignReturned: payload.data.list.length > 0,
+      pageSize: 1,
+    });
+  }
+
   async #get(url, accessToken, prefix) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
