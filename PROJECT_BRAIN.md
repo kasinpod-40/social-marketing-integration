@@ -1716,9 +1716,10 @@ This does not prove the original authorization completed, and it changes no Paid
 
 ## TikTok Ads Campaign source proof preparation — 2026-10-02
 
-The customer OAuth callback is now connected and validated with an active encrypted access token in
-Customer Production D1. A guarded Worker operator route is implemented to read just page 1/size 1 of
-the official Marketing API v1.3 `campaign/get/` endpoint using that token. It returns only a boolean,
-and does not write Business data. Local and Workers gates pass. Live Campaign API proof is pending
-because the current Production Worker includes concurrent routes not present in the isolated branch;
-deploying a main-only bundle would regress those routes. No customer click or new OAuth grant is needed.
+The customer OAuth callback is connected and validated with an active encrypted access token in
+Customer Production D1. PR #888 added a guarded Worker operator route to read just page 1/size 1
+of official Marketing API v1.3 `campaign/get/`. A bundle preserving active Facebook/Lark routes and
+all 223 bindings was placed at 0% traffic. One version-override GET returned HTTP 200 and
+`campaignReturned=true`, proving Campaign read access without exposing a row or token. The previous
+Worker version was restored as the sole 100% deployment. TikTok Ads D1 facts/jobs stayed 0/0.
+No customer click or new OAuth grant is needed. Ingestion and Paid destinations remain off.

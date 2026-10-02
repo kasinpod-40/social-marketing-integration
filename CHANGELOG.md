@@ -4,8 +4,9 @@
 
 - Add a guarded operator probe that reads one Campaign page with the customer's encrypted OAuth
   credential and returns only whether a row exists; keep Ads ingestion, D1/Lark writes and schedules off.
-- Pass full local and Workers gates; live Campaign validation awaits integration with the active
-  Production Worker code and bindings.
+- Pass full local and Workers gates, then validate against the active Production code and bindings.
+- Merge PR #888, prove one live Campaign read at 0% traffic through a version override, and restore
+  the prior Worker at 100%; no TikTok Ads D1 facts or jobs were written.
 
 ## 2026-10-01 — TikTok Ads customer retry UX
 
