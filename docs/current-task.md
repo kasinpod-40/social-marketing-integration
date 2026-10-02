@@ -65,6 +65,7 @@ CUSTOMER_CHATWOOT_DAILY_DISCOVERY        = UPDATED_WITHIN_ONCE_CODE_AND_FULL_GAT
 CUSTOMER_TIKTOK_20260827_FAST_BRIDGE     = COMPLETE_D1_LARK_REPORT_IMPORT_GATE_DISABLED
 CUSTOMER_D1_FREE_CAPACITY_GUARD          = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
 CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE_D1_32164
+TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
 ```
 
 ## Objective
@@ -99,11 +100,16 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
   customer identity, Queue, D1 write, Lark write or schedule mutation is exposed by the route.
 - Focused tests 6/6, `npm ci`, `npm run check` (866 source files, zero cycles/hygiene), unit 3478,
   Workers runtime 19, report reliability 106, audit zero and deploy dry-run all passed.
-- Live Campaign API proof remains pending. Active Production Worker version `954f8f3b` includes
-  concurrent Facebook/Lark routes absent from the isolated main-based worktree. Do not deploy this
-  worktree build over that active code. Preserve exact active code/bindings and re-run the read-only
-  probe after reviewed integration. The active version was verified at 100% by Wrangler deployment
-  listing; this task made no Production mutation.
+- PR #888 merged as `f89c081c`; both CI verify jobs passed. The candidate bundle was built with
+  the active Facebook/Lark routes. Wrangler dark version `10397bcb` matched active `954f8f3b`
+  on all 223 bindings (206 plain text, 15 secret, D1 and Queue), with no missing, extra or changed
+  binding. The active Queue auto-recovery flag was preserved as `true`.
+- Deployed `954f8f3b` at 100% and `10397bcb` at 0%, then invoked one operator-authenticated
+  version-override GET. Live TikTok Marketing API v1.3 Campaign read returned HTTP 200 with
+  `campaignReturned=true` from page 1/size 1. No Campaign row, credential or advertiser ID was
+  emitted. Restored single-version `954f8f3b` at 100%; `ads_daily_facts` and `sync_jobs` for
+  `tiktok_ads` remained 0/0, with read-only D1 query reporting zero writes. The source read gate
+  passed; ingestion, Paid Canonical/D1/Lark/Report and schedule remain unimplemented/off.
 
 - Fetch/pull verified main `54506f73c1297da8c9b235bdd601605a3fe7af02`; changes after #879 are #880–#883,
   no TikTok Ads ingestion. Migration maximum remains 0023. Report adapter remains planned; no TikTok Ads job.
