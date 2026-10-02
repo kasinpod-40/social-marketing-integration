@@ -69,6 +69,8 @@
 
     "MKT_CONNECTION_PUBLIC_ORIGIN": "https://replace-with-sync-worker.example",
     "MKT_CONNECTION_CUSTOMER_KEY": "chemistry_k",
+    // เปิดเฉพาะช่วงทดสอบ D1 วันเดียวหลังตรวจ Preview; ค่าเริ่มต้นต้องปิด
+    "MKT_TIKTOK_ADS_D1_WRITE_ENABLED": "false",
     "MKT_GOOGLE_ADS_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/google-ads/callback",
     "MKT_YOUTUBE_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/youtube/callback",
     "GOOGLE_OAUTH_CLIENT_ID": "replace-with-google-oauth-client-id",

@@ -89,13 +89,15 @@ TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
 
 ### Implementation result — TikTok Ads Production preparation
 
-#### Daily Ads source/data-model contract — proposed 2026-10-02
+#### Daily Ads source/data-model contract — approved base-metric scope 2026-10-02
 
 - Objective: turn the proven TikTok Ads Campaign read into a reviewed campaign-day source contract before
   durable ingestion. In scope: exact TikTok reporting API request/metric proof, mapping into existing Paid
-  D1/Lark/Report tables, null and idempotency semantics. Out of scope until contract approval: source
-  Connector writes, Report activation, schedule admission and business data backfill.
-- Proposed contract: `docs/tasks/tiktok-ads-source-contract-20261002.md`. It uses the existing
+  D1/Lark/Report tables, null and idempotency semantics. D1-only Connector writes are now in scope
+  after reviewed implementation and exact one-day UAT; Lark/Report activation, schedule admission and
+  business data backfill remain later gates.
+- Approved D1-only contract: `docs/tasks/tiktok-ads-source-contract-20261002.md`. The user instructed
+  proceeding with the safe base-metric scope after the metric discussion. It uses the existing
   `ads_entity_state`, `ads_daily_facts`, Coverage and sync log, Campaign-grain facts, bounded Paid Lark
   projections and the existing customer credential. There is no new Ads Base/table or RAW mirror.
 - Working decision after the user's instruction to proceed: first prove and ingest only Spend, Impressions
@@ -104,19 +106,40 @@ TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
   adapter's account/ad grain conflicts with the established Campaign-grain projection; it must not be
   activated unchanged.
 - Acceptance: guarded one-day GET-only integrated-report proof of exact fields, access and pagination;
-  reviewed metric decision; explicit contract approval recorded here after live proof; then focused parser/partial/retry/
-  idempotency tests, default gates, one-day D1-only UAT and source-to-D1 reconciliation before Lark,
-  Report or schedule activation. **Status: proposed, not yet approved for Connector implementation.**
+  reviewed base-metric decision; then focused parser/partial/retry/idempotency tests, default gates,
+  one-day D1-only UAT and source-to-D1 reconciliation before Lark, Report or schedule activation.
+  **Status: source/data-model contract approved for D1-only Connector implementation; no Lark/Report/
+  schedule admission yet.**
 - Implementation result: completed repository schema/report/source review, the proposed contract, and a
   GET-only operator report probe that requests one Campaign-day row and returns only presence flags. It
   reuses the existing Production/customer/connection/token guard and does not return advertiser IDs,
-  Campaign IDs, metric values or credentials. Focused source and HTTP tests passed 9/9. The exact live
-  report response has **not** been validated. `npm ci`, `npm run check` (866 source files, zero cycles),
+  Campaign IDs, metric values or credentials. Focused source and HTTP tests passed 9/9. The live
+  one-row report response was validated for 2026-10-01. `npm ci`, `npm run check` (866 source files, zero cycles),
   `npm test` (3,480 unit / 19 Workers), `npm run test:report-reliability` (106),
   `npm audit --omit=dev --audit-level=high` (zero vulnerabilities), and `npm run deploy:dry-run`
   passed. Wrangler dry-run and clean install required filesystem access to the isolated worktree.
-  No D1, Lark, Worker deployment, Queue or schedule mutation in this step. Connector implementation
-  remains blocked pending live proof and final source-contract review.
+  PR #890 merged as `b33e9c23` with both Branch Verification jobs passing. The exact active Worker
+  `954f8f3b` and candidate `5a8c5dc3` matched all 223 bindings (206 text, 15 Secret, D1, Queue).
+  The candidate bundle differed from the prior source-proof bundle only in the report route/date logic
+  and bundle export name after path normalization. Deployed candidate at 0% with active at 100%; one
+  operator-authenticated 2026-10-01 GET returned HTTP 200 with `reportReturned=true`, pagination present,
+  and Spend/Impressions/Clicks metric keys present. Restored `954f8f3b` as sole 100%. Independent D1
+  SELECT found TikTok Ads entity/daily/job/coverage 0/0/0/0, `changed_db=false`, `rows_written=0`.
+  No TikTok Ads Business write, Lark write, Queue admission or schedule mutation occurred.
+- D1-only implementation in isolated branch `codex/tiktok-ads-d1-daily-ingest-20261002` reads at most
+  500 complete Campaign-day rows, validates every metric and identity, then writes only existing
+  `ads_entity_state` / `ads_daily_facts` with exact stable keys. It uses an exact account/date lock,
+  records `sync_runs`, rejects missing previously stored identities, verifies D1 source hashes, and
+  writes Coverage only after readback. The operator GET returns counts only; POST additionally requires
+  `MKT_TIKTOK_ADS_D1_WRITE_ENABLED=true`, which defaults false in the example config. No Queue, Lark,
+  Report or schedule activation is included. A real Workers D1 test passed one-day write/replay with
+  fact no-op, Coverage and sync log. `npm run check` passed (870 source files, zero cycles),
+  `npm test` passed (3,488 unit and 20 Workers), `npm run test:report-reliability` passed
+  (106), `npm audit --omit=dev --audit-level=high` found zero vulnerabilities, and
+  `npm run deploy:dry-run` passed. Live one-day D1 UAT remains pending reviewed deployment.
+  Automatic approval review rejected the attempted `git add`/`git commit` because the latest user
+  instruction to continue did not explicitly authorize a commit under `AGENTS.md`. No files were staged,
+  no commit/PR was created, and Production was not changed by this implementation.
 
 #### Campaign source read proof — 2026-10-02
 

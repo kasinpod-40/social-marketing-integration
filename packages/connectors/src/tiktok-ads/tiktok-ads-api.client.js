@@ -2,6 +2,8 @@ import { permanentError, transientError } from '../../../shared/src/errors/runti
 
 const DEFAULT_BASE_URL = 'https://business-api.tiktok.com/open_api/v1.3';
 const DEFAULT_TIMEOUT_MS = 30_000;
+const REPORT_PAGE_SIZE = 100;
+const REPORT_MAX_PAGES = 5;
 
 export class TikTokAdsApiClient {
   constructor(input = {}) {
@@ -80,16 +82,7 @@ export class TikTokAdsApiClient {
     const accessToken = requireText(input.accessToken, 'accessToken');
     const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
     const date = requireIsoDate(input.date);
-    const url = new URL(`${this.baseUrl}/report/integrated/get/`);
-    url.searchParams.set('advertiser_id', advertiserId);
-    url.searchParams.set('report_type', 'BASIC');
-    url.searchParams.set('data_level', 'AUCTION_CAMPAIGN');
-    url.searchParams.set('dimensions', JSON.stringify(['campaign_id', 'stat_time_day']));
-    url.searchParams.set('metrics', JSON.stringify(['spend', 'impressions', 'clicks']));
-    url.searchParams.set('start_date', date);
-    url.searchParams.set('end_date', date);
-    url.searchParams.set('page', '1');
-    url.searchParams.set('page_size', '1');
+    const url = this.#campaignDailyReportUrl(advertiserId, date, 1, 1);
     const payload = await this.#get(url, accessToken, 'TIKTOK_ADS_REPORT_PROBE');
     if (!Array.isArray(payload.data?.list)) {
       throw transientError('TikTok Ads report response is malformed', {
@@ -107,6 +100,72 @@ export class TikTokAdsApiClient {
         clicks: Object.hasOwn(metrics ?? {}, 'clicks'),
       }),
     });
+  }
+
+  /** อ่านทุกหน้าของวันเดียวแบบมีเพดาน ก่อนเปิด D1 write boundary */
+  async listCampaignDailyReport(input = {}) {
+    const accessToken = requireText(input.accessToken, 'accessToken');
+    const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
+    const date = requireIsoDate(input.date);
+    const rows = [];
+    let expectedTotal = null;
+    let expectedPages = null;
+    for (let page = 1; page <= REPORT_MAX_PAGES; page += 1) {
+      const payload = await this.#get(
+        this.#campaignDailyReportUrl(advertiserId, date, page, REPORT_PAGE_SIZE),
+        accessToken,
+        'TIKTOK_ADS_DAILY_REPORT',
+      );
+      const list = payload.data?.list;
+      const pageInfo = payload.data?.page_info;
+      if (!Array.isArray(list) || !pageInfo || typeof pageInfo !== 'object') {
+        throw transientError('TikTok Ads daily report response is malformed', {
+          code: 'TIKTOK_ADS_DAILY_REPORT_INVALID_RESPONSE',
+        });
+      }
+      const total = nonNegativeInteger(pageInfo.total_number, 'total_number');
+      const pages = positiveInteger(pageInfo.total_page ?? Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE)), 'total_page');
+      const reportedPage = positiveInteger(pageInfo.page ?? page, 'page');
+      if (reportedPage !== page || pages > REPORT_MAX_PAGES
+        || (expectedTotal !== null && (total !== expectedTotal || pages !== expectedPages))) {
+        throw permanentError('TikTok Ads daily report pagination is inconsistent or too large', {
+          code: 'TIKTOK_ADS_DAILY_REPORT_PAGINATION_UNSAFE',
+        });
+      }
+      expectedTotal = total;
+      expectedPages = pages;
+      rows.push(...list);
+      if (rows.length > REPORT_MAX_PAGES * REPORT_PAGE_SIZE) {
+        throw permanentError('TikTok Ads daily report exceeds the bounded row limit', {
+          code: 'TIKTOK_ADS_DAILY_REPORT_TOO_LARGE',
+        });
+      }
+      if (page === pages) {
+        if (rows.length !== total) {
+          throw transientError('TikTok Ads daily report count does not match its pages', {
+            code: 'TIKTOK_ADS_DAILY_REPORT_INCOMPLETE',
+          });
+        }
+        return Object.freeze({ rows: Object.freeze(rows), totalCount: total, pageCount: pages });
+      }
+    }
+    throw permanentError('TikTok Ads daily report exceeded its page limit', {
+      code: 'TIKTOK_ADS_DAILY_REPORT_TOO_LARGE',
+    });
+  }
+
+  #campaignDailyReportUrl(advertiserId, date, page, pageSize) {
+    const url = new URL(`${this.baseUrl}/report/integrated/get/`);
+    url.searchParams.set('advertiser_id', advertiserId);
+    url.searchParams.set('report_type', 'BASIC');
+    url.searchParams.set('data_level', 'AUCTION_CAMPAIGN');
+    url.searchParams.set('dimensions', JSON.stringify(['campaign_id', 'stat_time_day']));
+    url.searchParams.set('metrics', JSON.stringify(['spend', 'impressions', 'clicks']));
+    url.searchParams.set('start_date', date);
+    url.searchParams.set('end_date', date);
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('page_size', String(pageSize));
+    return url;
   }
 
   async #get(url, accessToken, prefix) {
@@ -180,6 +239,11 @@ function optionalText(value) {
 function positiveInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
+  return number;
+}
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be nonnegative`);
   return number;
 }
 function requireIsoDate(value) {
