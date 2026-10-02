@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createTikTokAdsSourceProbeHttpHandler,
   TIKTOK_ADS_SOURCE_PROBE_PATH,
+  TIKTOK_ADS_REPORT_PROBE_PATH,
 } from '../../apps/sync-worker/src/tiktok-ads-source-probe-http.js';
 
 const url = new URL(`https://worker.example${TIKTOK_ADS_SOURCE_PROBE_PATH}`);
@@ -33,10 +34,17 @@ function setup(overrides = {}) {
       } },
     }),
     loadAdsConfig: () => ({ approvedAdvertiserId: overrides.approvedAdvertiserId ?? null }),
-    createClient: () => ({ probeCampaigns: async (input) => {
-      calls.push(['provider', input]);
-      return { campaignReturned: true, pageSize: 1 };
-    } }),
+    createClient: () => ({
+      probeCampaigns: async (input) => {
+        calls.push(['provider', input]);
+        return { campaignReturned: true, pageSize: 1 };
+      },
+      probeCampaignDailyReport: async (input) => {
+        calls.push(['report', input]);
+        return { reportReturned: true, pageSize: 1, paginationAvailable: true,
+          metricsPresent: { spend: true, impressions: true, clicks: true } };
+      },
+    }),
   });
   return { handler, calls };
 }
@@ -56,6 +64,38 @@ test('source probe reads bound credential and returns sanitized GET-only result'
     credentialReference: 'credential-1', connectionId: 'connection-1',
     connectorKey: 'tiktok_ads', credentialKind: 'access_token',
   });
+});
+
+test('report probe uses same credential boundary and returns no source row', async () => {
+  const { handler, calls } = setup();
+  const reportUrl = new URL(`https://worker.example${TIKTOK_ADS_REPORT_PROBE_PATH}?date=2026-10-01`);
+  const response = await handler({ request: new Request(reportUrl, {
+    headers: { authorization: 'Bearer operator-private' },
+  }), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' }, url: reportUrl });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, source: 'tiktok_ads', probe: {
+    reportReturned: true, pageSize: 1, paginationAvailable: true,
+    metricsPresent: { spend: true, impressions: true, clicks: true },
+  } });
+  assert.deepEqual(calls.map(([name]) => name), ['connection', 'credential', 'report']);
+  assert.deepEqual(calls[2][1], {
+    accessToken: 'access-private', advertiserId: '1234567890123456789', date: '2026-10-01',
+  });
+});
+
+test('report probe rejects unauthorized and malformed dates before credential access', async () => {
+  const { handler, calls } = setup();
+  const reportUrl = new URL(`https://worker.example${TIKTOK_ADS_REPORT_PROBE_PATH}?date=bad`);
+  const invalid = await handler({ request: new Request(reportUrl, {
+    headers: { authorization: 'Bearer operator-private' },
+  }), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' }, url: reportUrl });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(calls, []);
+  const unauthorized = await handler({ request: new Request(reportUrl, {
+    headers: { authorization: 'Bearer wrong' },
+  }), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' }, url: reportUrl });
+  assert.equal(unauthorized.status, 401);
+  assert.deepEqual(calls, []);
 });
 
 test('source probe blocks other runtime profiles before connection and provider access', async () => {

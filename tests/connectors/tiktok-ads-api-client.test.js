@@ -75,6 +75,43 @@ test('TikTok Ads campaign probe uses a bounded GET and returns no campaign data'
   assert.equal(calls[0].init.headers['Access-Token'], 'access-private');
 });
 
+test('TikTok Ads report probe requests one campaign-day row and reveals only metric presence', async () => {
+  const calls = [];
+  const client = createClient(async (url, init) => {
+    calls.push({ url: url.toString(), init });
+    return Response.json({ code: 0, data: {
+      list: [{ dimensions: { campaign_id: 'private-id' }, metrics: {
+        spend: '12.34', impressions: '100', clicks: '4', private_metric: 'secret',
+      } }],
+      page_info: { total_number: 123 },
+    } });
+  });
+  const result = await client.probeCampaignDailyReport({
+    accessToken: 'access-private', advertiserId: '1234567890123456789', date: '2026-10-01',
+  });
+  assert.deepEqual(result, {
+    reportReturned: true, pageSize: 1, paginationAvailable: true,
+    metricsPresent: { spend: true, impressions: true, clicks: true },
+  });
+  assert.equal(JSON.stringify(result).includes('private-id'), false);
+  assert.equal(JSON.stringify(result).includes('12.34'), false);
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, '/open_api/v1.3/report/integrated/get/');
+  assert.equal(url.searchParams.get('report_type'), 'BASIC');
+  assert.equal(url.searchParams.get('data_level'), 'AUCTION_CAMPAIGN');
+  assert.deepEqual(JSON.parse(url.searchParams.get('dimensions')), ['campaign_id', 'stat_time_day']);
+  assert.deepEqual(JSON.parse(url.searchParams.get('metrics')), ['spend', 'impressions', 'clicks']);
+  assert.equal(url.searchParams.get('start_date'), '2026-10-01');
+  assert.equal(url.searchParams.get('end_date'), '2026-10-01');
+  assert.equal(url.searchParams.get('page_size'), '1');
+  assert.equal(url.toString().includes('access-private'), false);
+  assert.equal(calls[0].init.headers['Access-Token'], 'access-private');
+  await assert.rejects(client.probeCampaignDailyReport({
+    accessToken: 'access-private', advertiserId: '1234567890123456789', date: '2026-02-30',
+  }), /real YYYY-MM-DD date/u);
+  assert.equal(calls.length, 1);
+});
+
 function createClient(fetchImpl) {
   return new TikTokAdsApiClient({
     appId: '7670007933899390993',
