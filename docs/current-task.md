@@ -88,6 +88,23 @@ CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE
 
 ### Implementation result — TikTok Ads Production preparation
 
+#### Campaign source read proof — 2026-10-02
+
+- Customer OAuth callback already produced a validated, connected TikTok Ads connection and one active
+  encrypted access-token credential in Customer Production D1. No new customer action is needed.
+- Added a guarded, GET-only `/operator/tiktok-ads/source-probe` route. It checks the exact Production
+  customer tuple, connected/validated status, bound credential and optional approved advertiser ID;
+  decrypts the token only inside Worker; calls official v1.3 `campaign/get/` with page 1 and size 1;
+  returns only a boolean indicating whether a campaign row was returned. No Campaign row, token,
+  customer identity, Queue, D1 write, Lark write or schedule mutation is exposed by the route.
+- Focused tests 6/6, `npm ci`, `npm run check` (866 source files, zero cycles/hygiene), unit 3478,
+  Workers runtime 19, report reliability 106, audit zero and deploy dry-run all passed.
+- Live Campaign API proof remains pending. Active Production Worker version `954f8f3b` includes
+  concurrent Facebook/Lark routes absent from the isolated main-based worktree. Do not deploy this
+  worktree build over that active code. Preserve exact active code/bindings and re-run the read-only
+  probe after reviewed integration. The active version was verified at 100% by Wrangler deployment
+  listing; this task made no Production mutation.
+
 - Fetch/pull verified main `54506f73c1297da8c9b235bdd601605a3fe7af02`; changes after #879 are #880–#883,
   no TikTok Ads ingestion. Migration maximum remains 0023. Report adapter remains planned; no TikTok Ads job.
 - Live Worker `e0e8fbf1-86f9-43fb-b2c2-f12362582683` remains 100%; 240 plain-text + 10 secrets = 250 text

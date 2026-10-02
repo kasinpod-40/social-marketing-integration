@@ -1713,3 +1713,12 @@ The first Customer TikTok Ads OAuth attempt began but had no consumed callback o
 A repeated browser POST during that attempt returned an active-attempt JSON error. The shared confirmation
 page now uses the connector name and redirects such repeat browser POSTs to the read-only invitation preview.
 This does not prove the original authorization completed, and it changes no Paid Ads Business path.
+
+## TikTok Ads Campaign source proof preparation — 2026-10-02
+
+The customer OAuth callback is now connected and validated with an active encrypted access token in
+Customer Production D1. A guarded Worker operator route is implemented to read just page 1/size 1 of
+the official Marketing API v1.3 `campaign/get/` endpoint using that token. It returns only a boolean,
+and does not write Business data. Local and Workers gates pass. Live Campaign API proof is pending
+because the current Production Worker includes concurrent routes not present in the isolated branch;
+deploying a main-only bundle would regress those routes. No customer click or new OAuth grant is needed.

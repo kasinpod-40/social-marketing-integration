@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-02 — TikTok Ads read-only Campaign probe
+
+- Add a guarded operator probe that reads one Campaign page with the customer's encrypted OAuth
+  credential and returns only whether a row exists; keep Ads ingestion, D1/Lark writes and schedules off.
+- Pass full local and Workers gates; live Campaign validation awaits integration with the active
+  Production Worker code and bindings.
+
 ## 2026-10-01 — TikTok Ads customer retry UX
 
 - Label the shared OAuth confirmation button with the selected connector and send duplicate active browser

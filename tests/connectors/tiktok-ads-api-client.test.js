@@ -55,6 +55,26 @@ test('TikTok Ads advertiser info validates exact authorized identity', async () 
   assert.equal(calls[0].init.headers['Access-Token'], 'access-private');
 });
 
+test('TikTok Ads campaign probe uses a bounded GET and returns no campaign data', async () => {
+  const calls = [];
+  const client = createClient(async (url, init) => {
+    calls.push({ url: url.toString(), init });
+    return Response.json({ code: 0, data: { list: [{ campaign_id: 'private-id' }] } });
+  });
+  const result = await client.probeCampaigns({
+    accessToken: 'access-private', advertiserId: '1234567890123456789',
+  });
+  assert.deepEqual(result, { campaignReturned: true, pageSize: 1 });
+  assert.equal(JSON.stringify(result).includes('private-id'), false);
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, '/open_api/v1.3/campaign/get/');
+  assert.equal(url.searchParams.get('advertiser_id'), '1234567890123456789');
+  assert.equal(url.searchParams.get('page'), '1');
+  assert.equal(url.searchParams.get('page_size'), '1');
+  assert.equal(calls[0].init.method, 'GET');
+  assert.equal(calls[0].init.headers['Access-Token'], 'access-private');
+});
+
 function createClient(fetchImpl) {
   return new TikTokAdsApiClient({
     appId: '7670007933899390993',
