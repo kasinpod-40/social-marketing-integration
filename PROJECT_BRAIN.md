@@ -1,5 +1,16 @@
 # Project Brain — Social Marketing Data Integration
 
+## TikTok Ads Campaign-day base metrics — 2026-10-02
+
+The customer OAuth grant is connected and its access token is encrypted in Production D1. A guarded
+0%-traffic Worker probe confirmed that the official Campaign-day report returns Spend, Impressions and
+Clicks with pagination metadata for 2026-10-01; the prior Worker was restored at 100% and no Ads facts
+were written. The approved first D1-only phase uses Campaign-day stable keys in existing Paid Ads tables,
+bounded full pagination, all-row validation, exact advertiser binding, a lock, sync log and readback before
+Coverage. Conversion count, purchase value, ROAS, reach and video metrics remain unknown/null. The
+Report adapter's current account/ad grain cannot be activated for these Campaign-grain facts. Lark,
+Report, Queue and schedule activation require separate proof after one-day D1 reconciliation.
+
 ## WooCommerce September–December 2025 history — 2026-09-25
 
 Customer authorized the first one-year historical channel. GET-only exact-account WooCommerce API probes

@@ -112,6 +112,33 @@ test('TikTok Ads report probe requests one campaign-day row and reveals only met
   assert.equal(calls.length, 1);
 });
 
+test('TikTok Ads daily report reads bounded pages and rejects incomplete pagination', async () => {
+  const calls = [];
+  const row = (id) => ({ dimensions: { campaign_id: id, stat_time_day: '2026-10-01' },
+    metrics: { spend: '1.00', impressions: '2', clicks: '1' } });
+  const client = createClient(async (url) => {
+    const page = Number(url.searchParams.get('page'));
+    calls.push(page);
+    return Response.json({ code: 0, data: {
+      list: page === 1 ? Array.from({ length: 100 }, (_, index) => row(String(index + 1))) : [row('101')],
+      page_info: { page, total_page: 2, total_number: 101 },
+    } });
+  });
+  const result = await client.listCampaignDailyReport({
+    accessToken: 'access-private', advertiserId: '1234567890123456789', date: '2026-10-01',
+  });
+  assert.equal(result.rows.length, 101);
+  assert.equal(result.pageCount, 2);
+  assert.deepEqual(calls, [1, 2]);
+
+  const incomplete = createClient(async () => Response.json({ code: 0, data: {
+    list: [row('1')], page_info: { page: 1, total_page: 1, total_number: 2 },
+  } }));
+  await assert.rejects(incomplete.listCampaignDailyReport({
+    accessToken: 'access-private', advertiserId: '1234567890123456789', date: '2026-10-01',
+  }), { code: 'TIKTOK_ADS_DAILY_REPORT_INCOMPLETE' });
+});
+
 function createClient(fetchImpl) {
   return new TikTokAdsApiClient({
     appId: '7670007933899390993',

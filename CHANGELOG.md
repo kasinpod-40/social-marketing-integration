@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-02 — TikTok Ads one-day D1-only ingest preparation
+
+- Add bounded Campaign-day report pagination and validate all rows before writing the existing Paid Ads D1 facts.
+- Add an operator-only preview and a separately gated one-day D1 write path with lock, sync log, readback and Coverage; Lark, Report, Queue and schedule remain inactive.
+- Keep unproven conversion, revenue, reach and video metrics null. One-day live D1 reconciliation remains required.
+
 ## 2026-10-02 — TikTok Ads daily report source preflight
 
 - Draft the Campaign-day source/data-model contract against the existing Paid Ads D1 and Lark tables, including

@@ -19,6 +19,10 @@ import {
   TIKTOK_ADS_REPORT_PROBE_PATH,
 } from './tiktok-ads-source-probe-http.js';
 import {
+  createTikTokAdsDailyD1HttpHandler,
+  TIKTOK_ADS_DAILY_D1_PATH,
+} from './tiktok-ads-daily-d1-http.js';
+import {
   createMetaD1OnlyPartialStagingRecoveryHttpHandler,
   META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PATH,
 } from './meta-d1-only-partial-staging-recovery-http.js';
@@ -50,6 +54,7 @@ const KNOWN_METHODS = new Map([[INVITATION_PATH, Object.freeze(['POST'])]]);
 KNOWN_METHODS.set(TIKTOK_POST_LARK_AUDIT_PATH, Object.freeze(['GET']));
 KNOWN_METHODS.set(TIKTOK_ADS_SOURCE_PROBE_PATH, Object.freeze(['GET']));
 KNOWN_METHODS.set(TIKTOK_ADS_REPORT_PROBE_PATH, Object.freeze(['GET']));
+KNOWN_METHODS.set(TIKTOK_ADS_DAILY_D1_PATH, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PATH, Object.freeze(['POST']));
 KNOWN_METHODS.set(WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH, Object.freeze(['GET']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
@@ -68,6 +73,7 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
     ?? composeConnectorHandlers([
       createTikTokPostLarkAuditHttpHandler(dependencies.tiktokAuditDependencies),
       createTikTokAdsSourceProbeHttpHandler(dependencies.tiktokAdsSourceProbeDependencies),
+      createTikTokAdsDailyD1HttpHandler(dependencies.tiktokAdsDailyD1Dependencies),
       createMetaD1OnlyPartialStagingRecoveryHttpHandler(
         dependencies.metaPartialStagingRecoveryDependencies,
       ),

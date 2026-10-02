@@ -148,7 +148,9 @@ Daily contract ปัจจุบันลดงาน Source โดยไม่
 และทุกปลายทางยังใช้ stable-key upsert กับ durable checkpoint เหมือนเดิม. Queue ของ Chatwoot ยังคง
 ประมวลผลทีละ delivery แต่สามารถ hydrate ภายใน delivery พร้อมกันได้สูงสุดสอง Conversation ผ่าน
 execution-only cap โดยไม่เปลี่ยน Work fingerprint.
-TikTok Ads ยัง `planned`;
+TikTok Ads มี Customer OAuth และ Campaign-day Spend/Impressions/Clicks source proof แล้ว; D1-only
+one-day ingest ยังต้องผ่าน live reconciliation ก่อนเปิด Lark/Report/Queue/schedule. การเชื่อมต่อ
+อัตโนมัติยัง `planned`;
 Notification/DLQ redrive ปิดและ Production blocked. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
 `docs/project-brain/chatwoot-stable-identity-pagination-live-closeout-2026-08-10.md` และ
