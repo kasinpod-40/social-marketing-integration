@@ -1723,3 +1723,15 @@ all 223 bindings was placed at 0% traffic. One version-override GET returned HTT
 `campaignReturned=true`, proving Campaign read access without exposing a row or token. The previous
 Worker version was restored as the sole 100% deployment. TikTok Ads D1 facts/jobs stayed 0/0.
 No customer click or new OAuth grant is needed. Ingestion and Paid destinations remain off.
+
+## TikTok Ads Campaign-day report source contract — proposed 2026-10-02
+
+The next Paid source step has a proposed, unapproved contract in
+`docs/tasks/tiktok-ads-source-contract-20261002.md`. A guarded GET-only Worker probe now has local tests
+for one Campaign-day integrated-report row and returns only row/pagination/metric-presence flags. No live
+report proof or connector write has occurred. The existing planned TikTok Report adapter selects account
+summary and ad ranking, while the reviewed Campaign Summary path uses campaign-grain D1 facts; activating
+the adapter unchanged would select the wrong grain. TikTok `Conversions` denotes the selected optimization
+event, not inherently purchase orders. First delivery therefore uses only proved spend, impressions and
+clicks; conversion count, revenue and ROAS stay null until specific metrics are proven. The source contract and live report proof must be
+accepted in `docs/current-task.md` before durable ingestion.

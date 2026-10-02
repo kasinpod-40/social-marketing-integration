@@ -75,6 +75,40 @@ export class TikTokAdsApiClient {
     });
   }
 
+  /** ตรวจรูปแบบรายงาน Campaign รายวันเพียงแถวเดียว ไม่ส่งข้อมูลธุรกิจกลับจาก Worker */
+  async probeCampaignDailyReport(input = {}) {
+    const accessToken = requireText(input.accessToken, 'accessToken');
+    const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
+    const date = requireIsoDate(input.date);
+    const url = new URL(`${this.baseUrl}/report/integrated/get/`);
+    url.searchParams.set('advertiser_id', advertiserId);
+    url.searchParams.set('report_type', 'BASIC');
+    url.searchParams.set('data_level', 'AUCTION_CAMPAIGN');
+    url.searchParams.set('dimensions', JSON.stringify(['campaign_id', 'stat_time_day']));
+    url.searchParams.set('metrics', JSON.stringify(['spend', 'impressions', 'clicks']));
+    url.searchParams.set('start_date', date);
+    url.searchParams.set('end_date', date);
+    url.searchParams.set('page', '1');
+    url.searchParams.set('page_size', '1');
+    const payload = await this.#get(url, accessToken, 'TIKTOK_ADS_REPORT_PROBE');
+    if (!Array.isArray(payload.data?.list)) {
+      throw transientError('TikTok Ads report response is malformed', {
+        code: 'TIKTOK_ADS_REPORT_PROBE_INVALID_RESPONSE',
+      });
+    }
+    const metrics = payload.data.list[0]?.metrics;
+    return Object.freeze({
+      reportReturned: payload.data.list.length > 0,
+      pageSize: 1,
+      paginationAvailable: payload.data.page_info != null,
+      metricsPresent: Object.freeze({
+        spend: Object.hasOwn(metrics ?? {}, 'spend'),
+        impressions: Object.hasOwn(metrics ?? {}, 'impressions'),
+        clicks: Object.hasOwn(metrics ?? {}, 'clicks'),
+      }),
+    });
+  }
+
   async #get(url, accessToken, prefix) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -147,4 +181,13 @@ function positiveInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
   return number;
+}
+function requireIsoDate(value) {
+  const date = requireText(value, 'date');
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)
+    || Number.isNaN(Date.parse(`${date}T00:00:00Z`))
+    || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) {
+    throw new TypeError('date must be a real YYYY-MM-DD date');
+  }
+  return date;
 }

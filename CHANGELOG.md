@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-02 — TikTok Ads daily report source preflight
+
+- Draft the Campaign-day source/data-model contract against the existing Paid Ads D1 and Lark tables, including
+  nullable revenue and a Report grain mismatch that must be resolved before activation.
+- Add an operator-authenticated, GET-only, one-row integrated-report probe. It returns only source/metric
+  presence flags, with no Campaign identity, metric value or token in the response. Live report proof and
+  connector writes remain pending.
+
 ## 2026-10-02 — TikTok Ads read-only Campaign probe
 
 - Add a guarded operator probe that reads one Campaign page with the customer's encrypted OAuth

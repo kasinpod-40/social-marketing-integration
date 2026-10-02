@@ -89,6 +89,35 @@ TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
 
 ### Implementation result — TikTok Ads Production preparation
 
+#### Daily Ads source/data-model contract — proposed 2026-10-02
+
+- Objective: turn the proven TikTok Ads Campaign read into a reviewed campaign-day source contract before
+  durable ingestion. In scope: exact TikTok reporting API request/metric proof, mapping into existing Paid
+  D1/Lark/Report tables, null and idempotency semantics. Out of scope until contract approval: source
+  Connector writes, Report activation, schedule admission and business data backfill.
+- Proposed contract: `docs/tasks/tiktok-ads-source-contract-20261002.md`. It uses the existing
+  `ads_entity_state`, `ads_daily_facts`, Coverage and sync log, Campaign-grain facts, bounded Paid Lark
+  projections and the existing customer credential. There is no new Ads Base/table or RAW mirror.
+- Working decision after the user's instruction to proceed: first prove and ingest only Spend, Impressions
+  and Clicks. Generic optimization-event `Conversions` (which need not mean purchases), purchase value and
+  ROAS remain null until a separate source metric and attribution contract is proven. The currently planned Report
+  adapter's account/ad grain conflicts with the established Campaign-grain projection; it must not be
+  activated unchanged.
+- Acceptance: guarded one-day GET-only integrated-report proof of exact fields, access and pagination;
+  reviewed metric decision; explicit contract approval recorded here after live proof; then focused parser/partial/retry/
+  idempotency tests, default gates, one-day D1-only UAT and source-to-D1 reconciliation before Lark,
+  Report or schedule activation. **Status: proposed, not yet approved for Connector implementation.**
+- Implementation result: completed repository schema/report/source review, the proposed contract, and a
+  GET-only operator report probe that requests one Campaign-day row and returns only presence flags. It
+  reuses the existing Production/customer/connection/token guard and does not return advertiser IDs,
+  Campaign IDs, metric values or credentials. Focused source and HTTP tests passed 9/9. The exact live
+  report response has **not** been validated. `npm ci`, `npm run check` (866 source files, zero cycles),
+  `npm test` (3,480 unit / 19 Workers), `npm run test:report-reliability` (106),
+  `npm audit --omit=dev --audit-level=high` (zero vulnerabilities), and `npm run deploy:dry-run`
+  passed. Wrangler dry-run and clean install required filesystem access to the isolated worktree.
+  No D1, Lark, Worker deployment, Queue or schedule mutation in this step. Connector implementation
+  remains blocked pending live proof and final source-contract review.
+
 #### Campaign source read proof — 2026-10-02
 
 - Customer OAuth callback already produced a validated, connected TikTok Ads connection and one active
