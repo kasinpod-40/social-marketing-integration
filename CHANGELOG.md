@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-03 — Controlled TikTok Ads Lark projection preparation
+
+- Preview and separately gate one closed Campaign-day from D1 into the existing Campaign and Daily tables.
+- Require exact advertiser/grain/Coverage, 90-day cache and capacity bounds, lock/lease, all-table preflight,
+  stable-key partial-write recovery and zero-diff readback. Preserve unproved metrics as null.
+- Keep metadata enrichment, Summary, Report admission and automatic scheduling pending their own live gates.
+
 ## 2026-10-03 — TikTok Ads historical D1 and Lark schema proof
 
 - Backfill 397 closed dates from 2025-09-01 through 2026-10-02 into D1 and reconcile 5,708 unique Campaign-day facts against source and daily Coverage.
