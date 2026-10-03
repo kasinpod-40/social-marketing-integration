@@ -6,7 +6,15 @@ source/write gates are in `docs/tasks/tiktok-ads-full-completion-20261003.md`. E
 Campaign base facts are retained; all-status history must also be audited because TikTok's default
 report filter excludes deleted objects. Campaign metadata proved 220 source rows / three pages,
 with all 119 retained identities matched. Enrichment implementation and capability probes are
-prepared; live metadata writes, additional grains/metrics, Report and schedule remain pending.
+prepared. Live candidate `700fb41b` updated/read back all 119 retained Campaign masters and 13
+Lark Campaign rows; both replays made zero changes. Baseline traffic/deployment remained unchanged.
+Additional grains/metrics, all-status history reconciliation, Report and schedule remain pending.
+GET-only samples returned 252 Ad Groups / 1,303 Ads under the default filter; complete STATUS_ALL
+pagination passed: 228 Campaigns, 261 Ad Groups and 5,771 Ad endpoint identities (58 pages).
+GET-only hierarchy proof found zero missing/conflicting parents and zero asset-type ID collisions;
+1,062 videos / 2,414 images, 821 missing video/image and 4,923 multi-asset rows. Smart+/creative
+identity semantics remain a write gate. Individual purchase count/ROAS field requests succeeded,
+value hypothesis failed; event business semantics and conversion-value mapping remain unproved.
 
 # Project Brain — Social Marketing Data Integration
 

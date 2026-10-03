@@ -1,3 +1,11 @@
+## TikTok Ads all-status inventory preparation — 2026-10-04
+
+- เพิ่ม GET-only full Campaign/Ad Group/Ad inventory ใช้ STATUS_ALL และ pagination ร่วมแบบจำกัด
+  100 หน้า พร้อมตรวจ owner, duplicate, parent และ asset; response คืนเฉพาะจำนวนและ presence flags
+- แยก purchase count/value/ROAS capability hypotheses เพื่อระบุ field ที่ API รองรับได้ตรงจุด
+- ยืนยัน live metadata enrichment 119 D1 Campaign / 13 Lark Campaign พร้อม readback และ replay
+  ไม่เปลี่ยนข้อมูลซ้ำ; all-status history, Ad grain, Report/AI และ schedule ยังไม่ประกาศว่าเสร็จ
+
 # Changelog
 
 ## 2026-10-03 — TikTok Ads full completion preparation

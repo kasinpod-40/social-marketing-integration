@@ -16,7 +16,11 @@ const CAPABILITIES = Object.freeze({
   ad_video: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['video_play_actions', 'video_watched_2s', 'video_watched_6s'] },
   ad_conversion: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['conversion', 'cost_per_conversion'] },
   ad_purchase: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['total_complete_payment', 'total_purchase_value'] },
+  ad_purchase_count: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['complete_payment'] },
+  ad_purchase_value: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['total_complete_payment_value'] },
+  ad_purchase_roas: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['complete_payment_roas'] },
 });
+export const TIKTOK_ADS_CAPABILITY_KINDS = Object.freeze(Object.keys(CAPABILITIES));
 
 export class TikTokAdsApiClient {
   constructor(input = {}) {
@@ -189,52 +193,95 @@ export class TikTokAdsApiClient {
     return Object.freeze({ ...source, rows: Object.freeze(rows) });
   }
 
-  async #listCampaignRows({ accessToken, prefix, urlForPage }) {
+  /** Full inventory ใช้ STATUS_ALL และ fields ที่จำเป็น; กำหนดเพดาน 10,000 แถว ไม่ถือว่า sample ครบ */
+  async listEntityMetadata(input = {}) {
+    const kinds = { campaign: ['campaign', 'campaign_name'], ad_group: ['adgroup', 'adgroup_name'], ad: ['ad', 'ad_name'] };
+    if (!Object.hasOwn(kinds, input.kind)) throw new TypeError('Unsupported TikTok Ads inventory');
+    const [resource, nameField] = kinds[input.kind];
+    const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
+    const fields = ['advertiser_id', `${resource}_id`, nameField, 'operation_status'];
+    if (input.kind === 'campaign') fields.push('objective_type');
+    else fields.push('campaign_id');
+    if (input.kind === 'ad') fields.push('adgroup_id', 'video_id', 'image_ids', 'ad_format');
+    if (input.kind === 'ad_group') fields.push('optimization_goal', 'conversion_window', 'promotion_type');
+    const result = await this.#listCampaignRows({ accessToken: requireText(input.accessToken, 'accessToken'),
+      prefix: 'TIKTOK_ADS_INVENTORY', maxPages: 100, concurrency: 4, urlForPage: page => {
+        const url = new URL(`${this.baseUrl}/${resource}/get/`);
+        url.searchParams.set('advertiser_id', advertiserId);
+        url.searchParams.set('fields', JSON.stringify(fields));
+        url.searchParams.set('filtering', JSON.stringify({ primary_status: 'STATUS_ALL' }));
+        url.searchParams.set('page', String(page));
+        url.searchParams.set('page_size', String(REPORT_PAGE_SIZE));
+        return url;
+      } });
+    const ids = new Set();
+    const rows = result.rows.map(row => {
+      const id = requireDigits(row?.[`${resource}_id`], `${resource}_id`);
+      if (ids.has(id) || (row.advertiser_id != null && String(row.advertiser_id) !== advertiserId)) {
+        throw permanentError('TikTok Ads inventory identity conflict', { code: 'TIKTOK_ADS_INVENTORY_IDENTITY_CONFLICT' });
+      }
+      ids.add(id);
+      if (row.image_ids != null && (!Array.isArray(row.image_ids) || row.image_ids.length > 100
+        || row.image_ids.some(value => typeof value !== 'string' || !value.trim()))) {
+        throw permanentError('TikTok Ads image inventory is malformed', { code: 'TIKTOK_ADS_INVENTORY_ASSET_INVALID' });
+      }
+      return Object.freeze({ id, kind: input.kind, name: optionalText(row[nameField]),
+        status: optionalText(row.operation_status), objective: optionalText(row.objective_type),
+        campaignId: input.kind === 'campaign' ? id : requireDigits(row.campaign_id, 'campaign_id'),
+        adGroupId: input.kind === 'ad' ? requireDigits(row.adgroup_id, 'adgroup_id') : null,
+        videoId: optionalText(row.video_id), imageIds: Object.freeze(row.image_ids ?? []),
+        adFormat: optionalText(row.ad_format), optimizationGoal: optionalText(row.optimization_goal),
+        conversionWindow: optionalText(row.conversion_window), promotionType: optionalText(row.promotion_type),
+      });
+    });
+    return Object.freeze({ ...result, rows: Object.freeze(rows) });
+  }
+
+  async #listCampaignRows({ accessToken, prefix, urlForPage, maxPages = REPORT_MAX_PAGES, concurrency = 1 }) {
     const rows = [];
     let expectedTotal = null;
     let expectedPages = null;
-    for (let page = 1; page <= REPORT_MAX_PAGES; page += 1) {
-      const payload = await this.#get(
-        urlForPage(page),
-        accessToken,
-        prefix,
-      );
-      const list = payload.data?.list;
-      const pageInfo = payload.data?.page_info;
-      if (!Array.isArray(list) || !pageInfo || typeof pageInfo !== 'object') {
-        throw transientError('TikTok Ads daily report response is malformed', {
-          code: `${prefix}_INVALID_RESPONSE`,
-        });
-      }
-      const total = nonNegativeInteger(pageInfo.total_number, 'total_number');
-      const pages = positiveInteger(pageInfo.total_page ?? Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE)), 'total_page');
-      const reportedPage = positiveInteger(pageInfo.page ?? page, 'page');
-      if (reportedPage !== page || pages > REPORT_MAX_PAGES
-        || (expectedTotal !== null && (total !== expectedTotal || pages !== expectedPages))) {
-        throw permanentError('TikTok Ads daily report pagination is inconsistent or too large', {
-          code: `${prefix}_PAGINATION_UNSAFE`,
-        });
-      }
-      expectedTotal = total;
-      expectedPages = pages;
-      rows.push(...list);
-      if (rows.length > REPORT_MAX_PAGES * REPORT_PAGE_SIZE) {
-        throw permanentError('TikTok Ads daily report exceeds the bounded row limit', {
-          code: `${prefix}_TOO_LARGE`,
-        });
-      }
-      if (page === pages) {
-        if (rows.length !== total) {
-          throw transientError('TikTok Ads daily report count does not match its pages', {
-            code: `${prefix}_INCOMPLETE`,
+    let page = 1;
+    while (page <= (expectedPages ?? 1)) {
+      // อ่านหน้าแรกเพื่อกำหนดขอบเขต แล้วอ่านไม่เกิน 4 requests พร้อมกันเฉพาะ inventory
+      const end = Math.min(page + concurrency - 1, expectedPages ?? 1);
+      const pagesToRead = Array.from({ length: end - page + 1 }, (_, index) => page + index);
+      const settled = await Promise.allSettled(pagesToRead.map(async requestedPage => ({ requestedPage,
+        payload: await this.#get(urlForPage(requestedPage), accessToken, prefix),
+      })));
+      const rejected = settled.find(result => result.status === 'rejected');
+      if (rejected) throw rejected.reason;
+      const responses = settled.map(result => result.value);
+      for (const { requestedPage, payload } of responses) {
+        const list = payload.data?.list;
+        const pageInfo = payload.data?.page_info;
+        if (!Array.isArray(list) || list.length > REPORT_PAGE_SIZE || !pageInfo || typeof pageInfo !== 'object') {
+          throw transientError('TikTok Ads paginated response is malformed', { code: `${prefix}_INVALID_RESPONSE` });
+        }
+        const total = nonNegativeInteger(pageInfo.total_number, 'total_number');
+        const pages = positiveInteger(pageInfo.total_page ?? Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE)), 'total_page');
+        const reportedPage = positiveInteger(pageInfo.page ?? requestedPage, 'page');
+        if (reportedPage !== requestedPage || pages > maxPages
+          || (expectedTotal !== null && (total !== expectedTotal || pages !== expectedPages))) {
+          throw permanentError('TikTok Ads pagination is inconsistent or too large', {
+            code: `${prefix}_PAGINATION_UNSAFE`,
+            details: { requestedPage, reportedPage, totalPages: pages, totalRows: total,
+              expectedPages, expectedTotal, maxPages },
           });
         }
-        return Object.freeze({ rows: Object.freeze(rows), totalCount: total, pageCount: pages });
+        expectedTotal = total;
+        expectedPages = pages;
+        rows.push(...list);
+        if (rows.length > maxPages * REPORT_PAGE_SIZE) {
+          throw permanentError('TikTok Ads response exceeds the bounded row limit', { code: `${prefix}_TOO_LARGE` });
+        }
       }
+      page = end + 1;
     }
-    throw permanentError('TikTok Ads daily report exceeded its page limit', {
-      code: `${prefix}_TOO_LARGE`,
-    });
+    if (rows.length !== expectedTotal) {
+      throw transientError('TikTok Ads response count does not match its pages', { code: `${prefix}_INCOMPLETE` });
+    }
+    return Object.freeze({ rows: Object.freeze(rows), totalCount: expectedTotal, pageCount: expectedPages });
   }
 
   #campaignDailyReportUrl(advertiserId, date, page, pageSize) {

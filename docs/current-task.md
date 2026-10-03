@@ -193,7 +193,44 @@ TIKTOK_ADS_LARK_ONE_DAY_UAT               = PASS_13_CAMPAIGNS_13_DAILY_REPLAY_ZE
   audit/dry-run/diff review and reviewed controlled live UAT. Implementation result: metadata/readback/lease/replay and capability tests passed; full gates
   passed check (877 files, zero cycles), 3,517 unit tests, 20 Workers runtime tests, Report reliability
   106/106, production dependency audit zero vulnerabilities and deploy dry-run. One additional
-  capability-query guard test passed afterward. Reviewed live enrichment/capability proof pending.
+  capability-query guard test passed afterward.
+- Live candidate `700fb41b` passed metadata preview, updated all 119 existing Campaign masters,
+  reconciled every metadata field, and replayed with zero writes / 119 skips. Lark updated the 13
+  Campaign rows for 2026-10-02; all fields read back, immediate replay zero changes in both tables.
+  Temporary Preview URLs were restored disabled; deployment ID remained unchanged with baseline
+  `954f8f3b` at 100%. No additional grain/metric, Summary, Report or schedule writes.
+- GET-only samples proved Ad Group and Ad metadata access (252 / 1,303 default-status records),
+  Ad-level base/delivery/video/generic-conversion fields. All-status Campaign sample reported 16
+  rows for 2026-10-02 versus 13 retained original-query rows; history must be reconciled.
+  The combined purchase hypothesis was rejected, so purchase/value remain unproved/null.
+
+#### Full all-status inventory source proof — continuation 2026-10-04
+
+- Read-only scope: exact-advertiser Campaign/Ad Group/Ad inventory with explicit STATUS_ALL,
+  requested identity/parent/asset fields, shared bounded pagination extended to 100 pages / 10,000
+  rows for inventory only. Daily and existing Campaign metadata limits are unchanged.
+- Reject duplicate/foreign identity, missing parents, malformed image arrays, inconsistent page
+  totals and oversized responses before exposing a complete result. Operator returns only counts
+  and presence flags; never source names, IDs, assets or credentials. Individual purchase-count,
+  value and ROAS hypotheses are probed separately; response acceptance alone does not approve semantics.
+- Implementation result: 23 focused tests passed, including seven-page / 601-Ad inventory,
+  owner/parent/asset/pagination guards and pre-decrypt query/privacy checks. Full gates and live
+  all-status inventory proof passed. Full gates passed: check (877 files, zero cycles),
+  3,524 unit tests, 20 Workers tests, 106 Report reliability tests, zero production dependency
+  vulnerabilities, normal/isolated deploy dry-run and diff review. No new grain/metric writes admitted.
+- Live proof 2026-10-04: STATUS_ALL returned 228 Campaigns / 3 pages, 261 Ad Groups / 3 pages,
+  and 5,771 Ad endpoint identities / 58 pages. The initial 5,000 bound rejected the actual source
+  before accepting completeness; increased only inventory to 10,000. Serial Ads read exceeded the
+  client wait; bounded concurrency four passed the full read and retained exact pagination guards.
+- Candidate `17869f70` proved full hierarchy: zero missing Campaign/Ad Group parents and zero
+  conflicting Campaign parents. Source asset IDs: 1,062 videos / 2,414 images, zero cross-type ID
+  collisions; 821 Ads returned no video/image, 4,923 returned multiple asset IDs. These are source
+  presence counts, not an approved one-creative-per-Ad mapping (images may include covers).
+- Individual GET capability responses accepted complete_payment and complete_payment_roas;
+  total_complete_payment_value was rejected. No purchase/value semantics or writes are admitted
+  from sample presence alone. Smart+/Ad-vs-creative identity and missing-asset contracts remain next.
+- Every preview window restored the prior disabled Preview URLs and confirmed deployment unchanged;
+  production baseline stayed sole 100%. Source proof made no D1/Lark business or Queue writes.
 
 #### Campaign metadata full-read preparation — authorized end-to-end continuation
 

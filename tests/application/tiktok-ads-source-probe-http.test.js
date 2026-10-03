@@ -46,6 +46,14 @@ function setup(overrides = {}) {
       },
       listCampaignMetadata: async () => ({ totalCount: 1, pageCount: 1,
         rows: [{ campaignId: '456', name: 'private-campaign-name', status: 'ENABLE', objective: 'TRAFFIC' }] }),
+      listEntityMetadata: async input => {
+        calls.push(['inventory', input]);
+        if (overrides.inventoryError) throw overrides.inventoryError;
+        if (overrides.inventories) return overrides.inventories[input.kind];
+        return { totalCount: 1, pageCount: 1, rows: [{ id: 'private-id', name: 'private-name',
+          status: 'ENABLE', campaignId: 'private-parent', adGroupId: 'private-group',
+          videoId: 'private-video', imageIds: ['private-image'], optimizationGoal: null }] };
+      },
       probeCapability: async input => {
         calls.push(['capability', input]);
         return { kind: input.kind, sampleOnly: true, rowReturned: true, totalCount: 1,
@@ -168,4 +176,64 @@ test('source probe rejects operator and mismatched advertiser before decrypt/pro
   const mismatched = await handler({ request: request(), env, url });
   assert.equal(mismatched.status, 409);
   assert.deepEqual(calls.map(([name]) => name), ['connection']);
+});
+
+
+test('full inventory exposes aggregate proof only and rejects identity overrides before decrypt', async () => {
+  const { handler, calls } = setup();
+  const env = { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' };
+  for (const query of ['?inventory=unknown', '?inventory=ad&advertiser=999', '?inventory=ad&inventory=ad']) {
+    assert.equal((await handler({ request: request(), env, url: new URL(url.href + query) })).status, 400);
+  }
+  assert.deepEqual(calls, []);
+  const response = await handler({ request: request(), env, url: new URL(url.href + '?inventory=ad') });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.probe.sampleOnly, false);
+  assert.equal(body.probe.rows, 1);
+  assert.equal(body.probe.videos, 1);
+  assert.equal(body.probe.images, 1);
+  assert.equal(body.probe.adsWithoutAssets, 0);
+  assert.doesNotMatch(JSON.stringify(body), /private/);
+});
+
+
+test('pagination diagnostics allow only fixed integer counters, never provider payload', async () => {
+  const { handler } = setup({ inventoryError: Object.assign(new Error('private payload'), {
+    code: 'TIKTOK_ADS_INVENTORY_PAGINATION_UNSAFE', details: {
+      requestedPage: 2, reportedPage: 2, totalPages: 14, totalRows: 1303,
+      expectedPages: 14, expectedTotal: 1302, maxPages: 50,
+      accessToken: 'private-token', campaignId: 'private-id', providerMessage: 'private-message',
+    },
+  }) });
+  const response = await handler({ request: request(), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' },
+    url: new URL(url.href + '?inventory=ad') });
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.deepEqual(body.diagnostics, { requestedPage: 2, reportedPage: 2, totalPages: 14,
+    totalRows: 1303, expectedPages: 14, expectedTotal: 1302, maxPages: 50 });
+  assert.doesNotMatch(JSON.stringify(body), /private/);
+});
+
+
+test('complete hierarchy proof checks actual parents and asset ambiguity without disclosure', async () => {
+  const inventories = {
+    campaign: { totalCount: 1, rows: [{ id: 'private-campaign' }] },
+    ad_group: { totalCount: 1, rows: [{ id: 'private-group', campaignId: 'private-campaign' }] },
+    ad: { totalCount: 1, rows: [{ id: 'private-ad', campaignId: 'private-campaign',
+      adGroupId: 'private-group', videoId: 'private-video', imageIds: ['private-image'] }] },
+  };
+  for (const conflict of [false, true]) {
+    inventories.ad.rows[0].campaignId = conflict ? 'missing' : 'private-campaign';
+    const { handler } = setup({ inventories });
+    const response = await handler({ request: request(), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' },
+      url: new URL(url.href + '?inventory=hierarchy') });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.probe.hierarchyReconciled, !conflict);
+    assert.equal(body.probe.conflictingAdParents, conflict ? 1 : 0);
+    assert.equal(body.probe.multiAssetAds, 1);
+    assert.equal(body.probe.assetTypeCollisions, 0);
+    assert.doesNotMatch(JSON.stringify(body), /private|missing"/);
+  }
 });
