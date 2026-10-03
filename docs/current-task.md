@@ -67,6 +67,7 @@ CUSTOMER_D1_FREE_CAPACITY_GUARD          = CODE_AND_FULL_GATES_PASS_REVIEW_PENDI
 CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE_D1_32164
 TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
 TIKTOK_ADS_D1_ONE_DAY_UAT                 = PASS_16_FACTS_REPLAY_0_WRITES_2026_10_03
+TIKTOK_ADS_REPORT_GRAIN_PREPARATION       = CAMPAIGN_NONE_NONE_PLANNED_VALIDATION_PENDING
 ```
 
 ## Objective
@@ -89,6 +90,23 @@ TIKTOK_ADS_D1_ONE_DAY_UAT                 = PASS_16_FACTS_REPLAY_0_WRITES_2026_1
   full default gates before review/merge. No production traffic switch before callback/runtime verification.
 
 ### Implementation result — TikTok Ads Production preparation
+
+#### Planned Report grain preparation — 2026-10-03
+
+- Objective: align the still-planned TikTok Ads Report reader with the live-proven Campaign-day D1
+  facts. In scope: select `campaign` / `none` / `none`, expose no ad-level ranking, and retain null
+  semantics for unproven conversion, value, reach and video metrics. Out of scope: Report activation,
+  Lark writes, Queue/schedule admission and historical backfill.
+- Acceptance: focused D1 reader test proves Campaign selection, Spend/Impressions/Clicks aggregation,
+  null metrics, `revisable` status and no Top Ads/entity lookup; default repository gates pass.
+  Live Lark schema and period-level Coverage/readback remain prerequisites for activation.
+- Implementation result: the planned adapter contract now selects Campaign facts and reports Top Ads
+  as `not_observed`. Focused D1 reader tests passed 6/6; `npm run check` passed (870 source files,
+  zero cycles), `npm test` passed (3,489 unit and 20 Workers), Report reliability passed 106/106,
+  production-dependency audit found zero vulnerabilities, deploy dry-run passed and `git diff --check`
+  passed. The first dry-run attempt hit local Wrangler temporary-file permission and passed on a
+  repeat with filesystem access. Live Lark schema and period-level Coverage readback remain pending;
+  no Production Worker or Lark data was changed.
 
 #### Daily Ads source/data-model contract — approved base-metric scope 2026-10-02
 

@@ -243,6 +243,58 @@ test('Google Ads aggregates campaign all/all facts without fabricating Top Ads',
   assert.equal(result.readSummary.entityQueryCount, 0);
 });
 
+test('TikTok Ads reads only proved campaign-day facts and leaves unknown metrics unavailable', async () => {
+  const calls = [];
+  const db = createD1((sql, bindings) => {
+    calls.push({ sql, bindings });
+    if (sql.includes('data_coverage_runs')) {
+      return {
+        coverage_run_id: 'coverage-tiktok',
+        dataset_key: 'ads_daily_facts',
+        status: 'revisable',
+        expected_rows: 2,
+        observed_rows: 2,
+        source_watermark: '2026-10-01',
+        failed_rows: 0,
+      };
+    }
+    if (sql.includes('ads_entity_state')) throw new Error('Campaign-only TikTok facts must not query ad entities');
+    return [
+      fact({
+        key: 'campaign-1', level: 'campaign', campaignId: 'campaign-1',
+        breakdown: 'none', segment: 'none', metricDate: '2026-10-01',
+        spend: 1_000_000, impressions: 100, clicks: 10, conversions: null, value: null,
+      }),
+      fact({
+        key: 'campaign-2', level: 'campaign', campaignId: 'campaign-2',
+        breakdown: 'none', segment: 'none', metricDate: '2026-10-01',
+        spend: 2_000_000, impressions: 200, clicks: 20, conversions: null, value: null,
+      }),
+    ];
+  });
+  const result = await new D1AdsReportSource({ db, platform: 'tiktok_ads' }).load({
+    customerKey: 'demo', accountKey: 'demo', periodStart: '2026-10-01', periodEnd: '2026-10-01',
+  });
+
+  const factCall = calls.find((call) => call.sql.includes('FROM ads_daily_facts'));
+  assert.deepEqual(factCall.bindings.slice(3, 4), ['campaign']);
+  assert.equal(result.metrics.report_level, 'campaign');
+  assert.equal(result.metrics.spend_micros, 3_000_000);
+  assert.equal(result.metrics.impressions, 300);
+  assert.equal(result.metrics.clicks, 30);
+  assert.equal(result.metrics.ctr, 0.1);
+  assert.equal(result.metrics.cpc_micros, 100_000);
+  assert.equal(result.metrics.conversions, null);
+  assert.equal(result.metrics.conversion_value_micros, null);
+  assert.equal(result.metrics.roas, null);
+  assert.equal(result.metrics.reach, null);
+  assert.equal(result.metrics.data_status, 'revisable');
+  assert.deepEqual(result.topAds, []);
+  assert.equal(result.readSummary.topAdsAvailability, 'not_observed');
+  assert.equal(result.readSummary.rankingReportLevel, null);
+  assert.equal(result.readSummary.entityQueryCount, 0);
+});
+
 function fact(input) {
   return Object.freeze({
     ads_fact_key: input.key,
