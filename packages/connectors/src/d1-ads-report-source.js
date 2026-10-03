@@ -70,12 +70,18 @@ export class D1AdsReportSource {
     const topAdsLimit = boundedPositiveInteger(input.topAdsLimit ?? DEFAULT_TOP_ADS_LIMIT, 'topAdsLimit', 100);
     const queryLevels = [...new Set([...this.summaryReportLevels, ...this.rankingReportLevels])];
 
-    const [factRows, coverage] = await Promise.all([
+    const dailyCoverage = this.platform === 'tiktok_ads';
+    const coverageDays = Math.round((Date.parse(periodEnd) - Date.parse(periodStart)) / 86_400_000) + 1;
+    if (dailyCoverage && coverageDays > 400) throw invalidQuery('TikTok Ads report period exceeds 400 days');
+    const [factRows, coverageRead] = await Promise.all([
       queryLevels.length === 0 ? Promise.resolve([]) : this.#all(
         factSql(queryLevels.length),
         [customerKey, this.platform, accountKey, ...queryLevels, periodStart, periodEnd, factLimit + 1],
       ),
-      this.#first(
+      dailyCoverage ? this.#all(
+        dailyCoverageSql(this.coverageDatasetKeys.length),
+        [customerKey, this.platform, accountKey, ...this.coverageDatasetKeys, periodStart, periodEnd, coverageDays + 1],
+      ) : this.#first(
         coverageSql(this.coverageDatasetKeys.length),
         [customerKey, this.platform, accountKey, ...this.coverageDatasetKeys],
       ),
@@ -99,6 +105,9 @@ export class D1AdsReportSource {
       });
     const summaryRows = summarySelection.rows;
     const rankingRows = rankingSelection.rows;
+    const coverage = dailyCoverage
+      ? reconcileDailyCoverage(coverageRead, summaryRows, periodStart, coverageDays)
+      : coverageRead;
 
     const entityIds = [...new Set(rankingRows.map(entityIdentity).filter(Boolean))].sort();
     const entityIdChunks = chunkValues(entityIds, MAX_ENTITY_IDS_PER_QUERY);
@@ -155,6 +164,7 @@ export class D1AdsReportSource {
         coverageStatus,
         coverageRate,
         coverageRunId: coverage?.coverage_run_id ?? null,
+        ...(dailyCoverage ? { expectedCoverageDays: coverageDays, coveredDays: coverage.covered_days } : {}),
         sourceWatermark: coverage?.source_watermark ?? latestRevision([...summaryRows, ...rankingRows]),
         revisableUntil: nullableInteger(coverage?.revisable_until),
         failedRows: nullableInteger(coverage?.failed_rows) ?? 0,
@@ -231,6 +241,50 @@ function coverageSql(datasetCount) {
       AND dataset_key IN (${placeholders(datasetCount)}) AND completed_at IS NOT NULL
     ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
   `;
+}
+
+function dailyCoverageSql(datasetCount) {
+  return `SELECT coverage_run_id, dataset_key, status, period_start, period_end,
+    expected_rows, observed_rows, failed_rows, source_watermark
+    FROM data_coverage_runs
+    WHERE customer_key = ? AND platform = ? AND account_key = ?
+      AND dataset_key IN (${placeholders(datasetCount)}) AND completed_at IS NOT NULL
+      AND period_start >= ? AND period_end <= ?
+    ORDER BY period_start ASC, coverage_run_id ASC LIMIT ?`;
+}
+
+// ช่วง TikTok ต้องมี Coverage วันต่อวันตรงกับ facts; รายการล่าสุดเพียงวันเดียวไม่ยืนยันทั้งช่วง
+function reconcileDailyCoverage(coverageRows, facts, periodStart, dayCount) {
+  const factsByDay = new Map();
+  for (const fact of facts) factsByDay.set(fact.metric_date, (factsByDay.get(fact.metric_date) ?? 0) + 1);
+  let coveredDays = 0;
+  let revisable = false;
+  let expected = 0;
+  let observed = 0;
+  for (let offset = 0; offset < dayCount; offset += 1) {
+    const date = new Date(Date.parse(`${periodStart}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+    const matches = coverageRows.filter(row => row.period_start === date && row.period_end === date);
+    if (matches.length !== 1) continue;
+    const row = matches[0];
+    const count = factsByDay.get(date) ?? 0;
+    const status = normalizeCoverageStatus(row.status);
+    if (!['complete', 'revisable', 'no_data_confirmed'].includes(status)
+      || nullableInteger(row.failed_rows) !== 0
+      || nullableInteger(row.expected_rows) !== count || nullableInteger(row.observed_rows) !== count
+      || (status === 'no_data_confirmed' && count !== 0)) continue;
+    coveredDays += 1;
+    revisable ||= status === 'revisable';
+    expected += count;
+    observed += count;
+  }
+  const allCovered = coveredDays === dayCount && coverageRows.length === dayCount;
+  return Object.freeze({
+    dataset_key: 'ads_daily_facts',
+    status: allCovered ? (revisable ? 'revisable' : expected === 0 ? 'no_data_confirmed' : 'complete') : 'partial',
+    expected_rows: expected, observed_rows: observed, covered_days: coveredDays,
+    failed_rows: coverageRows.reduce((sum, row) => sum + Math.max(0, nullableInteger(row.failed_rows) ?? 0), 0),
+    coverage_rate: allCovered ? 1 : Math.min(coveredDays / dayCount, 0.999999),
+  });
 }
 
 function entitySql(entityIdCount) {
@@ -331,6 +385,7 @@ function normalizeNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 function calculateCoverageRate(row) {
+  if (typeof row?.coverage_rate === 'number') return row.coverage_rate;
   const expected = nullableInteger(row?.expected_rows) ?? nullableInteger(row?.expected_entities);
   const observed = nullableInteger(row?.observed_rows) ?? nullableInteger(row?.observed_entities);
   if (expected === null || observed === null || expected <= 0) return null;
