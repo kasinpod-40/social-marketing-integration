@@ -6,7 +6,13 @@ On 2026-10-03, PR #891 merged as `03dbdf80`. A 0%-traffic candidate with the exp
 flag passed exact binding comparison, but its 2026-10-01 GET preview rejected the source day before
 any D1 write. A separate GET-only diagnostic with the write flag false proved that all 16 rows use
 `YYYY-MM-DD 00:00:00`. The active Worker was restored as the sole 100% version. The normalizer now
-accepts only that exact midnight shape or date-only for the requested day; live D1 UAT is still pending.
+accepts only that exact midnight shape or date-only for the requested day; live D1 UAT was pending at that point.
+PR #892 then merged as `b2d477aa`. Fixed candidate `368e4a01` at 0% passed a complete 16-row
+GET preview, wrote 16 distinct Campaign-day D1 facts on the first exact-day POST, and wrote zero
+facts on a same-day replay. Independent D1 reads verified 16 entity and fact keys, complete
+16/16 Coverage, successful sync log, null unproved metrics, one account currency/timezone, no
+Queue job and no retained lock. The original Worker `954f8f3b` was restored as sole 100%.
+TikTok Ads remains off in Lark, Report and schedule; those are the next validation gates.
 
 The customer OAuth grant is connected and its access token is encrypted in Production D1. A guarded
 0%-traffic Worker probe confirmed that the official Campaign-day report returns Spend, Impressions and

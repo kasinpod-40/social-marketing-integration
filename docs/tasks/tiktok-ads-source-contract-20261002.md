@@ -1,6 +1,6 @@
 # TikTok Ads source/data-model contract — base metrics approved 2026-10-02
 
-Status: **APPROVED FOR D1-ONLY IMPLEMENTATION AND CONTROLLED UAT**. The user authorized proceeding with the safe base-metric scope. A one-row live report proof passed on 2026-10-02. Lark/Report/schedule activation still requires independent D1 reconciliation.
+Status: **D1-ONLY ONE-DAY UAT PASSED 2026-10-03**. The user authorized the safe base-metric scope. A complete 16-Campaign report day passed preview, D1 write and a zero-fact-write replay. Lark/Report/schedule activation still requires their own schema, grain and reconciliation gates.
 
 ## Scope and existing destinations
 
@@ -31,6 +31,6 @@ The currently planned TikTok Report adapter expects account-grain summary plus a
 1. First delivery uses only proved spend, impressions, clicks and their derived rates. Conversion count, purchase value and ROAS stay blank until an event-specific source and business metric contract is approved.
 2. Guarded, one-day GET-only report proof confirmed advertiser permission, a returned row, pagination metadata and Spend/Impressions/Clicks presence. Numeric parsing, complete pagination and source timezone/currency binding remain implementation/UAT gates. The probe returned only sanitized booleans.
 3. Source contract approval for the three base metrics is recorded in `docs/current-task.md` before connector coding, per `AGENTS.md` section 5.
-4. Focused parser/normalization, empty/partial/retry, stable-key/rerun, currency and null-semantic tests; full repo gates; reviewed deployment; one-day D1-only UAT and source↔D1/Coverage reconciliation are required before Lark, Report, and schedule activation.
+4. Focused parser/normalization, empty/partial/retry, stable-key/rerun, currency and null-semantic tests, full repo gates, reviewed deployment and one-day D1-only UAT passed. The Worker read back exact source hashes before sealing Coverage, independent D1 SELECT confirmed 16 unique Campaign-day facts and 16/16 Coverage, and a replay wrote zero facts. Lark, Report and schedule still require separate validation before activation.
 
 Official sources: [TikTok Business API SDK ReportingApi](https://github.com/tiktok/tiktok-business-api-sdk/blob/main/js_sdk/docs/ReportingApi.md); [TikTok Ads Manager metric definitions](https://ads.tiktok.com/help/article/basic-data?lang=en).

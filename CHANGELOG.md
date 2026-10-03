@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-03 — TikTok Ads one-day D1-only UAT
+
+- Previewed all 16 Campaign rows for 2026-10-01 through a 0%-traffic Worker candidate, then wrote 16 unique Paid Ads D1 facts and reconciled Coverage/sync log.
+- Replayed the same day with zero fact writes; preserved null for unproven metrics, no Lark/Report/Queue/schedule admission, and restored the original Worker as sole 100%.
+
 ## 2026-10-03 — TikTok Ads source day normalization
 
 - Accept TikTok's live-proven Campaign report daily dimension `YYYY-MM-DD 00:00:00` as the requested account day while retaining the date-only stable key; reject other dates or times.

@@ -66,6 +66,7 @@ CUSTOMER_TIKTOK_20260827_FAST_BRIDGE     = COMPLETE_D1_LARK_REPORT_IMPORT_GATE_D
 CUSTOMER_D1_FREE_CAPACITY_GUARD          = CODE_AND_FULL_GATES_PASS_REVIEW_PENDING
 CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE_D1_32164
 TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
+TIKTOK_ADS_D1_ONE_DAY_UAT                 = PASS_16_FACTS_REPLAY_0_WRITES_2026_10_03
 ```
 
 ## Objective
@@ -155,6 +156,21 @@ TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
   day or non-midnight time. Focused and actual Workers D1 replay tests passed. Full gates passed:
   `npm run check` (870 files, zero cycles), `npm test` (3,488 unit / 20 Workers),
   `npm run test:report-reliability` (106), audit zero, deploy dry-run. Live write remains pending.
+- PR #892 passed both Branch Verification jobs and merged as `b2d477aa` on 2026-10-03.
+  Candidate version `368e4a01` preserved all 223 active bindings and added only the explicit
+  D1-write text flag; it ran at 0% beside `954f8f3b` at 100%. GET preview of exact source day
+  2026-10-01 returned 16 complete, normalized Campaign rows in one page and wrote nothing.
+  Independent D1 preflight still found TikTok Ads entity/fact/Coverage/sync-run 0/0/0/0.
+  One operator-authenticated POST returned `rows=16, written=16, status=revisable`.
+  D1 SELECT then found 16 unique facts for 16 Campaigns, one advertiser/currency/timezone,
+  all three proved base metrics present, and all unproved conversions/revenue/reach/video metrics
+  null. Coverage had expected/observed/written 16/16/16, failed 0; sync run had pulled/written
+  16/16, with no TikTok Ads Queue job or retained lock. An exact same-day replay returned
+  `rows=16, written=0`; readback kept 16 unique facts, Coverage 16/16/written 0 and successful
+  sync run pulled 16/written 0. All independent SELECTs had `changed_db=false`.
+  Finally restored `954f8f3b` as the sole 100% active Worker. **One-day D1-only UAT and
+  idempotent replay passed.** Lark projection, Report adaptation, schedule/Queue admission and
+  historical backfill remain separate, unactivated gates.
 
 #### Campaign source read proof — 2026-10-02
 
