@@ -49,7 +49,8 @@ export async function buildTikTokAdsDailyWriteSet(input = {}) {
     const dimension = object(source?.dimensions, 'dimensions');
     const metrics = object(source?.metrics, 'metrics');
     const campaignId = digits(dimension.campaign_id, 'campaign_id');
-    if (dimension.stat_time_day !== date) {
+    // TikTok ส่ง daily dimension เป็นเวลาเที่ยงคืนของวันในบัญชี ไม่ใช่ date-only เสมอไป
+    if (dimension.stat_time_day !== date && dimension.stat_time_day !== `${date} 00:00:00`) {
       throw permanentError('TikTok Ads report date does not match request', {
         code: 'TIKTOK_ADS_DAILY_DATE_MISMATCH',
       });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-03 — TikTok Ads source day normalization
+
+- Accept TikTok's live-proven Campaign report daily dimension `YYYY-MM-DD 00:00:00` as the requested account day while retaining the date-only stable key; reject other dates or times.
+- The first 16-row Production preview failed before D1 writes; a GET-only shape diagnostic confirmed all 16 rows use midnight format. No TikTok Ads facts were written.
+
 ## 2026-10-02 — TikTok Ads one-day D1-only ingest preparation
 
 - Add bounded Campaign-day report pagination and validate all rows before writing the existing Paid Ads D1 facts.
