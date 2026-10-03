@@ -2,6 +2,12 @@
 
 ## TikTok Ads Campaign-day base metrics — 2026-10-02
 
+On 2026-10-03, PR #891 merged as `03dbdf80`. A 0%-traffic candidate with the explicit D1 write
+flag passed exact binding comparison, but its 2026-10-01 GET preview rejected the source day before
+any D1 write. A separate GET-only diagnostic with the write flag false proved that all 16 rows use
+`YYYY-MM-DD 00:00:00`. The active Worker was restored as the sole 100% version. The normalizer now
+accepts only that exact midnight shape or date-only for the requested day; live D1 UAT is still pending.
+
 The customer OAuth grant is connected and its access token is encrypted in Production D1. A guarded
 0%-traffic Worker probe confirmed that the official Campaign-day report returns Spend, Impressions and
 Clicks with pagination metadata for 2026-10-01; the prior Worker was restored at 100% and no Ads facts

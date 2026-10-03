@@ -140,6 +140,21 @@ TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
   Automatic approval review rejected the attempted `git add`/`git commit` because the latest user
   instruction to continue did not explicitly authorize a commit under `AGENTS.md`. No files were staged,
   no commit/PR was created, and Production was not changed by this implementation.
+- The user explicitly approved commit, push, PR and controlled one-day D1 UAT. PR #891 passed both
+  Branch Verification jobs and merged as `03dbdf80` on 2026-10-02. Candidate `41f831ac` had all
+  223 active bindings identical plus only `MKT_TIKTOK_ADS_D1_WRITE_ENABLED=true`, and was placed at 0%
+  beside active `954f8f3b` at 100%. The first 2026-10-01 GET preview returned
+  `TIKTOK_ADS_DAILY_DATE_MISMATCH` before any business write. A second GET-only diagnostic version
+  `1824d532` had the write flag false and proved all 16 source rows carry exact
+  `YYYY-MM-DD 00:00:00` (16 strings, 16 requested-date prefixes, 16 space-midnight matches).
+  The diagnostic was removed and active `954f8f3b` restored as sole 100%. Exact preflight D1 counts
+  remained entity/daily/Coverage/sync-run 0/0/0/0. Follow-up normalization and live one-day UAT are
+  pending review; do not claim D1 ingest complete yet.
+- The date-shape follow-up accepts only exact requested `YYYY-MM-DD` or
+  `YYYY-MM-DD 00:00:00`, normalizes both to the same stable day/hash, and rejects a different
+  day or non-midnight time. Focused and actual Workers D1 replay tests passed. Full gates passed:
+  `npm run check` (870 files, zero cycles), `npm test` (3,488 unit / 20 Workers),
+  `npm run test:report-reliability` (106), audit zero, deploy dry-run. Live write remains pending.
 
 #### Campaign source read proof — 2026-10-02
 

@@ -26,6 +26,11 @@ test('TikTok Ads maps only proved campaign-day metrics with stable keys and null
   const replay = await buildTikTokAdsDailyWriteSet({ ...base, rows: [sourceRow()] });
   assert.equal(result.sourceWatermark, replay.sourceWatermark);
   assert.equal(result.dailyFacts[0].source_payload_hash, replay.dailyFacts[0].source_payload_hash);
+  const midnight = await buildTikTokAdsDailyWriteSet({
+    ...base, rows: [sourceRow('456', { dimensions: { stat_time_day: '2026-10-01 00:00:00' } })],
+  });
+  assert.equal(result.dailyFacts[0].ads_fact_key, midnight.dailyFacts[0].ads_fact_key);
+  assert.equal(result.dailyFacts[0].source_payload_hash, midnight.dailyFacts[0].source_payload_hash);
 });
 
 test('TikTok Ads rejects duplicate campaign, wrong day and unknown money before any write set', async () => {
@@ -34,6 +39,9 @@ test('TikTok Ads rejects duplicate campaign, wrong day and unknown money before 
   }), { code: 'TIKTOK_ADS_DAILY_DUPLICATE_CAMPAIGN' });
   await assert.rejects(buildTikTokAdsDailyWriteSet({
     ...base, rows: [sourceRow('456', { dimensions: { stat_time_day: '2026-09-30' } })],
+  }), { code: 'TIKTOK_ADS_DAILY_DATE_MISMATCH' });
+  await assert.rejects(buildTikTokAdsDailyWriteSet({
+    ...base, rows: [sourceRow('456', { dimensions: { stat_time_day: '2026-10-01 01:00:00' } })],
   }), { code: 'TIKTOK_ADS_DAILY_DATE_MISMATCH' });
   await assert.rejects(buildTikTokAdsDailyWriteSet({
     ...base, rows: [sourceRow('456', { metrics: { spend: undefined } })],

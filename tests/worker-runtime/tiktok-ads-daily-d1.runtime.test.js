@@ -14,7 +14,7 @@ it('writes and replays one TikTok Ads Campaign day in real Workers D1 with recon
     historyStore: new D1MarketingHistoryStore({ db: env.MKT_STATE_DB }),
     lockStore: new D1ReliabilityStore({ db: env.MKT_STATE_DB }),
     client: { listCampaignDailyReport: async () => ({
-      rows: [{ dimensions: { campaign_id: '456', stat_time_day: '2026-10-01' },
+      rows: [{ dimensions: { campaign_id: '456', stat_time_day: '2026-10-01 00:00:00' },
         metrics: { spend: '12.34', impressions: '100', clicks: '4' } }],
       totalCount: 1,
       pageCount: 1,
