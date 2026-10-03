@@ -67,6 +67,22 @@ test('projection preview is read-only; write/replay reconcile exact advertiser k
   assert.deepEqual(replay.tables.map(value => [value.created, value.updated, value.skipped]), [[0, 0, 1], [0, 0, 1]]);
 });
 
+test('projection reads proved metadata; wrong metadata owner blocks Campaign and Daily writes', async () => {
+  const f = fixture();
+  Object.assign(f.state.facts[0], { campaign_name: 'Verified campaign', campaign_status: 'paused',
+    campaign_objective: 'TRAFFIC', metadata_account_id: '123' });
+  await projectTikTokAdsDailyLark({ ...f.input, execute: true });
+  assert.equal(f.records.get('campaigns')[0].fields.campaign_name, 'Verified campaign');
+  assert.equal(f.records.get('campaigns')[0].fields.status, 'paused');
+  assert.equal(f.records.get('campaigns')[0].fields.objective, 'TRAFFIC');
+  const replay = await projectTikTokAdsDailyLark({ ...f.input, execute: true });
+  assert.deepEqual(replay.tables.map(row => row.updated), [0, 0]);
+  f.state.facts[0].metadata_account_id = '999';
+  f.calls.length = 0;
+  await assert.rejects(projectTikTokAdsDailyLark({ ...f.input, execute: true }));
+  assert.deepEqual(f.calls, ['acquire', 'release']);
+});
+
 test('projection rejects partial/missing/duplicate Coverage and identity mismatch before any Lark write', async () => {
   for (const mutate of [f => f.state.coverage.splice(0), f => f.state.coverage.push({ ...f.state.coverage[0] }),
     f => f.state.coverage[0].observed_rows++, f => f.state.coverage[0].failed_rows++,

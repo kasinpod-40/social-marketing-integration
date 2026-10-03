@@ -92,6 +92,33 @@ TIKTOK_ADS_LARK_ONE_DAY_UAT               = PASS_13_CAMPAIGNS_13_DAILY_REPLAY_ZE
   preservation with replaced/self-referenced credentials and PKCE state; existing Google/YouTube regression;
   full default gates before review/merge. No production traffic switch before callback/runtime verification.
 
+### Full TikTok Ads completion — latest user authorization 2026-10-03
+
+- The latest explicit user request expands the earlier Campaign/base-metric slice to complete
+  Account, Campaign, Ad Group, Ad, Creative, Campaign/Ad daily history from 2025-09-01,
+  customer Lark projection, Campaign Summary, Top Ads, 1D/3D/7D/30D Report/AI, Queue/schedule,
+  retry/alerts and final idempotent Production cycle. This is authorized implementation and
+  reviewed Production execution, not merely a plan. Other connectors remain outside this scope.
+- Reuse the shared Paid model, destination tables, writer, report and reliability contracts.
+  Separate report grains and Coverage datasets; never sum Campaign + Ad Group + Ad facts together.
+  Creative assets are exact-advertiser source identities, not invented IDs or title-derived keys.
+- Existing storage/Lark blueprint is the model authority. Event conversion facts require the exact
+  provider event, attribution semantics and currency. Generic optimization conversion is not purchase.
+  Unknown/unavailable values remain null with truthful availability; reach is non-additive across
+  campaigns/dates. ROAS is derived only from an explicitly proven attributed-value numerator.
+- Read-only capability discovery is the next gate: Ad Group/Ad identities and parent relationships,
+  creative identity shape, all-status Campaign/Ad reports, delivery/video metrics, optimization
+  conversion and event-specific purchase/value metric candidates. No additional grain/metric writes
+  until source proof and the corresponding mapping contract are recorded.
+- Official current source docs state synchronous basic reports default to STATUS_NOT_DELETE.
+  The earlier 397-day proof is complete for its original query contract only; compare STATUS_ALL
+  against retained facts before claiming all-status historical completeness. Preserve existing rows
+  and reconcile source differences; do not discard previously proved facts.
+- Definition of Done: all source-supported tables/fields populated and read back; missing permission
+  or unavailable provider metrics reported precisely; historical Coverage exact by grain/date;
+  bounded Lark cache and views/relationships checked; Report/AI reconciled; actual automatic cycle
+  and zero-change replay; no new unresolved scoped failure; all repo gates and docs current.
+
 ### Implementation result — TikTok Ads Production preparation
 
 #### Controlled Lark Campaign/Daily projection — authorized continuation 2026-10-03
@@ -147,6 +174,26 @@ TIKTOK_ADS_LARK_ONE_DAY_UAT               = PASS_13_CAMPAIGNS_13_DAILY_REPLAY_ZE
 - Next gates: complete Campaign metadata proof/enrichment, scoped current-month Summary,
   actual 1D/3D/7D/30D Report/AI materialization, source schedule and final Production cycle proof.
   TikTok Ads is not end-to-end COMPLETE yet; customer OAuth reauthorization is not required.
+
+#### Campaign metadata full-read proof and enrichment — authorized continuation 2026-10-03
+
+- PR #898 merged as `f5eb9f99` after both CI checks passed. GET-only candidate `42e8a251`
+  read 220 Campaigns across three complete pages; all names/status/objectives present and all 119
+  retained D1 Campaign identities matched. No source rows or credentials disclosed.
+- The concurrent YouTube repair candidate was preserved. A temporary Version URL window performed
+  only this GET, restored Preview URLs disabled, and confirmed the deployment ID unchanged.
+- Next implementation scope: enrich only existing, exact-owner Campaign masters using the shared D1
+  history writer; preserve absent/unknown metadata and unmatched masters. No new master identities,
+  no Daily fact/Coverage changes, no provider mutation, Summary/Report/schedule or retention changes.
+  Map known operation status ENABLE/DISABLE/DELETE to canonical active/paused/removed; unknown values
+  preserve stored status. Shared Lark projection reads these verified D1 fields for Campaign display.
+- Acceptance: complete source read before writes, stable-key/owner/duplicate validation, bounded
+  batch writes under renewed lease, readback of every metadata field, zero metadata writes on replay,
+  Lark metadata readback and zero-change replay. Required: focused tests and all default gates,
+  audit/dry-run/diff review and reviewed controlled live UAT. Implementation result: metadata/readback/lease/replay and capability tests passed; full gates
+  passed check (877 files, zero cycles), 3,517 unit tests, 20 Workers runtime tests, Report reliability
+  106/106, production dependency audit zero vulnerabilities and deploy dry-run. One additional
+  capability-query guard test passed afterward. Reviewed live enrichment/capability proof pending.
 
 #### Campaign metadata full-read preparation — authorized end-to-end continuation
 

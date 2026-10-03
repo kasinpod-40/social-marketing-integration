@@ -38,8 +38,12 @@ async function project(input) {
   const age = (Date.parse(today) - Date.parse(date)) / 86_400_000;
   if (age < 1 || age > 90) fail('TIKTOK_ADS_LARK_DATE_OUTSIDE_CACHE');
   const { db, customerKey, accountKey, advertiserId } = input;
-  const result = await db.prepare(`SELECT * FROM ads_daily_facts
-    WHERE customer_key = ? AND platform = 'tiktok_ads' AND account_key = ? AND metric_date = ? LIMIT 501`)
+  const result = await db.prepare(`SELECT f.*, e.entity_name AS campaign_name, e.status AS campaign_status,
+      e.objective AS campaign_objective, e.source_account_id AS metadata_account_id
+    FROM ads_daily_facts f LEFT JOIN ads_entity_state e ON e.customer_key = f.customer_key
+      AND e.platform = f.platform AND e.account_key = f.account_key AND e.entity_type = 'campaign'
+      AND e.external_entity_id = f.external_campaign_id
+    WHERE f.customer_key = ? AND f.platform = 'tiktok_ads' AND f.account_key = ? AND f.metric_date = ? LIMIT 501`)
     .bind(customerKey, accountKey, date).all();
   const facts = result?.results ?? [];
   const coverageResult = await db.prepare(`SELECT * FROM data_coverage_runs
@@ -48,7 +52,8 @@ async function project(input) {
     .bind(customerKey, accountKey, date, date).all();
   const coverage = coverageResult?.results ?? [];
   if (facts.length > MAX_ROWS || new Set(facts.map(row => row.external_entity_id)).size !== facts.length
-    || facts.some(row => row.source_account_id !== advertiserId || row.report_level !== 'campaign'
+    || facts.some(row => row.source_account_id !== advertiserId
+      || (row.metadata_account_id != null && row.metadata_account_id !== advertiserId) || row.report_level !== 'campaign'
       || row.entity_type !== 'campaign' || row.breakdown_key !== 'none' || row.segment_key !== 'none'
       || row.external_campaign_id !== row.external_entity_id || row.currency !== input.currency
       || row.account_timezone !== timezone || row.metric_date !== date
@@ -67,7 +72,11 @@ async function project(input) {
   const campaigns = facts.map(row => ({ ads_campaign_key: createAdsEntityKey({ platform: 'tiktok_ads',
     accountId: advertiserId, entityType: 'campaign', externalEntityId: row.external_campaign_id }),
   platform: 'tiktok_ads', ad_channel: 'tiktok_ads', account_id: advertiserId,
-  external_campaign_id: row.external_campaign_id }));
+  external_campaign_id: row.external_campaign_id,
+  ...(row.campaign_name != null ? { campaign_name: row.campaign_name } : {}),
+  ...(row.campaign_objective != null ? { objective: row.campaign_objective } : {}),
+  ...(['active', 'paused', 'removed', 'unknown'].includes(row.campaign_status) ? { status: row.campaign_status } : {}),
+  }));
   const dailyRepository = createExplicitNullUpdateRepository({ repository: input.repository, fieldNames: NULL_FIELDS });
   const specs = [
     { tableId: input.tables.mktAdsCampaigns, keyField: 'ads_campaign_key', rows: campaigns, repository: input.repository },

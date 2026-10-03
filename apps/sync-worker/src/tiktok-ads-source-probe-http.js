@@ -17,10 +17,15 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
     try {
       const reportDate = isCampaignProbe ? null : url.searchParams.get('date');
       const metadata = isCampaignProbe && url.searchParams.get('metadata') === 'full';
+      const capability = isCampaignProbe && url.searchParams.get('capability');
+      const capabilityDate = url.searchParams.get('date');
       const source = await loadTikTokAdsAuthorizedSource({
         request, env, dependencies,
         validateRequest: () => isCampaignProbe
           ? url.searchParams.size === 0 || (metadata && url.searchParams.size === 1)
+            || (['adgroup_metadata', 'ad_metadata', 'campaign_all', 'ad_base', 'ad_delivery',
+              'ad_video', 'ad_conversion', 'ad_purchase'].includes(capability)
+              && url.searchParams.size === 2 && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? ''))
           : /^\d{4}-\d{2}-\d{2}$/u.test(reportDate ?? ''),
       });
       if (source.status === 401) return json({ ok: false, error: 'Unauthorized' }, { status: 401, headers });
@@ -31,7 +36,10 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
         status: 409, headers,
       });
 
-      const result = metadata
+      const result = capability
+        ? await source.client.probeCapability({ accessToken: source.accessToken,
+          advertiserId: source.connection.externalAccountId, kind: capability, date: capabilityDate })
+        : metadata
         ? await metadataProof(source, env.MKT_STATE_DB)
         : isCampaignProbe
         ? await source.client.probeCampaigns({

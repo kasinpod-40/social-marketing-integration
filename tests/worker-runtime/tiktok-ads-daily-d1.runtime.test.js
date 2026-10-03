@@ -3,6 +3,7 @@ import { applyD1Migrations, env } from 'cloudflare:test';
 import { D1MarketingHistoryStore } from '../../packages/connectors/src/d1-marketing-history-store.js';
 import { D1ReliabilityStore } from '../../packages/reliability/src/d1-reliability-store.js';
 import { runTikTokAdsDailyD1Sync } from '../../packages/application/src/tiktok-ads/run-tiktok-ads-daily-d1-sync.js';
+import { reconcileTikTokAdsCampaignMetadata } from '../../packages/application/src/tiktok-ads/reconcile-tiktok-ads-campaign-metadata.js';
 
 it('writes and replays one TikTok Ads Campaign day in real Workers D1 with reconciled Coverage', async () => {
   await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
@@ -39,4 +40,17 @@ it('writes and replays one TikTok Ads Campaign day in real Workers D1 with recon
     SELECT status, records_written FROM sync_runs WHERE platform = 'tiktok_ads'
   `).first();
   expect(run).toMatchObject({ status: 'success', records_written: 0 });
+  const metadata = { ...input, execute: true, writeEnabled: true, client: {
+    async listCampaignMetadata() { return { totalCount: 1, pageCount: 1,
+      rows: [{ campaignId: '456', name: 'Verified campaign', status: 'DISABLE', objective: 'TRAFFIC' }] }; },
+  } };
+  expect((await reconcileTikTokAdsCampaignMetadata(metadata)).changed).toBe(1);
+  expect((await reconcileTikTokAdsCampaignMetadata(metadata)).changed).toBe(0);
+  expect((await runTikTokAdsDailyD1Sync(input)).written).toBe(0);
+  const master = await env.MKT_STATE_DB.prepare(`SELECT entity_name, status, objective
+    FROM ads_entity_state WHERE platform='tiktok_ads' AND external_entity_id='456'`).first();
+  expect(master).toMatchObject({ entity_name: 'Verified campaign', status: 'paused', objective: 'TRAFFIC' });
+  const finalFact = await env.MKT_STATE_DB.prepare(`SELECT source_payload_hash FROM ads_daily_facts
+    WHERE platform='tiktok_ads'`).first();
+  expect(finalFact.source_payload_hash).toBe(fact.source_payload_hash);
 });

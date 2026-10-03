@@ -46,6 +46,11 @@ function setup(overrides = {}) {
       },
       listCampaignMetadata: async () => ({ totalCount: 1, pageCount: 1,
         rows: [{ campaignId: '456', name: 'private-campaign-name', status: 'ENABLE', objective: 'TRAFFIC' }] }),
+      probeCapability: async input => {
+        calls.push(['capability', input]);
+        return { kind: input.kind, sampleOnly: true, rowReturned: true, totalCount: 1,
+          fieldsPresent: { ad_id: true } };
+      },
     }),
   });
   return { handler, calls };
@@ -66,6 +71,22 @@ test('source probe reads bound credential and returns sanitized GET-only result'
     credentialReference: 'credential-1', connectionId: 'connection-1',
     connectorKey: 'tiktok_ads', credentialKind: 'access_token',
   });
+});
+
+test('capability query is allowlisted and rejects caller identity override before decrypt', async () => {
+  const f = setup();
+  const env = { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' };
+  for (const query of ['?capability=unknown&date=2026-10-02',
+    '?capability=ad_metadata&date=2026-10-02&advertiser=999']) {
+    const selected = new URL(url.href + query);
+    assert.equal((await f.handler({ request: request(), env, url: selected })).status, 400);
+  }
+  assert.deepEqual(f.calls, []);
+  const selected = new URL(url.href + '?capability=ad_metadata&date=2026-10-02');
+  const result = await f.handler({ request: request(), env, url: selected });
+  assert.equal(result.status, 200);
+  assert.equal(JSON.stringify(await result.json()).includes('private'), false);
+  assert.equal(f.calls.at(-1)[1].advertiserId, '1234567890123456789');
 });
 
 test('full metadata proof reveals only counts/presence and stored identity matches without writes', async () => {

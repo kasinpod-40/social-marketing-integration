@@ -2,6 +2,37 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TikTokAdsApiClient } from '../../packages/connectors/src/tiktok-ads/tiktok-ads-api.client.js';
 
+test('capability discovery uses bounded all-status ad report and discloses only field presence', async () => {
+  const calls = [];
+  const client = createClient(async (url, init) => {
+    calls.push({ url: new URL(url), init });
+    return Response.json({ code: 0, data: { page_info: { total_number: 22 }, list: [{
+      dimensions: { ad_id: 'private-id', stat_time_day: '2026-10-02 00:00:00' },
+      metrics: { spend: 'private-value', impressions: '500', clicks: '4' },
+    }] } });
+  });
+  const result = await client.probeCapability({ advertiserId: '123', accessToken: 'private',
+    kind: 'ad_base', date: '2026-10-02' });
+  assert.equal(result.totalCount, 22);
+  assert.equal(result.sampleOnly, true);
+  assert.equal(result.dateMatched, true);
+  assert.deepEqual(result.fieldsPresent, { spend: true, impressions: true, clicks: true });
+  assert.equal(calls[0].url.searchParams.get('data_level'), 'AUCTION_AD');
+  assert.equal(calls[0].url.searchParams.get('page_size'), '1');
+  assert.match(calls[0].url.searchParams.get('filtering'), /STATUS_ALL/u);
+  assert.equal(JSON.stringify(result).includes('private'), false);
+  await assert.rejects(client.probeCapability({ kind: 'arbitrary_endpoint' }));
+  assert.equal(calls.length, 1);
+});
+
+test('metadata capability rejects a returned foreign advertiser without exposing response', async () => {
+  const client = createClient(async () => Response.json({ code: 0, data: {
+    page_info: { total_number: 1 }, list: [{ advertiser_id: '999', ad_id: '456' }],
+  } }));
+  await assert.rejects(client.probeCapability({ advertiserId: '123', accessToken: 'private',
+    kind: 'ad_metadata' }), { code: 'TIKTOK_ADS_CAPABILITY_OWNER_CONFLICT' });
+});
+
 test('TikTok Ads advertiser discovery uses official v1.3 auth boundary', async () => {
   const calls = [];
   const client = createClient(async (url, init) => {
