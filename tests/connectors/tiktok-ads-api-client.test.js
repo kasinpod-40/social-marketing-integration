@@ -216,3 +216,71 @@ function createClient(fetchImpl) {
     fetchImpl,
   });
 }
+
+
+test('full all-status Ad inventory reads beyond five pages and preserves exact parents/assets', async () => {
+  const pages = [];
+  const client = createClient(async url => {
+    const page = Number(url.searchParams.get('page'));
+    pages.push(page);
+    assert.equal(url.pathname, '/open_api/v1.3/ad/get/');
+    assert.deepEqual(JSON.parse(url.searchParams.get('filtering')), { primary_status: 'STATUS_ALL' });
+    assert.ok(JSON.parse(url.searchParams.get('fields')).includes('image_ids'));
+    const start = (page - 1) * 100;
+    return Response.json({ code: 0, data: {
+      list: Array.from({ length: Math.min(100, 601 - start) }, (_, i) => ({
+        advertiser_id: '123', ad_id: String(start + i + 1), campaign_id: '456', adgroup_id: '789',
+        ad_name: 'private-name', operation_status: 'ENABLE', video_id: 'opaque-video', image_ids: ['opaque-image'],
+      })), page_info: { page, total_page: 7, total_number: 601 },
+    } });
+  });
+  const result = await client.listEntityMetadata({ kind: 'ad', advertiserId: '123', accessToken: 'private' });
+  assert.deepEqual(pages, [1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(result.rows.length, 601);
+  assert.equal(result.rows[600].id, '601');
+  assert.equal(result.rows[0].campaignId, '456');
+  assert.equal(result.rows[0].adGroupId, '789');
+  assert.deepEqual(result.rows[0].imageIds, ['opaque-image']);
+});
+
+test('inventory rejects duplicate/foreign identity, missing parent, malformed assets and unsafe paging', async () => {
+  const row = { advertiser_id: '123', ad_id: '456', campaign_id: '789', adgroup_id: '101' };
+  for (const list of [[row, row], [{ ...row, advertiser_id: '999' }],
+    [{ ...row, campaign_id: null }], [{ ...row, image_ids: 'image' }]]) {
+    const client = createClient(async () => Response.json({ code: 0, data: {
+      list, page_info: { page: 1, total_page: 1, total_number: list.length },
+    } }));
+    await assert.rejects(client.listEntityMetadata({ kind: 'ad', advertiserId: '123', accessToken: 'private' }));
+  }
+  const client = createClient(async () => Response.json({ code: 0, data: {
+    list: [], page_info: { page: 1, total_page: 101, total_number: 10001 },
+  } }));
+  await assert.rejects(client.listEntityMetadata({ kind: 'ad', advertiserId: '123', accessToken: 'private' }),
+    { code: 'TIKTOK_ADS_INVENTORY_PAGINATION_UNSAFE' });
+});
+
+
+test('inventory bounds concurrent requests at four and rejects total drift between pages', async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const client = createClient(async url => {
+    const page = Number(url.searchParams.get('page'));
+    inFlight += 1; peak = Math.max(peak, inFlight);
+    await new Promise(resolve => setTimeout(resolve, 2));
+    inFlight -= 1;
+    return Response.json({ code: 0, data: {
+      list: [{ campaign_id: String(page) }], page_info: { page, total_page: 8, total_number: 8 },
+    } });
+  });
+  const result = await client.listEntityMetadata({ kind: 'campaign', advertiserId: '123', accessToken: 'private' });
+  assert.equal(peak, 4);
+  assert.deepEqual(result.rows.map(row => row.id), ['1','2','3','4','5','6','7','8']);
+  const drift = createClient(async url => {
+    const page = Number(url.searchParams.get('page'));
+    return Response.json({ code: 0, data: { list: [],
+      page_info: { page, total_page: 2, total_number: page === 1 ? 2 : 3 },
+    } });
+  });
+  await assert.rejects(drift.listEntityMetadata({ kind: 'campaign', advertiserId: '123', accessToken: 'private' }),
+    { code: 'TIKTOK_ADS_INVENTORY_PAGINATION_UNSAFE' });
+});

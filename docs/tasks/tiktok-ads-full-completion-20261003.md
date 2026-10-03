@@ -67,3 +67,18 @@ Official references: [Reporting API](https://github.com/tiktok/tiktok-business-a
 [Ad Group API](https://github.com/tiktok/tiktok-business-api-sdk/blob/main/js_sdk/docs/AdgroupApi.md),
 [Ad API](https://github.com/tiktok/tiktok-business-api-sdk/blob/main/js_sdk/docs/AdApi.md),
 [Basic report dimensions](https://business-api.tiktok.com/gateway/docs/index?doc_id=1751443956638721).
+
+## Verified full inventory / remaining identity gate — 2026-10-04
+
+GET-only STATUS_ALL proof: 228 Campaigns, 261 Ad Groups, 5,771 Ad endpoint identities.
+All pages reconciled (3/3/58); bounded concurrency four avoids serial wait expiry and preserves
+consistent totals, duplicate/owner guards. Complete hierarchy read found zero missing Campaign /
+Ad Group parents and zero inconsistent Campaign parents. No business rows were written.
+
+There are 1,062 distinct video IDs and 2,414 image IDs, no cross-type ID collision; 821 Ads have
+no video/image and 4,923 have multiple source asset IDs. Image IDs may be covers; these counts
+cannot justify choosing the first asset, generating a creative ID, or interpreting every Ad
+endpoint identity as the upgraded Smart+ Ad ID. Automation/Smart+ and source asset types must
+be proved before admitting those master/fact writes. Individual complete_payment and
+complete_payment_roas requests succeeded; the value hypothesis failed. Metric semantics,
+missing-row/zero behavior and attribution remain unapproved from field presence alone.
