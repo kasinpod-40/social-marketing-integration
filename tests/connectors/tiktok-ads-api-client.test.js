@@ -139,6 +139,45 @@ test('TikTok Ads daily report reads bounded pages and rejects incomplete paginat
   }), { code: 'TIKTOK_ADS_DAILY_REPORT_INCOMPLETE' });
 });
 
+test('Campaign metadata shares complete bounded pagination and strips unrelated provider fields', async () => {
+  const calls = [];
+  const client = createClient(async (url, init) => {
+    const page = Number(url.searchParams.get('page'));
+    calls.push(page);
+    assert.equal(url.pathname, '/open_api/v1.3/campaign/get/');
+    assert.equal(url.searchParams.get('page_size'), '100');
+    assert.equal(init.headers['Access-Token'], 'access-private');
+    return Response.json({ code: 0, data: { list: [{ campaign_id: String(page),
+      advertiser_id: '1234567890123456789', campaign_name: `Campaign ${page}`, operation_status: 'ENABLE',
+      objective_type: 'TRAFFIC', private_data: 'do-not-retain' }],
+    page_info: { page, total_page: 2, total_number: 2 } } });
+  });
+  const result = await client.listCampaignMetadata({ accessToken: 'access-private', advertiserId: '1234567890123456789' });
+  assert.deepEqual(calls, [1, 2]);
+  assert.equal(result.totalCount, 2);
+  assert.deepEqual(result.rows[0], { campaignId: '1', name: 'Campaign 1', status: 'ENABLE', objective: 'TRAFFIC' });
+  assert.doesNotMatch(JSON.stringify(result), /do-not-retain|private_data|access-private/);
+});
+
+test('Campaign metadata rejects duplicate, wrong advertiser, incomplete and excessive pagination', async () => {
+  const row = { campaign_id: '123', advertiser_id: '1234567890123456789' };
+  for (const [list, info, code] of [
+    [[row, row], { page: 1, total_page: 1, total_number: 2 }, 'IDENTITY_CONFLICT'],
+    [[{ ...row, advertiser_id: '999' }], { page: 1, total_page: 1, total_number: 1 }, 'IDENTITY_CONFLICT'],
+    [[row], { page: 1, total_page: 1, total_number: 2 }, 'INCOMPLETE'],
+    [[row], { page: 1, total_page: 6, total_number: 600 }, 'PAGINATION_UNSAFE'],
+  ]) {
+    const client = createClient(async () => Response.json({ code: 0, data: { list, page_info: info } }));
+    await assert.rejects(client.listCampaignMetadata({ accessToken: 'access-private', advertiserId: '1234567890123456789' }),
+      { code: `TIKTOK_ADS_CAMPAIGN_METADATA_${code}` });
+  }
+  const missing = createClient(async () => Response.json({ code: 0, data: {
+    list: [row], page_info: { page: 1, total_page: 1, total_number: 1 },
+  } }));
+  const result = await missing.listCampaignMetadata({ accessToken: 'access-private', advertiserId: '1234567890123456789' });
+  assert.deepEqual(result.rows[0], { campaignId: '123', name: null, status: null, objective: null });
+});
+
 function createClient(fetchImpl) {
   return new TikTokAdsApiClient({
     appId: '7670007933899390993',

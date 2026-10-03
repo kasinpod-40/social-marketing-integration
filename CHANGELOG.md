@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-03 — TikTok Ads full Campaign metadata read preparation
+
+- Extend the existing client pagination and GET-only source probe for bounded full Campaign metadata
+  reads with duplicate/advertiser guards and stored-master identity match counts; no metadata writes.
+
+## 2026-10-03 — TikTok Ads Campaign/Daily live Lark UAT
+
+- Create and reconcile 13 Campaign identities and 13 Daily rows for the closed 2026-10-02 day.
+- Prove immediate zero-create/zero-update replay in both tables; restore the original Worker sole100%.
+- Keep historical Lark, Summary, Report/AI and automatic schedule pending their subsequent gates.
+
 ## 2026-10-03 — TikTok Ads standalone Lark preview hydration repair
 
 - Hydrate non-secret D1 runtime configuration after operator/query validation and before constructing
