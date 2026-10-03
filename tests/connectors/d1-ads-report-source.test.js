@@ -248,15 +248,17 @@ test('TikTok Ads reads only proved campaign-day facts and leaves unknown metrics
   const db = createD1((sql, bindings) => {
     calls.push({ sql, bindings });
     if (sql.includes('data_coverage_runs')) {
-      return {
+      return [{
         coverage_run_id: 'coverage-tiktok',
         dataset_key: 'ads_daily_facts',
         status: 'revisable',
+        period_start: '2026-10-01',
+        period_end: '2026-10-01',
         expected_rows: 2,
         observed_rows: 2,
         source_watermark: '2026-10-01',
         failed_rows: 0,
-      };
+      }];
     }
     if (sql.includes('ads_entity_state')) throw new Error('Campaign-only TikTok facts must not query ad entities');
     return [
@@ -293,6 +295,32 @@ test('TikTok Ads reads only proved campaign-day facts and leaves unknown metrics
   assert.equal(result.readSummary.topAdsAvailability, 'not_observed');
   assert.equal(result.readSummary.rankingReportLevel, null);
   assert.equal(result.readSummary.entityQueryCount, 0);
+});
+
+test('TikTok period coverage rejects a missing day, duplicate day or fact-count mismatch', async () => {
+  const day = { coverage_run_id: 'coverage', dataset_key: 'ads_daily_facts', status: 'revisable',
+    period_start: '2026-10-01', period_end: '2026-10-01', expected_rows: 1, observed_rows: 1, failed_rows: 0 };
+  const rows = [fact({ key: 'one', level: 'campaign', campaignId: 'one', breakdown: 'none', segment: 'none',
+    metricDate: '2026-10-01', spend: 100, impressions: 10, clicks: 1, conversions: null, value: null })];
+  for (const [coverage, end] of [[[day], '2026-10-02'], [[day, day], '2026-10-01'], [[{ ...day, observed_rows: 2 }], '2026-10-01']]) {
+    const db = createD1(sql => sql.includes('data_coverage_runs') ? coverage : rows);
+    const result = await new D1AdsReportSource({ db, platform: 'tiktok_ads' }).load({
+      customerKey: 'demo', accountKey: 'demo', periodStart: '2026-10-01', periodEnd: end,
+    });
+    assert.equal(result.metrics.data_status, 'partial');
+    assert.ok(result.readSummary.coverageRate < 1);
+  }
+});
+
+test('TikTok period accepts a confirmed empty day only with zero matching facts', async () => {
+  const db = createD1(sql => sql.includes('data_coverage_runs') ? [{ dataset_key: 'ads_daily_facts', status: 'no_data_confirmed',
+    period_start: '2026-10-01', period_end: '2026-10-01', expected_rows: 0, observed_rows: 0, failed_rows: 0 }] : []);
+  const result = await new D1AdsReportSource({ db, platform: 'tiktok_ads' }).load({
+    customerKey: 'demo', accountKey: 'demo', periodStart: '2026-10-01', periodEnd: '2026-10-01',
+  });
+  assert.equal(result.metrics.data_status, 'no_data_confirmed');
+  assert.equal(result.readSummary.coverageRate, 1);
+  assert.equal(result.metrics.spend_micros, null);
 });
 
 function fact(input) {

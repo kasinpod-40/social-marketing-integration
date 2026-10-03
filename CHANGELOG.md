@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-03 — TikTok Ads historical D1 and Lark schema proof
+
+- Backfill 397 closed dates from 2025-09-01 through 2026-10-02 into D1 and reconcile 5,708 unique Campaign-day facts against source and daily Coverage.
+- Add a scoped GET-only Lark schema operator; prove existing Paid Ads field types/options via Production credentials, then restore the sole active Worker.
+- Reconcile TikTok Report Coverage day by day against selected Campaign facts; fail partial for missing, duplicate or mismatched dates. Prove D1-only 1D/3D/7D/30D parity against independent SQL.
+- Historical Lark writes and automatic Report/schedule admission remain gated.
+
 ## 2026-10-03 — TikTok Ads planned Report grain
 
 - Align the planned Paid Ads Report source with proved Campaign-day `none/none` facts, keeping ad-level Top Ads unavailable and unproved metrics null.

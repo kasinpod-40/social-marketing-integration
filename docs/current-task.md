@@ -67,7 +67,9 @@ CUSTOMER_D1_FREE_CAPACITY_GUARD          = CODE_AND_FULL_GATES_PASS_REVIEW_PENDI
 CUSTOMER_ORGANIC_HISTORY_REPAIR          = COMPLETE_FACEBOOK_D1_LARK_321_YOUTUBE_D1_32164
 TIKTOK_ADS_CAMPAIGN_SOURCE_PROOF          = LIVE_PASS_READ_ONLY_2026_10_02
 TIKTOK_ADS_D1_ONE_DAY_UAT                 = PASS_16_FACTS_REPLAY_0_WRITES_2026_10_03
-TIKTOK_ADS_REPORT_GRAIN_PREPARATION       = CAMPAIGN_NONE_NONE_PLANNED_VALIDATION_PENDING
+TIKTOK_ADS_REPORT_GRAIN_PREPARATION       = CAMPAIGN_NONE_NONE_PLANNED_READ_ONLY_PARITY_PASS
+TIKTOK_ADS_HISTORY_D1                     = PASS_397_DATES_5708_FACTS_20250901_20261002
+TIKTOK_ADS_LARK_SCHEMA                    = LIVE_API_PASS_CAMPAIGN_DAILY_SUMMARY
 ```
 
 ## Objective
@@ -90,6 +92,50 @@ TIKTOK_ADS_REPORT_GRAIN_PREPARATION       = CAMPAIGN_NONE_NONE_PLANNED_VALIDATIO
   full default gates before review/merge. No production traffic switch before callback/runtime verification.
 
 ### Implementation result — TikTok Ads Production preparation
+
+#### Historical D1 scope and Lark API schema read — authorized 2026-10-03
+
+- Latest user instruction authorizes TikTok Ads historical retrieval beginning `2025-09-01` and
+  Lark schema inspection through API. The initial fixed end is the latest closed account day
+  `2026-10-02` (397 dates). Reuse the merged one-day D1 route and its full source-pagination,
+  advertiser binding, exact date lock, stable keys, source-hash readback and Coverage contract.
+- Historical data stays in D1; no historical Lark materialization, Report admission, Queue or schedule
+  change. Preview all dates before execution, checkpoint sanitized daily counts, stop on a source
+  anomaly, reconcile every date independently in D1, and restore sole active Production version.
+- Lark CLI app API returned `99991672` (`app_scope_not_applied`). The schema operator instead uses
+  existing Production Worker Lark credentials for exactly Campaigns, Daily and Campaign Summary,
+  reads fields only, and strips table/field IDs, arbitrary Select options and all record data.
+- Implementation result: endpoint sample GETs for `2025-09-01`, `2026-01-01`, `2026-06-01`,
+  `2026-10-02` passed (14/19/18/13 Campaign rows, one page each). Full GET preview passed
+  397/397 dates with 5,708 rows, maximum 23 per day and zero empty days. Serial reviewed daily
+  POST completed all dates, writing 5,692 facts and retaining the 16 existing UAT facts unchanged.
+  Independent D1 SELECT verified 5,708 unique keys / 397 dates, exact start/end, Coverage
+  expected/observed 5,708/5,708, zero failed rows and zero active TikTok Ads locks.
+  Independent per-date comparison subsequently verified all 397 fact and Coverage dates against the
+  execution checkpoint, with zero mismatches. Production Lark schema API proof passed through candidate
+  `d9da3d17` at 0% with all 223 bindings identical: Campaigns/Daily/Summary contain 22/46/22 fields;
+  all 8 Campaign and 24 Daily blueprint fields match their expected types, platform/ad_channel have
+  `tiktok_ads`, and Daily entity_type has `campaign`. No records were read or written by this probe.
+  The original Worker `954f8f3b` was restored as sole 100%. Schema focused tests passed 3/3;
+  check passed (872 source files, zero cycles), unit tests 3,492/3,492, Workers 20/20, Report
+  reliability 106/106 and deploy dry-run passed. Workers tests required local temporary-file access.
+  Initial candidate upload was delayed by automatic approval review usage limit, then Cloudflare rejected
+  explicit secret inherit version IDs; after checking latest secret metadata matches active, using the
+  supported `latest` inheritance passed exact candidate binding parity.
+
+#### Report period Coverage preparation — 2026-10-03
+
+- TikTok alone now reads bounded daily Coverage inside the requested Report period (maximum 400 days).
+  Each day must have exactly one finished Coverage row, supported status, zero failures and expected/
+  observed count equal to the selected Campaign facts. Missing/duplicate/mismatched days produce
+  partial status and a coverage rate below one; unrelated Paid sources retain their prior reader.
+- The shared calculator respects explicit partial Coverage even for revisable source facts.
+  Focused tests prove missing dates, duplicate dates, count mismatch, confirmed empty day and null
+  semantics. Live D1-only reader parity passed 1D/3D/7D/30D ending 2026-10-02 (13/49/123/583 facts),
+  all base totals matched independent SQL, all day Coverage rates were 1, conversions/ROAS remained null.
+  Report remains planned until reviewed Lark materialization and runtime admission; no Report rows were written.
+  Final gates passed: check (872 files, zero cycles), unit 3,494/3,494, Workers 20/20,
+  Report reliability 106/106, production-dependency audit zero vulnerabilities, deploy dry-run and diff check.
 
 #### Planned Report grain preparation — 2026-10-03
 

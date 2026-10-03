@@ -1,5 +1,21 @@
 # Project Brain — Social Marketing Data Integration
 
+## TikTok Ads historical D1 and Lark schema proof — 2026-10-03
+
+User requested history starting 2025-09-01. All 397 closed dates through 2026-10-02 passed source
+preview and serial reviewed D1 ingestion: 5,708 unique Campaign-day facts, 5,692 new writes and
+16 unchanged prior UAT facts. Independent per-day SELECT reconciled every date and Coverage to
+the execution checkpoint with zero mismatches, failures or active locks. Historical facts remain in D1.
+Production Worker Lark API read-only schema proof passed Campaign/Daily/Summary at 22/46/22 fields,
+with all required Campaign/Daily field types and TikTok/Campaign Select options present. Original
+Worker restored as sole 100%. Report period Coverage, Lark projection/readback and schedule activation
+are still subsequent gates; schema proof alone does not activate them.
+
+The planned D1 Report reader now reconciles TikTok Coverage for every requested date (bounded at
+400 days); absent/duplicate/count-mismatched Coverage is partial. Independent live 1D/3D/7D/30D
+reader parity ending 2026-10-02 passed base-total SQL comparison and complete date Coverage,
+with 13/49/123/583 facts and null unproved conversion/ROAS. Lark projection/runtime admission remain pending.
+
 ## TikTok Ads Report grain preparation — 2026-10-03
 
 The planned Report contract selects only the proven `campaign` / `none` / `none` D1 facts. Ad-level

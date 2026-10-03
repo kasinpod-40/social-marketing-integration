@@ -117,6 +117,7 @@ function resolveDataStatus(rows, coverageStatus) {
   if (statuses.has('source_unavailable')) return 'source_unavailable';
   if (statuses.has('not_observed')) return 'not_observed';
   if (statuses.has('partial')) return 'partial';
+  if (coverageStatus === 'partial') return 'partial';
   if (statuses.has('revisable') || coverageStatus === 'revisable') return 'revisable';
   return coverageStatus === 'complete' ? 'complete' : 'partial';
 }
