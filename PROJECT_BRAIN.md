@@ -2,6 +2,11 @@
 
 ## TikTok Ads controlled Lark projection preparation — 2026-10-03
 
+The first live GET stopped before writes because standalone preview runs before Worker runtime
+hydration. Post-auth/query hydration before source-runtime construction fixed the path; a GET-only
+candidate passed all D1/Lark preflight with 13 Campaign and 13 Daily creates planned and Daily total
+6,835. Active Worker restored; write UAT/replay are pending. Fixed stage codes contain no source payload.
+
 After complete historical D1 and read-only schema proof, authorized continuation prepares one
 closed-day projection within the existing 90-day cache. It uses advertiser-based Paid canonical keys,
 existing repository/sync-engine and explicit-null updates. All table plans precede writes; bounded

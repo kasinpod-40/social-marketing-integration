@@ -115,6 +115,22 @@ TIKTOK_ADS_LARK_SCHEMA                    = LIVE_API_PASS_CAMPAIGN_DAILY_SUMMARY
   deploy dry-run and diff check. One additional preflight regression passed after the full suite.
   Reviewed live UAT/replay remain pending; no Lark records written yet.
 
+#### Lark preview runtime hydration repair — live read-only proof 2026-10-03
+
+- PR #896 merged as `390b7a27`. Candidate preview initially returned 502 before Business writes.
+  GET-only stage diagnostics isolated failure at authorized-source loading. The standalone preview
+  entry runs before the normal Worker D1 runtime-config hydration; hydration must happen after
+  operator/query validation and before constructing the connection runtime, not afterward.
+- Shared source loader accepts an optional post-auth hydration callback; existing already-hydrated
+  D1/source routes retain their prior behavior. Responses expose only fixed stage names and sanitized
+  error codes. No secrets, IDs, response payloads or metric values are disclosed.
+- Corrected GET-only candidate `14529db7` passed live preview for 2026-10-02: 13 facts, 13 Campaign
+  creates and 13 Daily creates planned, no updates, Daily total 6,835 within capacity. This proves
+  the hydration root cause and destination preflight without executing Lark writes. Sole original
+  Worker restored. Focused tests 12/12; check (875 files, zero cycles), unit 3,504/3,504, Workers
+  20/20, Report reliability 106/106, normal/isolated dry-run and diff check passed. Production audit
+  remains zero with unchanged dependencies. Reviewed write UAT/replay remain pending.
+
 #### Historical D1 scope and Lark API schema read — authorized 2026-10-03
 
 - Latest user instruction authorizes TikTok Ads historical retrieval beginning `2025-09-01` and

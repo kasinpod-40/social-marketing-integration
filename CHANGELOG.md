@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-03 — TikTok Ads standalone Lark preview hydration repair
+
+- Hydrate non-secret D1 runtime configuration after operator/query validation and before constructing
+  the source connection in the standalone preview route; retain existing normal source-route behavior.
+- Prove live GET-only preflight for 13 Campaign/Daily rows and preserve fixed-stage diagnostics without data disclosure.
+
 ## 2026-10-03 — Controlled TikTok Ads Lark projection preparation
 
 - Preview and separately gate one closed Campaign-day from D1 into the existing Campaign and Daily tables.

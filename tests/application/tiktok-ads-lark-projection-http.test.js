@@ -54,5 +54,26 @@ test('projection API failure exposes code only and cannot claim completion', asy
   f.dependencies.project = async () => { const error = new Error('credential-private response'); error.code = 'LARK_FAILED'; throw error; };
   const response = await createTikTokAdsLarkProjectionHttpHandler(f.dependencies)(request());
   assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { ok: false, code: 'LARK_FAILED' });
+  assert.deepEqual(await response.json(), { ok: false, stage: 'projection', code: 'LARK_FAILED' });
+});
+
+test('standalone projection hydrates non-secret config after auth/query guard and before source runtime', async () => {
+  const f = setup();
+  const calls = [];
+  const originalRuntime = f.dependencies.createRuntime;
+  f.dependencies.hydrate = async raw => {
+    calls.push('hydrate');
+    return { ...raw, migrated: true, LARK_TABLE_MKT_ADS_CAMPAIGNS: 'tblCampaigns', LARK_TABLE_MKT_ADS_DAILY: 'tblDaily' };
+  };
+  f.dependencies.createRuntime = runtime => {
+    calls.push('source_runtime');
+    assert.equal(runtime.migrated, true);
+    return originalRuntime();
+  };
+  const handle = createTikTokAdsLarkProjectionHttpHandler(f.dependencies);
+  assert.equal((await handle(request('GET', 'date=2026-10-02', 'wrong'))).status, 401);
+  assert.equal((await handle(request('GET', 'date=bad'))).status, 400);
+  assert.deepEqual(calls, []);
+  assert.equal((await handle(request())).status, 200);
+  assert.deepEqual(calls, ['hydrate', 'source_runtime']);
 });

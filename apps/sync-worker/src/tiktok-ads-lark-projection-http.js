@@ -18,9 +18,19 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
     if (url.pathname !== TIKTOK_ADS_LARK_PROJECTION_PATH) return null;
     const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
     if (!['GET', 'POST'].includes(request.method)) return json({ ok: false }, { status: 405, headers });
+    let stage = 'authorized_source';
     try {
       let date;
-      const source = await loadTikTokAdsAuthorizedSource({ request, env, dependencies,
+      let runtime;
+      const source = await loadTikTokAdsAuthorizedSource({ request, env, dependencies: {
+        ...dependencies,
+        hydrateAuthorizedEnv: async raw => {
+          stage = 'runtime_hydration';
+          runtime = await (dependencies.hydrate ?? hydrateRuntimeEnvFromD1)(raw);
+          stage = 'authorized_source';
+          return runtime;
+        },
+      },
         validateRequest: () => {
           try {
             date = requireDateOnly(url.searchParams.get('date'));
@@ -32,8 +42,9 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
       if (request.method === 'POST' && env.MKT_TIKTOK_ADS_LARK_WRITE_ENABLED !== 'true') {
         return json({ ok: false, code: 'TIKTOK_ADS_LARK_WRITE_DISABLED' }, { status: 409, headers });
       }
-      const runtime = await (dependencies.hydrate ?? hydrateRuntimeEnvFromD1)(env);
+      stage = 'lark_client';
       const client = (dependencies.createLarkClient ?? createLarkBitableClientFromEnv)(runtime);
+      stage = 'projection';
       const result = await (dependencies.project ?? projectTikTokAdsDailyLark)({
         date, db: env.MKT_STATE_DB, customerKey: source.runtime.config.customerKey,
         accountKey: source.runtime.config.customerKey, advertiserId: source.connection.externalAccountId,
@@ -46,7 +57,7 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
       });
       return json({ ok: true, result }, { status: 200, headers });
     } catch (error) {
-      return json({ ok: false, code: sanitizeOperationalError(error).code ?? 'TIKTOK_ADS_LARK_PROJECTION_FAILED' },
+      return json({ ok: false, stage, code: sanitizeOperationalError(error).code ?? 'TIKTOK_ADS_LARK_PROJECTION_FAILED' },
         { status: 502, headers });
     }
   };
