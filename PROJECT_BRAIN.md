@@ -1,5 +1,17 @@
 # Project Brain — Social Marketing Data Integration
 
+## TikTok Ads Campaign/Daily Lark UAT — live pass 2026-10-03
+
+Reviewed hydration repair #897 merged `cf95a132`. Isolated candidate `5b142870` at 0% projected
+the closed 2026-10-02 day: 13 Campaign identities and 13 Daily rows created, all canonical fields
+reconciled through live readback. Immediate replay returned 0/0/13 for each table and zero duplicate
+keys. Daily total 6,835 -> 6,848. Original Worker restored sole 100%; source facts remained read-only.
+Historical Lark, Summary, Report/AI and schedule were not activated by this UAT and remain next gates.
+
+Full Campaign metadata pagination is prepared through the existing source probe (`metadata=full`),
+sharing bounded client pagination with the Daily report. It returns count/presence/identity-match flags
+only; no metadata rows or writes. Live full-read proof must precede name/status/objective enrichment.
+
 ## TikTok Ads controlled Lark projection preparation — 2026-10-03
 
 The first live GET stopped before writes because standalone preview runs before Worker runtime

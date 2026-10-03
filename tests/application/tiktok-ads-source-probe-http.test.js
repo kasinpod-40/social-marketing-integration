@@ -44,6 +44,8 @@ function setup(overrides = {}) {
         return { reportReturned: true, pageSize: 1, paginationAvailable: true,
           metricsPresent: { spend: true, impressions: true, clicks: true } };
       },
+      listCampaignMetadata: async () => ({ totalCount: 1, pageCount: 1,
+        rows: [{ campaignId: '456', name: 'private-campaign-name', status: 'ENABLE', objective: 'TRAFFIC' }] }),
     }),
   });
   return { handler, calls };
@@ -64,6 +66,32 @@ test('source probe reads bound credential and returns sanitized GET-only result'
     credentialReference: 'credential-1', connectionId: 'connection-1',
     connectorKey: 'tiktok_ads', credentialKind: 'access_token',
   });
+});
+
+test('full metadata proof reveals only counts/presence and stored identity matches without writes', async () => {
+  const { handler } = setup();
+  const fullUrl = new URL(`https://worker.example${TIKTOK_ADS_SOURCE_PROBE_PATH}?metadata=full`);
+  const response = await handler({ request: new Request(fullUrl, { headers: { authorization: 'Bearer operator-private' } }),
+    url: fullUrl, env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private', MKT_STATE_DB: {
+      prepare(sql) { assert.match(sql, /^SELECT external_entity_id, source_account_id/u); return { bind(customer, account) {
+        assert.equal(customer, 'chemistry_k'); assert.equal(account, customer);
+        return { async all() { return { results: [{ external_entity_id: '456', source_account_id: '1234567890123456789' },
+          { external_entity_id: '789', source_account_id: '1234567890123456789' }] }; } };
+      } }; },
+    } } });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.probe, { campaigns: 1, pageCount: 1, allNamesPresent: true, allStatusesPresent: true,
+    allObjectivesPresent: true, storedCampaigns: 2, matchedStoredCampaigns: 1 });
+  assert.doesNotMatch(JSON.stringify(body), /private|1234567890123456789|456|789/);
+});
+
+test('unknown metadata query rejects before decrypt or source API', async () => {
+  const { handler, calls } = setup();
+  const fullUrl = new URL(`https://worker.example${TIKTOK_ADS_SOURCE_PROBE_PATH}?metadata=other`);
+  assert.equal((await handler({ request: new Request(fullUrl, { headers: { authorization: 'Bearer operator-private' } }),
+    url: fullUrl, env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' } })).status, 400);
+  assert.deepEqual(calls, []);
 });
 
 test('report probe uses same credential boundary and returns no source row', async () => {

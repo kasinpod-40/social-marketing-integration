@@ -107,20 +107,52 @@ export class TikTokAdsApiClient {
     const accessToken = requireText(input.accessToken, 'accessToken');
     const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
     const date = requireIsoDate(input.date);
+    return this.#listCampaignRows({ accessToken, prefix: 'TIKTOK_ADS_DAILY_REPORT',
+      urlForPage: page => this.#campaignDailyReportUrl(advertiserId, date, page, REPORT_PAGE_SIZE) });
+  }
+
+  /** อ่าน Campaign metadata ครบทุกหน้าก่อน enrich; ไม่อนุมานว่าแถวที่ไม่คืนมาถูกลบ */
+  async listCampaignMetadata(input = {}) {
+    const accessToken = requireText(input.accessToken, 'accessToken');
+    const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
+    const source = await this.#listCampaignRows({ accessToken, prefix: 'TIKTOK_ADS_CAMPAIGN_METADATA',
+      urlForPage: page => {
+        const url = new URL(`${this.baseUrl}/campaign/get/`);
+        url.searchParams.set('advertiser_id', advertiserId);
+        url.searchParams.set('page', String(page));
+        url.searchParams.set('page_size', String(REPORT_PAGE_SIZE));
+        return url;
+      } });
+    const seen = new Set();
+    const rows = source.rows.map(row => {
+      const campaignId = requireDigits(row?.campaign_id, 'campaign_id');
+      if (seen.has(campaignId) || (row.advertiser_id != null && String(row.advertiser_id) !== advertiserId)) {
+        throw permanentError('TikTok Ads Campaign metadata identity is inconsistent', {
+          code: 'TIKTOK_ADS_CAMPAIGN_METADATA_IDENTITY_CONFLICT',
+        });
+      }
+      seen.add(campaignId);
+      return Object.freeze({ campaignId, name: optionalText(row.campaign_name),
+        status: optionalText(row.operation_status), objective: optionalText(row.objective_type) });
+    });
+    return Object.freeze({ ...source, rows: Object.freeze(rows) });
+  }
+
+  async #listCampaignRows({ accessToken, prefix, urlForPage }) {
     const rows = [];
     let expectedTotal = null;
     let expectedPages = null;
     for (let page = 1; page <= REPORT_MAX_PAGES; page += 1) {
       const payload = await this.#get(
-        this.#campaignDailyReportUrl(advertiserId, date, page, REPORT_PAGE_SIZE),
+        urlForPage(page),
         accessToken,
-        'TIKTOK_ADS_DAILY_REPORT',
+        prefix,
       );
       const list = payload.data?.list;
       const pageInfo = payload.data?.page_info;
       if (!Array.isArray(list) || !pageInfo || typeof pageInfo !== 'object') {
         throw transientError('TikTok Ads daily report response is malformed', {
-          code: 'TIKTOK_ADS_DAILY_REPORT_INVALID_RESPONSE',
+          code: `${prefix}_INVALID_RESPONSE`,
         });
       }
       const total = nonNegativeInteger(pageInfo.total_number, 'total_number');
@@ -129,7 +161,7 @@ export class TikTokAdsApiClient {
       if (reportedPage !== page || pages > REPORT_MAX_PAGES
         || (expectedTotal !== null && (total !== expectedTotal || pages !== expectedPages))) {
         throw permanentError('TikTok Ads daily report pagination is inconsistent or too large', {
-          code: 'TIKTOK_ADS_DAILY_REPORT_PAGINATION_UNSAFE',
+          code: `${prefix}_PAGINATION_UNSAFE`,
         });
       }
       expectedTotal = total;
@@ -137,20 +169,20 @@ export class TikTokAdsApiClient {
       rows.push(...list);
       if (rows.length > REPORT_MAX_PAGES * REPORT_PAGE_SIZE) {
         throw permanentError('TikTok Ads daily report exceeds the bounded row limit', {
-          code: 'TIKTOK_ADS_DAILY_REPORT_TOO_LARGE',
+          code: `${prefix}_TOO_LARGE`,
         });
       }
       if (page === pages) {
         if (rows.length !== total) {
           throw transientError('TikTok Ads daily report count does not match its pages', {
-            code: 'TIKTOK_ADS_DAILY_REPORT_INCOMPLETE',
+            code: `${prefix}_INCOMPLETE`,
           });
         }
         return Object.freeze({ rows: Object.freeze(rows), totalCount: total, pageCount: pages });
       }
     }
     throw permanentError('TikTok Ads daily report exceeded its page limit', {
-      code: 'TIKTOK_ADS_DAILY_REPORT_TOO_LARGE',
+      code: `${prefix}_TOO_LARGE`,
     });
   }
 

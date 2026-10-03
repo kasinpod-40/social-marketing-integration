@@ -70,6 +70,7 @@ TIKTOK_ADS_D1_ONE_DAY_UAT                 = PASS_16_FACTS_REPLAY_0_WRITES_2026_1
 TIKTOK_ADS_REPORT_GRAIN_PREPARATION       = CAMPAIGN_NONE_NONE_PLANNED_READ_ONLY_PARITY_PASS
 TIKTOK_ADS_HISTORY_D1                     = PASS_397_DATES_5708_FACTS_20250901_20261002
 TIKTOK_ADS_LARK_SCHEMA                    = LIVE_API_PASS_CAMPAIGN_DAILY_SUMMARY
+TIKTOK_ADS_LARK_ONE_DAY_UAT               = PASS_13_CAMPAIGNS_13_DAILY_REPLAY_ZERO_CHANGE
 ```
 
 ## Objective
@@ -130,6 +131,37 @@ TIKTOK_ADS_LARK_SCHEMA                    = LIVE_API_PASS_CAMPAIGN_DAILY_SUMMARY
   Worker restored. Focused tests 12/12; check (875 files, zero cycles), unit 3,504/3,504, Workers
   20/20, Report reliability 106/106, normal/isolated dry-run and diff check passed. Production audit
   remains zero with unchanged dependencies. Reviewed write UAT/replay remain pending.
+
+#### Campaign/Daily live Lark UAT — passed 2026-10-03
+
+- PR #897 merged as `cf95a132` after both CI checks passed. Candidate `5b142870` preserved all
+  223 active bindings plus one isolated Lark write gate, with active Production still at 100%.
+- Exact 2026-10-02 GET preview passed with 13 facts and 13/13 Campaign/Daily creates planned.
+  Reviewed POST created 13 Campaign identities and 13 Daily rows. Live stable-key/value readback
+  matched every canonical field, including the account-timezone date and null metric semantics.
+- Immediate same-day replay returned Campaign `0 create / 0 update / 13 skip` and Daily
+  `0 create / 0 update / 13 skip`, with zero duplicate stable keys and readback reconciled.
+  Daily count changed 6,835 -> 6,848. No Summary, Report, historical Lark, retention, Queue or
+  schedule writes occurred in this operator. D1 source facts were read-only; only the scoped lease
+  was acquired/released. Original Worker `954f8f3b` restored as sole 100%.
+- Next gates: complete Campaign metadata proof/enrichment, scoped current-month Summary,
+  actual 1D/3D/7D/30D Report/AI materialization, source schedule and final Production cycle proof.
+  TikTok Ads is not end-to-end COMPLETE yet; customer OAuth reauthorization is not required.
+
+#### Campaign metadata full-read preparation — authorized end-to-end continuation
+
+- Objective: prove complete bounded Campaign metadata pagination before enriching names/status/objective.
+  Reuse the source client, source-probe route and validated advertiser. GET-only `metadata=full` returns
+  counts/presence flags and D1 master identity match counts, never Campaign IDs/names or source rows.
+- Source contract: official v1.3 `campaign/get/` with page/page_size, consistent total/page metadata,
+  maximum five pages / 500 Campaigns, duplicate/advertiser guards. Preserve absent metadata as null;
+  Campaigns absent from this API response are never marked missing or deleted. No D1/Lark writes yet.
+- Acceptance: focused pagination/identity/no-disclosure tests, full gates and live GET proof before
+  metadata enrichment. Official source: TikTok Business API SDK `js_sdk/docs/CampaignCreationApi.md`.
+- Implementation result: shared bounded pagination extended for metadata and GET-only full proof added
+  to the existing route. Focused tests 14/14; check (875 source files, zero cycles), unit 3,508/3,508,
+  Workers 20/20, Report reliability 106/106 and normal/isolated deploy dry-run passed. Live proof pending;
+  no metadata writes or source/destination admissions added.
 
 #### Historical D1 scope and Lark API schema read — authorized 2026-10-03
 
