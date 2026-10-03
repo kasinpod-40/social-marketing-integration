@@ -25,7 +25,7 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
         request, env, dependencies,
         validateRequest: () => isCampaignProbe
           ? url.searchParams.size === 0 || (metadata && url.searchParams.size === 1)
-            || (['campaign', 'ad_group', 'ad', 'hierarchy'].includes(inventory) && url.searchParams.size === 1)
+            || (['campaign', 'ad_group', 'ad', 'smart_ad', 'hierarchy', 'smart_hierarchy'].includes(inventory) && url.searchParams.size === 1)
             || (TIKTOK_ADS_CAPABILITY_KINDS.includes(capability)
               && url.searchParams.size === 2 && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? ''))
           : /^\d{4}-\d{2}-\d{2}$/u.test(reportDate ?? ''),
@@ -69,9 +69,9 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
 }
 
 async function inventoryProof(source, kind) {
-  if (kind === 'hierarchy') {
+  if (['hierarchy', 'smart_hierarchy'].includes(kind)) {
     const inventories = {};
-    for (const entityKind of ['campaign', 'ad_group', 'ad']) {
+    for (const entityKind of kind === 'smart_hierarchy' ? ['campaign', 'ad_group', 'ad', 'smart_ad'] : ['campaign', 'ad_group', 'ad']) {
       inventories[entityKind] = await source.client.listEntityMetadata({ accessToken: source.accessToken,
         advertiserId: source.connection.externalAccountId, kind: entityKind });
     }
@@ -84,7 +84,34 @@ async function inventoryProof(source, kind) {
       && groups.get(row.adGroupId) !== row.campaignId).length;
     const videos = new Set(inventories.ad.rows.map(row => row.videoId).filter(Boolean));
     const images = new Set(inventories.ad.rows.flatMap(row => row.imageIds));
-    return { kind, sampleOnly: false, allStatuses: true,
+    let smartProof;
+    if (kind === 'smart_hierarchy') {
+      const types = new Map(inventories.campaign.rows.map(row => [row.id, row.automationType]));
+      const legacy = new Map(inventories.ad.rows.map(row => [row.id, row]));
+      let missingSmartParents = 0;
+      let missingCreativeReferences = 0;
+      let conflictingCreativeParents = 0;
+      const creativeParents = new Map();
+      let sharedCreativeReferences = 0;
+      for (const ad of inventories.smart_ad.rows) {
+        if (!campaigns.has(ad.campaignId) || groups.get(ad.adGroupId) !== ad.campaignId) missingSmartParents++;
+        for (const id of ad.creativeIds) {
+          if (creativeParents.has(id) && creativeParents.get(id) !== ad.id) sharedCreativeReferences++;
+          creativeParents.set(id, ad.id);
+          const creative = legacy.get(id);
+          if (!creative) missingCreativeReferences++;
+          else if (creative.campaignId !== ad.campaignId || creative.adGroupId !== ad.adGroupId) conflictingCreativeParents++;
+        }
+      }
+      smartProof = { smartAds: inventories.smart_ad.totalCount, missingSmartParents,
+        missingCreativeReferences, conflictingCreativeParents, sharedCreativeReferences,
+        missingCreativeIds: inventories.smart_ad.rows.reduce((sum, row) => sum + (row.creativeItems ?? 0) - row.creativeIds.length, 0),
+        unknownCampaignTypes: inventories.ad.rows.filter(row => !['MANUAL', 'SMART_PLUS', 'UPGRADED_SMART_PLUS'].includes(types.get(row.campaignId))).length,
+        upgradedCreativeRows: inventories.ad.rows.filter(row => types.get(row.campaignId) === 'UPGRADED_SMART_PLUS').length,
+        manualOrLegacyAdRows: inventories.ad.rows.filter(row => ['MANUAL', 'SMART_PLUS'].includes(types.get(row.campaignId))).length,
+      };
+    }
+    return { kind, sampleOnly: false, allStatuses: true, ...smartProof,
       campaigns: inventories.campaign.totalCount, adGroups: inventories.ad_group.totalCount,
       ads: inventories.ad.totalCount, missingGroupParents, missingAdParents, conflictingAdParents,
       hierarchyReconciled: missingGroupParents + missingAdParents + conflictingAdParents === 0,
@@ -97,6 +124,16 @@ async function inventoryProof(source, kind) {
   const result = await source.client.listEntityMetadata({ accessToken: source.accessToken,
     advertiserId: source.connection.externalAccountId, kind });
   return { kind, sampleOnly: false, allStatuses: true, rows: result.totalCount, pageCount: result.pageCount,
+    creativeItems: kind === 'smart_ad' ? result.rows.reduce((sum, row) => sum + row.creativeItems, 0) : undefined,
+    missingCreativeLists: kind === 'smart_ad' ? result.rows.filter(row => row.creativeItems === null).length : undefined,
+    creativeIds: kind === 'smart_ad' ? new Set(result.rows.flatMap(row => row.creativeIds)).size : undefined,
+    missingCreativeIds: kind === 'smart_ad'
+      ? result.rows.reduce((sum, row) => sum + row.creativeItems - row.creativeIds.length, 0) : undefined,
+    automationCounts: kind === 'campaign' ? Object.fromEntries(
+      ['MANUAL', 'SMART_PLUS', 'UPGRADED_SMART_PLUS', 'unknown'].map(type => [type,
+        result.rows.filter(row => type === 'unknown'
+          ? !['MANUAL', 'SMART_PLUS', 'UPGRADED_SMART_PLUS'].includes(row.automationType)
+          : row.automationType === type).length])) : undefined,
     allNamesPresent: result.rows.every(row => row.name !== null),
     allStatusesPresent: result.rows.every(row => row.status !== null),
     distinctCampaignParents: new Set(result.rows.map(row => row.campaignId)).size,

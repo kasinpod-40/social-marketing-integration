@@ -284,3 +284,35 @@ test('inventory bounds concurrent requests at four and rejects total drift betwe
   await assert.rejects(drift.listEntityMetadata({ kind: 'campaign', advertiserId: '123', accessToken: 'private' }),
     { code: 'TIKTOK_ADS_INVENTORY_PAGINATION_UNSAFE' });
 });
+
+
+test('Smart+ and Ad v2 discovery keep all-status filters and exact report dimension distinct', async () => {
+  const urls = [];
+  const client = createClient(async url => {
+    urls.push(url);
+    return Response.json({ code: 0, data: { list: [], page_info: { total_number: 0 } } });
+  });
+  for (const kind of ['smart_plus_metadata', 'ad_v2_base']) {
+    await client.probeCapability({ kind, advertiserId: '123', accessToken: 'private', date: '2026-10-02' });
+  }
+  assert.equal(urls[0].pathname, '/open_api/v1.3/smart_plus/ad/get/');
+  assert.deepEqual(JSON.parse(urls[0].searchParams.get('filtering')), { primary_status: 'STATUS_ALL' });
+  assert.deepEqual(JSON.parse(urls[1].searchParams.get('dimensions')), ['ad_id_v2', 'stat_time_day']);
+});
+
+
+test('Smart+ full metadata uses smart_plus_ad_id rather than legacy creative identity', async () => {
+  const client = createClient(async url => {
+    assert.equal(url.pathname, '/open_api/v1.3/smart_plus/ad/get/');
+    assert.ok(JSON.parse(url.searchParams.get('fields')).includes('smart_plus_ad_id'));
+    return Response.json({ code: 0, data: { page_info: { page: 1, total_page: 1, total_number: 1 },
+      list: [{ advertiser_id: '123', smart_plus_ad_id: '456', campaign_id: '789', adgroup_id: '101',
+        creative_list: [{ smart_plus_creative_id: '202' }, { smart_plus_creative_id: '303' }] }],
+    } });
+  });
+  const result = await client.listEntityMetadata({ kind: 'smart_ad', advertiserId: '123', accessToken: 'private' });
+  assert.equal(result.rows[0].id, '456');
+  assert.equal(result.rows[0].adGroupId, '101');
+  assert.equal(result.rows[0].creativeItems, 2);
+  assert.deepEqual(result.rows[0].creativeIds, ['202', '303']);
+});

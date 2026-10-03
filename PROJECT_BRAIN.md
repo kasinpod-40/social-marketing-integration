@@ -1,3 +1,16 @@
+## TikTok Ads Smart+ source identity proof — 2026-10-04
+
+All 228 Campaigns classified: 146 MANUAL, 1 SMART_PLUS, 81 UPGRADED_SMART_PLUS, zero unknown.
+Full Smart+ inventory returned 356 Ad identities on four pages, 680 creative entries, 679 usable
+smart_plus_creative_id values, one missing/invalid ID, no missing creative lists. These are distinct
+from the 5,771 identities returned by legacy ad/get; upgraded Smart+ rows require Creative semantics.
+Ad v2 one-day base sample has 42 rows versus legacy Ad sample 66. Individual total_purchase_value
+and value_per_complete_payment requests succeeded; complete_payment_value failed. Full identity
+joins passed: zero missing/conflicting parents, every usable Smart+ creative matched the legacy
+endpoint, no shared Creative-to-Ad ownership. Legacy rows split into 5,049 upgraded Creative
+identities and 722 Manual/Legacy Ads; 356 true Smart+ Ads are separate. Attributed-event/value
+semantics, unavailable-ID policy and canonical projection remain write gates; no business mutation.
+
 ## TikTok Ads full completion scope — 2026-10-03
 
 Latest user authorization expands delivery to all shared Paid master tables, Ad-level facts/Top Ads,

@@ -18,6 +18,12 @@ const CAPABILITIES = Object.freeze({
   ad_purchase: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['total_complete_payment', 'total_purchase_value'] },
   ad_purchase_count: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['complete_payment'] },
   ad_purchase_value: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['total_complete_payment_value'] },
+  smart_plus_metadata: { path: 'smart_plus/ad/get/', allStatuses: true,
+    fields: ['ad_id', 'smart_plus_ad_id', 'campaign_id', 'adgroup_id', 'creative_list'] },
+  ad_v2_base: { level: 'AUCTION_AD', dimension: 'ad_id_v2', metrics: ['spend', 'impressions', 'clicks'] },
+  ad_total_purchase_value: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['total_purchase_value'] },
+  ad_web_purchase_value: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['complete_payment_value'] },
+  ad_purchase_average_value: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['value_per_complete_payment'] },
   ad_purchase_roas: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['complete_payment_roas'] },
 });
 export const TIKTOK_ADS_CAPABILITY_KINDS = Object.freeze(Object.keys(CAPABILITIES));
@@ -128,6 +134,7 @@ export class TikTokAdsApiClient {
     url.searchParams.set('advertiser_id', advertiserId);
     url.searchParams.set('page', '1');
     url.searchParams.set('page_size', '1');
+    if (spec.allStatuses) url.searchParams.set('filtering', JSON.stringify({ primary_status: 'STATUS_ALL' }));
     if (!spec.path) {
       const date = requireIsoDate(input.date);
       url.searchParams.set('report_type', 'BASIC');
@@ -195,14 +202,17 @@ export class TikTokAdsApiClient {
 
   /** Full inventory ใช้ STATUS_ALL และ fields ที่จำเป็น; กำหนดเพดาน 10,000 แถว ไม่ถือว่า sample ครบ */
   async listEntityMetadata(input = {}) {
-    const kinds = { campaign: ['campaign', 'campaign_name'], ad_group: ['adgroup', 'adgroup_name'], ad: ['ad', 'ad_name'] };
+    const kinds = { campaign: ['campaign', 'campaign_name', 'campaign_id'],
+      ad_group: ['adgroup', 'adgroup_name', 'adgroup_id'], ad: ['ad', 'ad_name', 'ad_id'],
+      smart_ad: ['smart_plus/ad', 'ad_name', 'smart_plus_ad_id'] };
     if (!Object.hasOwn(kinds, input.kind)) throw new TypeError('Unsupported TikTok Ads inventory');
-    const [resource, nameField] = kinds[input.kind];
+    const [resource, nameField, idField] = kinds[input.kind];
     const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
-    const fields = ['advertiser_id', `${resource}_id`, nameField, 'operation_status'];
-    if (input.kind === 'campaign') fields.push('objective_type');
+    const fields = ['advertiser_id', idField, nameField, 'operation_status'];
+    if (input.kind === 'campaign') fields.push('objective_type', 'campaign_automation_type');
     else fields.push('campaign_id');
     if (input.kind === 'ad') fields.push('adgroup_id', 'video_id', 'image_ids', 'ad_format');
+    if (input.kind === 'smart_ad') fields.push('adgroup_id', 'creative_list');
     if (input.kind === 'ad_group') fields.push('optimization_goal', 'conversion_window', 'promotion_type');
     const result = await this.#listCampaignRows({ accessToken: requireText(input.accessToken, 'accessToken'),
       prefix: 'TIKTOK_ADS_INVENTORY', maxPages: 100, concurrency: 4, urlForPage: page => {
@@ -216,7 +226,7 @@ export class TikTokAdsApiClient {
       } });
     const ids = new Set();
     const rows = result.rows.map(row => {
-      const id = requireDigits(row?.[`${resource}_id`], `${resource}_id`);
+      const id = requireDigits(row?.[idField], idField);
       if (ids.has(id) || (row.advertiser_id != null && String(row.advertiser_id) !== advertiserId)) {
         throw permanentError('TikTok Ads inventory identity conflict', { code: 'TIKTOK_ADS_INVENTORY_IDENTITY_CONFLICT' });
       }
@@ -225,10 +235,17 @@ export class TikTokAdsApiClient {
         || row.image_ids.some(value => typeof value !== 'string' || !value.trim()))) {
         throw permanentError('TikTok Ads image inventory is malformed', { code: 'TIKTOK_ADS_INVENTORY_ASSET_INVALID' });
       }
+      if (row.creative_list != null && (!Array.isArray(row.creative_list) || row.creative_list.length > 100)) {
+        throw permanentError('TikTok Ads creative inventory is malformed', { code: 'TIKTOK_ADS_INVENTORY_ASSET_INVALID' });
+      }
       return Object.freeze({ id, kind: input.kind, name: optionalText(row[nameField]),
         status: optionalText(row.operation_status), objective: optionalText(row.objective_type),
+        automationType: optionalText(row.campaign_automation_type),
         campaignId: input.kind === 'campaign' ? id : requireDigits(row.campaign_id, 'campaign_id'),
-        adGroupId: input.kind === 'ad' ? requireDigits(row.adgroup_id, 'adgroup_id') : null,
+        adGroupId: ['ad', 'smart_ad'].includes(input.kind) ? requireDigits(row.adgroup_id, 'adgroup_id') : null,
+        creativeItems: Array.isArray(row.creative_list) ? row.creative_list.length : null,
+        creativeIds: Object.freeze(Array.isArray(row.creative_list)
+          ? row.creative_list.map(creative => optionalDigits(creative?.smart_plus_creative_id)).filter(Boolean) : []),
         videoId: optionalText(row.video_id), imageIds: Object.freeze(row.image_ids ?? []),
         adFormat: optionalText(row.ad_format), optimizationGoal: optionalText(row.optimization_goal),
         conversionWindow: optionalText(row.conversion_window), promotionType: optionalText(row.promotion_type),

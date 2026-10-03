@@ -82,3 +82,25 @@ endpoint identity as the upgraded Smart+ Ad ID. Automation/Smart+ and source ass
 be proved before admitting those master/fact writes. Individual complete_payment and
 complete_payment_roas requests succeeded; the value hypothesis failed. Metric semantics,
 missing-row/zero behavior and attribution remain unapproved from field presence alone.
+
+## Smart+ identity proof — 2026-10-04
+
+Campaign automation classification is complete: 146 MANUAL / 1 SMART_PLUS / 81 UPGRADED_SMART_PLUS,
+no unknown. Smart+ endpoint full STATUS_ALL inventory: 356 true Ad IDs, four pages, 680 creative
+entries, 679 usable smart_plus_creative_id references, one missing/invalid reference. Missing references
+must remain unavailable; no title/position/generated Creative key is permitted. Before writes,
+join these IDs to the legacy Ad endpoint and verify Campaign/Ad Group parents. Reports use a single
+chosen identity dimension: ad_id_v2 for true Ads, legacy ad_id for upgraded Creative grain. Never
+combine both as Ads or sum them. Account, Campaign, Ad and Creative grains remain alternatives.
+
+Independent field probes accept total_purchase_value and value_per_complete_payment; they reject
+complete_payment_value. Event definition, attribution, missing-row behavior, currency and arithmetic
+consistency are still required before metric mapping. GET-only source presence does not admit writes.
+Official [Smart+ Ad endpoint and query fields](https://github.com/tiktok/tiktok-business-api-sdk/blob/main/js_sdk/docs/AdApi.md#smartPlusAdGet)
+and [filter](https://github.com/tiktok/tiktok-business-api-sdk/blob/main/js_sdk/docs/FilteringSmartPlusAdGet.md).
+
+Full cross-endpoint proof passed: all 679 usable Smart+ creative references match legacy Ad endpoint
+identities with the same Campaign/Ad Group; zero missing/conflicting parent and zero shared Creative
+ownership. The 5,771 legacy endpoint rows split into 5,049 upgraded Creative identities and 722
+Manual/Legacy Ad identities. The 356 Smart+ Ad IDs are separate. Canonical master implementation
+must preserve this partition; every unavailable Creative reference remains null/unavailable.

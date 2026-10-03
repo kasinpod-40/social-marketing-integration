@@ -2816,3 +2816,31 @@ child identity after reviewed merge/deploy.
 - The customer-provided Base export has the exact Production Worker Base token. All six Production D1-configured Report table IDs match one table in that export; their display names are Thai. Only these six scoped tables were matched. This reproduces the exact-name failure without needing permission to any other customer table.
 - The candidate Weekly processor now passes the six IDs from hydrated Production D1 runtime config to the source collector. It reads only those tables by ID, performs no whole-Base table inventory in this path and rejects missing, malformed or duplicate IDs before record reads.
 - Focused tests 7/7, full unit 3473/3473, Worker runtime 19/19, Report reliability 106/106, `npm run check`, deploy dry-run and dependency audit pass. No Production deployment, Lark write, notification send, DLQ redrive, schedule or flag change occurred. Live Lark API readback remains unavailable to the local App (HTTP 403).
+
+### Implementation result — identity/metric source proof continuation 2026-10-04
+
+- GET-only scope extends verified inventory to Campaign automation classifications, Smart+ endpoint
+  field presence and separate ad_id_v2 base report. Fixed purchase value / average-value hypotheses
+  are requested individually; a successful field never establishes cross-channel/event equivalence.
+- Source IDs, raw enum values and source rows remain private. Automation output counts only fixed
+  MANUAL/SMART_PLUS/UPGRADED_SMART_PLUS labels; unknown values are counted as unknown.
+- Required tests: fixed Smart+ all-status request, distinct Ad v2 dimension, aggregate classification
+  privacy, full gates and live source proof. No business writes or schedule admission in this phase.
+- Implementation result: live candidate `3aba1b07` proved automation classification for all 228
+  Campaigns: 146 MANUAL, 1 SMART_PLUS, 81 UPGRADED_SMART_PLUS, zero unknown. Smart+ GET sample
+  reported 356 Ads with smart_plus_ad_id / Campaign / Ad Group / creative_list fields. Ad v2
+  base sample reported 42 rows for 2026-10-02 versus 66 with legacy ad_id; never mix these grains.
+- Independent total_purchase_value and value_per_complete_payment probes succeeded (48 rows),
+  complete_payment_value failed. This resolves request-name rejection only; attributed event,
+  value/count equivalence, zero semantics and full identity joins remain gates before writes.
+- Preview URLs restored disabled and deployment unchanged. No business or Queue writes.
+- Complete Smart+ proof candidate `eaa50523`: 356 Ads / 4 pages, 680 creative entries, 679
+  usable IDs, one unavailable ID. Cross-endpoint comparison matched every usable creative reference;
+  zero missing/conflicting parents or shared Creative-to-Ad ownership. Legacy Ad endpoint splits
+  into 5,049 upgraded Creative identities and 722 Manual/Legacy Ad identities. No unknown Campaign types.
+- Gates passed: 27 focused tests, check (877 files, zero cycles), 3,528 unit tests, 20 Workers tests,
+  Report reliability 106/106, production dependency audit zero, normal/isolated dry-run and diff check.
+  Read-only inventory PR #900 merged `c765433b`; identity proof is prepared for its own reviewed PR.
+- Remaining delivery: canonical master/Creative mapping (preserving the one unavailable ID),
+  all-status Campaign and true-Ad history reconciliation from 2025-09-01, bounded 90-day Lark
+  projection/readback, Summary/Report/AI and source schedule with a real automatic cycle.
