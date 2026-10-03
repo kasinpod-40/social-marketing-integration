@@ -1,5 +1,14 @@
 # Project Brain — Social Marketing Data Integration
 
+## TikTok Ads controlled Lark projection preparation — 2026-10-03
+
+After complete historical D1 and read-only schema proof, authorized continuation prepares one
+closed-day projection within the existing 90-day cache. It uses advertiser-based Paid canonical keys,
+existing repository/sync-engine and explicit-null updates. All table plans precede writes; bounded
+Coverage/capacity/lock/lease gates and zero-diff readback prevent false success. Campaign identity only
+is written until complete metadata is reconciled. Summary, Report admission and schedules remain off.
+Live UAT and replay are pending; this entry does not claim Lark Business completion.
+
 ## TikTok Ads historical D1 and Lark schema proof — 2026-10-03
 
 User requested history starting 2025-09-01. All 397 closed dates through 2026-10-02 passed source

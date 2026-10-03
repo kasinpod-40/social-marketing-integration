@@ -597,7 +597,7 @@ async function verifyD1DailyIdentities({ db, customerKey, candidates }) {
   return verified;
 }
 
-async function countLarkRecords(client, tableId) {
+export async function countLarkRecords(client, tableId) {
   const response = await client.requestBitableJson(
     `/open-apis/bitable/v1/apps/${encodeURIComponent(client.appToken)}/tables/${encodeURIComponent(tableId)}/records?page_size=1`,
     { method: 'GET' },

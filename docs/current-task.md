@@ -93,6 +93,28 @@ TIKTOK_ADS_LARK_SCHEMA                    = LIVE_API_PASS_CAMPAIGN_DAILY_SUMMARY
 
 ### Implementation result — TikTok Ads Production preparation
 
+#### Controlled Lark Campaign/Daily projection — authorized continuation 2026-10-03
+
+- Objective: continue the authorized end-to-end TikTok Ads work after historical D1 and live schema
+  proof. In scope: operator GET preview and separately gated POST for one closed day within the
+  existing 90-day cache, using existing Paid canonical rows, repository, sync engine and locks.
+  First live UAT is `2026-10-02`; source account is the validated connection, not a URL parameter.
+- Campaign master writes identity fields only; name/status/objective remain untouched until complete
+  metadata source reconciliation. Daily sends proved Spend/Impressions/Clicks and shared derived rates;
+  unproved metrics remain null and clear stale values on update. All destination plans must pass before
+  writes, and zero-diff live readback must pass before success. Partial writes retry by stable key.
+- Out of scope for this slice: historical Lark materialization, retention deletes, Summary writes,
+  Report admission and Queue/schedule changes. No other connector/table writes or D1 source mutations.
+- Acceptance: exact Campaign/Daily identity/value readback, zero-change replay, malformed/partial
+  Coverage rejection, cache/capacity/lock/lease gates, partial-write recovery and sanitized responses.
+  Required checks: focused tests, full default gates, production dependency audit and reviewed live UAT.
+- Implementation result: scoped operator and projection code prepared; focused tests 9/9 passed,
+  including all-table schema preflight, duplicate destination, partial-write recovery, explicit-null
+  clearing and readback failure. Default gates passed: check (875 source files, zero cycles), unit
+  3,502/3,502, Workers 20/20, Report reliability 106/106, production dependency audit zero vulnerabilities,
+  deploy dry-run and diff check. One additional preflight regression passed after the full suite.
+  Reviewed live UAT/replay remain pending; no Lark records written yet.
+
 #### Historical D1 scope and Lark API schema read — authorized 2026-10-03
 
 - Latest user instruction authorizes TikTok Ads historical retrieval beginning `2025-09-01` and
