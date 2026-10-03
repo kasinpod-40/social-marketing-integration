@@ -15,16 +15,20 @@ export async function loadTikTokAdsAuthorizedSource({ request, env, dependencies
     return Object.freeze({ status: 400 });
   }
 
+  // Preview entry เรียกก่อน Worker hydration ปกติ จึง hydrate หลัง auth/query guard เท่านั้น
+  const runtimeEnv = dependencies.hydrateAuthorizedEnv
+    ? await dependencies.hydrateAuthorizedEnv(env)
+    : env;
   const createRuntime = dependencies.createRuntime ?? createCustomerConnectionRuntime;
   const loadAdsConfig = dependencies.loadAdsConfig ?? loadTikTokAdsRuntimeConfig;
   const createClient = dependencies.createClient ?? ((config) => new TikTokAdsApiClient(config));
-  const runtime = createRuntime(env);
+  const runtime = createRuntime(runtimeEnv);
   if (runtime.config.environment !== 'production'
     || runtime.config.customerProfile !== 'chemistry_k'
     || runtime.config.customerKey !== 'chemistry_k') {
     throw new Error('TikTok Ads source requires the exact customer Production runtime');
   }
-  const adsConfig = loadAdsConfig(env);
+  const adsConfig = loadAdsConfig(runtimeEnv);
   const connection = await runtime.store.findConnectionByCustomerConnector({
     customerKey: runtime.config.customerKey,
     connectorKey: 'tiktok_ads',
