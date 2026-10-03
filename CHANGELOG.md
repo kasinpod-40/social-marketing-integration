@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-03 — TikTok Ads planned Report grain
+
+- Align the planned Paid Ads Report source with proved Campaign-day `none/none` facts, keeping ad-level Top Ads unavailable and unproved metrics null.
+- Keep Report admission disabled until Lark schema, period Coverage and source-to-report reconciliation pass.
+
 ## 2026-10-03 — TikTok Ads one-day D1-only UAT
 
 - Previewed all 16 Campaign rows for 2026-10-01 through a 0%-traffic Worker candidate, then wrote 16 unique Paid Ads D1 facts and reconciled Coverage/sync log.

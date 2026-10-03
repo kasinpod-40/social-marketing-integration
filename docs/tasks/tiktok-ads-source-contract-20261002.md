@@ -24,7 +24,7 @@ The first source proof requests only `spend`, `impressions`, and `clicks`. Treat
 
 Example (illustrative only, **not** customer data): account key `demo_account`, advertiser `123`, campaign `456`, date `2026-10-01`, spend `12.34` account-currency units maps to `12_340_000` micros and key `tiktok_ads:demo_account:campaign:456:2026-10-01:none:none`; if revenue is unavailable, `conversion_value_micros=NULL`, so ROAS is `NULL`.
 
-The currently planned TikTok Report adapter expects account-grain summary plus ad-grain Top Ads, whereas the approved Campaign Summary/D1 retention path expects campaign-grain facts. Do **not** flip that adapter active as-is: first make its summary selection campaign-grain and Top Ads unavailable/explicitly not observed, or obtain separately proven ad-grain source data. Do not sum campaign `reach` across campaigns because unique audiences overlap.
+The planned TikTok Report adapter now selects campaign-grain `none/none` facts and explicitly marks Top Ads `not_observed`; it remains `planned` until period Coverage and source-to-report reconciliation pass. No ad-grain rankings may be inferred from Campaign rows. Do not sum campaign `reach` across campaigns because unique audiences overlap.
 
 ## Acceptance and gates before connector implementation
 

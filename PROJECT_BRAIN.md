@@ -1,5 +1,12 @@
 # Project Brain — Social Marketing Data Integration
 
+## TikTok Ads Report grain preparation — 2026-10-03
+
+The planned Report contract selects only the proven `campaign` / `none` / `none` D1 facts. Ad-level
+Top Ads is `not_observed`; unknown conversion, value, reach and video metrics remain null. Report
+status stays `planned`. One-day D1 Coverage does not prove an arbitrary Report period complete, so
+period-level Coverage, Lark schema and source-to-report reconciliation remain activation gates.
+
 ## TikTok Ads Campaign-day base metrics — 2026-10-02
 
 On 2026-10-03, PR #891 merged as `03dbdf80`. A 0%-traffic candidate with the explicit D1 write
@@ -20,7 +27,7 @@ Clicks with pagination metadata for 2026-10-01; the prior Worker was restored at
 were written. The approved first D1-only phase uses Campaign-day stable keys in existing Paid Ads tables,
 bounded full pagination, all-row validation, exact advertiser binding, a lock, sync log and readback before
 Coverage. Conversion count, purchase value, ROAS, reach and video metrics remain unknown/null. The
-Report adapter's current account/ad grain cannot be activated for these Campaign-grain facts. Lark,
+Report adapter is prepared at Campaign grain but remains planned. Lark,
 Report, Queue and schedule activation require separate proof after one-day D1 reconciliation.
 
 ## WooCommerce September–December 2025 history — 2026-09-25
