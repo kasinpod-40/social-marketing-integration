@@ -4,6 +4,19 @@ const DEFAULT_BASE_URL = 'https://business-api.tiktok.com/open_api/v1.3';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const REPORT_PAGE_SIZE = 100;
 const REPORT_MAX_PAGES = 5;
+const CAPABILITIES = Object.freeze({
+  adgroup_metadata: { path: 'adgroup/get/', fields: ['adgroup_id', 'campaign_id', 'adgroup_name',
+    'operation_status', 'optimization_goal', 'conversion_window'] },
+  ad_metadata: { path: 'ad/get/', fields: ['ad_id', 'adgroup_id', 'campaign_id', 'ad_name',
+    'operation_status', 'video_id', 'image_ids', 'tiktok_item_id', 'identity_id'] },
+  campaign_all: { level: 'AUCTION_CAMPAIGN', dimension: 'campaign_id',
+    metrics: ['spend', 'impressions', 'clicks'] },
+  ad_base: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['spend', 'impressions', 'clicks'] },
+  ad_delivery: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['reach', 'frequency'] },
+  ad_video: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['video_play_actions', 'video_watched_2s', 'video_watched_6s'] },
+  ad_conversion: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['conversion', 'cost_per_conversion'] },
+  ad_purchase: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['total_complete_payment', 'total_purchase_value'] },
+});
 
 export class TikTokAdsApiClient {
   constructor(input = {}) {
@@ -99,6 +112,44 @@ export class TikTokAdsApiClient {
         impressions: Object.hasOwn(metrics ?? {}, 'impressions'),
         clicks: Object.hasOwn(metrics ?? {}, 'clicks'),
       }),
+    });
+  }
+
+  /** Discovery อ่านหนึ่งหน้าเท่านั้น; ชื่อ metric เป็น capability hypothesis จน API/semantics ผ่าน */
+  async probeCapability(input = {}) {
+    if (!Object.hasOwn(CAPABILITIES, input.kind)) throw new TypeError('Unsupported TikTok Ads capability');
+    const spec = CAPABILITIES[input.kind];
+    const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
+    const url = new URL(`${this.baseUrl}/${spec.path ?? 'report/integrated/get/'}`);
+    url.searchParams.set('advertiser_id', advertiserId);
+    url.searchParams.set('page', '1');
+    url.searchParams.set('page_size', '1');
+    if (!spec.path) {
+      const date = requireIsoDate(input.date);
+      url.searchParams.set('report_type', 'BASIC');
+      url.searchParams.set('data_level', spec.level);
+      url.searchParams.set('dimensions', JSON.stringify([spec.dimension, 'stat_time_day']));
+      url.searchParams.set('metrics', JSON.stringify(spec.metrics));
+      url.searchParams.set('start_date', date);
+      url.searchParams.set('end_date', date);
+      url.searchParams.set('filtering', JSON.stringify([{ field_name: spec.level === 'AUCTION_AD'
+        ? 'ad_status' : 'campaign_status', filter_type: 'IN', filter_value: JSON.stringify(['STATUS_ALL']) }]));
+    }
+    const payload = await this.#get(url, requireText(input.accessToken, 'accessToken'), 'TIKTOK_ADS_CAPABILITY');
+    const list = payload.data?.list;
+    if (!Array.isArray(list) || list.length > 1) throw transientError('TikTok Ads capability response malformed',
+      { code: 'TIKTOK_ADS_CAPABILITY_INVALID_RESPONSE' });
+    const sample = list[0];
+    if (spec.path && sample?.advertiser_id != null && String(sample.advertiser_id) !== advertiserId) {
+      throw permanentError('TikTok Ads capability owner mismatch', { code: 'TIKTOK_ADS_CAPABILITY_OWNER_CONFLICT' });
+    }
+    const values = spec.path ? sample : sample?.metrics;
+    const fields = spec.fields ?? spec.metrics;
+    return Object.freeze({ kind: input.kind, sampleOnly: true, rowReturned: list.length > 0,
+      totalCount: nonNegativeInteger(payload.data?.page_info?.total_number, 'total_number'),
+      fieldsPresent: Object.freeze(Object.fromEntries(fields.map(field => [field, Object.hasOwn(values ?? {}, field)]))),
+      dateMatched: spec.path ? null : sample?.dimensions?.stat_time_day === input.date
+        || sample?.dimensions?.stat_time_day === `${input.date} 00:00:00`,
     });
   }
 

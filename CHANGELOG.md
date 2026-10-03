@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-03 — TikTok Ads full completion preparation
+
+- Record the user-approved complete Paid Ads delivery scope and source/model gates.
+- Prepare exact-owner Campaign metadata D1 enrichment and Lark display with no-change replay,
+  shared history writes, renewed leases, audit log and all-field readback.
+- Add bounded GET-only Ad Group/Ad/report capability probes; preserve unknown metrics and
+  require an all-status historical audit before broad source admission.
+
 ## 2026-10-03 — TikTok Ads full Campaign metadata read preparation
 
 - Extend the existing client pagination and GET-only source probe for bounded full Campaign metadata

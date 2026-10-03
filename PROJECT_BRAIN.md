@@ -1,3 +1,13 @@
+## TikTok Ads full completion scope — 2026-10-03
+
+Latest user authorization expands delivery to all shared Paid master tables, Ad-level facts/Top Ads,
+source-supported event metrics, Lark/Report/AI and automatic scheduling. The complete model and staged
+source/write gates are in `docs/tasks/tiktok-ads-full-completion-20261003.md`. Existing verified
+Campaign base facts are retained; all-status history must also be audited because TikTok's default
+report filter excludes deleted objects. Campaign metadata proved 220 source rows / three pages,
+with all 119 retained identities matched. Enrichment implementation and capability probes are
+prepared; live metadata writes, additional grains/metrics, Report and schedule remain pending.
+
 # Project Brain — Social Marketing Data Integration
 
 ## TikTok Ads Campaign/Daily Lark UAT — live pass 2026-10-03

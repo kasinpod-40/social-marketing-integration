@@ -1,5 +1,9 @@
 # Social Marketing Data Integration
 
+TikTok Ads full delivery is in progress; verified Campaign base history and one-day Lark UAT
+are complete, while full master/Ad/event, Report/AI and schedule admission remain gated.
+See [current task](docs/current-task.md) and [full completion contract](docs/tasks/tiktok-ads-full-completion-20261003.md).
+
 ## Instagram token renewal
 
 Customer Production currently reads `META_INSTAGRAM_ACCESS_TOKEN` from the Sync Worker Secret. The customer
