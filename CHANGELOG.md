@@ -1,3 +1,12 @@
+## TikTok Ads Smart+ identity discovery — 2026-10-04
+
+- เพิ่ม GET-only Campaign automation classification, Smart+ full inventory และ cross-endpoint
+  parent/creative proof; แยก smart_plus_ad_id ออกจาก ID ที่ legacy Ad endpoint คืน
+- เพิ่ม probe รายงาน ad_id_v2 และแยก metric total_purchase_value / value_per_complete_payment
+  จากชื่อที่ API ปฏิเสธ; การรับ field ยังไม่ใช่ approval ของ event/currency/attribution semantics
+- Live: 146 Manual / 1 Smart+ / 81 Upgraded Smart+ Campaigns; 356 Smart+ Ads / 4 หน้า และ
+  680 creative entries (679 IDs ผ่านรูปแบบ); ไม่มี business writes หรือ production traffic change
+
 ## TikTok Ads all-status inventory preparation — 2026-10-04
 
 - เพิ่ม GET-only full Campaign/Ad Group/Ad inventory ใช้ STATUS_ALL และ pagination ร่วมแบบจำกัด

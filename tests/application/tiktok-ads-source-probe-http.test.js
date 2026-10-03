@@ -237,3 +237,39 @@ test('complete hierarchy proof checks actual parents and asset ambiguity without
     assert.doesNotMatch(JSON.stringify(body), /private|missing"/);
   }
 });
+
+
+test('automation classification counts only fixed enums and hides unknown source values', async () => {
+  const { handler } = setup({ inventories: { campaign: { totalCount: 4, pageCount: 1,
+    rows: ['MANUAL', 'SMART_PLUS', 'UPGRADED_SMART_PLUS', 'private-unknown'].map(automationType => ({
+      name: 'private-name', status: 'ENABLE', campaignId: 'private-parent', adGroupId: null,
+      videoId: null, imageIds: [], automationType,
+    })) } } });
+  const response = await handler({ request: request(), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' },
+    url: new URL(url.href + '?inventory=campaign') });
+  const body = await response.json();
+  assert.deepEqual(body.probe.automationCounts, { MANUAL: 1, SMART_PLUS: 1, UPGRADED_SMART_PLUS: 1, unknown: 1 });
+  assert.doesNotMatch(JSON.stringify(body), /private/);
+});
+
+
+test('Smart+ hierarchy separates creative endpoint rows from true Ad identities', async () => {
+  const inventories = {
+    campaign: { totalCount: 1, rows: [{ id: 'private-campaign', automationType: 'UPGRADED_SMART_PLUS' }] },
+    ad_group: { totalCount: 1, rows: [{ id: 'private-group', campaignId: 'private-campaign' }] },
+    ad: { totalCount: 1, rows: [{ id: 'private-creative', campaignId: 'private-campaign',
+      adGroupId: 'private-group', videoId: null, imageIds: [] }] },
+    smart_ad: { totalCount: 1, rows: [{ id: 'private-smart-ad', campaignId: 'private-campaign',
+      adGroupId: 'private-group', creativeItems: 1, creativeIds: ['private-creative'] }] },
+  };
+  const { handler } = setup({ inventories });
+  const response = await handler({ request: request(), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' },
+    url: new URL(url.href + '?inventory=smart_hierarchy') });
+  const body = await response.json();
+  assert.equal(body.probe.smartAds, 1);
+  assert.equal(body.probe.upgradedCreativeRows, 1);
+  assert.equal(body.probe.manualOrLegacyAdRows, 0);
+  assert.equal(body.probe.missingCreativeReferences, 0);
+  assert.equal(body.probe.conflictingCreativeParents, 0);
+  assert.doesNotMatch(JSON.stringify(body), /private/);
+});
