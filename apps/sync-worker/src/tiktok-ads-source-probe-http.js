@@ -22,12 +22,16 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
       const capability = isCampaignProbe && url.searchParams.get('capability');
       const capabilityDate = url.searchParams.get('date');
       const metrics = isCampaignProbe && url.searchParams.get('metrics') === 'full';
+      const metricGrain = url.searchParams.get('grain') ?? 'ad';
       const daily = isCampaignProbe && url.searchParams.get('daily') === 'full';
       const inventory = isCampaignProbe && url.searchParams.get('inventory');
       const source = await loadTikTokAdsAuthorizedSource({
         request, env, dependencies,
         validateRequest: () => isCampaignProbe
-          ? url.searchParams.size === 0 || ((daily || metrics) && url.searchParams.size === 2 && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? '')) || (metadata && url.searchParams.size === 1)
+          ? url.searchParams.size === 0 || ((daily && url.searchParams.size === 2 || metrics
+              && ['ad', 'campaign'].includes(metricGrain)
+              && url.searchParams.size === 2 + Number(url.searchParams.has('grain')))
+              && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? '')) || (metadata && url.searchParams.size === 1)
             || (['campaign', 'ad_group', 'ad', 'smart_ad', 'hierarchy', 'smart_hierarchy'].includes(inventory) && url.searchParams.size === 1)
             || (TIKTOK_ADS_CAPABILITY_KINDS.includes(capability)
               && url.searchParams.size === 2 && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? ''))
@@ -44,7 +48,7 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
       const result = daily || metrics
         ? await (metrics ? proveTikTokAdsDailyMetrics : proveTikTokAdsDailyGrains)({ client: source.client, accessToken: source.accessToken,
           advertiserId: source.connection.externalAccountId, customerKey: source.runtime.config.customerKey,
-          accountKey: source.runtime.config.customerKey, date: capabilityDate, db: env.MKT_STATE_DB })
+          accountKey: source.runtime.config.customerKey, date: capabilityDate, grain: metricGrain, db: env.MKT_STATE_DB })
         : inventory
         ? await inventoryProof(source, inventory)
         : capability
@@ -141,6 +145,14 @@ async function inventoryProof(source, kind) {
         result.rows.filter(row => type === 'unknown'
           ? !['MANUAL', 'SMART_PLUS', 'UPGRADED_SMART_PLUS'].includes(row.automationType)
           : row.automationType === type).length])) : undefined,
+    adFormatCounts: kind === 'ad' ? Object.fromEntries(['SINGLE_VIDEO', 'CAROUSEL_ADS', 'unknown'].map(format => [format,
+      result.rows.filter(row => format === 'unknown' ? !['SINGLE_VIDEO', 'CAROUSEL_ADS'].includes(row.adFormat)
+        : row.adFormat === format).length])) : undefined,
+    videoFormatWithoutVideoId: kind === 'ad' ? result.rows.filter(row => row.adFormat === 'SINGLE_VIDEO' && !row.videoId).length : undefined,
+    distinctPostIds: kind === 'ad' ? new Set(result.rows.map(row => row.postId).filter(Boolean)).size : undefined,
+    videoWithoutVideoIdWithPost: kind === 'ad' ? result.rows.filter(row => row.adFormat === 'SINGLE_VIDEO' && !row.videoId && row.postId).length : undefined,
+    carouselWithPost: kind === 'ad' ? result.rows.filter(row => row.adFormat === 'CAROUSEL_ADS' && row.postId).length : undefined,
+    carouselWithoutImages: kind === 'ad' ? result.rows.filter(row => row.adFormat === 'CAROUSEL_ADS' && !row.imageIds.length).length : undefined,
     allNamesPresent: result.rows.every(row => row.name !== null),
     allStatusesPresent: result.rows.every(row => row.status !== null),
     distinctCampaignParents: new Set(result.rows.map(row => row.campaignId)).size,

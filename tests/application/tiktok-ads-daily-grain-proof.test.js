@@ -76,3 +76,15 @@ test('metric probe reports foreign base identities and propagates transient fami
   };
   await assert.rejects(proveTikTokAdsDailyMetrics(f.input), { code: 'TIKTOK_ADS_ALL_STATUS_DAILY_NETWORK_ERROR' });
 });
+
+test('Campaign metric proof uses its own fixed dimension/master and never interprets true Ad rows as Campaigns', async () => {
+  const f = fixture(); const result = await proveTikTokAdsDailyMetrics({ ...f.input, grain: 'campaign' });
+  assert.equal(result.grain, 'campaign'); assert.equal(result.trueAdDimension, false);
+  assert.equal(result.families.base.baseIdentityMatched, true);
+  assert.equal(result.families.base.missingMasters, 0);
+  assert.equal(f.calls.every(call => call.grain === 'campaign'), true);
+  assert.doesNotMatch(JSON.stringify(result), /private|1.23|\b11\b/u);
+  await assert.rejects(proveTikTokAdsDailyMetrics({ ...f.input, grain: 'creative' }), { code: 'TIKTOK_ADS_DAILY_PROOF_GRAIN_INVALID' });
+  f.rows.campaign[0].dimensions = { ad_id_v2: '33', stat_time_day: date };
+  await assert.rejects(proveTikTokAdsDailyMetrics({ ...f.input, grain: 'campaign' }), { code: 'TIKTOK_ADS_DAILY_PROOF_SOURCE_IDENTITY' });
+});

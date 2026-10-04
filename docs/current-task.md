@@ -2999,3 +2999,27 @@ or automatic schedule admission yet.
 - Creative guard gates passed9focused /3,557unit /24Workers /106Report reliability,
   check/hygiene, normal dry-run; dependencies unchanged with zero production vulnerabilities.
   Independent live Report parity rerun passed all8windows with zero invented Creative references.
+
+### Implementation result — historical and Lark closeout / Campaign metric proof 2026-10-04
+
+STATUS_ALL source/D1 preview-write-readback all796operations passed:398dates,Campaign5746 /Ad16945.
+Independent SQL confirms both Coverage datasets398days, expected=observed,failed0 and active locks0.
+Lark90day2026-07-06..10-03 containsCampaign1361 /Ad4382(5743total);all26ranges readback
+and all-range replay zero changes. SharedDailytotal12711 below17000. Summary14months396rows
+all-field readback and all-month replay zero changes. CF cleanup401 repaired using refreshedauth
+after Lark completion;previews disabled and954f8f3b100%deployment unchanged.
+
+Next GET-only proof extends fixed metric families to Campaign grain and reports fixed documented
+Ad format counts (SINGLE_VIDEO/CAROUSEL_ADS/unknown) to avoid interpreting video covers as images.
+No new metric/event writes or Report/schedule admission from field presence. Official ad/create
+format examples: https://business-api.tiktok.com/gateway/docs/index?doc_id=1774482920012801 .
+
+- Campaign full metric GET passed2025-09-01/2026-10-03:15identities each; delivery/video/
+  optimization/web families match base and all fields numeric. App family11/13rows remains partial.
+  Source post GET candidate30af2b86 proved all509 video Ads withoutvideo_id and37 Carousel Ads
+  withoutimage_ids have tiktok_item_id (439distinctposts acrossfullinventory). Source IDs are
+  retained only internally; response exposes counts. Lark Creative enum supportsvideo/carousel,
+  source_content_id exists; post enum absent, so never invent it. Post reuse/type/collision proof
+  and mapping remain next. Preview disabled and active deployment unchanged.
+- Gates passed:3559unit/24Workers/106Reportreliability,check882files/zero cycles/hygiene,
+  isolateddryrun and diffcheck. Dependencies unchanged; priorproductionaudit zero vulnerabilities.
