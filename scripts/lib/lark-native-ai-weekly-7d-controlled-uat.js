@@ -6,7 +6,7 @@ import {
 } from '../../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
 import { addDaysDateOnly } from '../../packages/application/src/reports/report-period.js';
 import { createReportId } from '../../packages/application/src/storage/marketing-history-contract.js';
-import { getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
+import { createReportPlatformAdapterRegistry, getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
 import { stableStringify } from '../../packages/application/src/use-cases/build-report-snapshot.js';
 import { weekly7dControlledUatError } from '../../packages/application/src/reports/build-lark-native-ai-weekly-7d-controlled-uat.js';
 
@@ -51,7 +51,7 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
     ? await client.searchRecordsByFieldValues({
       tableId: tables.snapshots,
       fieldName: 'report_id',
-      values: buildExactWeeklyReportIds(settings, customerProfile, targetPeriodEnd),
+      values: buildExactWeeklyReportIds(settings, customerProfile, targetPeriodEnd, input.tikTokAdsReady === true),
     })
     : await client.searchRecordsByFieldValues({
       tableId: tables.snapshots,
@@ -124,10 +124,12 @@ export async function collectLarkNativeAiWeekly7dControlledUatSource(input = {})
   });
 }
 
-function buildExactWeeklyReportIds(settings, customerProfile, periodEnd) {
+function buildExactWeeklyReportIds(settings, customerProfile, periodEnd, tikTokAdsReady = false) {
   const periodStart = addDaysDateOnly(periodEnd, -6);
   return settings.map((setting) => {
-    const contract = getReportPlatformContract(setting.platform);
+    const contract = setting.platform === 'tiktok_ads' && tikTokAdsReady
+      ? createReportPlatformAdapterRegistry({ tikTokAdsReady: true }).get('tiktok_ads').contract
+      : getReportPlatformContract(setting.platform);
     return createReportId({
       report_setting_key: setting.reportSettingKey,
       account_key: customerProfile,

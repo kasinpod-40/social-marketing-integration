@@ -2015,3 +2015,11 @@ replaced by the normal 03:30 Asia/Bangkok setting. Final Production Worker versi
 This proves the automatic path, while the next actual 03:30 run has not happened yet.
 The shared Report AI summary flag is still false and no provider is wired; no TikTok Ads
 AI generation is claimed. Unsupported attributed purchase/value/ROAS semantics remain null.
+
+The Monday Lark Native AI flow is independent from the optional per-Report AI provider.
+Production has Monday 09:15 Shared 7D Report and 09:30 Lark Native AI group-notification
+gates enabled. TikTok Ads' 03:30 Daily job already writes a proved 7D v2 Report, but the
+Weekly AI source still used the default eight active channel count and a planned v1
+TikTok Report identity. A reviewed gated change selects v2 only when the TikTok Ads
+Report write gate is true, including in retained D1 recovery, and requires nine aligned
+channel Reports. The first real nine-channel AI/group send remains to be verified.

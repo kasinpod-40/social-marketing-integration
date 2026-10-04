@@ -206,7 +206,7 @@ test('retained Weekly source rebuilds the eight active channels from exact D1 ma
         reportIds.push(reportId);
         if (reportId.endsWith(':youtube-organic-v1')) return null;
         const platform = reportId.match(/^chemistry_k:([^:]+):rolling:7d:/u)?.[1];
-        const capability = ['meta_ads', 'google_ads'].includes(platform)
+        const capability = ['meta_ads', 'google_ads', 'tiktok_ads'].includes(platform)
           ? 'paid_ads'
           : platform === 'woocommerce'
             ? 'commerce'
@@ -279,4 +279,33 @@ test('retained Weekly source rebuilds the eight active channels from exact D1 ma
     payload.source === 'validated_lark_report_output'
     && payload.sourceWatermark.startsWith('lark-report:')
   )), true);
+});
+
+test('retained Weekly source includes proved TikTok Ads v2 report only when ready', async () => {
+  const reportIds = [];
+  const source = await collectRetainedD1Weekly7dSource({
+    customerProfile: 'chemistry_k', targetPeriodEnd: '2026-09-06', tikTokAdsReady: true,
+    reader: {
+      async readById(reportId) {
+        reportIds.push(reportId);
+        const platform = reportId.match(/^chemistry_k:([^:]+):rolling:7d:/u)?.[1];
+        return {
+          row: { report_id: reportId, report_setting_key: `chemistry_k:${platform}:rolling:7d`,
+            customer_key: 'chemistry_k', account_key: 'chemistry_k', report_type: 'dashboard_performance_report', generated_at: 1_788_748_251_000 },
+          payload: { schemaVersion: 'report_materialization_v1', sourceReportId: reportId,
+            platformScope: platform, capability: ['meta_ads','google_ads','tiktok_ads'].includes(platform) ? 'paid_ads'
+              : platform === 'woocommerce' ? 'commerce' : platform === 'chatwoot' ? 'customer_service' : 'organic',
+            reportType: 'dashboard_performance_report',
+            period: { periodKind: 'rolling_days', windowDays: 7, periodStart: '2026-08-31', periodEnd: '2026-09-06',
+              comparisonMode: 'none', compareStart: null, compareEnd: null },
+            dataStatus: 'complete', coverageRate: 1, metricPayload: {}, collections: { dimension_metrics: [] },
+            topContent: [], topAds: [], source: 'd1', sourceWatermark: 'retained', generatedAt: 1_788_748_251_000,
+            sourceUnavailableReason: null, aiSummary: null },
+        };
+      },
+    },
+  });
+  assert.equal(source.selectedChannelCount, 9);
+  assert.equal(source.selectedChannels.includes('tiktok_ads'), true);
+  assert.equal(reportIds.some(id => id.endsWith(':tiktok-ads-v2')), true);
 });

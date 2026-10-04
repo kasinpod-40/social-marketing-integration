@@ -9,6 +9,7 @@ import {
 } from '../../../packages/application/src/reports/build-lark-native-ai-weekly-7d-controlled-uat.js';
 import {
   REPORT_SOURCE_STATUS,
+  createReportPlatformAdapterRegistry,
   listReportPlatformContracts,
 } from '../../../packages/application/src/reports/report-platform-adapter-registry.js';
 import {
@@ -70,10 +71,15 @@ const AI_TITLE = 'AI Materialization → MKT_AI_Report_Runs';
 const NOTIFICATION_TITLE = 'Eligible AI Run → Lark Group Notification';
 const ACTIVE = new Set(['enable', 'enabled', 'active', 'on']);
 const INACTIVE = new Set(['disable', 'disabled', 'inactive', 'off', 'draft']);
-const EXPECTED_REPORT_COUNT = listReportPlatformContracts()
-  .filter((contract) => contract.sourceStatus === REPORT_SOURCE_STATUS.ACTIVE)
-  .length;
 const DEFAULT_MAX_QUEUE_ATTEMPTS = 5;
+function activeWeeklyReportContracts(tikTokAdsReady) {
+  const tiktok = tikTokAdsReady
+    ? createReportPlatformAdapterRegistry({ tikTokAdsReady: true }).get('tiktok_ads').contract
+    : null;
+  return listReportPlatformContracts()
+    .map(contract => contract.platformScope === 'tiktok_ads' && tiktok ? tiktok : contract)
+    .filter(contract => contract.sourceStatus === REPORT_SOURCE_STATUS.ACTIVE);
+}
 const CREATE_PHASES = Object.freeze({
   synthesis: 'fresh_ai_row_create_attempt',
   admission: 'notification_ai_row_create_attempt',
@@ -118,6 +124,8 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
     const syncEngine = infrastructure.syncEngine;
     const workStore = infrastructure.getResumableWorkStore();
     const operation = requireStableOperation(jobInput.operation);
+    const tikTokAdsReady = jobInput.env?.MKT_TIKTOK_ADS_REPORT_WRITE_ENABLED === 'true';
+    const expectedReportCount = activeWeeklyReportContracts(tikTokAdsReady).length;
 
     await verifyAutomationState(client, jobInput.env);
 
@@ -139,6 +147,7 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
           db: jobInput.env?.MKT_STATE_DB,
           customerProfile: jobInput.config.customerProfile,
           targetPeriodEnd: periodEnd,
+          tikTokAdsReady,
         });
         const generatedAt = resolveAuthorityGeneratedAt(retainedSource.reportBundles);
         const seed = await buildSeed({
@@ -201,12 +210,13 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
       tableIds: readWeeklySourceTableIds(jobInput.env),
       customerProfile: jobInput.config.customerProfile,
       targetPeriodEnd: periodEnd,
+      tikTokAdsReady,
     });
     const observedPeriodEnd = requireDateOnly(
       collected?.targetPeriod?.periodEnd,
       'source.targetPeriod.periodEnd',
     );
-    if (observedPeriodEnd < periodEnd || collected.selectedChannelCount < EXPECTED_REPORT_COUNT) {
+    if (observedPeriodEnd < periodEnd || collected.selectedChannelCount < expectedReportCount) {
       throwPendingOrTerminal({
         mainQueueAttempts,
         maximumAttempts,
@@ -214,19 +224,19 @@ export function createAutomaticWeeklyExecutiveProcessor(dependencies = {}) {
         code: 'LARK_WEEKLY_EXECUTIVE_AUTO_REPORTS_PENDING',
         terminalCode: 'LARK_WEEKLY_EXECUTIVE_AUTO_REPORTS_NOT_READY',
         details: {
-          expectedReportCount: EXPECTED_REPORT_COUNT,
+          expectedReportCount,
           observedReportCount: collected.selectedChannelCount,
           expectedPeriodEnd: periodEnd,
           observedPeriodEnd,
         },
       });
     }
-    if (observedPeriodEnd !== periodEnd || collected.selectedChannelCount !== EXPECTED_REPORT_COUNT) {
+    if (observedPeriodEnd !== periodEnd || collected.selectedChannelCount !== expectedReportCount) {
       throw autoError(
         'Weekly Executive source authority advanced beyond the scheduled identity',
         'LARK_WEEKLY_EXECUTIVE_AUTO_SOURCE_DRIFT',
         {
-          expectedReportCount: EXPECTED_REPORT_COUNT,
+          expectedReportCount,
           observedReportCount: collected.selectedChannelCount,
           expectedPeriodEnd: periodEnd,
           observedPeriodEnd,
@@ -403,8 +413,7 @@ export async function collectRetainedD1Weekly7dSource(input = {}) {
   const periodEnd = requireDateOnly(input.targetPeriodEnd, 'targetPeriodEnd');
   const periodStart = addDaysDateOnly(periodEnd, -6);
   const reader = input.reader ?? new D1ReportMaterializationReader({ db: input.db });
-  const contracts = listReportPlatformContracts()
-    .filter((contract) => contract.sourceStatus === REPORT_SOURCE_STATUS.ACTIVE);
+  const contracts = activeWeeklyReportContracts(input.tikTokAdsReady === true);
   const items = await Promise.all(contracts.map(async (contract) => {
     const channel = LARK_NATIVE_AI_CHANNELS.find((candidate) => (
       candidate.platform === contract.platformScope
