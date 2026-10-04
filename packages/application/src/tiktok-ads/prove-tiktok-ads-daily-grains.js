@@ -78,6 +78,8 @@ export async function loadTikTokAdsDailyMasters(input) {
 /** Full true-Ad metric capability: no response sample is treated as a complete supported dataset. */
 export async function proveTikTokAdsDailyMetrics(input) {
   const date = requireDateOnly(input.date);
+  const grain = input.grain ?? 'ad';
+  if (!['ad', 'campaign'].includes(grain)) fail('GRAIN_INVALID');
   const masters = await loadTikTokAdsDailyMasters(input);
   const families = {};
   let baseIds;
@@ -85,7 +87,7 @@ export async function proveTikTokAdsDailyMetrics(input) {
     let source;
     try {
       source = await input.client.listAllStatusDailyReport({ accessToken: input.accessToken,
-        advertiserId: input.advertiserId, date, grain: 'ad', metricFamily });
+        advertiserId: input.advertiserId, date, grain, metricFamily });
     } catch (error) {
       if (error.code !== 'TIKTOK_ADS_ALL_STATUS_DAILY_REJECTED') throw error;
       families[metricFamily] = { supported: false, code: error.code };
@@ -96,11 +98,11 @@ export async function proveTikTokAdsDailyMetrics(input) {
     const fields = Object.fromEntries(metrics.map(metric => [metric, { present: 0, numeric: 0, zero: 0, nonzero: 0 }]));
     let missingMasters = 0;
     for (const row of source.rows) {
-      const id = row?.dimensions?.ad_id_v2;
+      const id = row?.dimensions?.[grain === 'ad' ? 'ad_id_v2' : 'campaign_id'];
       if (typeof id !== 'string' || !/^\d+$/u.test(id) || seen.has(id)
         || ![date, `${date} 00:00:00`].includes(row?.dimensions?.stat_time_day)) fail('SOURCE_IDENTITY');
       seen.add(id);
-      if (!masters.has(`ad:${id}`)) missingMasters++;
+      if (!masters.has(`${grain}:${id}`)) missingMasters++;
       for (const metric of metrics) {
         const value = row?.metrics?.[metric];
         if (!Object.hasOwn(row?.metrics ?? {}, metric)) continue;
@@ -115,5 +117,5 @@ export async function proveTikTokAdsDailyMetrics(input) {
       missingMasters, baseIdentityMatched: baseIds != null && seen.size === baseIds.size
         && [...seen].every(id => baseIds.has(id)), fields };
   }
-  return { date, allStatuses: true, trueAdDimension: true, sampleOnly: false, families };
+  return { date, grain, allStatuses: true, trueAdDimension: grain === 'ad', sampleOnly: false, families };
 }

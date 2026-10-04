@@ -230,7 +230,7 @@ test('full all-status Ad inventory reads beyond five pages and preserves exact p
     return Response.json({ code: 0, data: {
       list: Array.from({ length: Math.min(100, 601 - start) }, (_, i) => ({
         advertiser_id: '123', ad_id: String(start + i + 1), campaign_id: '456', adgroup_id: '789',
-        ad_name: 'private-name', operation_status: 'ENABLE', video_id: 'opaque-video', image_ids: ['opaque-image'],
+        ad_name: 'private-name', operation_status: 'ENABLE', video_id: 'opaque-video', image_ids: ['opaque-image'], tiktok_item_id: '1234567890123456789',
       })), page_info: { page, total_page: 7, total_number: 601 },
     } });
   });
@@ -241,6 +241,7 @@ test('full all-status Ad inventory reads beyond five pages and preserves exact p
   assert.equal(result.rows[0].campaignId, '456');
   assert.equal(result.rows[0].adGroupId, '789');
   assert.deepEqual(result.rows[0].imageIds, ['opaque-image']);
+  assert.equal(result.rows[0].postId, '1234567890123456789');
 });
 
 test('inventory rejects duplicate/foreign identity, missing parent, malformed assets and unsafe paging', async () => {
@@ -340,6 +341,9 @@ test('full metric families use ad_id_v2 and reject unapproved metric names befor
   assert.deepEqual(JSON.parse(calls[0].searchParams.get('metrics')), ['video_play_actions', 'video_watched_2s', 'video_watched_6s']);
   assert.deepEqual(JSON.parse(calls[0].searchParams.get('dimensions')), ['ad_id_v2', 'stat_time_day']);
   await assert.rejects(client.listAllStatusDailyReport({grain:'ad',metricFamily:'arbitrary'}));
-  await assert.rejects(client.listAllStatusDailyReport({grain:'campaign',metricFamily:'video'}));
-  assert.equal(calls.length, 1);
+  await client.listAllStatusDailyReport({grain:'campaign',metricFamily:'video',advertiserId:'123',accessToken:'private',date:'2026-10-03'});
+  assert.deepEqual(JSON.parse(calls[1].searchParams.get('dimensions')), ['campaign_id', 'stat_time_day']);
+  assert.equal(calls[1].searchParams.get('data_level'), 'AUCTION_CAMPAIGN');
+  assert.match(calls[1].searchParams.get('filtering'), /campaign_status/u);
+  assert.equal(calls.length, 2);
 });

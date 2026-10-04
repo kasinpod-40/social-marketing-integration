@@ -283,3 +283,12 @@ test('full daily query rejects unknown identity or extra query before token hydr
   }
   assert.deepEqual(f.calls, []);
 });
+
+test('metric grain override is fixed and rejected before decrypt for unknown/extra parameters', async () => {
+  const f = setup();
+  for (const query of ['metrics=full&date=2026-10-03&grain=creative', 'metrics=full&date=2026-10-03&grain=ad&account=other']) {
+    const target = new URL(`https://worker.example${TIKTOK_ADS_SOURCE_PROBE_PATH}?${query}`);
+    assert.equal((await f.handler({ request: request(), env: { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' }, url: target })).status, 400);
+  }
+  assert.deepEqual(f.calls, []);
+});

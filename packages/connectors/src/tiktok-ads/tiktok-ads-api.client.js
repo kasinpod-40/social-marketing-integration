@@ -187,7 +187,7 @@ export class TikTokAdsApiClient {
       ad: ['AUCTION_AD', 'ad_id_v2', 'ad_status'] };
     if (!Object.hasOwn(grains, input.grain)) throw new TypeError('Unsupported TikTok Ads daily grain');
     const family = input.metricFamily ?? 'base';
-    if (!Object.hasOwn(TIKTOK_ADS_DAILY_METRIC_FAMILIES, family) || (input.grain !== 'ad' && family !== 'base')) throw new TypeError('Unsupported TikTok daily metric family');
+    if (!Object.hasOwn(TIKTOK_ADS_DAILY_METRIC_FAMILIES, family)) throw new TypeError('Unsupported TikTok daily metric family');
     const [level, dimension, statusField] = grains[input.grain];
     const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
     const date = requireIsoDate(input.date);
@@ -247,7 +247,7 @@ export class TikTokAdsApiClient {
     const fields = ['advertiser_id', idField, nameField, 'operation_status'];
     if (input.kind === 'campaign') fields.push('objective_type', 'campaign_automation_type');
     else fields.push('campaign_id');
-    if (input.kind === 'ad') fields.push('adgroup_id', 'video_id', 'image_ids', 'ad_format');
+    if (input.kind === 'ad') fields.push('adgroup_id', 'video_id', 'image_ids', 'ad_format', 'tiktok_item_id');
     if (input.kind === 'smart_ad') fields.push('adgroup_id', 'creative_list');
     if (input.kind === 'ad_group') fields.push('optimization_goal', 'conversion_window', 'promotion_type');
     const result = await this.#listCampaignRows({ accessToken: requireText(input.accessToken, 'accessToken'),
@@ -283,7 +283,7 @@ export class TikTokAdsApiClient {
         creativeIds: Object.freeze(Array.isArray(row.creative_list)
           ? row.creative_list.map(creative => optionalDigits(creative?.smart_plus_creative_id)).filter(Boolean) : []),
         videoId: optionalText(row.video_id), imageIds: Object.freeze(row.image_ids ?? []),
-        adFormat: optionalText(row.ad_format), optimizationGoal: optionalText(row.optimization_goal),
+        adFormat: optionalText(row.ad_format), postId: optionalDigits(row.tiktok_item_id), optimizationGoal: optionalText(row.optimization_goal),
         conversionWindow: optionalText(row.conversion_window), promotionType: optionalText(row.promotion_type),
       });
     });

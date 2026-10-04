@@ -891,3 +891,9 @@ Report/schedule admission follows from field presence alone.
 
 - Keep historical Creative unavailable when TikTok Daily facts do not prove the reference; current master is not historical attribution.
 - Preserve proved Daily reference and existing Meta/Google behavior; live read-only1/3/7/30day current/comparison base totals and Top5 parity pass.
+
+## TikTok Ads historical/Lark live closeout and Campaign metric proof — 2026-10-04
+
+- Reconciled398all-status dates:5746Campaign /16945trueAd facts, complete independent Coverage and zero failed rows.
+- Reconciled90day Lark5743Daily rows and14month396Summary rows; all replay zero changes, preview disabled and traffic unchanged.
+- Extend GET-only Campaign metric families and fixed Ad-format counts before admitting richer metrics/assets.
