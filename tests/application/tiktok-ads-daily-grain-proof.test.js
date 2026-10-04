@@ -88,3 +88,21 @@ test('Campaign metric proof uses its own fixed dimension/master and never interp
   f.rows.campaign[0].dimensions = { ad_id_v2: '33', stat_time_day: date };
   await assert.rejects(proveTikTokAdsDailyMetrics({ ...f.input, grain: 'campaign' }), { code: 'TIKTOK_ADS_DAILY_PROOF_SOURCE_IDENTITY' });
 });
+
+
+test('core grain proof reconciles video and generic optimization counts without summing distinct reach', async () => {
+  const f = fixture();
+  for (const rows of Object.values(f.rows)) Object.assign(rows[0].metrics, {
+    reach: '5', video_play_actions: '4', video_watched_2s: '3', video_watched_6s: '1', conversion: '1.50',
+  });
+  const result = await proveTikTokAdsDailyGrains({ ...f.input, coreMetrics: true });
+  assert.equal(result.coreMetrics, true); assert.equal(result.reachAdditive, false);
+  assert.equal(result.totalsMatch.optimizationConversionMicros, true);
+  assert.equal(result.totalsMatch.video_play_actions, true);
+  assert.equal(Object.hasOwn(result.totalsMatch, 'reach'), false);
+  assert.ok(f.calls.every(call => call.metricFamily === 'core'));
+  f.rows.ad[0].metrics.conversion = '1.49';
+  assert.equal((await proveTikTokAdsDailyGrains({ ...f.input, coreMetrics: true })).totalsMatch.optimizationConversionMicros, false);
+  f.rows.ad[0].metrics.video_play_actions = undefined;
+  await assert.rejects(proveTikTokAdsDailyGrains({ ...f.input, coreMetrics: true }));
+});
