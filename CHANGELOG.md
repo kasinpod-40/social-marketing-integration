@@ -886,3 +886,8 @@ Report/schedule admission follows from field presence alone.
 
 - Project1..7closed days per request using exact per-day Coverage and entity/day keys; deduplicate Campaign masters across dates.
 - Renew lease before schema/readback plans; preserve independent grain flags and90day/capacity bounds.
+
+## TikTok Ads historical Top Ads Creative guard — 2026-10-04
+
+- Keep historical Creative unavailable when TikTok Daily facts do not prove the reference; current master is not historical attribution.
+- Preserve proved Daily reference and existing Meta/Google behavior; live read-only1/3/7/30day current/comparison base totals and Top5 parity pass.
