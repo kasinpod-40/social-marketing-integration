@@ -1,3 +1,4 @@
+import { TIKTOK_ADS_DAILY_METRIC_FAMILIES } from '../../../connectors/src/tiktok-ads/tiktok-ads-api.client.js';
 import { currencyAmountToMicros } from '../../../domain/src/entities/ads.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
@@ -71,4 +72,48 @@ export async function loadTikTokAdsDailyMasters(input) {
     entities.set(key, row);
   }
   return entities;
+}
+
+
+/** Full true-Ad metric capability: no response sample is treated as a complete supported dataset. */
+export async function proveTikTokAdsDailyMetrics(input) {
+  const date = requireDateOnly(input.date);
+  const masters = await loadTikTokAdsDailyMasters(input);
+  const families = {};
+  let baseIds;
+  for (const [metricFamily, metrics] of Object.entries(TIKTOK_ADS_DAILY_METRIC_FAMILIES)) {
+    let source;
+    try {
+      source = await input.client.listAllStatusDailyReport({ accessToken: input.accessToken,
+        advertiserId: input.advertiserId, date, grain: 'ad', metricFamily });
+    } catch (error) {
+      if (error.code !== 'TIKTOK_ADS_ALL_STATUS_DAILY_REJECTED') throw error;
+      families[metricFamily] = { supported: false, code: error.code };
+      continue;
+    }
+    if (!Array.isArray(source.rows) || source.rows.length !== source.totalCount) fail('SOURCE_COUNT');
+    const seen = new Set();
+    const fields = Object.fromEntries(metrics.map(metric => [metric, { present: 0, numeric: 0, zero: 0, nonzero: 0 }]));
+    let missingMasters = 0;
+    for (const row of source.rows) {
+      const id = row?.dimensions?.ad_id_v2;
+      if (typeof id !== 'string' || !/^\d+$/u.test(id) || seen.has(id)
+        || ![date, `${date} 00:00:00`].includes(row?.dimensions?.stat_time_day)) fail('SOURCE_IDENTITY');
+      seen.add(id);
+      if (!masters.has(`ad:${id}`)) missingMasters++;
+      for (const metric of metrics) {
+        const value = row?.metrics?.[metric];
+        if (!Object.hasOwn(row?.metrics ?? {}, metric)) continue;
+        fields[metric].present++;
+        if (!/^(0|[1-9]\d*)(\.\d+)?$/u.test(String(value ?? '')) || !Number.isFinite(Number(value))) continue;
+        fields[metric].numeric++;
+        fields[metric][Number(value) === 0 ? 'zero' : 'nonzero']++;
+      }
+    }
+    if (metricFamily === 'base') baseIds = seen;
+    families[metricFamily] = { supported: true, rows: source.totalCount, pages: source.pageCount,
+      missingMasters, baseIdentityMatched: baseIds != null && seen.size === baseIds.size
+        && [...seen].every(id => baseIds.has(id)), fields };
+  }
+  return { date, allStatuses: true, trueAdDimension: true, sampleOnly: false, families };
 }

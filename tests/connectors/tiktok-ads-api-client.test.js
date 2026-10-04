@@ -331,3 +331,15 @@ test('complete daily STATUS_ALL uses only the approved true Ad dimension and ref
   await assert.rejects(client.listAllStatusDailyReport({ grain: 'creative' }));
   assert.equal(calls.length, 2);
 });
+
+
+test('full metric families use ad_id_v2 and reject unapproved metric names before request', async () => {
+  const calls = []; const client = createClient(async url => { calls.push(new URL(url));
+    return Response.json({ code: 0, data: { list: [], page_info: { total_number: 0, total_page: 1 } } }); });
+  await client.listAllStatusDailyReport({ grain: 'ad', metricFamily: 'video', advertiserId: '123', accessToken: 'private', date: '2026-10-03' });
+  assert.deepEqual(JSON.parse(calls[0].searchParams.get('metrics')), ['video_play_actions', 'video_watched_2s', 'video_watched_6s']);
+  assert.deepEqual(JSON.parse(calls[0].searchParams.get('dimensions')), ['ad_id_v2', 'stat_time_day']);
+  await assert.rejects(client.listAllStatusDailyReport({grain:'ad',metricFamily:'arbitrary'}));
+  await assert.rejects(client.listAllStatusDailyReport({grain:'campaign',metricFamily:'video'}));
+  assert.equal(calls.length, 1);
+});

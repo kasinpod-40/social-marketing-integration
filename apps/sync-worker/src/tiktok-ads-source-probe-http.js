@@ -1,4 +1,4 @@
-import { proveTikTokAdsDailyGrains } from '../../../packages/application/src/tiktok-ads/prove-tiktok-ads-daily-grains.js';
+import { proveTikTokAdsDailyGrains, proveTikTokAdsDailyMetrics } from '../../../packages/application/src/tiktok-ads/prove-tiktok-ads-daily-grains.js';
 import { permanentError, sanitizeOperationalError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { json } from '../../../packages/shared/src/http/response.js';
 import { loadTikTokAdsAuthorizedSource } from './tiktok-ads-authorized-source.js';
@@ -21,12 +21,13 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
       const metadata = isCampaignProbe && url.searchParams.get('metadata') === 'full';
       const capability = isCampaignProbe && url.searchParams.get('capability');
       const capabilityDate = url.searchParams.get('date');
+      const metrics = isCampaignProbe && url.searchParams.get('metrics') === 'full';
       const daily = isCampaignProbe && url.searchParams.get('daily') === 'full';
       const inventory = isCampaignProbe && url.searchParams.get('inventory');
       const source = await loadTikTokAdsAuthorizedSource({
         request, env, dependencies,
         validateRequest: () => isCampaignProbe
-          ? url.searchParams.size === 0 || (daily && url.searchParams.size === 2 && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? '')) || (metadata && url.searchParams.size === 1)
+          ? url.searchParams.size === 0 || ((daily || metrics) && url.searchParams.size === 2 && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? '')) || (metadata && url.searchParams.size === 1)
             || (['campaign', 'ad_group', 'ad', 'smart_ad', 'hierarchy', 'smart_hierarchy'].includes(inventory) && url.searchParams.size === 1)
             || (TIKTOK_ADS_CAPABILITY_KINDS.includes(capability)
               && url.searchParams.size === 2 && /^\d{4}-\d{2}-\d{2}$/u.test(capabilityDate ?? ''))
@@ -40,8 +41,8 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
         status: 409, headers,
       });
 
-      const result = daily
-        ? await proveTikTokAdsDailyGrains({ client: source.client, accessToken: source.accessToken,
+      const result = daily || metrics
+        ? await (metrics ? proveTikTokAdsDailyMetrics : proveTikTokAdsDailyGrains)({ client: source.client, accessToken: source.accessToken,
           advertiserId: source.connection.externalAccountId, customerKey: source.runtime.config.customerKey,
           accountKey: source.runtime.config.customerKey, date: capabilityDate, db: env.MKT_STATE_DB })
         : inventory

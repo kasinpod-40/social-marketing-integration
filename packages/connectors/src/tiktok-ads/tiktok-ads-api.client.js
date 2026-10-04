@@ -26,6 +26,14 @@ const CAPABILITIES = Object.freeze({
   ad_purchase_average_value: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['value_per_complete_payment'] },
   ad_purchase_roas: { level: 'AUCTION_AD', dimension: 'ad_id', metrics: ['complete_payment_roas'] },
 });
+export const TIKTOK_ADS_DAILY_METRIC_FAMILIES = Object.freeze({
+  base: Object.freeze(['spend', 'impressions', 'clicks']),
+  delivery: Object.freeze(['reach', 'frequency']),
+  video: Object.freeze(['video_play_actions', 'video_watched_2s', 'video_watched_6s']),
+  optimization: Object.freeze(['conversion', 'cost_per_conversion']),
+  web_purchase: Object.freeze(['complete_payment', 'complete_payment_roas', 'value_per_complete_payment']),
+  app_purchase: Object.freeze(['purchase', 'total_purchase', 'total_purchase_value']),
+});
 export const TIKTOK_ADS_CAPABILITY_KINDS = Object.freeze(Object.keys(CAPABILITIES));
 
 export class TikTokAdsApiClient {
@@ -178,6 +186,8 @@ export class TikTokAdsApiClient {
     const grains = { campaign: ['AUCTION_CAMPAIGN', 'campaign_id', 'campaign_status'],
       ad: ['AUCTION_AD', 'ad_id_v2', 'ad_status'] };
     if (!Object.hasOwn(grains, input.grain)) throw new TypeError('Unsupported TikTok Ads daily grain');
+    const family = input.metricFamily ?? 'base';
+    if (!Object.hasOwn(TIKTOK_ADS_DAILY_METRIC_FAMILIES, family) || (input.grain !== 'ad' && family !== 'base')) throw new TypeError('Unsupported TikTok daily metric family');
     const [level, dimension, statusField] = grains[input.grain];
     const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
     const date = requireIsoDate(input.date);
@@ -188,7 +198,7 @@ export class TikTokAdsApiClient {
         url.searchParams.set('report_type', 'BASIC');
         url.searchParams.set('data_level', level);
         url.searchParams.set('dimensions', JSON.stringify([dimension, 'stat_time_day']));
-        url.searchParams.set('metrics', JSON.stringify(['spend', 'impressions', 'clicks']));
+        url.searchParams.set('metrics', JSON.stringify(TIKTOK_ADS_DAILY_METRIC_FAMILIES[family]));
         url.searchParams.set('filtering', JSON.stringify([{ field_name: statusField,
           filter_type: 'IN', filter_value: JSON.stringify(['STATUS_ALL']) }]));
         url.searchParams.set('start_date', date);

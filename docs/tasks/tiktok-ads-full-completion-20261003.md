@@ -140,3 +140,13 @@ metrics or activate Report/schedule; those need their own semantics/source proof
 Official [core/optimization conversion semantics](https://ads.tiktok.com/help/article/basic-data):
 conversions follow the selected optimization event; reach counts distinct users. Generic optimization
 conversion is not purchase, and entity/day reach cannot be summed as distinct period audience.
+
+## Full true Ad metric observation — 2026-10-04
+
+Full STATUS_ALL ad_id_v2 days2025-09-01 and2026-10-03 proved base/delivery/video/optimization/
+web-purchase identical complete identities53/35, every requested metric numeric. Generic conversion
+nonzero12/6 Ad rows; complete_payment, complete_payment_roas, value_per_complete_payment explicitly
+zero everywhere. Generic conversion follows optimization event and remains distinct from purchase.
+App purchase family rows40/30 do not cover all53/35 Ads; missing rows are unavailable. Do not
+combine app purchase value with web payment count/ROAS or derive exact value from rounded ratios.
+Metric observation does not prove current/historical attribution windows or full date coverage.
