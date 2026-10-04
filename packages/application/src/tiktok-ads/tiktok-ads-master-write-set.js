@@ -80,7 +80,7 @@ export async function buildTikTokAdsMasterWriteSet(input) {
     external_campaign_id: row.campaignId, external_ad_group_id: row.id, ad_group_name: row.name,
     optimization_goal: row.optimizationGoal ?? null, ad_channel: 'tiktok_ads',
   }, 'adGroups');
-  const videos = new Map();
+  const resources = new Map();
   for (const row of legacy.values()) {
     if (campaigns.get(row.campaignId).automationType === 'UPGRADED_SMART_PLUS') {
       await add('creative', row, { external_creative_id: row.id, creative_name: row.name,
@@ -89,11 +89,22 @@ export async function buildTikTokAdsMasterWriteSet(input) {
         ad_channel: 'tiktok_ads' }, 'creatives');
       continue;
     }
-    // image_ids อาจเป็น cover จึงไม่ใช้สร้างหรือเลือก Creative; video_id เป็น reusable source identity
+    // image_ids อาจเป็น cover; ใช้ video_id เดิม หรือ source post ID ของ format ที่ยืนยันแล้วเท่านั้น
     const videoId = row.videoId && !row.videoId.includes(':') ? row.videoId : null;
-    if (videoId) videos.set(videoId, { id: videoId, name: null, status: null });
+    const postId = !videoId && /^\d+$/u.test(row.postId ?? '')
+      && ['SINGLE_VIDEO', 'CAROUSEL_ADS'].includes(row.adFormat) ? row.postId : null;
+    const resourceId = videoId ?? postId;
+    if (resourceId) {
+      const resource = { id: resourceId, name: null, status: null,
+        type: postId ? (row.adFormat === 'CAROUSEL_ADS' ? 'carousel' : 'video') : 'video',
+        videoId, postId };
+      const existing = resources.get(resourceId);
+      if (existing && (existing.type !== resource.type || existing.postId !== resource.postId
+        || existing.videoId !== resource.videoId)) fail('RESOURCE_IDENTITY_CONFLICT');
+      resources.set(resourceId, resource);
+    }
     await add('ad', row, { external_campaign_id: row.campaignId, external_ad_group_id: row.adGroupId,
-      external_ad_id: row.id, external_creative_id: videoId, ad_name: row.name,
+      external_ad_id: row.id, external_creative_id: resourceId, ad_name: row.name,
       ad_type: row.adFormat ?? null, ad_channel: 'tiktok_ads' }, 'ads');
   }
   for (const row of inventories.smart_ad.rows) await add('ad', row, {
@@ -101,11 +112,12 @@ export async function buildTikTokAdsMasterWriteSet(input) {
     external_ad_id: row.id, external_creative_id: row.creativeItems === 1 ? row.creativeIds[0] ?? null : null,
     ad_name: row.name, ad_channel: 'tiktok_ads',
   }, 'ads');
-  for (const row of videos.values()) await add('creative', row, {
-    external_creative_id: row.id, creative_type: 'video', video_id: row.id, ad_channel: 'tiktok_ads',
+  for (const row of resources.values()) await add('creative', row, {
+    external_creative_id: row.id, creative_type: row.type, video_id: row.videoId,
+    source_content_id: row.postId, ad_channel: 'tiktok_ads',
   }, 'creatives');
   return { entities, canonical, unavailableCreativeIds,
-    unmappedImageOnlyAds: [...legacy.values()].filter(row => campaigns.get(row.campaignId).automationType !== 'UPGRADED_SMART_PLUS'
-      && !row.videoId).length };
+    unmappedCreativeAds: [...legacy.values()].filter(row => campaigns.get(row.campaignId).automationType !== 'UPGRADED_SMART_PLUS'
+      && !row.videoId && !(/^\d+$/u.test(row.postId ?? '') && ['SINGLE_VIDEO', 'CAROUSEL_ADS'].includes(row.adFormat))).length };
 }
 function fail(code) { throw permanentError('TikTok Ads master snapshot preflight failed', { code: `TIKTOK_ADS_MASTER_${code}` }); }

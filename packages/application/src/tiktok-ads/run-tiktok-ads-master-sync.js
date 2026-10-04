@@ -105,7 +105,7 @@ async function reconcile(input) {
   }
   const result = { mode: input.execute ? 'execute' : 'preview', d1Changed: changed.length,
     d1Skipped: expected.length - changed.length, unavailableCreativeIds: input.snapshot.unavailableCreativeIds,
-    unmappedImageOnlyAds: input.snapshot.unmappedImageOnlyAds,
+    unmappedCreativeAds: input.snapshot.unmappedCreativeAds,
     tables: plans.map((plan, index) => ({ dataset: SPECS[index][0], rows: specs[index].rows.length,
       created: plan.createRows.length, updated: plan.updateRows.length, skipped: plan.skipped })) };
   if (!input.execute) return result;
