@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { runTikTokAdsMasterSync } from '../../packages/application/src/tiktok-ads/run-tiktok-ads-master-sync.js';
 import { applyD1Migrations, env } from 'cloudflare:test';
 import { D1MarketingHistoryStore } from '../../packages/connectors/src/d1-marketing-history-store.js';
 import { D1ReliabilityStore } from '../../packages/reliability/src/d1-reliability-store.js';
@@ -53,4 +54,34 @@ it('writes and replays one TikTok Ads Campaign day in real Workers D1 with recon
   const finalFact = await env.MKT_STATE_DB.prepare(`SELECT source_payload_hash FROM ads_daily_facts
     WHERE platform='tiktok_ads'`).first();
   expect(finalFact.source_payload_hash).toBe(fact.source_payload_hash);
+});
+
+
+it('full TikTok master sync uses real D1 writes/lease, exact parent readback and zero-change replay', async () => {
+  await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
+  const records = new Map();
+  const row = (kind, id, extra = {}) => ({ kind, id, campaignId: '910', adGroupId: '920', name: 'Example',
+    status: 'ENABLE', videoId: null, imageIds: [], ...extra });
+  const datasets = { campaign: [row('campaign', '910', { automationType: 'UPGRADED_SMART_PLUS' })],
+    ad_group: [row('ad_group', '920')], ad: [row('ad', '930')],
+    smart_ad: [row('smart_ad', '940', { creativeItems: 1, creativeIds: ['930'] })] };
+  const input = { execute: true, writeEnabled: true, customerKey: 'master_runtime', accountKey: 'master_runtime',
+    advertiserId: '999', currency: 'THB', timezone: 'Asia/Bangkok', accessToken: 'test-only', db: env.MKT_STATE_DB,
+    historyStore: new D1MarketingHistoryStore({ db: env.MKT_STATE_DB }),
+    lockStore: new D1ReliabilityStore({ db: env.MKT_STATE_DB }), repository: {},
+    larkClient: { async requestBitableJson() { return { data: { total: 0 } }; } },
+    client: { async listEntityMetadata({kind}) { return { rows: datasets[kind], totalCount: datasets[kind].length }; },
+      async getAdvertiser() { return { advertiserId: '999', advertiserName: 'Example', currency: 'THB', timezone: 'Asia/Bangkok' }; } },
+    tables: { mktAdsAccounts: 'account', mktAdsCampaigns: 'campaign', mktAdsAdGroups: 'group', mktAdsAds: 'ad', mktAdsCreatives: 'creative' },
+    syncEngine: { async planByKey(spec) { const done=records.has(spec.tableId);
+      return { ...spec, inputRows: spec.rows.length, duplicateInputRows: 0, createRows: done ? [] : spec.rows,
+        updateRows: [], skipped: done ? spec.rows.length : 0 }; },
+    async executePlan(plan, {beforeWriteChunk}) { await beforeWriteChunk(); records.set(plan.tableId, plan.rows); } },
+  };
+  expect((await runTikTokAdsMasterSync(input)).d1Changed).toBe(5);
+  expect((await runTikTokAdsMasterSync(input)).d1Changed).toBe(0);
+  const creative = await env.MKT_STATE_DB.prepare("SELECT entity_type, parent_ad_id FROM ads_entity_state WHERE account_key='master_runtime' AND external_entity_id='930'").first();
+  expect(creative).toMatchObject({ entity_type: 'creative', parent_ad_id: '940' });
+  const facts = await env.MKT_STATE_DB.prepare("SELECT COUNT(*) AS n FROM ads_daily_facts WHERE account_key='master_runtime'").first();
+  expect(facts.n).toBe(0);
 });

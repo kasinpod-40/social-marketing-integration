@@ -1,3 +1,13 @@
+## TikTok Ads full master preparation — 2026-10-04
+
+Existing Paid master schema live GET passed Account/Ad Group/Ad/Creative (12/12/18/22 fields).
+Source full snapshot builds 1 Account, 228 Campaigns, 261 Ad Groups, 1,078 true Ads and 5,179
+Creative identities, preserving 119 existing D1 Campaigns and 13 existing Lark Campaigns.
+Shared writer/sync engine prepares all destination tables before any writes, bounded batches,
+renewed lease, audit and exact D1/Lark readback. Stable-key-prefix search remains bounded and
+normalizes Rich text keys; destination owner mismatch and duplicates fail closed. Live final
+GET preview passed; write UAT/replay, all-status daily history, Report/AI and schedule remain pending.
+
 ## TikTok Ads Smart+ source identity proof — 2026-10-04
 
 All 228 Campaigns classified: 146 MANUAL, 1 SMART_PLUS, 81 UPGRADED_SMART_PLUS, zero unknown.

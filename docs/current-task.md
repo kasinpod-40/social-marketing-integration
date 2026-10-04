@@ -2844,3 +2844,25 @@ child identity after reviewed merge/deploy.
 - Remaining delivery: canonical master/Creative mapping (preserving the one unavailable ID),
   all-status Campaign and true-Ad history reconciliation from 2025-09-01, bounded 90-day Lark
   projection/readback, Summary/Report/AI and source schedule with a real automatic cycle.
+
+### Implementation result — master sync continuation 2026-10-04
+
+ผู้ใช้ยืนยันให้ทำจนเสร็จครบทั้งหมดรวม daily schedule. ขั้น master ใช้ contract ใน
+`docs/tasks/tiktok-ads-full-completion-20261003.md`; identity gate ผ่าน #900/#901 แล้ว
+ทำ Account/Campaign/Ad Group/true Ad/Creative ให้ครบผ่าน shared D1 writer และ Lark sync engine
+ต้องตรวจ full snapshot parents, existing owner/key, schema/capacity, renewable lock, partial retry,
+all-field readbackและzero-change replayก่อนlive execution.
+- Live master schema GET passed Accounts/Ad Groups/Ads/Creatives at 12/12/18/22 fields. Status
+  supports active/paused/removed/unknown, creative video supported; unsupported unknown creative
+  type remains null and resource_owner is preserved rather than inventing a Select enum.
+- Final GET preview `7fa42231` passed: 6,628 D1 creates/changes / 119 skips; Lark Account 1 create,
+  Campaign 215 create / 13 skip, Ad Group 261 create, true Ad 1,078 create, Creative 5,179 create.
+  One Creative reference remains unavailable; 546 Manual/Legacy image-only Ads require asset-type
+  proof. Every table schema and capacity preflight passed; zero business writes.
+- Scoped prefix search normalization preserves Rich text stable keys; a dedicated real sync-engine
+  regression proves existing Campaign reuse and rejects foreign destination owner. Shared D1 runtime
+  test proves five master identities / parent readback / replay zero writes and zero Daily facts.
+- Final gates passed: 8 focused master tests; check (880 files / zero cycles), 3,536 unit tests,
+  21 Workers runtime tests, 106 Report reliability tests, production audit zero vulnerabilities,
+  normal/isolated deploy dry-run and diff review. Controlled POST/readback/replay remains
+  next; no additional Daily/Conversion, Report/Summary/AI, history or schedule admission yet.
