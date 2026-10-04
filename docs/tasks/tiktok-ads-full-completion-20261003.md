@@ -124,3 +124,19 @@ Creative เท่านั้น ใช้ source ID เดิม ไม่เ�
 - พรีวิวต้องผ่าน schema/capacity และทุกตาราง plan ก่อนเขียน; batch ไม่เกิน100, renewable lease,
   audit log, D1 fields readback และ Lark zero-diff readback; replayไม่เปลี่ยนข้อมูลเดิม
 - ช่วงนี้ไม่เขียน Daily/Conversion/Report/Summary/Schedule; เป็น master slice ของงานครบระบบ
+
+## Verified STATUS_ALL daily grain base contract — 2026-10-04
+
+Full GET Campaign/ad_id_v2 reports passed 2025-09-01, 2026-01-01, 2026-06-01 and 2026-10-03.
+Every source identity matched the stored true master and Campaign/Ad Group parents; spend in integer
+micros, impressions and clicks sums match exactly between independent grains on every date.
+Approved next implementation: independent Campaign/ad D1 facts; exact day/grain coverage, readback,
+replay and existing-fact reconciliation. Campaign coverage keeps `ads_daily_facts` for compatibility;
+Ad coverage uses `ads_daily_facts_ad`, never shares a Campaign coverage completion marker.
+Campaign/Ad rows are alternatives, never summed together. Existing Campaign-only queries must explicitly
+filter report_level before any mixed-grain write. Base proof does not admit new conversion/value/reach
+metrics or activate Report/schedule; those need their own semantics/source proof and downstream UAT.
+
+Official [core/optimization conversion semantics](https://ads.tiktok.com/help/article/basic-data):
+conversions follow the selected optimization event; reach counts distinct users. Generic optimization
+conversion is not purchase, and entity/day reach cannot be summed as distinct period audience.

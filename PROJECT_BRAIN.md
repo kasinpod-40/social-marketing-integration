@@ -1848,3 +1848,11 @@ the adapter unchanged would select the wrong grain. TikTok `Conversions` denotes
 event, not inherently purchase orders. First delivery therefore uses only proved spend, impressions and
 clicks; conversion count, revenue and ROAS stay null until specific metrics are proven. The source contract and live report proof must be
 accepted in `docs/current-task.md` before durable ingestion.
+
+## TikTok Ads master live / daily grain proof — 2026-10-04
+
+Master #902 live UAT completed: Account1 /Campaign228 /AdGroup261 /trueAds1078 /Creative5179,
+D1/Lark full readback passed and replay zero business changes. Production traffic unchanged.
+GET-only complete STATUS_ALL Campaign/ad_id_v2 daily proof added with bounded pagination,
+exact stored advertiser/parents and independent base totals; metric/Report/schedule remain gated
+until live source reconciliation and full downstream UAT pass.

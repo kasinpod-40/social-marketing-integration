@@ -273,3 +273,13 @@ test('Smart+ hierarchy separates creative endpoint rows from true Ad identities'
   assert.equal(body.probe.conflictingCreativeParents, 0);
   assert.doesNotMatch(JSON.stringify(body), /private/);
 });
+
+
+test('full daily query rejects unknown identity or extra query before token hydration', async () => {
+  const f = setup(); const env = { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private' };
+  for (const query of ['?daily=full&date=2026-10-02&account=999', '?daily=other&date=2026-10-02', '?daily=full']) {
+    const selected = new URL(url.href + query);
+    assert.equal((await f.handler({ request: request(), env, url: selected })).status, 400);
+  }
+  assert.deepEqual(f.calls, []);
+});

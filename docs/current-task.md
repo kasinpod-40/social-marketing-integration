@@ -2866,3 +2866,25 @@ all-field readbackและzero-change replayก่อนlive execution.
   21 Workers runtime tests, 106 Report reliability tests, production audit zero vulnerabilities,
   normal/isolated deploy dry-run and diff review. Controlled POST/readback/replay remains
   next; no additional Daily/Conversion, Report/Summary/AI, history or schedule admission yet.
+
+### Implementation result — STATUS_ALL daily grain proof continuation 2026-10-04
+
+Master PR #902 merged after both CI gates passed. Controlled master POST/readback/replay is running.
+Next stage adds GET-only full one-day Campaign/ad_id_v2 report reconciliation, bounded 100 pages
+and four concurrent requests; duplicates/date/count/base metric guards and exact stored master owner
+and Campaign/Ad Group parent joins. Return only counts and equality flags, never source amounts/IDs.
+No Daily/Event/Report/Schedule writes admitted by this proof change. Live totals/identity proof must pass
+before extending the shared D1/Lark grain contract.
+
+- Controlled master candidate `a9809f87` passed POST: D1 6,628 changes /119 existing skips;
+  Lark Account1, Campaign228 (215create/13reuse), AdGroup261, trueAds1078, Creative5179.
+  Full field readback reconciled; second POST D1 zero changes and all five Lark tables zero
+  creates/updates. Preview restored false and active deployment unchanged. No Daily/Report/Schedule
+  admission yet; Creative asset-type/relationships remain part of full completion.
+
+- Live GET candidate `1126cacc`: 2025-09-01 Campaign15/Ad53, 2026-01-01 Campaign19/Ad32,
+  2026-06-01 Campaign18/Ad49, 2026-10-03 Campaign15/Ad35. Every full page count reconciled;
+  zero missing advertiser-scoped master/parent and exact spend-micro/impression/click total parity
+  between Campaign and true Ad grains for all four days. No writes; preview false restored, deployment unchanged.
+- Gates passed: 33 focused /3,542 unit /21 Workers runtime /106 Report reliability, architecture881files
+  zero cycles, hygiene, audit zero production vulnerabilities, normal and isolated deploy dry-run and diff review.
