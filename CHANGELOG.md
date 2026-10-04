@@ -1,3 +1,10 @@
+## 2026-10-04 — Lark percentage replay precision
+
+- Support the observed two-decimal percentage formatter with fraction precision, preserving null/zero
+  and exact D1 metrics; expose preview changed-field counts without record identifiers or amounts.
+- Verify GET-only live replay skips all 35 scoped Ads after isolating video rate floating point drift.
+- Record complete core history and controlled Report readback; daily Queue and core Lark backfill remain pending.
+
 ## TikTok Ads full master sync preparation — 2026-10-04
 
 - TikTok Report controlled admission adds independent true-Ad Coverage, complete source watermark and opt-in Lark readback; default schedule remains off.

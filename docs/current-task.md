@@ -3111,3 +3111,26 @@ Large fixture proves 1,078 true Ads/Creatives and stable replay. Full regression
 normal dry run passed. No dependencies changed. Readiness moves to dev_ready with only
 liveAccountUat pending; ordinary Production schedule stays denied until exact Queue live UAT.
 Core historical enrichment continues from durable local checkpoint; full readback still pending.
+
+Core Lark one-day POST returned readback mismatch after the write. Historical Lark enrichment is stopped; GET-only field-name/count diagnostics will identify the differing field without business amounts or IDs. No root cause is claimed before live reproduction.
+
+
+### Implementation result — core history / Report / Lark precision 2026-10-04
+
+Core history enrichment and fresh source readback completed all 398 closed dates (2025-09-01..2026-10-03),
+796 date/grain units and 22,691 facts: Campaign 5,746 / true Ad 16,945. Independent D1 count/key/Coverage
+checks have zero missing core metrics, failed rows or incomplete days. Full additive Campaign/Ad parity passed.
+Controlled Report POST/readback passed all 1/3/7/30-day windows with comparison Coverage 100%,
+14 metric rows and five true Top Ads per window. Replay creates no records; generated-at metadata refreshes
+existing records under the shared contract. AI remains disabled; actual Queue/automatic cycle is pending.
+
+Core Lark one-day write exposed only video_view_rate differences (22 of 35 Ad rows). Live GET diagnosis
+proved numeric ratios agree at 14 fractional decimal places while exact comparison sees floating point drift.
+The existing serializer now supports only the observed 0.00% formatter with four fractional decimal places,
+retaining ratio units, explicit zero/null semantics and exact D1 source values. No global numeric tolerance.
+GET-only fixed candidate readback plans 35 skips / zero updates, with previews restored disabled and active
+Production deployment unchanged. Controlled POST/replay and complete core Lark/Summary enrichment remain next.
+
+Gates: 3,580 unit / 25 real Workers / 107 Report reliability tests, architecture 885 files / zero cycles,
+repository hygiene, production audit zero vulnerabilities, normal and isolated dry runs. Final focused
+formatter/projection tests include real numeric changes and missing-versus-zero preservation.

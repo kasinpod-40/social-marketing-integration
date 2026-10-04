@@ -1973,3 +1973,9 @@ anddayCoverage rather thanonelexicalmaximum. Tests/fullgates/liveReportUAT pendi
 TikTok Ads daily Queue implementation uses existing business runners and D1 resumable Work;
 technical/large-fixture gates pass with one unit per delivery. Readiness is dev_ready only;
 exact Production Queue UAT and real automatic cycle remain pending, schedule stays disabled.
+
+
+TikTok Ads core history and controlled Report live readback are complete for 398 closed dates and all four
+Report windows. Core Lark rate readback needs formatter-aware ratio precision: live GET fixed preview
+skips all 35 one-day Ad rows. Core Lark/Summary backfill, relationships, AI and actual automatic Queue cycle
+remain required; Production traffic and schedule admission are unchanged.

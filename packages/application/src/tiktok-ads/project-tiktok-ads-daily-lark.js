@@ -133,7 +133,8 @@ async function project(input) {
   if (recordsBefore + plans.at(-1).createRows.length > 17_000) fail('TIKTOK_ADS_LARK_CACHE_CAPACITY');
   const counts = plans.map(plan => ({ rows: plan.inputRows, created: plan.createRows.length,
     updated: plan.updateRows.length, skipped: plan.skipped }));
-  if (!input.execute) return { mode: 'preview', date, periodEnd, days, facts: facts.length, recordsBefore, tables: counts };
+  if (!input.execute) return { mode: 'preview', date, periodEnd, days, facts: facts.length, recordsBefore, tables: counts,
+    changedFields: plans.map(plan => plan.changedFieldCounts ?? {}) };
   for (const plan of plans) await input.syncEngine.executePlan(plan, { beforeWriteChunk: input.beforeWriteChunk });
   for (const spec of specs) {
     await input.beforeWriteChunk?.();
