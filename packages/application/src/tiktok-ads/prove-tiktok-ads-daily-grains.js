@@ -10,19 +10,7 @@ export async function proveTikTokAdsDailyGrains(input) {
     snapshots[grain] = await input.client.listAllStatusDailyReport({ accessToken: input.accessToken,
       advertiserId: input.advertiserId, date, grain });
   }
-  const stored = await input.db.prepare(`SELECT entity_type, external_entity_id, source_account_id,
-    parent_campaign_id, parent_ad_group_id FROM ads_entity_state
-    WHERE customer_key = ? AND platform = 'tiktok_ads' AND account_key = ?
-      AND entity_type IN ('campaign', 'ad_group', 'ad') LIMIT 10001`)
-    .bind(input.customerKey, input.accountKey).all();
-  const masters = stored?.results ?? [];
-  const entities = new Map();
-  if (masters.length > 10000) fail('MASTER_BOUND');
-  for (const row of masters) {
-    const key = `${row.entity_type}:${row.external_entity_id}`;
-    if (entities.has(key) || row.source_account_id !== input.advertiserId) fail('MASTER_OWNER');
-    entities.set(key, row);
-  }
+  const entities = await loadTikTokAdsDailyMasters(input);
   const results = {};
   const totals = {};
   for (const grain of ['campaign', 'ad']) {
@@ -66,4 +54,21 @@ export async function proveTikTokAdsDailyGrains(input) {
 }
 function fail(reason) {
   throw permanentError('TikTok Ads daily grain proof failed', { code: `TIKTOK_ADS_DAILY_PROOF_${reason}` });
+}
+
+export async function loadTikTokAdsDailyMasters(input) {
+  const stored = await input.db.prepare(`SELECT entity_type, external_entity_id, source_account_id,
+    parent_campaign_id, parent_ad_group_id, external_creative_id FROM ads_entity_state
+    WHERE customer_key = ? AND platform = 'tiktok_ads' AND account_key = ?
+      AND entity_type IN ('campaign', 'ad_group', 'ad') LIMIT 10001`)
+    .bind(input.customerKey, input.accountKey).all();
+  const masters = stored?.results ?? [];
+  const entities = new Map();
+  if (masters.length > 10000) fail('MASTER_BOUND');
+  for (const row of masters) {
+    const key = `${row.entity_type}:${row.external_entity_id}`;
+    if (entities.has(key) || row.source_account_id !== input.advertiserId) fail('MASTER_OWNER');
+    entities.set(key, row);
+  }
+  return entities;
 }

@@ -1,7 +1,8 @@
+import { loadTikTokAdsDailyMasters } from '../../../packages/application/src/tiktok-ads/prove-tiktok-ads-daily-grains.js';
 import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
 import { buildTikTokAdsDailyWriteSet } from '../../../packages/application/src/tiktok-ads/tiktok-ads-daily-write-set.js';
-import { runTikTokAdsDailyD1Sync } from '../../../packages/application/src/tiktok-ads/run-tiktok-ads-daily-d1-sync.js';
+import { runTikTokAdsDailyD1Sync, readTikTokAdsDailyReadback } from '../../../packages/application/src/tiktok-ads/run-tiktok-ads-daily-d1-sync.js';
 import { requireDateOnly } from '../../../packages/shared/src/date/date-only.js';
 import { sanitizeOperationalError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { json } from '../../../packages/shared/src/http/response.js';
@@ -23,12 +24,15 @@ export function createTikTokAdsDailyD1HttpHandler(dependencies = {}) {
     }
     try {
       let date = null;
+      let grain = 'campaign';
+      const allStatuses = url.searchParams.has('grain');
       const source = await loadTikTokAdsAuthorizedSource({
         request, env, dependencies,
         validateRequest: () => {
           try {
             date = requireDateOnly(url.searchParams.get('date'), { label: 'TikTok Ads date' });
-            return true;
+            grain = url.searchParams.get('grain') ?? 'campaign';
+            return ['campaign', 'ad'].includes(grain) && url.searchParams.size === (allStatuses ? 2 : 1);
           } catch { return false; }
         },
       });
@@ -44,22 +48,27 @@ export function createTikTokAdsDailyD1HttpHandler(dependencies = {}) {
         advertiserId: source.connection.externalAccountId,
         currency: source.connection.providerMetadata?.currency,
         timezone: source.connection.providerMetadata?.timezone,
-        date,
-        syncRunId: `tiktok_ads:campaign_daily:${accountKey}:${date}`,
+        date, grain, allStatuses,
+        multiGrainWriteEnabled: env.MKT_TIKTOK_ADS_MULTI_GRAIN_WRITE_ENABLED === 'true',
+        syncRunId: `tiktok_ads:${grain}_daily:${accountKey}:${date}`,
         accessToken: source.accessToken,
         client: source.client,
       };
       if (request.method === 'GET') {
-        const report = await source.client.listCampaignDailyReport({
+        const report = await source.client[allStatuses ? 'listAllStatusDailyReport' : 'listCampaignDailyReport']({
+          grain,
           accessToken: source.accessToken,
           advertiserId: source.connection.externalAccountId,
           date,
         });
-        await buildWriteSet({ ...context, rows: report.rows, now: Date.now() });
+        const parents = allStatuses ? await loadTikTokAdsDailyMasters({ ...context, db: env.MKT_STATE_DB }) : undefined;
+        const writeSet = await buildWriteSet({ ...context, parents, rows: report.rows, now: Date.now() });
+        const readback = allStatuses ? await readTikTokAdsDailyReadback({ ...context, db: env.MKT_STATE_DB }, writeSet) : null;
         return json({ ok: true, source: 'tiktok_ads', mode: 'preview', rows: report.totalCount,
-          pageCount: report.pageCount }, { status: 200, headers });
+          pageCount: report.pageCount, ...(readback ? { readback } : {}) }, { status: 200, headers });
       }
-      if (env.MKT_TIKTOK_ADS_D1_WRITE_ENABLED !== 'true') {
+      if (env.MKT_TIKTOK_ADS_D1_WRITE_ENABLED !== 'true'
+        || (allStatuses && env.MKT_TIKTOK_ADS_MULTI_GRAIN_WRITE_ENABLED !== 'true')) {
         return json({ ok: false, error: 'TikTok Ads D1 write gate is disabled' }, { status: 409, headers });
       }
       const result = await runSync({

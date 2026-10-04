@@ -1,5 +1,5 @@
 import { currencyAmountToMicros } from '../../../domain/src/entities/ads.js';
-import { requireDateOnly } from '../../../shared/src/date/date-only.js';
+import { requireDateOnly, todayInTimeZone } from '../../../shared/src/date/date-only.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 import {
@@ -21,8 +21,10 @@ export async function buildTikTokAdsDailyWriteSet(input = {}) {
   const date = requireDateOnly(input.date, { label: 'TikTok Ads date' });
   const syncRunId = text(input.syncRunId, 'syncRunId');
   const now = timestamp(input.now);
+  const grain = input.grain ?? 'campaign';
+  if (!['campaign', 'ad'].includes(grain)) throw new TypeError('Unsupported TikTok daily grain');
   const rows = input.rows;
-  if (!Array.isArray(rows) || rows.length > MAX_DAILY_ROWS) {
+  if (!Array.isArray(rows) || rows.length > (grain === 'ad' ? 10000 : MAX_DAILY_ROWS)) {
     throw permanentError('TikTok Ads daily source rows exceed the reviewed bound', {
       code: 'TIKTOK_ADS_DAILY_ROW_BOUND',
     });
@@ -40,35 +42,57 @@ export async function buildTikTokAdsDailyWriteSet(input = {}) {
     });
   }
 
+  if (input.allStatuses && (date < '2025-09-01' || date >= todayInTimeZone(timezone, new Date(now)))) {
+    throw permanentError('TikTok daily range must be a closed authorized date', { code: 'TIKTOK_ADS_DAILY_DATE_OUTSIDE_SCOPE' });
+  }
+
   const seen = new Set();
-  const coverageRunId = `${PLATFORM}:${accountKey}:campaign_daily:${date}`;
+  const coverageRunId = `${PLATFORM}:${accountKey}:${grain}_daily:${date}`;
   const entities = [];
   const dailyFacts = [];
   const sourceHashes = [];
   for (const source of rows) {
     const dimension = object(source?.dimensions, 'dimensions');
     const metrics = object(source?.metrics, 'metrics');
-    const campaignId = digits(dimension.campaign_id, 'campaign_id');
+    const entityId = digits(dimension[grain === 'ad' ? 'ad_id_v2' : 'campaign_id'], grain);
+    const master = input.parents?.get(`${grain}:${entityId}`);
+    let campaignId = entityId;
+    let adGroupId = null;
+    if (grain === 'ad' || input.allStatuses) {
+      if (!master || master.source_account_id !== advertiserId) {
+        throw permanentError('TikTok daily identity has no approved master', { code: 'TIKTOK_ADS_DAILY_MASTER_MISSING' });
+      }
+      if (grain === 'ad') {
+        campaignId = digits(master.parent_campaign_id, 'parent_campaign_id');
+        adGroupId = digits(master.parent_ad_group_id, 'parent_ad_group_id');
+        const group = input.parents.get(`ad_group:${adGroupId}`);
+        if (!input.parents.has(`campaign:${campaignId}`) || !group
+          || group.parent_campaign_id !== campaignId || group.source_account_id !== advertiserId) {
+          throw permanentError('TikTok daily master parents conflict', { code: 'TIKTOK_ADS_DAILY_PARENT_CONFLICT' });
+        }
+      }
+    }
     // TikTok ส่ง daily dimension เป็นเวลาเที่ยงคืนของวันในบัญชี ไม่ใช่ date-only เสมอไป
     if (dimension.stat_time_day !== date && dimension.stat_time_day !== `${date} 00:00:00`) {
       throw permanentError('TikTok Ads report date does not match request', {
         code: 'TIKTOK_ADS_DAILY_DATE_MISMATCH',
       });
     }
-    if (seen.has(campaignId)) {
+    if (seen.has(entityId)) {
       throw permanentError('TikTok Ads report repeated one campaign-day identity', {
-        code: 'TIKTOK_ADS_DAILY_DUPLICATE_CAMPAIGN',
+        code: grain === 'campaign' ? 'TIKTOK_ADS_DAILY_DUPLICATE_CAMPAIGN' : 'TIKTOK_ADS_DAILY_DUPLICATE_AD',
       });
     }
-    seen.add(campaignId);
+    seen.add(entityId);
     const spendMicros = currencyAmountToMicros(text(metrics.spend, 'spend'), 'spend');
     const impressions = count(metrics.impressions, 'impressions');
     const clicks = count(metrics.clicks, 'clicks');
     const sourceHash = await createStableFingerprint({
       advertiserId, campaignId, date, spendMicros, impressions, clicks, currency,
+      ...(grain === 'ad' ? { adId: entityId, adGroupId } : {}),
     });
     sourceHashes.push(sourceHash);
-    entities.push(validateStorageRow('ads_entity_state', {
+    if (grain === 'campaign') entities.push(validateStorageRow('ads_entity_state', {
       entity_key: createAdsEntityKey({
         platform: PLATFORM, account_key: accountKey, entity_type: 'campaign',
         external_entity_id: campaignId,
@@ -100,20 +124,21 @@ export async function buildTikTokAdsDailyWriteSet(input = {}) {
     }));
     dailyFacts.push(validateStorageRow('ads_daily_facts', {
       ads_fact_key: createAdsFactKey({
-        platform: PLATFORM, account_key: accountKey, report_level: 'campaign',
-        external_entity_id: campaignId, metric_date: date,
+        platform: PLATFORM, account_key: accountKey, report_level: grain,
+        external_entity_id: entityId, metric_date: date,
         breakdown_key: 'none', segment_key: 'none',
       }),
       customer_key: customerKey,
       platform: PLATFORM,
       account_key: accountKey,
       source_account_id: advertiserId,
-      report_level: 'campaign',
-      entity_type: 'campaign',
-      external_entity_id: campaignId,
+      report_level: grain,
+      entity_type: grain,
+      external_entity_id: entityId,
       external_campaign_id: campaignId,
-      external_ad_group_id: null,
-      external_ad_id: null,
+      external_ad_group_id: adGroupId,
+      external_ad_id: grain === 'ad' ? entityId : null,
+      // Current master Creative ไม่ยืนยัน attribution ของวันย้อนหลัง
       external_creative_id: null,
       metric_date: date,
       account_timezone: timezone,

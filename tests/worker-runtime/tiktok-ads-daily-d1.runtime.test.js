@@ -1,3 +1,4 @@
+import { buildTikTokAdsMasterWriteSet } from '../../packages/application/src/tiktok-ads/tiktok-ads-master-write-set.js';
 import { expect, it } from 'vitest';
 import { runTikTokAdsMasterSync } from '../../packages/application/src/tiktok-ads/run-tiktok-ads-master-sync.js';
 import { applyD1Migrations, env } from 'cloudflare:test';
@@ -84,4 +85,44 @@ it('full TikTok master sync uses real D1 writes/lease, exact parent readback and
   expect(creative).toMatchObject({ entity_type: 'creative', parent_ad_id: '940' });
   const facts = await env.MKT_STATE_DB.prepare("SELECT COUNT(*) AS n FROM ads_daily_facts WHERE account_key='master_runtime'").first();
   expect(facts.n).toBe(0);
+});
+
+
+it('Campaign and true Ad grains coexist with separate Coverage, full parent readback and independent zero-change replays', async () => {
+  await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
+  const advertiserId = '123';
+  const base = { customerKey: 'daily_grains', accountKey: 'daily_grains', advertiserId,
+    currency: 'THB', timezone: 'Asia/Bangkok', date: '2026-10-01',
+    accessToken: 'test-only', businessWriteEnabled: true, multiGrainWriteEnabled: true,
+    allStatuses: true, db: env.MKT_STATE_DB,
+    historyStore: new D1MarketingHistoryStore({ db: env.MKT_STATE_DB }),
+    lockStore: new D1ReliabilityStore({ db: env.MKT_STATE_DB }),
+    client: { async listAllStatusDailyReport({ grain }) { return { totalCount: 1, pageCount: 1,
+      rows: [{ dimensions: { [grain === 'ad' ? 'ad_id_v2' : 'campaign_id']: grain === 'ad' ? '33' : '11',
+        stat_time_day: '2026-10-01 00:00:00' }, metrics: { spend: '1.23', impressions: '10', clicks: '2' } }] }; } },
+  };
+  const row = (kind, id, extra = {}) => ({ kind, id, campaignId: '11', adGroupId: '22', name: 'Verified',
+    status: 'ENABLE', videoId: null, imageIds: [], ...extra });
+  const rows = { campaign: [row('campaign', '11', { automationType: 'MANUAL' })],
+    ad_group: [row('ad_group', '22')], ad: [row('ad', '33')], smart_ad: [] };
+  const master = await buildTikTokAdsMasterWriteSet({ ...base, accountName: 'Verified', now: Date.now(),
+    syncRunId: 'masters', inventories: Object.fromEntries(Object.entries(rows).map(([kind, items]) =>
+      [kind, { rows: items, totalCount: items.length }])) });
+  await base.historyStore.writeMetaD1Operations(master.entities.map(row => ({ kind: 'ads_entity', row })));
+  const campaign = { ...base, grain: 'campaign', syncRunId: 'campaign-grain' };
+  const ad = { ...base, grain: 'ad', syncRunId: 'ad-grain' };
+  expect((await runTikTokAdsDailyD1Sync(campaign)).written).toBe(1);
+  expect((await runTikTokAdsDailyD1Sync(ad)).written).toBe(1);
+  expect((await runTikTokAdsDailyD1Sync(campaign)).written).toBe(0);
+  expect((await runTikTokAdsDailyD1Sync(ad)).written).toBe(0);
+  const facts = (await env.MKT_STATE_DB.prepare("SELECT report_level, external_entity_id, external_campaign_id, external_ad_group_id, external_ad_id, external_creative_id FROM ads_daily_facts WHERE account_key='daily_grains' ORDER BY report_level").all()).results;
+  expect(facts).toEqual([
+    { report_level: 'ad', external_entity_id: '33', external_campaign_id: '11', external_ad_group_id: '22', external_ad_id: '33', external_creative_id: null },
+    { report_level: 'campaign', external_entity_id: '11', external_campaign_id: '11', external_ad_group_id: null, external_ad_id: null, external_creative_id: null },
+  ]);
+  const coverage = (await env.MKT_STATE_DB.prepare("SELECT dataset_key, observed_rows FROM data_coverage_runs WHERE account_key='daily_grains' ORDER BY dataset_key").all()).results;
+  expect(coverage).toEqual([{ dataset_key: 'ads_daily_facts', observed_rows: 1 }, { dataset_key: 'ads_daily_facts_ad', observed_rows: 1 }]);
+  await expect(runTikTokAdsDailyD1Sync({ ...ad, client: { async listAllStatusDailyReport() {
+    return { totalCount: 1, rows: [{ dimensions: { ad_id_v2: '999', stat_time_day: '2026-10-01' }, metrics: { spend: '1', impressions: '1', clicks: '1' } }] }; } } })).rejects.toMatchObject({ code: 'TIKTOK_ADS_DAILY_MASTER_MISSING' });
+  expect((await env.MKT_STATE_DB.prepare("SELECT COUNT(*) AS n FROM ads_daily_facts WHERE account_key='daily_grains'").first()).n).toBe(2);
 });

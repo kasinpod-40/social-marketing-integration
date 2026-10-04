@@ -43,7 +43,7 @@ async function project(input) {
     FROM ads_daily_facts f LEFT JOIN ads_entity_state e ON e.customer_key = f.customer_key
       AND e.platform = f.platform AND e.account_key = f.account_key AND e.entity_type = 'campaign'
       AND e.external_entity_id = f.external_campaign_id
-    WHERE f.customer_key = ? AND f.platform = 'tiktok_ads' AND f.account_key = ? AND f.metric_date = ? LIMIT 501`)
+    WHERE f.customer_key = ? AND f.platform = 'tiktok_ads' AND f.account_key = ? AND f.metric_date = ? AND f.report_level = 'campaign' LIMIT 501`)
     .bind(customerKey, accountKey, date).all();
   const facts = result?.results ?? [];
   const coverageResult = await db.prepare(`SELECT * FROM data_coverage_runs

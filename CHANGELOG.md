@@ -851,3 +851,9 @@ D1/Lark full readback passed and replay zero business changes. Production traffi
 GET-only complete STATUS_ALL Campaign/ad_id_v2 daily proof added with bounded pagination,
 exact stored advertiser/parents and independent base totals; metric/Report/schedule remain gated
 until live source reconciliation and full downstream UAT pass.
+
+## TikTok Ads independent daily grains — 2026-10-04
+
+Adds separately gated STATUS_ALL Campaign and true Ad daily D1 writes to the existing writer.
+Exact parent/master checks, independent Ad coverage, full-field readback and stable-key replay;
+Campaign-only Lark projection filters its grain. No Report or schedule activation in this slice.
