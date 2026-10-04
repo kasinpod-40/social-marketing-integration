@@ -1,3 +1,8 @@
+## 2026-10-04 — Admit TikTok Ads into Monday Lark Native AI source
+
+- When the TikTok Ads Report gate is enabled, exact weekly Lark source and retained D1 recovery use the proved 7D v2 Report identity and require nine aligned channels. The separate optional per-Report AI flag remains unchanged.
+- Production already has the Monday 09:15 Report and 09:30 Lark Native AI group-notification schedules enabled; actual nine-channel delivery still requires live verification.
+
 ## 2026-10-04 — TikTok Ads automatic daily cycle verified
 
 - A real primary Cron trigger at 17:30 Asia/Bangkok started the TikTok Ads job automatically; all 42 units completed successfully with zero scoped DLQ. The temporary test time was removed and Production now has the daily 03:30 Asia/Bangkok setting at 100% traffic.

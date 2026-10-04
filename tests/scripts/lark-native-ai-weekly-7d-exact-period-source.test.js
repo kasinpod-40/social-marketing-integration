@@ -7,13 +7,13 @@ import { collectLarkNativeAiWeekly7dControlledUatSource } from '../../scripts/li
 const DAY = 86_400_000;
 const atBangkokDay = (date) => Date.parse(`${date}T00:00:00.000+07:00`);
 
-function snapshot(periodEnd, generatedAt) {
+function snapshot(periodEnd, generatedAt, platform = 'youtube') {
   const end = atBangkokDay(periodEnd);
   const start = end - (6 * DAY);
   return {
     fields: {
       report_id: `report:${periodEnd}`,
-      report_setting_key: 'chemistry_k:youtube:rolling:7d',
+      report_setting_key: `chemistry_k:${platform}:rolling:7d`,
       customer_profile: 'chemistry_k',
       account_id: 'youtube:chemistry_k',
       report_type: 'dashboard_performance_report',
@@ -31,7 +31,7 @@ function snapshot(periodEnd, generatedAt) {
   };
 }
 
-function client(searches = []) {
+function client(searches = [], platform = 'youtube') {
   const ids = Object.fromEntries(Object.keys(LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES)
     .map((key) => [key, `tbl_${key}`]));
   return {
@@ -44,22 +44,22 @@ function client(searches = []) {
         customer_profile: 'chemistry_k',
         report_type: 'dashboard_performance_report',
         window_days: 7,
-        platforms: ['youtube'],
-        capability: 'organic',
-        report_setting_key: 'chemistry_k:youtube:rolling:7d',
-        account_id: 'youtube:chemistry_k',
+        platforms: [platform],
+        capability: platform === 'tiktok_ads' ? 'paid_ads' : 'organic',
+        report_setting_key: `chemistry_k:${platform}:rolling:7d`,
+        account_id: `${platform}:chemistry_k`,
       } }],
     }),
     searchRecordsByFieldValues: async (input) => {
       const { tableId } = input;
       searches.push(input);
       if (tableId === ids.snapshots && input.fieldName === 'report_id') {
-        return [snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z'))];
+        return [snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z'), platform)];
       }
       if (tableId === ids.snapshots) {
         return [
-          snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z')),
-          snapshot('2026-09-07', Date.parse('2026-09-08T02:15:00Z')),
+          snapshot('2026-09-06', Date.parse('2026-09-07T02:15:00Z'), platform),
+          snapshot('2026-09-07', Date.parse('2026-09-08T02:15:00Z'), platform),
         ];
       }
       return [];
@@ -93,4 +93,16 @@ test('exact period selection keeps a retained Weekly recovery on its scheduled p
   assert.equal(latest.targetPeriod.periodEnd, '2026-09-07');
   assert.equal(latest.selectionPolicy, 'newest_7d_period_with_maximum_channel_coverage');
   assert.equal(latestSearches[0].fieldName, 'report_setting_key');
+});
+
+test('proved TikTok Ads weekly AI source reads the v2 Report identity', async () => {
+  const searches = [];
+  const source = await collectLarkNativeAiWeekly7dControlledUatSource({
+    client: client(searches, 'tiktok_ads'), customerProfile: 'chemistry_k',
+    targetPeriodEnd: '2026-09-06', tikTokAdsReady: true,
+  });
+  assert.equal(source.selectedChannelCount, 1);
+  assert.deepEqual(source.selectedChannels, ['tiktok_ads']);
+  assert.equal(searches[0].values.length, 1);
+  assert.equal(searches[0].values[0].endsWith(':tiktok-ads-v2'), true);
 });

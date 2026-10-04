@@ -3209,3 +3209,24 @@ disabled. The next 03:30 run has not happened yet. The shared optional Report AI
 remains false: no provider is injected in the Worker, so AI output cannot be claimed or
 enabled safely. All proved TikTok Ads metrics remain truthful; unsupported attributed
 purchase/value/ROAS and nonadditive period Reach remain null.
+
+### Implementation result — TikTok Ads Monday Lark Native AI admission 2026-10-04
+
+The Monday 09:15 Shared 7D Report and 09:30 Lark Native AI/group-notification schedules
+are separate from optional per-Report `MKT_REPORT_AI_SUMMARY_ENABLED`. Production readback
+shows both weekly schedules and notification runtime/send/mirror gates enabled, while the
+optional Report AI flag remains false. TikTok Ads Daily creates its own proved 7D v2 Report
+after the 03:30 source sync; D1 readback for 2026-09-27..2026-10-03 confirms one
+`chemistry_k:tiktok_ads:rolling:7d` materialization with `tiktok-ads-v2` formula.
+
+The weekly Lark source previously counted eight default-active channels and built the
+TikTok Ads exact Report ID with the planned v1 formula. With the existing TikTok Ads
+Report write gate true, weekly source selection and retained D1 recovery now use the
+proved v2 contract and require all nine channels for the same closed period. The default
+planned contract and 09:15 Shared Report producer remain unchanged; TikTok Ads 03:30
+Daily already creates its own 7D Report. Focused live-shape tests cover v2 selection and
+nine-channel recovery. Full gates: check 885 source files/zero cycles, 3,586 unit tests,
+25 Workers runtime tests, 107 Report reliability tests, production audit zero, deploy
+dry-run and diff check. Customer Lark user-identity read was unavailable under the local
+CLI strict bot policy, so tomorrow's actual AI generation/group delivery still needs
+live readback before success is claimed.
