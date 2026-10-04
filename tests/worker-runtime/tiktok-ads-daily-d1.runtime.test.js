@@ -70,6 +70,7 @@ it('full TikTok master sync uses real D1 writes/lease, exact parent readback and
     advertiserId: '999', currency: 'THB', timezone: 'Asia/Bangkok', accessToken: 'test-only', db: env.MKT_STATE_DB,
     historyStore: new D1MarketingHistoryStore({ db: env.MKT_STATE_DB }),
     lockStore: new D1ReliabilityStore({ db: env.MKT_STATE_DB }), repository: {},
+    reconcileLinks: async () => ({ adGroups: 0, ads: 0, creativeLinks: 0, updated: 0 }),
     larkClient: { async requestBitableJson() { return { data: { total: 0 } }; } },
     client: { async listEntityMetadata({kind}) { return { rows: datasets[kind], totalCount: datasets[kind].length }; },
       async getAdvertiser() { return { advertiserId: '999', advertiserName: 'Example', currency: 'THB', timezone: 'Asia/Bangkok' }; } },

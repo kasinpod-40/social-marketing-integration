@@ -1,3 +1,9 @@
+## 2026-10-04 — TikTok Ads current master relations
+
+- Link current Ad Groups, true Ads and all proved Creative children by real Lark record IDs.
+- Reject missing/foreign targets and invalid relation schema; verify updates and stable replay.
+- Preserve null historical Daily Creative attribution.
+
 ## 2026-10-04 — Lark percentage replay precision
 
 - Support the observed two-decimal percentage formatter with fraction precision, preserving null/zero

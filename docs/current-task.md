@@ -3134,3 +3134,14 @@ Production deployment unchanged. Controlled POST/replay and complete core Lark/S
 Gates: 3,580 unit / 25 real Workers / 107 Report reliability tests, architecture 885 files / zero cycles,
 repository hygiene, production audit zero vulnerabilities, normal and isolated dry runs. Final focused
 formatter/projection tests include real numeric changes and missing-versus-zero preservation.
+
+### Implementation result — TikTok Ads current master links 2026-10-04
+
+The existing master reconciliation now resolves customer-owned Lark record IDs after all five master
+write/readback stages. It links Ad Groups to Campaigns, true Ads to Ad Groups, and Ads to all proved
+current Creative records, including multi-asset Smart+ parents. A missing/foreign target or wrong link
+schema fails before link writes; each bounded update has exact fresh readback and zero-change replay.
+When a current Creative relation disappears, the one-way link is explicitly cleared. These links
+represent current master relationships, not historical Daily attribution. Shared serializer accepts
+only Lark one-way-association type 18 with unique record IDs in link_record_ids, following the official
+Base record contract. Focused tests pass, full gates and live Lark UAT pending before release.

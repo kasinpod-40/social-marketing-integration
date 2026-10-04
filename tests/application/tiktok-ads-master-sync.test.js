@@ -21,7 +21,8 @@ function fixture() {
     lockStore: { async acquire() { locks.push('acquire'); return { acquired: true }; },
       async renew() { return { renewed: lease }; }, async release() { locks.push('release'); }, async saveSyncRun() {} },
     tables: { mktAdsAccounts: 'accounts', mktAdsCampaigns: 'campaigns', mktAdsAdGroups: 'groups', mktAdsAds: 'ads', mktAdsCreatives: 'creatives' },
-    repository: {}, larkClient: { async requestBitableJson() { return { data: { total: 0 } }; } },
+    repository: {}, reconcileLinks: async () => ({ adGroups: 0, ads: 0, creativeLinks: 0, updated: 0 }),
+    larkClient: { async requestBitableJson() { return { data: { total: 0 } }; } },
     syncEngine: { async planByKey(spec) {
       if (failTable === spec.tableId) throw Error('Schema invalid');
       const existing = specs.get(spec.tableId);
