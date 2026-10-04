@@ -3051,3 +3051,20 @@ Live c88a7a2d passed2025-09-01/2026-01-01/2026-06-01/2026-10-03 with every addit
 exactlyequal, zero missingmasters/parents. Previewdisabled/Productionunchanged. No new metricwrites.
 Gates:39focused/3562unit/24Workers/106reliability/check/hygiene/normal+isolateddryrun;
 dependenciesunchanged with productionauditzero. Master sourcepost PR912 merged; controlled UAT next.
+
+
+### Implementation result — core Daily enrichment continuation 2026-10-04
+
+Master post livePOST/fullreadback/replaypassed:546Adreferences/296newCreatives, total5475;
+secondPOSTzeroD1changes/allfiveLarktableszerochanges. Previewdisabled, activeProductionunchanged.
+Core proof PR913 merged afterbothCI. Implement gated core Daily mapping per approvedcontract,
+exact actions metadata/hash/readback, base downgrade refusal and day-onlyReach projection.
+TikTok periodReport/TopAds neverSUMreach; metriclabel clearlyOptimizationconversions.
+Full gates/liveenrichment preflight/UAT pending. NoReport/scheduleactivationyet.
+
+- Core mapping gates passed29focused/3565unit/24realWorkers/106Reportreliability,
+  check882files/zero cycles/hygiene,normal+isolateddryrun anddiffreview;dependency graphunchanged,
+  productionaudit0. Workers regression proves source core persists/replayszero and disabledgate/
+  base downgrade fail. Lark core evidence readback/replay tested; Report/TopAds reach forcednull.
+  Live full398daycross-grainGETpreflight running (firstURL404 propagation retried, cleanupverified).
+  No new core metrics writes yet; existing master/history/Lark/Summary delivered remainverified.

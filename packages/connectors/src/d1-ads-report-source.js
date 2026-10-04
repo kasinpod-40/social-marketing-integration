@@ -134,7 +134,7 @@ export class D1AdsReportSource {
     const coverageRate = calculateCoverageRate(coverage);
     const summaryReportLevel = summarySelection.reportLevel ?? this.summaryReportLevels[0];
     const metrics = calculateAdsPeriodMetrics({
-      rows: summaryRows,
+      rows: this.platform === 'tiktok_ads' ? summaryRows.map(row => ({ ...row, reach: null })) : summaryRows,
       reportLevel: summaryReportLevel,
       coverageStatus,
       coverageRate,
@@ -142,7 +142,7 @@ export class D1AdsReportSource {
     const topAds = this.rankingReportLevels.length === 0 || !rankingAdmitted
       ? Object.freeze([])
       : buildTopAds({
-        rows: rankingRows,
+        rows: this.platform === 'tiktok_ads' ? rankingRows.map(row => ({ ...row, reach: null })) : rankingRows,
         entityById,
         platform: this.platform,
         reportLevel: rankingSelection.reportLevel ?? this.rankingReportLevels[0],

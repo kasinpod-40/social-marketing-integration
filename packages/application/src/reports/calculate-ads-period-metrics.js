@@ -40,7 +40,7 @@ export function buildAdsMetricPayload(input = {}) {
     ['impressions', 'Impressions', 'count'],
     ['reach', 'Reach', 'count'],
     ['clicks', 'Clicks', 'count'],
-    ['conversions', 'Conversions', 'count'],
+    ['conversions', platform === 'tiktok_ads' ? 'Optimization conversions' : 'Conversions', 'count'],
     ['conversion_value_micros', 'Conversion value', 'currency'],
     ['ctr', 'CTR', 'ratio'],
     ['conversion_rate', 'Conversion rate', 'ratio'],

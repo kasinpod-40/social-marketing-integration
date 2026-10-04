@@ -196,3 +196,21 @@ test('bounded range reconciles every day, including confirmed empty day, and ded
   }
   await assert.rejects(projectTikTokAdsDailyLark({ ...input, days: 8 }), { code: 'TIKTOK_ADS_LARK_RANGE_INVALID' });
 });
+
+
+test('projection enriches only proved core daily metrics and rejects inconsistent evidence before writes', async () => {
+  const f = fixture();
+  Object.assign(f.state.facts[0], { reach: 800, conversions: 1.5, video_views: 900,
+    actions_json: JSON.stringify({ metric_semantics: 'provider_selected_optimization_event',
+      attribution: 'provider_report_default', conversion: '1.50', video_watched_2s: 700, video_watched_6s: 200 }) });
+  await projectTikTokAdsDailyLark({ ...f.input, execute: true });
+  const row = f.records.get('daily')[0].fields;
+  assert.equal(row.reach, 800); assert.equal(row.conversions, 1.5); assert.equal(row.video_views, 900);
+  assert.equal(row.video_view_rate, 0.9); assert.equal(row.actual_roas, undefined);
+  const replay = await projectTikTokAdsDailyLark({ ...f.input, execute: true });
+  assert.equal(replay.tables[1].updated, 0);
+  f.state.facts[0].conversions = 2;
+  f.calls.length = 0;
+  await assert.rejects(projectTikTokAdsDailyLark({ ...f.input, execute: true }), { code: 'TIKTOK_ADS_CORE_EVIDENCE_INVALID' });
+  assert.deepEqual(f.calls, ['acquire', 'release']);
+});

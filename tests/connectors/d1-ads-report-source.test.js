@@ -374,13 +374,15 @@ test('TikTok Top Ads uses independently complete Ad Coverage and never sums Camp
     return [fact({ key: 'campaign-fact', level: 'campaign', campaignId: 'campaign', breakdown: 'none', segment: 'none', metricDate: day,
       spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null }),
     { ...fact({ key: 'ad-fact', level: 'ad', adId: 'true-ad', campaignId: 'campaign', breakdown: 'none', segment: 'none', metricDate: day,
-      spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null }), external_creative_id: dailyCreative }];
+      spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null }), external_creative_id: dailyCreative }].map(row => ({ ...row, reach: 80 }));
   });
   const source = new D1AdsReportSource({ db, platform: 'tiktok_ads', rankingReportLevels: ['ad'],
     rankingBreakdownFamily: 'none', rankingSegmentFamily: 'none', rankingCoverageDatasetKeys: ['ads_daily_facts_ad'] });
   const query = { customerKey: 'demo', accountKey: 'demo', periodStart: day, periodEnd: day };
   const result = await source.load(query);
   assert.equal(result.metrics.spend_micros, 1000000);
+  assert.equal(result.metrics.reach, null);
+  assert.equal(result.topAds[0].reach, null);
   assert.equal(result.topAds.length, 1); assert.equal(result.readSummary.rankingCoverageRate, 1);
   assert.equal(result.readSummary.topAdsAvailability, 'available');
   assert.equal(result.topAds[0].external_creative_id, null);

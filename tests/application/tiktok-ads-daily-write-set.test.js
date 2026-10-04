@@ -77,3 +77,20 @@ test('new all-status daily contract refuses current day or dates outside approve
       allStatuses: true, date, rows: [] }), { code: 'TIKTOK_ADS_DAILY_DATE_OUTSIDE_SCOPE' });
   }
 });
+
+
+test('core Daily maps observed reach/playstarts/generic conversion, preserves exact video definitions and rejects gaps', async () => {
+  const parents = new Map([['campaign:456', { source_account_id: base.advertiserId }]]);
+  const input = { ...base, now: Date.parse('2026-10-04T00:00:00Z'), allStatuses: true, coreMetrics: true, parents,
+    rows: [sourceRow('456', { metrics: { reach: '80', conversion: '1.50', video_play_actions: '90',
+      video_watched_2s: '70', video_watched_6s: '20' } })] };
+  const row = (await buildTikTokAdsDailyWriteSet(input)).dailyFacts[0];
+  assert.equal(row.reach, 80); assert.equal(row.conversions, 1.5); assert.equal(row.video_views, 90);
+  assert.equal(row.conversion_value_micros, null);
+  assert.deepEqual(JSON.parse(row.actions_json), { metric_semantics: 'provider_selected_optimization_event',
+    attribution: 'provider_report_default', conversion: '1.50', video_watched_2s: 70, video_watched_6s: 20 });
+  const baseline = (await buildTikTokAdsDailyWriteSet({ ...input, coreMetrics: false })).dailyFacts[0];
+  assert.notEqual(row.source_payload_hash, baseline.source_payload_hash);
+  input.rows[0].metrics.video_watched_6s = undefined;
+  await assert.rejects(buildTikTokAdsDailyWriteSet(input));
+});

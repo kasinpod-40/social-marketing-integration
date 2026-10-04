@@ -115,6 +115,22 @@ it('Campaign and true Ad grains coexist with separate Coverage, full parent read
   expect((await runTikTokAdsDailyD1Sync(ad)).written).toBe(1);
   expect((await runTikTokAdsDailyD1Sync(campaign)).written).toBe(0);
   expect((await runTikTokAdsDailyD1Sync(ad)).written).toBe(0);
+  const enriched = { ...ad, coreMetrics: true, coreMetricWriteEnabled: true, client: {
+    async listAllStatusDailyReport({ metricFamily }) {
+      expect(metricFamily).toBe('core');
+      return { totalCount: 1, pageCount: 1, rows: [{ dimensions: { ad_id_v2: '33', stat_time_day: '2026-10-01' },
+        metrics: { spend: '1.23', impressions: '10', clicks: '2', reach: '8', conversion: '1.50',
+          video_play_actions: '9', video_watched_2s: '7', video_watched_6s: '2' } }] };
+    },
+  } };
+  expect((await runTikTokAdsDailyD1Sync(enriched)).written).toBe(1);
+  expect((await runTikTokAdsDailyD1Sync(enriched)).written).toBe(0);
+  const coreFact = await env.MKT_STATE_DB.prepare("SELECT reach, conversions, video_views, actions_json FROM ads_daily_facts WHERE account_key='daily_grains' AND report_level='ad'").first();
+  expect(coreFact).toMatchObject({ reach: 8, conversions: 1.5, video_views: 9 });
+  expect(JSON.parse(coreFact.actions_json).video_watched_6s).toBe(2);
+  await expect(runTikTokAdsDailyD1Sync(ad)).rejects.toMatchObject({ code: 'TIKTOK_ADS_METRIC_DOWNGRADE_REFUSED' });
+  await expect(runTikTokAdsDailyD1Sync({ ...enriched, coreMetricWriteEnabled: false }))
+    .rejects.toMatchObject({ code: 'TIKTOK_ADS_CORE_METRIC_WRITE_DISABLED' });
   const facts = (await env.MKT_STATE_DB.prepare("SELECT report_level, external_entity_id, external_campaign_id, external_ad_group_id, external_ad_id, external_creative_id FROM ads_daily_facts WHERE account_key='daily_grains' ORDER BY report_level").all()).results;
   expect(facts).toEqual([
     { report_level: 'ad', external_entity_id: '33', external_campaign_id: '11', external_ad_group_id: '22', external_ad_id: '33', external_creative_id: null },
