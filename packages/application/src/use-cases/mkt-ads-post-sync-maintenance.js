@@ -230,7 +230,12 @@ export async function materializeCampaignSummaryHistory(input = {}) {
   });
 }
 
-async function materializeCampaignSummaryPeriods(input) {
+export async function materializeCampaignSummaryPeriods(input) {
+  const scope = input.scope;
+  if (scope && (!TERMINAL_MAINTENANCE_PLATFORMS.has(scope.platform)
+    || !optionalText(scope.accountKey) || !optionalText(scope.advertiserId))) {
+    throw maintenanceError('Ads Campaign Summary exact scope is invalid', 'MKT_ADS_CAMPAIGN_SUMMARY_SCOPE_INVALID');
+  }
   const larkRows = [];
   for (const period of input.periods) {
     const rows = await readCampaignPeriodRows({
@@ -238,6 +243,7 @@ async function materializeCampaignSummaryPeriods(input) {
       customerKey: input.customerKey,
       periodStart: period.periodStart,
       periodEnd: period.periodEnd,
+      scope,
     });
     larkRows.push(...rows.map((row) => campaignSummaryRow(
       row,
@@ -268,7 +274,9 @@ async function materializeCampaignSummaryPeriods(input) {
       'MKT_ADS_CAMPAIGN_SUMMARY_DUPLICATE_KEY',
     );
   }
-  const result = await input.syncEngine.executePlan(plan);
+  if (input.execute === false) return Object.freeze({ mode: 'preview', campaigns: larkRows.length,
+    created: plan.createRows.length, updated: plan.updateRows.length, skipped: plan.skipped });
+  const result = await input.syncEngine.executePlan(plan, { beforeWriteChunk: input.beforeWriteChunk });
   const accounted = Number(result?.created ?? 0) + Number(result?.updated ?? 0) + Number(result?.skipped ?? 0);
   if (accounted !== larkRows.length || Number(result?.duplicateInputRows ?? 0) !== 0) {
     throw maintenanceError(
@@ -276,6 +284,7 @@ async function materializeCampaignSummaryPeriods(input) {
       'MKT_ADS_CAMPAIGN_SUMMARY_RECONCILIATION_FAILED',
     );
   }
+  await input.beforeWriteChunk?.();
   const readbackPlan = await input.syncEngine.planByKey({
     repository: exactRepository,
     tableId: input.tableId,
@@ -418,7 +427,7 @@ export async function assertMktAdsMaintenanceIdle(input = {}) {
   return assertNoActiveSyncLocks(requireDb(input.db), normalizeNow(input.now ?? Date.now()));
 }
 
-async function readCampaignPeriodRows({ db, customerKey, periodStart, periodEnd }) {
+async function readCampaignPeriodRows({ db, customerKey, periodStart, periodEnd, scope }) {
   const result = await db.prepare(`
     SELECT
       f.platform,
@@ -442,6 +451,7 @@ async function readCampaignPeriodRows({ db, customerKey, periodStart, periodEnd 
       AND c.entity_type = 'campaign'
       AND c.external_entity_id = f.external_campaign_id
     WHERE f.customer_key = ?
+      ${scope ? "AND f.platform = ? AND f.account_key = ? AND f.source_account_id = ?" : ""}
       AND f.external_campaign_id IS NOT NULL
       AND f.platform IN ('meta_ads', 'google_ads', 'tiktok_ads')
       AND f.metric_date >= ?
@@ -455,7 +465,8 @@ async function readCampaignPeriodRows({ db, customerKey, periodStart, periodEnd 
       f.platform, f.account_key, f.source_account_id, f.external_campaign_id
     ORDER BY f.platform, f.source_account_id, f.external_campaign_id
     LIMIT ?
-  `).bind(customerKey, periodStart, periodEnd, MAX_CAMPAIGN_SUMMARY_ROWS + 1).all();
+  `).bind(customerKey, ...(scope ? [scope.platform, scope.accountKey, scope.advertiserId] : []),
+    periodStart, periodEnd, MAX_CAMPAIGN_SUMMARY_ROWS + 1).all();
   const rows = Array.isArray(result) ? result : (result?.results ?? []);
   if (rows.length > MAX_CAMPAIGN_SUMMARY_ROWS) {
     throw maintenanceError(

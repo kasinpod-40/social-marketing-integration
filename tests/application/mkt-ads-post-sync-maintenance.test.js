@@ -423,3 +423,28 @@ for (const failQuery of [null, 2]) {
     }
   });
 }
+
+test('scoped Summary preview binds one platform/account/advertiser and performs no writes', async () => {
+  const { materializeCampaignSummaryPeriods } = await import('../../packages/application/src/use-cases/mkt-ads-post-sync-maintenance.js');
+  let writes = 0;
+  const result = await materializeCampaignSummaryPeriods({ customerKey: 'chemistry_k', tableId: 'summary',
+    timezone: 'Asia/Bangkok', now: NOW, execute: false, repository: {},
+    periods: [{ periodStart: '2026-09-01', periodEnd: '2026-09-03' }],
+    scope: { platform: 'tiktok_ads', accountKey: 'chemistry_k', advertiserId: '123' },
+    db: { prepare(sql) {
+      assert.match(sql, /f.platform = \? AND f.account_key = \? AND f.source_account_id = \?/u);
+      assert.match(sql, /f.report_level = 'campaign'/u);
+      return { bind(...args) {
+        assert.deepEqual(args, ['chemistry_k', 'tiktok_ads', 'chemistry_k', '123', '2026-09-01', '2026-09-03', 1001]);
+        return { all: async () => ({ results: [{ ...aggregateRow(), platform: 'tiktok_ads', source_account_id: '123',
+          conversions: null, conversion_value_micros: null }] }) };
+      } };
+    } }, syncEngine: { planByKey: async ({ rows }) => {
+      assert.equal(rows[0].conversions, null); assert.equal(rows[0].roas, null);
+      return { createRows: rows, updateRows: [], skipped: 0, duplicateInputRows: 0 };
+    }, executePlan: async () => { writes++; } },
+  });
+  assert.equal(result.campaigns, 1); assert.equal(result.created, 1); assert.equal(writes, 0);
+  await assert.rejects(materializeCampaignSummaryPeriods({ scope: { platform: 'other' } }),
+    { code: 'MKT_ADS_CAMPAIGN_SUMMARY_SCOPE_INVALID' });
+});

@@ -1880,3 +1880,12 @@ independent and is never added to Ad totals. Default TikTok adapter remains plan
 GET-only bounded true-Ad metric families inspect all rows against base identities and approved
 masters. Returns only supported/presence/numeric/zero/nonzero counts. No event/value writes or
 Report/schedule admission follows from field presence alone.
+
+## — exact TikTok monthly Summary continuation 2026-10-04
+
+Full STATUS_ALL source preflight passed398closed dates /22,691Campaign+trueAd rows; historical
+D1 writes/readbacks still running. True Ad Lark GET preview passed35creates withDaily6,981rows.
+Summary now reuses shared Paid period writer with optional exact platform/account/advertiser scope,
+GET preview, bounded one-month closed-day Coverage/parent proof, capacity/schema preflight, renewable
+lease, Thai month option preparation and all-field readback/replay. Default other-channel maintenance
+remains unchanged. Separate Summary admission; no Summary/Report/schedule claim before live UAT.
