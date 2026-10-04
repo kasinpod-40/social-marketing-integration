@@ -2932,3 +2932,21 @@ summary and planned adapter. No Report writes/schedule activation in this prepar
   106 Report reliability, check/hygiene, audit zero vulnerabilities, deploy dry-run. Dedicated
   regression proves summary spend remains one grain and missing Ad Coverage suppresses Top Ads
   while independently complete Campaign summary remains valid. Adapter remains planned.
+
+### Implementation result — full metric proof continuation 2026-10-04
+
+GET-only full true Ad daily metric families: base/delivery/video/optimization/web purchase/app
+purchase. Complete pages, exact ad_id_v2/day/master and comparison with base identity; returns
+counts/presence/numeric/zero/nonzero only. Provider rejection means unsupported family rather than
+fake zero; transient errors fail. No event/value metric writes authorized by presence alone.
+Independent live semantics/attribution/currency proof still required before mapping.
+
+- Full live GET metric proof candidate `d3fcfff5` passed both2026-10-03 and2025-09-01.
+  Base/delivery/video/optimization/web_purchase share all true Ad identities35/53; every requested
+  field present/numeric, zero missing masters. Generic conversion has nonzero6/12 rows while
+  complete_payment/ROAS/value-per-payment are explicitly zero on every row. Do not relabel generic
+  optimization conversions as purchases or infer currency value from a ratio. App purchase family
+  returns30/40 rows instead of35/53, all explicit zero; missing Ad identities remain unavailable,
+  not zero. Historical/attribution proof remains necessary before metric mapping.
+- Gates passed36focused/3553unit/22Workers/106Reportreliability/check/hygiene/audit/dry-runs.
+  No source data/IDs/amounts returned; no business writes or preview setting mutation in this GET.

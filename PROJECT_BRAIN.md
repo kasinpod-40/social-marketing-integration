@@ -1874,3 +1874,9 @@ readback. Ad projection writes Daily only; Campaign/master reconciliation remain
 Shared D1 Ads reader accepts explicit independent ranking coverage datasets. TikTok Top Ads
 remains unavailable until every ranking date reconciles with Ad facts; Campaign summary stays
 independent and is never added to Ad totals. Default TikTok adapter remains planned.
+
+## TikTok Ads full metric capability proof — 2026-10-04
+
+GET-only bounded true-Ad metric families inspect all rows against base identities and approved
+masters. Returns only supported/presence/numeric/zero/nonzero counts. No event/value writes or
+Report/schedule admission follows from field presence alone.

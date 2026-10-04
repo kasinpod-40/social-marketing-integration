@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proveTikTokAdsDailyGrains } from '../../packages/application/src/tiktok-ads/prove-tiktok-ads-daily-grains.js';
+import { proveTikTokAdsDailyGrains, proveTikTokAdsDailyMetrics } from '../../packages/application/src/tiktok-ads/prove-tiktok-ads-daily-grains.js';
 const date = '2026-10-02';
 function fixture() {
   const masters = [
@@ -48,4 +48,31 @@ test('empty complete source confirms zero rows independently of retained masters
   const result = await proveTikTokAdsDailyGrains(f.input);
   assert.equal(result.identityReconciled, true); assert.equal(result.grains.ad.rows, 0);
   assert.deepEqual(result.totalsMatch, { spend: true, impressions: true, clicks: true });
+});
+
+
+test('full true Ad metric proof distinguishes explicit zero/missing/nonnumeric and preserves unsupported family', async () => {
+  const f = fixture();
+  f.input.client.listAllStatusDailyReport = async ({metricFamily}) => {
+    if (metricFamily === 'web_purchase') { const error = new Error('private-provider-response');
+      error.code = 'TIKTOK_ADS_ALL_STATUS_DAILY_REJECTED'; throw error; }
+    return { totalCount: 1, pageCount: 1, rows: [{ dimensions: { ad_id_v2: '33', stat_time_day: date },
+      metrics: { spend: '1.23', impressions: '7', clicks: '2', reach: '0', frequency: 'N/A', conversion: '1.50' } }] };
+  };
+  const result = await proveTikTokAdsDailyMetrics(f.input);
+  assert.equal(result.families.base.baseIdentityMatched, true);
+  assert.deepEqual(result.families.delivery.fields.reach, { present: 1, numeric: 1, zero: 1, nonzero: 0 });
+  assert.deepEqual(result.families.delivery.fields.frequency, { present: 1, numeric: 0, zero: 0, nonzero: 0 });
+  assert.equal(result.families.video.fields.video_play_actions.present, 0);
+  assert.equal(result.families.optimization.fields.conversion.nonzero, 1);
+  assert.deepEqual(result.families.web_purchase, { supported: false, code: 'TIKTOK_ADS_ALL_STATUS_DAILY_REJECTED' });
+  assert.doesNotMatch(JSON.stringify(result), /private|1.23|1.50|\b33\b/);
+});
+test('metric probe reports foreign base identities and propagates transient family failures', async () => {
+  const f = fixture();
+  f.input.client.listAllStatusDailyReport = async ({metricFamily}) => {
+    if (metricFamily === 'video') { const error = new Error('network'); error.code = 'TIKTOK_ADS_ALL_STATUS_DAILY_NETWORK_ERROR'; throw error; }
+    return { totalCount: 1, pageCount: 1, rows: [{ dimensions: { ad_id_v2: '33', stat_time_day: date }, metrics: {} }] };
+  };
+  await assert.rejects(proveTikTokAdsDailyMetrics(f.input), { code: 'TIKTOK_ADS_ALL_STATUS_DAILY_NETWORK_ERROR' });
 });
