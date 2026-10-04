@@ -3189,3 +3189,23 @@ real Workers runtime 25/25, Report reliability 107/107, architecture/hygiene che
 (885 source files, zero cycles), production dependency audit zero vulnerabilities,
 deploy dry-run and diff check. The separate AI capability and first automatic scheduled
 cycle still need live verification before claiming full completion.
+
+### Implementation result — TikTok Ads automatic cycle and final schedule 2026-10-04
+
+PR #921 passed both CI checks and merged. A temporary TikTok-only schedule time of
+17:30 Asia/Bangkok on the existing five-minute primary Cron generated the standard
+scheduled operation `tiktok_ads:tiktok-ads-daily-20261003` without a manual Queue send.
+D1 Work readback was `completed` with `{status:success,units:42}`; the scoped DLQ count
+was zero. This proves master, source parity, 14 D1 Daily, 14 Lark Daily, Summary and four
+Report windows on an actual automatic cycle. The already-tested controlled UAT had the
+same successful 42-unit completion and zero scoped DLQ. No duplicate fact keys were
+introduced; both runs used the existing stable-key reconciliation and report readback.
+
+The temporary time was removed after completion. Final Worker version
+`e6a7e853-d45d-44a0-9ce9-21510e581b55` is 100% active with
+`MKT_SCHEDULE_TIKTOK_ADS_ENABLED=true`, `MKT_TIKTOK_ADS_SYNC_TIME=03:30`,
+234 bindings, 15 secret bindings, existing primary and YouTube Crons and preview URLs
+disabled. The next 03:30 run has not happened yet. The shared optional Report AI flag
+remains false: no provider is injected in the Worker, so AI output cannot be claimed or
+enabled safely. All proved TikTok Ads metrics remain truthful; unsupported attributed
+purchase/value/ROAS and nonadditive period Reach remain null.

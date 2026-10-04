@@ -1,11 +1,13 @@
 # Social Marketing Data Integration
 
-TikTok Ads master and base Daily history are live-proved: 398 dates from2025-09-01,
-5,746Campaign rows /16,945trueAd rows. Customer Lark90day cache has5,743TikTokDaily rows
-and14monthly Summary buckets /396Campaign-month rows, all readback/replay passed.
-Core metric enrichment and 1/3/7/30-day Reports have live readback. Current master links now connect
-261 Ad Groups and 1,078 Ads, with zero-change replay. AI admission and the actual automatic Queue cycle
-still require validation. See [current task](docs/current-task.md) and [full completion contract](docs/tasks/tiktok-ads-full-completion-20261003.md).
+TikTok Ads master and Daily history are live-proved for 398 dates from 2025-09-01:
+5,746 Campaign rows and 16,945 true-Ad rows. The customer Lark 90-day cache has 5,743
+Daily rows and 14 monthly Summary buckets with 396 Campaign-month rows. Core metric
+enrichment, master links and 1/3/7/30-day Reports passed readback and replay. A controlled
+42-unit Production Queue UAT and a real Cron-triggered 42-unit cycle completed with zero
+scoped DLQ. TikTok Ads daily sync is enabled for 03:30 Asia/Bangkok. The shared optional
+Report AI provider remains unconfigured and its flag is false; AI output is not claimed.
+See [current task](docs/current-task.md) and [full completion contract](docs/tasks/tiktok-ads-full-completion-20261003.md).
 
 ## Instagram token renewal
 
@@ -155,10 +157,9 @@ Daily contract ปัจจุบันลดงาน Source โดยไม่
 และทุกปลายทางยังใช้ stable-key upsert กับ durable checkpoint เหมือนเดิม. Queue ของ Chatwoot ยังคง
 ประมวลผลทีละ delivery แต่สามารถ hydrate ภายใน delivery พร้อมกันได้สูงสุดสอง Conversation ผ่าน
 execution-only cap โดยไม่เปลี่ยน Work fingerprint.
-TikTok Ads มี Customer OAuth และ Campaign-day Spend/Impressions/Clicks source proof แล้ว; D1-only
-one-day ingest ยังต้องผ่าน live reconciliation ก่อนเปิด Lark/Report/Queue/schedule. การเชื่อมต่อ
-อัตโนมัติยัง `planned`;
-Notification/DLQ redrive ปิดและ Production blocked. ดู
+TikTok Ads ผ่าน Customer Production UAT และ Cron-triggered Queue รอบจริงแล้ว โดย sync รายวัน
+03:30 Asia/Bangkok; รายละเอียดปัจจุบันอยู่ต้น README และ `docs/current-task.md`.
+Notification/DLQ redrive ของ workstream เดิมยังต้องตรวจตามขอบเขตของตนเอง. ดู
 `docs/project-brain/multichannel-report-schedule-final-closure-v1.md` และ
 `docs/project-brain/chatwoot-stable-identity-pagination-live-closeout-2026-08-10.md` และ
 `docs/project-brain/chatwoot-daily-updated-within-incremental-2026-08-15.md` และ
@@ -527,7 +528,7 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 | Instagram Organic | July D1/Lark parity accepted | All Meta completion Workstream; Worker restored all-false |
 | Meta Ads | July activity-scoped implementation under Gate | D1 keeps detail; Lark keeps activity entities and Shared Reports only |
 | Google Ads | Signed delivery and LIVE UAT completed / safely closed | No new implementation unless a separate incident or enhancement is approved |
-| TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
+| TikTok Ads | Production verified | Daily 03:30 Asia/Bangkok; Campaign/true-Ad D1, Lark, Summary and Reports verified; optional AI provider off |
 | WooCommerce | 2026-only Runtime verified; Live cleanup/reconciliation pending merged HEAD | Bounded Integration Workspace closeout; Schedule/Production remain closed |
 | Chatwoot | Closed accepted Partial UAT | Not a Meta prerequisite; retained DLQ/Alerts remain forensic truth |
 
@@ -592,5 +593,5 @@ Operator `/operator/tiktok-ads/report?days=1|3|7|30&date=YYYY-MM-DD` ตรว�
 และ true Ad ranking ทั้งช่วงหลักและช่วงเปรียบเทียบก่อนเขียน โดยต้องมี Coverage และ core metrics
 ครบทุกวัน POST ต้องเปิด `MKT_TIKTOK_ADS_REPORT_WRITE_ENABLED=true` อย่างชัดเจน และตรวจอ่าน
 Lark กลับครบทุกตาราง ข้อมูล Conversion หมายถึง optimization event; Reach ของช่วงรวมเป็น N/A
-เพราะไม่สามารถบวก distinct audience ข้ามวันได้ Default adapter ยังเป็น planned จนผ่าน live UAT
-และการเปิด schedule ที่ตรวจทานแล้ว
+เพราะไม่สามารถบวก distinct audience ข้ามวันได้ TikTok Ads fixed Report adapter ผ่าน live UAT แล้ว;
+daily Queue และ Cron รอบจริงผ่านครบ 42 ขั้น โดยตั้งเวลา 03:30 Asia/Bangkok

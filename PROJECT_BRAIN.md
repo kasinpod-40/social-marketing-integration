@@ -2004,3 +2004,14 @@ pending live-account UAT gate for TikTok Ads; catalog promotion to `verified` is
 The failed first operation remains an isolated forensic terminal. Schedule activation and an
 observed automatic cycle are still required; AI capability follows the separately proved
 provider contract and must not invent purchase/value metrics.
+
+The reviewed readiness promotion merged as PR #921. A temporary 17:30 Asia/Bangkok
+TikTok Ads time on the existing five-minute primary Cron produced the normal scheduled
+operation for 2026-10-03 without a manual Queue send. Its Work completed all 42 units
+with `{status:success,units:42}` and zero scoped DLQ. The temporary time was then
+replaced by the normal 03:30 Asia/Bangkok setting. Final Production Worker version
+`e6a7e853-d45d-44a0-9ce9-21510e581b55` serves 100% traffic with 234 bindings,
+15 secrets and preview URLs disabled; existing primary/YouTube crons are preserved.
+This proves the automatic path, while the next actual 03:30 run has not happened yet.
+The shared Report AI summary flag is still false and no provider is wired; no TikTok Ads
+AI generation is claimed. Unsupported attributed purchase/value/ROAS semantics remain null.
