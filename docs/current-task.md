@@ -2980,3 +2980,22 @@ as mutation chunks. This reduces repeated Lark scans during authorized cache bac
 - Full history write phase completed398days/two grains,22,691source facts; full independent
   source-to-D1 readback still running. Summary live preview passed2025-09(26Campaign rows)
   and2026-10(17Campaign rows);14month controlled POST/readback/replay running.
+
+### Implementation result — Report source parity / Creative attribution guard 2026-10-04
+
+Summary live14months /396Campaign-month rows reconciled and all-month replay zero changes.
+Ad Lark one-day UAT35rows reconciled and replay zero changes;90day cache still running.
+Independent local read-only D1 Report reader plus SQL proved current and comparison1/3/7/30day
+Campaign totals and trueAd Top5 rankings, all source/master names available and both Coverage rates1.
+Unproved reach/conversion/value/video remain null. Source proof exposed historical TopAds falling
+back to current master Creative despite null historical facts; TikTok now preserves null, while
+proved Daily Creative is retained and other-platform behavior remains unchanged. No Report writes
+or automatic schedule admission yet.
+
+- Full history source-to-D1 readback passed every398date/grain:22,691rows; both complete
+  checkpoints and no mismatches. CF token expired during final preview cleanup (401), after
+  readback completed; preview remains temporarily open for the active Lark cache execution.
+  Refresh Cloudflare auth and restore previews disabled after that run; verify traffic unchanged.
+- Creative guard gates passed9focused /3,557unit /24Workers /106Report reliability,
+  check/hygiene, normal dry-run; dependencies unchanged with zero production vulnerabilities.
+  Independent live Report parity rerun passed all8windows with zero invented Creative references.

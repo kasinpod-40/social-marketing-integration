@@ -369,7 +369,9 @@ function buildTopAds(input) {
       external_ad_id: externalAdId,
       external_campaign_id: firstKnown(rows, 'external_campaign_id'),
       external_ad_group_id: firstKnown(rows, 'external_ad_group_id'),
-      external_creative_id: firstKnown(rows, 'external_creative_id') ?? entity?.external_creative_id ?? null,
+      // TikTok current master Creative ไม่พิสูจน์ attribution ของวันที่ย้อนหลัง
+      external_creative_id: firstKnown(rows, 'external_creative_id')
+        ?? (input.platform === 'tiktok_ads' ? null : entity?.external_creative_id ?? null),
       ad_name: entity?.entity_name ?? null,
       currency: firstKnown(rows, 'currency') ?? entity?.currency ?? null,
       ...metrics,

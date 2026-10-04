@@ -1897,3 +1897,14 @@ has independent exact Coverage/count proof, including no_data_confirmed days; en
 remain unique, Campaign masters are deduplicated across days. Both grains retain existing gates,
 schema/capacity plan, full-field readback and replay. Lease renews before plans/readbacks as well
 as mutation chunks. This reduces repeated Lark scans during authorized cache backfill.
+
+### Implementation result — Report source parity / Creative attribution guard 2026-10-04
+
+Summary live14months /396Campaign-month rows reconciled and all-month replay zero changes.
+Ad Lark one-day UAT35rows reconciled and replay zero changes;90day cache still running.
+Independent local read-only D1 Report reader plus SQL proved current and comparison1/3/7/30day
+Campaign totals and trueAd Top5 rankings, all source/master names available and both Coverage rates1.
+Unproved reach/conversion/value/video remain null. Source proof exposed historical TopAds falling
+back to current master Creative despite null historical facts; TikTok now preserves null, while
+proved Daily Creative is retained and other-platform behavior remains unchanged. No Report writes
+or automatic schedule admission yet.
