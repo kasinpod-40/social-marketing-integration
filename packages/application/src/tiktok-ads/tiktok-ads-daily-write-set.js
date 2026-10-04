@@ -23,6 +23,7 @@ export async function buildTikTokAdsDailyWriteSet(input = {}) {
   const now = timestamp(input.now);
   const grain = input.grain ?? 'campaign';
   if (!['campaign', 'ad'].includes(grain)) throw new TypeError('Unsupported TikTok daily grain');
+  if (input.coreMetrics === true && input.allStatuses !== true) throw new TypeError('Core metrics require all-status grain');
   const rows = input.rows;
   if (!Array.isArray(rows) || rows.length > (grain === 'ad' ? 10000 : MAX_DAILY_ROWS)) {
     throw permanentError('TikTok Ads daily source rows exceed the reviewed bound', {
@@ -87,9 +88,19 @@ export async function buildTikTokAdsDailyWriteSet(input = {}) {
     const spendMicros = currencyAmountToMicros(text(metrics.spend, 'spend'), 'spend');
     const impressions = count(metrics.impressions, 'impressions');
     const clicks = count(metrics.clicks, 'clicks');
+    const core = input.coreMetrics === true ? {
+      reach: count(metrics.reach, 'reach'),
+      conversions: currencyAmountToMicros(text(metrics.conversion, 'conversion'), 'conversion') / 1_000_000,
+      video_views: count(metrics.video_play_actions, 'video_play_actions'),
+      actions_json: JSON.stringify({ metric_semantics: 'provider_selected_optimization_event',
+        attribution: 'provider_report_default', conversion: text(metrics.conversion, 'conversion'),
+        video_watched_2s: count(metrics.video_watched_2s, 'video_watched_2s'),
+        video_watched_6s: count(metrics.video_watched_6s, 'video_watched_6s') }),
+    } : { reach: null, conversions: null, video_views: null, actions_json: null };
     const sourceHash = await createStableFingerprint({
       advertiserId, campaignId, date, spendMicros, impressions, clicks, currency,
       ...(grain === 'ad' ? { adId: entityId, adGroupId } : {}),
+      ...(input.coreMetrics === true ? { core } : {}),
     });
     sourceHashes.push(sourceHash);
     if (grain === 'campaign') entities.push(validateStorageRow('ads_entity_state', {
@@ -148,14 +159,14 @@ export async function buildTikTokAdsDailyWriteSet(input = {}) {
       currency,
       spend_micros: spendMicros,
       impressions,
-      reach: null,
+      reach: core.reach,
       clicks,
-      conversions: null,
+      conversions: core.conversions,
       conversion_value_micros: null,
-      video_views: null,
+      video_views: core.video_views,
       video_view_rate: null,
       average_cpv_micros: null,
-      actions_json: null,
+      actions_json: core.actions_json,
       breakdown_json: null,
       data_status: 'revisable',
       coverage_run_id: coverageRunId,

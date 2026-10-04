@@ -7,7 +7,7 @@ import { assertMktAdsMaintenanceIdle, countLarkRecords } from '../use-cases/mkt-
 
 const MAX_ROWS = 500;
 const NULL_FIELDS = ['external_ad_group_id', 'external_ad_id', 'external_creative_id',
-  'reach', 'conversions', 'conversion_value_micros', 'conversion_value', 'cpa', 'actual_roas'];
+  'video_views', 'video_view_rate', 'reach', 'conversions', 'conversion_value_micros', 'conversion_value', 'cpa', 'actual_roas'];
 
 /** ส่งเฉพาะวันปิดใน cache 90 วันจาก D1; ทุกตารางผ่าน Plan ก่อนเขียน และอ่านกลับทุกค่า */
 export async function projectTikTokAdsDailyLark(input) {
@@ -89,14 +89,26 @@ async function project(input) {
         || group.parent_campaign_id !== row.external_campaign_id;
     })) fail('TIKTOK_ADS_LARK_AD_PARENT_CONFLICT');
   }
-  const daily = facts.map(row => createAdsDailyRow({ platform: 'tiktok_ads', accountId: advertiserId,
-    entityType: grain, externalEntityId: row.external_entity_id, externalCampaignId: row.external_campaign_id,
-    externalAdGroupId: grain === 'ad' ? row.external_ad_group_id : null,
-    externalAdId: grain === 'ad' ? row.external_ad_id : null,
-    metricDate: row.metric_date, sourceTimezone: timezone, adChannel: 'tiktok_ads', currency: row.currency,
-    spendMicros: row.spend_micros, impressions: row.impressions, clicks: row.clicks,
-    // Conversion/revenue/reach ยังไม่ผ่าน source contract จึงไม่อ่านค่าที่ปะปนมาจากภายนอก
-  }));
+  const daily = facts.map(row => {
+    const core = row.actions_json != null;
+    if (core) {
+      let evidence;
+      try { evidence = JSON.parse(row.actions_json); } catch { fail('TIKTOK_ADS_CORE_EVIDENCE_INVALID'); }
+      if (evidence?.metric_semantics !== 'provider_selected_optimization_event'
+        || evidence.attribution !== 'provider_report_default'
+        || Number(evidence.conversion) !== row.conversions
+        || !Number.isSafeInteger(row.video_views) || row.video_views < 0) fail('TIKTOK_ADS_CORE_EVIDENCE_INVALID');
+    }
+    return { ...createAdsDailyRow({ platform: 'tiktok_ads', accountId: advertiserId,
+      entityType: grain, externalEntityId: row.external_entity_id, externalCampaignId: row.external_campaign_id,
+      externalAdGroupId: grain === 'ad' ? row.external_ad_group_id : null,
+      externalAdId: grain === 'ad' ? row.external_ad_id : null,
+      metricDate: row.metric_date, sourceTimezone: timezone, adChannel: 'tiktok_ads', currency: row.currency,
+      spendMicros: row.spend_micros, impressions: row.impressions, clicks: row.clicks,
+      reach: core ? row.reach : null, conversions: core ? row.conversions : null,
+    }), ...(core ? { video_views: row.video_views,
+      video_view_rate: row.impressions > 0 ? row.video_views / row.impressions : null } : {}) };
+  });
   const campaigns = [...new Map(facts.map(row => [row.external_campaign_id, row])).values()].map(row => ({ ads_campaign_key: createAdsEntityKey({ platform: 'tiktok_ads',
     accountId: advertiserId, entityType: 'campaign', externalEntityId: row.external_campaign_id }),
   platform: 'tiktok_ads', ad_channel: 'tiktok_ads', account_id: advertiserId,

@@ -161,3 +161,20 @@ Ads retain their own proved parent and Creative reference. Lark source_content_i
 creative_type video/carousel already supported, video_id remains null for posts. Reject reusedpost
 with conflicting format/resource semantics and any upgradedCreative namespace collision before writes.
 Current post reference never becomes historical Daily Creative attribution. Unknownformat/noID staysnull.
+
+
+## Proved core Daily metric mapping — 2026-10-04
+
+Officialdefinitions and exactfourdate Campaign/ad_id_v2 reconciliation admit source core fields:
+reach is distinctusers perentity/day only; conversion is provider-selectedoptimizationevent count,
+not purchase or a named historical event. video_play_actions maps video_views (playstarts/replayexcluded).
+video_watched_2s/6s preserved in actions_json with exactprovidermetricnames and semantics.
+No inferredattributionwindow, purchasevalue, complete-payment value or eventfact from genericconversion.
+Conversion count supports nonnegative decimals; missing/nonnumeric fields reject wholeday under coremode.
+Existing spend/impressions/clicks keys remain unchanged, all core fields participate in fingerprint,
+allfieldreadback/replay. Separate core metricwriteflag; base writes refuse downgrading enrichedfacts.
+Lark Daily uses proved dayreach/conversion/video only; Report/TopAds periodreach remainsnull (nonadditive).
+Ratio video_views/impressions uses aggregatecomponents; unavailable currencyvalue staysnull.
+Historical whole-date source preflight must pass before authorized enrichment backfill.
+Officialreferences: https://ads.tiktok.com/resources/help/article/basic-data and
+https://ads.tiktok.com/resources/help/article/video-play .

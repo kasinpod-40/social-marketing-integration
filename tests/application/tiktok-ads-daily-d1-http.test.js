@@ -112,3 +112,19 @@ test('full Ad GET validates exact master parents then independently reads back a
   assert.deepEqual(f.calls.map(row => row[0]), ['full-read']);
   assert.doesNotMatch(JSON.stringify(body), /private|678|1234567890123456789|12.34/);
 });
+
+
+test('core metrics POST requires its own admission and refuses unknown or legacy metric queries', async () => {
+  const f = setup();
+  const env = { MKT_CONNECTION_OPERATOR_TOKEN: 'operator-private', MKT_TIKTOK_ADS_D1_WRITE_ENABLED: 'true',
+    MKT_TIKTOK_ADS_MULTI_GRAIN_WRITE_ENABLED: 'true' };
+  for (const query of ['&metrics=core', '&grain=ad&metrics=unknown']) {
+    assert.equal((await f.handler({ request: request('POST'), url: new URL(address + query), env })).status, 400);
+  }
+  const selected = new URL(address + '&grain=ad&metrics=core');
+  assert.equal((await f.handler({ request: request('POST'), url: selected, env })).status, 409);
+  assert.deepEqual(f.calls, []);
+  assert.equal((await f.handler({ request: request('POST'), url: selected,
+    env: { ...env, MKT_TIKTOK_ADS_CORE_METRIC_WRITE_ENABLED: 'true' } })).status, 200);
+  assert.equal(f.calls[0][1].coreMetrics, true); assert.equal(f.calls[0][1].coreMetricWriteEnabled, true);
+});

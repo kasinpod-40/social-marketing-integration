@@ -11,6 +11,7 @@ const LEASE_MS = 120_000;
 export async function runTikTokAdsDailyD1Sync(input = {}) {
   const grain = input.grain ?? 'campaign';
   if (!['campaign', 'ad'].includes(grain) || (grain === 'ad' && input.allStatuses !== true)) throw new TypeError('Unsupported TikTok daily grain');
+  if (input.coreMetrics === true && input.coreMetricWriteEnabled !== true) throw permanentError('Core metric write gate is disabled', { code: 'TIKTOK_ADS_CORE_METRIC_WRITE_DISABLED' });
   const maxRows = grain === 'ad' ? 10000 : 500;
   const client = requireMethod(input.client, input.allStatuses ? 'listAllStatusDailyReport' : 'listCampaignDailyReport');
   const historyStore = requireMethod(input.historyStore, 'writeMetaD1Operations');
@@ -50,7 +51,7 @@ export async function runTikTokAdsDailyD1Sync(input = {}) {
   try {
     await lockStore.saveSyncRun({ ...runEntry, status: 'running' });
     const source = await client[input.allStatuses ? 'listAllStatusDailyReport' : 'listCampaignDailyReport']({
-      grain,
+      grain, metricFamily: input.coreMetrics === true ? 'core' : 'base',
       accessToken: input.accessToken,
       advertiserId: input.advertiserId,
       date,
@@ -79,11 +80,12 @@ export async function runTikTokAdsDailyD1Sync(input = {}) {
       });
     }
     const existing = await db.prepare(`
-      SELECT ads_fact_key, customer_key, source_account_id FROM ads_daily_facts
+      SELECT ads_fact_key, customer_key, source_account_id, actions_json FROM ads_daily_facts
       WHERE platform = 'tiktok_ads' AND account_key = ? AND metric_date = ? AND report_level = ?
       LIMIT ?
     `).bind(accountKey, date, grain, maxRows + 1).all();
     const currentRows = existing?.results ?? [];
+    if (input.coreMetrics !== true && currentRows.some(row => row.actions_json != null)) throw permanentError('Base sync cannot discard proved core metrics', { code: 'TIKTOK_ADS_METRIC_DOWNGRADE_REFUSED' });
     const sourceKeys = new Set(writeSet.dailyFacts.map((row) => row.ads_fact_key));
     if (currentRows.length > maxRows || currentRows.some((row) =>
       row.customer_key !== input.customerKey || row.source_account_id !== input.advertiserId
@@ -195,7 +197,7 @@ export async function readTikTokAdsDailyReadback(input, writeSet) {
     'external_campaign_id', 'external_ad_group_id', 'external_ad_id', 'external_creative_id',
     'metric_date', 'account_timezone', 'breakdown_key', 'segment_key', 'currency',
     'spend_micros', 'impressions', 'clicks', 'reach', 'conversions', 'conversion_value_micros',
-    'video_views', 'source_payload_hash'];
+    'video_views', 'video_view_rate', 'average_cpv_micros', 'actions_json', 'breakdown_json', 'source_payload_hash'];
   return { rows: rows.length, reconciled: rows.length <= maxRows && byKey.size === rows.length
     && byKey.size === writeSet.dailyFacts.length && writeSet.dailyFacts.every(row =>
       fields.every(field => byKey.get(row.ads_fact_key)?.[field] === row[field])) };
