@@ -6,7 +6,8 @@ import { json } from '../../../packages/shared/src/http/response.js';
 import { hydrateRuntimeEnvFromD1 } from './runtime-config-hydration.js';
 
 export const TIKTOK_ADS_LARK_SCHEMA_PATH = '/operator/tiktok-ads/lark-schema';
-const TABLE_KEYS = Object.freeze({ campaigns: 'mktAdsCampaigns', daily: 'mktAdsDaily', summary: 'mktAdsCampaignSummary' });
+const TABLE_KEYS = Object.freeze({ accounts: 'mktAdsAccounts', ad_groups: 'mktAdsAdGroups',
+  ads: 'mktAdsAds', creatives: 'mktAdsCreatives', campaigns: 'mktAdsCampaigns', daily: 'mktAdsDaily', summary: 'mktAdsCampaignSummary' });
 
 /** อ่าน schema ของ Paid Ads ที่ระบุไว้เท่านั้น; Secret ใช้ใน Worker และไม่คืน IDs หรือ records */
 export function createTikTokAdsLarkSchemaHttpHandler(dependencies = {}) {
@@ -32,7 +33,9 @@ export function createTikTokAdsLarkSchemaHttpHandler(dependencies = {}) {
       return json({ ok: true, readOnly: true, table, fieldCount: fields.length,
         fields: fields.map(field => ({ name: field.fieldName, type: Number(field.type), primary: field.isPrimary === true,
           tiktokOptionPresent: (field.property?.options ?? []).some(option => option.name === 'tiktok_ads'),
-          campaignOptionPresent: (field.property?.options ?? []).some(option => option.name === 'campaign') })),
+          campaignOptionPresent: (field.property?.options ?? []).some(option => option.name === 'campaign'),
+          requiredOptions: Object.fromEntries(['active','paused','removed','unknown','video','customer','customer_owned','client','developer','integration_workspace','connected','selectable'].map(name => [name,
+            (field.property?.options ?? []).some(option => option.name === name)])) })),
       }, { status: 200, headers });
     } catch (error) {
       const operational = sanitizeOperationalError(error);

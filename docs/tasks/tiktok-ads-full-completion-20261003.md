@@ -104,3 +104,23 @@ identities with the same Campaign/Ad Group; zero missing/conflicting parent and 
 ownership. The 5,771 legacy endpoint rows split into 5,049 upgraded Creative identities and 722
 Manual/Legacy Ad identities. The 356 Smart+ Ad IDs are separate. Canonical master implementation
 must preserve this partition; every unavailable Creative reference remains null/unavailable.
+
+## Master write contract — authorized implementation 2026-10-04
+
+ใช้ full STATUS_ALL snapshot ที่ผ่าน proof ก่อนเขียน: Account / Campaign / Ad Group และ
+Ad แบบ Manual/Legacy แยกจาก true Smart+ Ads; legacy endpoint ของ Upgraded Smart+ เป็น
+Creative เท่านั้น ใช้ source ID เดิม ไม่เลือก first asset หรือสร้าง ID ใหม่
+
+- D1 ads_entity_state และ Lark master ห้าตารางเดิม; customer/account/advertiser exact scope
+- Campaign automation ไม่มี unknown; ตรวจทุก parent ก่อนทำ plan หรือ writes
+- Creative ของ Upgraded Smart+ ใช้ legacy creative ID ทั้ง inventory; parent_ad_id ตั้งได้เฉพาะ
+  reference ที่มีจริงใน Smart+ creative_list; orphan ไม่อนุมาน parent และไม่ถือว่าเป็น Ad
+- Manual/Legacy ที่มี video_id ใช้ source video ID เป็น reusable video Creative; image_ids
+  ยังไม่แยก cover/image จึงไม่สร้าง Creative จาก image_ids ในขั้นนี้ ค่า Creative ref ที่ไม่ทราบเป็น null
+- Ads ที่มีหลาย Creative ไม่เลือกตัวแรก; external_creative_id เป็น null พร้อมคง relation ที่ D1
+  Creative parent_ad_id เมื่อ source พิสูจน์ได้; ข้อมูล source ที่ไม่มี ID ไม่สร้าง placeholder
+- ใช้ canonical status active/paused/removed/unknown, currency/timezone จาก advertiser ที่validated
+- ไม่ลบ master ที่ไม่คืนมา; preserve first_seen/created และ Daily Coverage เดิมของ existing master
+- พรีวิวต้องผ่าน schema/capacity และทุกตาราง plan ก่อนเขียน; batch ไม่เกิน100, renewable lease,
+  audit log, D1 fields readback และ Lark zero-diff readback; replayไม่เปลี่ยนข้อมูลเดิม
+- ช่วงนี้ไม่เขียน Daily/Conversion/Report/Summary/Schedule; เป็น master slice ของงานครบระบบ

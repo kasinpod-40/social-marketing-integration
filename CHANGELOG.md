@@ -1,3 +1,12 @@
+## TikTok Ads full master sync preparation — 2026-10-04
+
+- สร้างmaster snapshotที่แยกManual/Legacy Ads, Smart+ Ads และ Upgraded Creative ด้วยsourceIDsจริง
+- ใช้sharedD1writer/Larksyncengine พร้อมall-table preflight/capacity, exact-owner/stablekeys,
+  boundedbatches, renewablelease, audit, readback/replay และไม่ลบmissingmaster
+- GETpreviewจริงผ่านห้าตาราง:1Account/228Campaigns/261AdGroups/1,078Ads/5,179Creatives
+  ใช้Campaign13แถวเดิมซ้ำ; ไม่มีbusinesswritesในproofนี้
+- เพิ่มboundedexactaccountprefixreadและRich-text/foreignownerregression; unknownCreative typeเป็นnull
+
 ## TikTok Ads Smart+ identity discovery — 2026-10-04
 
 - เพิ่ม GET-only Campaign automation classification, Smart+ full inventory และ cross-endpoint

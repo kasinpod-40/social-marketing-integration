@@ -2,7 +2,8 @@
 
 TikTok Ads full delivery is in progress; verified Campaign base history and one-day Lark UAT
 are complete, while full master/Ad/event, Report/AI and schedule admission remain gated.
-See [current task](docs/current-task.md) and [full completion contract](docs/tasks/tiktok-ads-full-completion-20261003.md).
+Full master source/preflight is proved (1 Account / 228 Campaigns / 261 Ad Groups / 1,078 Ads / 5,179 Creatives);
+controlled write/readback/replay is the next gate. See [current task](docs/current-task.md) and [full completion contract](docs/tasks/tiktok-ads-full-completion-20261003.md).
 
 ## Instagram token renewal
 
