@@ -142,8 +142,15 @@ export function listReportPlatformContracts() {
  */
 export function createReportPlatformAdapterRegistry(input = {}) {
   const adapters = input.adapters ?? {};
+  const contractFor = platform => {
+    const contract = getReportPlatformContract(platform);
+    if (platform !== 'tiktok_ads' || input.tikTokAdsReady !== true) return contract;
+    return freezeContract({ ...contract, sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+      rankingReportLevels: ['ad'], rankingBreakdownFamily: 'none', rankingSegmentFamily: 'none',
+      rankingCoverageDatasetKeys: ['ads_daily_facts_ad'], topAdsRequired: true, formulaVersion: 'tiktok-ads-v2' });
+  };
   const normalized = Object.fromEntries(Object.entries(adapters).map(([key, adapter]) => {
-    const contract = getReportPlatformContract(key);
+    const contract = contractFor(key);
     if (typeof adapter?.load !== 'function') {
       throw new TypeError(`Report platform adapter ${contract.platformScope} requires load()`);
     }
@@ -152,13 +159,13 @@ export function createReportPlatformAdapterRegistry(input = {}) {
 
   return Object.freeze({
     get(platformScope) {
-      const contract = getReportPlatformContract(platformScope);
+      const contract = contractFor(platformScope);
       const registered = normalized[contract.platformScope] ?? null;
       return Object.freeze({ contract, adapter: registered?.adapter ?? null });
     },
     list() {
       return Object.freeze(listReportPlatformContracts().map((contract) => Object.freeze({
-        ...contract,
+        ...contractFor(contract.platformScope),
         adapterRegistered: Boolean(normalized[contract.platformScope]),
       })));
     },

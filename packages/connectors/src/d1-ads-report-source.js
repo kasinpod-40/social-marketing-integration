@@ -1,3 +1,4 @@
+import { createStableFingerprint } from '../../shared/src/hash/stable-fingerprint.js';
 import { calculateAdsPeriodMetrics } from '../../application/src/reports/calculate-ads-period-metrics.js';
 import { getReportPlatformContract } from '../../application/src/reports/report-platform-adapter-registry.js';
 import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
@@ -17,6 +18,7 @@ export class D1AdsReportSource {
   constructor(input = {}) {
     this.db = requireD1(input.db);
     this.platform = requireText(input.platform, 'platform');
+    this.requireCoreMetrics = input.requireCoreMetrics === true;
     const contract = getReportPlatformContract(this.platform);
     if (contract.capability !== 'paid_ads') {
       throw invalidQuery(`${this.platform} is not a Paid Ads Report platform`);
@@ -108,6 +110,10 @@ export class D1AdsReportSource {
       });
     const summaryRows = summarySelection.rows;
     const rankingRows = rankingSelection.rows;
+    if (this.platform === 'tiktok_ads' && this.requireCoreMetrics
+      && [...summaryRows, ...rankingRows].some(row => row.reach == null || row.conversions == null || row.video_views == null)) {
+      throw permanentError('TikTok Report requires complete proved core Daily metrics', { code: 'REPORT_TIKTOK_CORE_METRICS_INCOMPLETE' });
+    }
     const coverage = dailyCoverage
       ? reconcileDailyCoverage(coverageRead.filter(row => this.coverageDatasetKeys.includes(row.dataset_key)), summaryRows, periodStart, coverageDays)
       : coverageRead;
@@ -177,7 +183,11 @@ export class D1AdsReportSource {
         ...(dailyCoverage && this.rankingReportLevels.length > 0 ? { rankingCoverageStatus, rankingCoverageRate } : {}),
         coverageRunId: coverage?.coverage_run_id ?? null,
         ...(dailyCoverage ? { expectedCoverageDays: coverageDays, coveredDays: coverage.covered_days } : {}),
-        sourceWatermark: coverage?.source_watermark ?? latestRevision([...summaryRows, ...rankingRows]),
+        sourceWatermark: dailyCoverage ? await createStableFingerprint({
+          facts: factRows.map(row => [row.ads_fact_key, row.source_revision]).sort((a,b) => String(a[0]).localeCompare(String(b[0]))),
+          coverage: coverageRead.map(row => [row.dataset_key, row.period_start, row.source_watermark])
+            .sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+        }) : coverage?.source_watermark ?? latestRevision([...summaryRows, ...rankingRows]),
         revisableUntil: nullableInteger(coverage?.revisable_until),
         failedRows: nullableInteger(coverage?.failed_rows) ?? 0,
       }),

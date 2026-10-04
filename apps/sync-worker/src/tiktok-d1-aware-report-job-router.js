@@ -88,6 +88,7 @@ async function processDashboardReportJob(input) {
     ? loadMetaEndToEndRuntimeConfig(input.env)
     : null;
   if (definition.type !== JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
+    || (platformScope === 'tiktok_ads' && input.env?.MKT_TIKTOK_ADS_REPORT_WRITE_ENABLED !== 'true')
     || !validShape
     || storageConfig.reportD1ReadEnabled !== true
     || storageConfig.reportPresetMaterializationEnabled !== true
@@ -145,6 +146,7 @@ async function processDashboardReportJob(input) {
       onReliabilityError: reliabilityLogger,
       execute: async ({ assertLockActive }) => {
         const registry = createD1ReportRegistry(input.env?.MKT_STATE_DB, {
+          tikTokAdsReady: input.env?.MKT_TIKTOK_ADS_REPORT_WRITE_ENABLED === 'true',
           commerceCurrency: commerceConfig?.defaultCurrency,
           generatedAt: Date.parse(body.requestedAt),
         });
@@ -185,6 +187,7 @@ async function processDashboardReportJob(input) {
           topContentLimit: body.topContentLimit,
           topAdsLimit: body.topAdsLimit,
           assertLockActive,
+          verifyReadback: platformScope === 'tiktok_ads',
           tables: tableIds,
         });
         return Object.freeze({
@@ -311,8 +314,9 @@ async function processLegacyTikTokReportJob(input) {
   }
 }
 
-function createD1ReportRegistry(db, options = {}) {
+export function createD1ReportRegistry(db, options = {}) {
   return createReportPlatformAdapterRegistry({
+    tikTokAdsReady: options.tikTokAdsReady === true,
     adapters: {
       facebook: new D1OrganicReportSource({ db, platform: 'facebook' }),
       instagram: new D1OrganicReportSource({ db, platform: 'instagram' }),
@@ -320,7 +324,9 @@ function createD1ReportRegistry(db, options = {}) {
       youtube: new D1OrganicReportSource({ db, platform: 'youtube' }),
       meta_ads: new D1AdsReportSource({ db, platform: 'meta_ads' }),
       google_ads: new D1AdsReportSource({ db, platform: 'google_ads' }),
-      tiktok_ads: new D1AdsReportSource({ db, platform: 'tiktok_ads' }),
+      tiktok_ads: new D1AdsReportSource({ db, platform: 'tiktok_ads',
+        ...(options.tikTokAdsReady === true ? { requireCoreMetrics: true, rankingReportLevels: ['ad'], rankingBreakdownFamily: 'none',
+          rankingSegmentFamily: 'none', rankingCoverageDatasetKeys: ['ads_daily_facts_ad'] } : {}) }),
       chatwoot: new D1ChatwootReportSource({ db }),
       ...(options.commerceCurrency ? {
         woocommerce: {

@@ -1,5 +1,7 @@
 ## TikTok Ads full master sync preparation — 2026-10-04
 
+- TikTok Report controlled admission adds independent true-Ad Coverage, complete source watermark and opt-in Lark readback; default schedule remains off.
+
 - TikTok core Daily metrics use a separate write gate, source evidence and replay/downgrade guards; day Reach stays unavailable in period totals.
 
 - TikTok combined core metric GET proof reconciles exact Campaign/true-Ad video and optimization counts without adding distinct Reach.

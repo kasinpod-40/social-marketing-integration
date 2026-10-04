@@ -493,3 +493,13 @@ function observation(id, metricDate, views) {
     completionRate: null,
   });
 }
+
+
+test('TikTok Report admission is explicit and preserves default planned/other platform contracts', () => {
+  const admitted = createReportPlatformAdapterRegistry({ tikTokAdsReady: true, adapters: { tiktok_ads: { load: async () => ({}) } } });
+  assert.equal(admitted.get('tiktok_ads').contract.sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
+  assert.deepEqual(admitted.get('tiktok_ads').contract.rankingReportLevels, ['ad']);
+  assert.deepEqual(admitted.get('tiktok_ads').contract.rankingCoverageDatasetKeys, ['ads_daily_facts_ad']);
+  assert.equal(createReportPlatformAdapterRegistry().get('tiktok_ads').contract.sourceStatus, REPORT_SOURCE_STATUS.PLANNED);
+  assert.equal(admitted.get('meta_ads').contract.formulaVersion, 'meta-ads-v1');
+});

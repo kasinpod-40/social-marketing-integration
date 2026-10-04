@@ -367,14 +367,14 @@ test('TikTok Top Ads uses independently complete Ad Coverage and never sums Camp
   const day = '2026-10-01';
   const coverage = dataset => ({ dataset_key: dataset, status: 'revisable', period_start: day, period_end: day,
     expected_rows: 1, observed_rows: 1, failed_rows: 0 });
-  let adCoverage = true; let dailyCreative = null;
+  let adCoverage = true; let dailyCreative = null; let revision = 'a-low';
   const db = createD1(sql => {
     if (sql.includes('data_coverage_runs')) return [coverage('ads_daily_facts'), ...(adCoverage ? [coverage('ads_daily_facts_ad')] : [])];
     if (sql.includes('ads_entity_state')) return [{ external_entity_id: 'true-ad', entity_name: 'Example', currency: 'THB', external_creative_id: 'current-only' }];
     return [fact({ key: 'campaign-fact', level: 'campaign', campaignId: 'campaign', breakdown: 'none', segment: 'none', metricDate: day,
       spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null }),
     { ...fact({ key: 'ad-fact', level: 'ad', adId: 'true-ad', campaignId: 'campaign', breakdown: 'none', segment: 'none', metricDate: day,
-      spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null }), external_creative_id: dailyCreative }].map(row => ({ ...row, reach: 80 }));
+      spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null }), external_creative_id: dailyCreative }].map(row => ({ ...row, reach: 80, source_revision: revision }));
   });
   const source = new D1AdsReportSource({ db, platform: 'tiktok_ads', rankingReportLevels: ['ad'],
     rankingBreakdownFamily: 'none', rankingSegmentFamily: 'none', rankingCoverageDatasetKeys: ['ads_daily_facts_ad'] });
@@ -386,6 +386,10 @@ test('TikTok Top Ads uses independently complete Ad Coverage and never sums Camp
   assert.equal(result.topAds.length, 1); assert.equal(result.readSummary.rankingCoverageRate, 1);
   assert.equal(result.readSummary.topAdsAvailability, 'available');
   assert.equal(result.topAds[0].external_creative_id, null);
+  revision = 'b-low';
+  assert.notEqual((await source.load(query)).readSummary.sourceWatermark, result.readSummary.sourceWatermark);
+  const strict = new D1AdsReportSource({ db, platform: 'tiktok_ads', requireCoreMetrics: true });
+  await assert.rejects(strict.load(query), { code: 'REPORT_TIKTOK_CORE_METRICS_INCOMPLETE' });
   dailyCreative = 'historical-proof';
   assert.equal((await source.load(query)).topAds[0].external_creative_id, 'historical-proof');
   adCoverage = false; const partial = await source.load(query);
