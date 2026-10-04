@@ -17,11 +17,7 @@ test('TikTok Ads D1-only runner writes one exact fact and seals Coverage after r
   const coverage = [];
   const calls = [];
   const db = { prepare: () => ({ bind: () => ({ first: async () => null, all: async () => ({
-    results: [...facts.values()].map((fact) => ({
-      ads_fact_key: fact.ads_fact_key, customer_key: fact.customer_key,
-      source_account_id: fact.source_account_id,
-      source_payload_hash: fact.source_payload_hash,
-    })),
+    results: [...facts.values()].map(fact => ({ ...fact })),
   }) }) }) };
   const lockStore = {
     acquire: async () => ({ acquired: true }),
@@ -63,4 +59,23 @@ test('TikTok Ads D1-only runner does not write when a source page is incomplete'
     client: { listCampaignDailyReport: async () => { throw new Error('incomplete page'); } },
   }), /incomplete page/u);
   assert.equal(writes, 0);
+});
+
+
+test('matching source hash cannot seal Coverage when a stored base metric is corrupted', async () => {
+  const facts = []; let coverageWrites = 0;
+  const db = { prepare: () => ({ bind: () => ({ first: async () => null,
+    all: async () => ({ results: facts.map(row => ({ ...row, impressions: row.impressions + 1 })) }),
+  }) }) };
+  await assert.rejects(runTikTokAdsDailyD1Sync({ ...base, db,
+    client: { listCampaignDailyReport: async () => ({ rows: [row()], totalCount: 1 }) },
+    lockStore: { acquire: async () => ({ acquired: true }), renew: async () => ({ renewed: true }),
+      release: async () => {}, saveSyncRun: async () => {} },
+    historyStore: { async writeMetaD1Operations(ops) {
+      for (const op of ops) { if (op.kind === 'ads_daily') facts.push(op.row);
+        if (op.kind === 'coverage_run') coverageWrites++; }
+      return ops.map(op => ({ table: op.kind === 'ads_daily' ? 'ads_daily_facts' : op.kind, status: 'written' }));
+    } },
+  }), { code: 'TIKTOK_ADS_DAILY_READBACK_MISMATCH' });
+  assert.equal(coverageWrites, 0);
 });

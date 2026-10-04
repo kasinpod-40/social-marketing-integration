@@ -2888,3 +2888,19 @@ before extending the shared D1/Lark grain contract.
   between Campaign and true Ad grains for all four days. No writes; preview false restored, deployment unchanged.
 - Gates passed: 33 focused /3,542 unit /21 Workers runtime /106 Report reliability, architecture881files
   zero cycles, hygiene, audit zero production vulnerabilities, normal and isolated deploy dry-run and diff review.
+
+### Implementation result — multi-grain D1 continuation 2026-10-04
+
+After full STATUS_ALL Campaign/ad_id_v2 identity/base totals proof, extend existing daily write set
+and runner with one explicit grain per call. `grain=campaign|ad` selects STATUS_ALL and requires
+separate multi-grain write admission in addition to existing D1 gate. Legacy date-only route is
+preserved; all existing Campaign queries now scope report_level. Ad daily keys/coverage are separate,
+parents come from advertiser-scoped validated master; no historical Creative attribution is inferred
+from current master. Closed dates from 2025-09-01 only. All-field readback and renewed coverage seal,
+source missing prior keys refuses writes; retry/replay retain stable facts. Tests/live UAT pending.
+
+- Multi-grain gates passed: 22 focused, 3,547 unit, 22 real Workers runtime, 106 Report reliability,
+  check/architecture/hygiene, production audit zero vulnerabilities, normal and isolated deploy dry-run.
+  Runtime proves both grains coexist, exact parent IDs and separate coverage markers, zero fact-write
+  replay per grain, missing true-Ad master rejection and corruption readback refusal. Controlled
+  one-day POST/readback/replay and full historical STATUS_ALL reconciliation remain next.
