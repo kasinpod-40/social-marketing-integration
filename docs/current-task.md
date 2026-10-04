@@ -3087,3 +3087,27 @@ anddayCoverage rather thanonelexicalmaximum. Tests/fullgates/liveReportUAT pendi
   Full core GET preflight completed 796/796 units, 22,691 rows over 398 dates.
   Preview restored disabled and active Production deployment unchanged. Live core UAT and
   historical enrichment are next; live Report writes and automatic daily closure remain pending.
+
+### Daily Queue contract — approved end-to-end scope continuation 2026-10-04
+
+Use existing durable Work store, source credential boundary, business runners and central Queue catalog.
+One unit per delivery: full master reconciliation; seven closed-day cross-grain source proofs;
+Campaign/Ad D1 core facts; Campaign/Ad Lark cache; affected month Summary; four Report windows.
+Persist a unit checkpoint only after the existing runner returns verified readback. Preserve stable
+operation identity on continuation; send failure must resume without replaying completed business units.
+No outer business lock because existing runners own their maintenance/lease boundary.
+Daily source triggers 03:30 Asia/Bangkok and Report follows source completion, not clock-only admission.
+Default flags remain false; catalog readiness remains foundation_ready until technical/fixture gates
+and exact live Queue UAT prove readiness. Automatic cycle is mandatory before declaring completion.
+
+### Implementation result — daily Queue technical gates 2026-10-04
+
+Daily flow uses seven-day reconciliation and one bounded unit per delivery. Durable tests prove
+predecessor ordering, generation fences, source parity failure, partial-write checkpoint refusal,
+send-failure resume without business replay and completed replay. Scheduler tests require every
+consumer gate and preserve exact previous-day stable identity at 03:30 Bangkok.
+Large fixture proves 1,078 true Ads/Creatives and stable replay. Full regression: 3,579 unit,
+25 real Workers, 107 Report reliability passed; architecture 885 files/zero cycles, hygiene and
+normal dry run passed. No dependencies changed. Readiness moves to dev_ready with only
+liveAccountUat pending; ordinary Production schedule stays denied until exact Queue live UAT.
+Core historical enrichment continues from durable local checkpoint; full readback still pending.

@@ -19,6 +19,11 @@ export async function loadTikTokAdsAuthorizedSource({ request, env, dependencies
   const runtimeEnv = dependencies.hydrateAuthorizedEnv
     ? await dependencies.hydrateAuthorizedEnv(env)
     : env;
+  return loadTikTokAdsRuntimeSource({ env: runtimeEnv, dependencies });
+}
+
+/** Exact runtime/grant/credential boundary shared by authenticated HTTP and internal Queue. */
+export async function loadTikTokAdsRuntimeSource({ env: runtimeEnv, dependencies = {} }) {
   const createRuntime = dependencies.createRuntime ?? createCustomerConnectionRuntime;
   const loadAdsConfig = dependencies.loadAdsConfig ?? loadTikTokAdsRuntimeConfig;
   const createClient = dependencies.createClient ?? ((config) => new TikTokAdsApiClient(config));

@@ -1,3 +1,4 @@
+import { TIKTOK_ADS_DAILY_REQUIRED_FLAGS } from './tiktok-ads-daily-job-router.js';
 import { addDaysDateOnly } from '../../../packages/application/src/reports/report-period.js';
 import { buildDashboardPresetJob } from '../../../packages/application/src/reports/dashboard-report-request.js';
 import {
@@ -62,6 +63,7 @@ export function buildScheduledJobs(input = {}) {
   const wooCommerceEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, false)
     : false;
+  const tiktokAdsEnabled = includePrimaryJobs ? readBoolean(env.MKT_SCHEDULE_TIKTOK_ADS_ENABLED, false) : false;
   const metaAdsEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_META_ADS_ENABLED, false)
     : false;
@@ -104,6 +106,7 @@ export function buildScheduledJobs(input = {}) {
       },
     );
   }
+  if (tiktokAdsEnabled) requireEnabledScheduleFlags(env, TIKTOK_ADS_DAILY_REQUIRED_FLAGS);
   if (metaAdsEnabled) {
     requireEnabledScheduleFlags(env, [
       'MKT_CONNECTOR_META_ADS_ENABLED',
@@ -138,6 +141,7 @@ export function buildScheduledJobs(input = {}) {
     || facebookEnabled
     || instagramEnabled
     || wooCommerceEnabled
+    || tiktokAdsEnabled
     || metaAdsEnabled
     || chatwootEnabled
     || dailyEnabled
@@ -256,6 +260,15 @@ export function buildScheduledJobs(input = {}) {
         originalRequestedAt: Date.parse(requestedAt),
       }));
     }
+  }
+
+  if (includePrimaryJobs && tiktokAdsEnabled
+    && local.time === readScheduleTime(env.MKT_TIKTOK_ADS_SYNC_TIME ?? '03:30', 'MKT_TIKTOK_ADS_SYNC_TIME')) {
+    jobs.push(createStableQueueOperationBody({ schemaVersion: 1, type: JOB_TYPES.TIKTOK_ADS_DAILY_SYNC,
+      trigger: JOB_TRIGGERS.META_ORGANIC_SCHEDULED, periodEnd: completedPeriodEnd, unitIndex: 0 }, {
+      operationId: `tiktok-ads-daily-${completedPeriodEnd.replaceAll('-', '')}`,
+      originalRequestedAt: Date.parse(requestedAt),
+    }));
   }
 
   if (includePrimaryJobs && metaAdsEnabled) {

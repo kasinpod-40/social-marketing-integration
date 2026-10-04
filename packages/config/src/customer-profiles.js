@@ -42,6 +42,7 @@ const CUSTOMER_PROFILES = Object.freeze({
         accountKey: 'chemistry_k',
         displayLabel: 'Instagram Organic — Chemistry K preflight pending',
       },
+      tiktok_ads: { enabledByDefault: false, accountKey: 'chemistry_k', displayLabel: 'TikTok Ads — Chemistry K' },
       meta_ads: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
@@ -99,6 +100,7 @@ const CUSTOMER_PROFILES = Object.freeze({
         accountKey: 'chemistry_k',
         displayLabel: 'Instagram — Chemistry K',
       },
+      tiktok_ads: { enabledByDefault: false, accountKey: 'chemistry_k', displayLabel: 'TikTok Ads — Chemistry K' },
       meta_ads: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',

@@ -1,3 +1,4 @@
+import { processTikTokAdsDailyJob } from './tiktok-ads-daily-job-router.js';
 import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
 import {
   JOB_TRIGGERS,
@@ -64,6 +65,7 @@ export function resolveDashboardReportMaxFactRows(env, platformScope) {
 
 export async function processJobWithTikTokD1AwareReport(input) {
   const type = input.job?.body?.type;
+  if (type === JOB_TYPES.TIKTOK_ADS_DAILY_SYNC) return processTikTokAdsDailyJob(input, { processReport: processDashboardReportJob });
   if (type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE) return processDashboardReportJob(input);
   if (LEGACY_REPORT_TYPES.has(type)) return processLegacyTikTokReportJob(input);
   return processJobWithTikTokPostLark(input);

@@ -905,3 +905,6 @@ Report/schedule admission follows from field presence alone.
 - Reconciled398all-status dates:5746Campaign /16945trueAd facts, complete independent Coverage and zero failed rows.
 - Reconciled90day Lark5743Daily rows and14month396Summary rows; all replay zero changes, preview disabled and traffic unchanged.
 - Extend GET-only Campaign metric families and fixed Ad-format counts before admitting richer metrics/assets.
+
+- TikTok Ads daily durable Queue pipeline: seven-day reconciliation, verified unit checkpoints,
+  source-before-Report ordering and disabled-by-default 03:30 producer; live UAT remains required.
