@@ -1,5 +1,7 @@
 ## TikTok Ads full master sync preparation — 2026-10-04
 
+- TikTok Ads source posts now map reusable video/carousel Creatives with collision guards; live preview resolves all546 Manual/Legacy references.
+
 - สร้างmaster snapshotที่แยกManual/Legacy Ads, Smart+ Ads และ Upgraded Creative ด้วยsourceIDsจริง
 - ใช้sharedD1writer/Larksyncengine พร้อมall-table preflight/capacity, exact-owner/stablekeys,
   boundedbatches, renewablelease, audit, readback/replay และไม่ลบmissingmaster

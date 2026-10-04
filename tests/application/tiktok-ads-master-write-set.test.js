@@ -43,3 +43,30 @@ test('missing creative identity is counted unavailable and never synthesized', a
   assert.equal(result.unavailableCreativeIds, 1);
   assert.equal(result.canonical.ads.find(row => row.external_ad_id === '40').external_creative_id, null);
 });
+
+
+test('source posts map reusable video/carousel Creatives without inventing video IDs or parents', async () => {
+  const input = fixture();
+  input.inventories.ad.rows.push(...[
+    { kind: 'ad', id: '33', campaignId: '11', adGroupId: '21', postId: '900', adFormat: 'SINGLE_VIDEO', imageIds: [] },
+    { kind: 'ad', id: '34', campaignId: '11', adGroupId: '21', postId: '900', adFormat: 'SINGLE_VIDEO', imageIds: [] },
+    { kind: 'ad', id: '35', campaignId: '11', adGroupId: '21', postId: '901', adFormat: 'CAROUSEL_ADS', imageIds: [] },
+  ]);
+  input.inventories.ad.totalCount = input.inventories.ad.rows.length;
+  const result = await buildTikTokAdsMasterWriteSet(input);
+  const posts = result.canonical.creatives.filter(row => row.source_content_id);
+  assert.equal(posts.length, 2);
+  assert.deepEqual(posts.map(row => [row.external_creative_id, row.creative_type, row.video_id]),
+    [['900', 'video', null], ['901', 'carousel', null]]);
+  assert.equal(result.canonical.ads.find(row => row.external_ad_id === '34').external_creative_id, '900');
+  assert.ok(result.entities.filter(row => ['900', '901'].includes(row.external_entity_id))
+    .every(row => row.parent_ad_id === null && row.parent_campaign_id === null));
+  input.inventories.ad.rows[4].adFormat = 'CAROUSEL_ADS';
+  await assert.rejects(buildTikTokAdsMasterWriteSet(input), { code: 'TIKTOK_ADS_MASTER_RESOURCE_IDENTITY_CONFLICT' });
+});
+
+test('post and upgraded Creative namespace collisions fail before any write', async () => {
+  const input = fixture();
+  Object.assign(input.inventories.ad.rows[2], { videoId: null, postId: '30', adFormat: 'SINGLE_VIDEO' });
+  await assert.rejects(buildTikTokAdsMasterWriteSet(input), { code: 'TIKTOK_ADS_MASTER_DUPLICATE_ENTITY' });
+});

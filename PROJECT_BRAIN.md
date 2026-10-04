@@ -1932,3 +1932,11 @@ format examples: https://business-api.tiktok.com/gateway/docs/index?doc_id=17744
   and mapping remain next. Preview disabled and active deployment unchanged.
 - Gates passed:3559unit/24Workers/106Reportreliability,check882files/zero cycles/hygiene,
   isolateddryrun and diffcheck. Dependencies unchanged; priorproductionaudit zero vulnerabilities.
+
+- Live full master GET preview bb086252 passed complete hierarchy/resource collision guards:
+  842D1changes,546Adreferenceupdates,296newreusablepostCreatives;totalCreative5475.
+  Existing5179Creative rows unchanged, all Account/Campaign/AdGroup masters unchanged,
+  unmappedManual/LegacyCreative0. One source-unavailable Smart+ reference preserved.
+  All five schema/capacity plans passed;previewrestoredfalse/Productionunchanged.
+- Gates:3561unit/24Workers/106Reportreliability,check882files/zero cycles/hygiene,
+  productionaudit0,normal+isolateddryruns,diffcheck. ControlledPOST/readback/replay pending merge.

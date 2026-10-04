@@ -150,3 +150,14 @@ zero everywhere. Generic conversion follows optimization event and remains disti
 App purchase family rows40/30 do not cover all53/35 Ads; missing rows are unavailable. Do not
 combine app purchase value with web payment count/ROAS or derive exact value from rounded ratios.
 Metric observation does not prove current/historical attribution windows or full date coverage.
+
+
+## Source post Creative contract — 2026-10-04
+
+GET inventory proves tiktok_item_id present for every509SINGLE_VIDEOwithoutvideo_id and37CAROUSEL_ADS
+withoutimage_ids. Preserve existing video-resource identities; otherwise use exact numeric sourcepostID
+for proved format. Sharedpost creates one reusable Creative with null Campaign/AdGroup/Ad parents;
+Ads retain their own proved parent and Creative reference. Lark source_content_id holds postID,
+creative_type video/carousel already supported, video_id remains null for posts. Reject reusedpost
+with conflicting format/resource semantics and any upgradedCreative namespace collision before writes.
+Current post reference never becomes historical Daily Creative attribution. Unknownformat/noID staysnull.
