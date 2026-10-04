@@ -1,3 +1,8 @@
+## 2026-10-04 — TikTok Ads automatic daily cycle verified
+
+- A real primary Cron trigger at 17:30 Asia/Bangkok started the TikTok Ads job automatically; all 42 units completed successfully with zero scoped DLQ. The temporary test time was removed and Production now has the daily 03:30 Asia/Bangkok setting at 100% traffic.
+- The final Worker retains 234 bindings, 15 secret bindings, the existing primary and YouTube crons and disabled preview URLs. The shared optional Report AI flag remains false because no provider is configured; no AI output is claimed.
+
 ## 2026-10-04 — TikTok Ads Production readiness after full Queue UAT
 
 - A fresh customer Production Queue run completed all 42 master, proof, D1, Lark, Summary and Report units with zero DLQ; promote TikTok Ads live-account readiness to verified for normal scheduled admission.
