@@ -1,5 +1,7 @@
 ## TikTok Ads full master sync preparation — 2026-10-04
 
+- TikTok combined core metric GET proof reconciles exact Campaign/true-Ad video and optimization counts without adding distinct Reach.
+
 - TikTok Ads source posts now map reusable video/carousel Creatives with collision guards; live preview resolves all546 Manual/Legacy references.
 
 - สร้างmaster snapshotที่แยกManual/Legacy Ads, Smart+ Ads และ Upgraded Creative ด้วยsourceIDsจริง

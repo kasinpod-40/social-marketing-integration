@@ -28,6 +28,7 @@ const CAPABILITIES = Object.freeze({
 });
 export const TIKTOK_ADS_DAILY_METRIC_FAMILIES = Object.freeze({
   base: Object.freeze(['spend', 'impressions', 'clicks']),
+  core: Object.freeze(['spend', 'impressions', 'clicks', 'reach', 'video_play_actions', 'video_watched_2s', 'video_watched_6s', 'conversion']),
   delivery: Object.freeze(['reach', 'frequency']),
   video: Object.freeze(['video_play_actions', 'video_watched_2s', 'video_watched_6s']),
   optimization: Object.freeze(['conversion', 'cost_per_conversion']),

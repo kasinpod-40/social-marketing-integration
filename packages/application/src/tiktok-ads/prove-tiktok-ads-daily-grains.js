@@ -9,7 +9,7 @@ export async function proveTikTokAdsDailyGrains(input) {
   const snapshots = {};
   for (const grain of ['campaign', 'ad']) {
     snapshots[grain] = await input.client.listAllStatusDailyReport({ accessToken: input.accessToken,
-      advertiserId: input.advertiserId, date, grain });
+      advertiserId: input.advertiserId, date, grain, metricFamily: input.coreMetrics === true ? 'core' : 'base' });
   }
   const entities = await loadTikTokAdsDailyMasters(input);
   const results = {};
@@ -18,7 +18,8 @@ export async function proveTikTokAdsDailyGrains(input) {
     const source = snapshots[grain];
     if (!Array.isArray(source.rows) || source.rows.length !== source.totalCount || source.rows.length > 10000) fail('SOURCE_COUNT');
     const seen = new Set();
-    const sum = { spend: 0, impressions: 0, clicks: 0 };
+    const additive = input.coreMetrics === true ? ['impressions', 'clicks', 'video_play_actions', 'video_watched_2s', 'video_watched_6s'] : ['impressions', 'clicks'];
+    const sum = Object.fromEntries(['spend', ...additive, ...(input.coreMetrics === true ? ['optimizationConversionMicros'] : [])].map(key => [key, 0]));
     let missingMasters = 0;
     let missingParents = 0;
     for (const row of source.rows) {
@@ -37,10 +38,14 @@ export async function proveTikTokAdsDailyGrains(input) {
       const spend = currencyAmountToMicros(row?.metrics?.spend, 'spend');
       if (!Number.isSafeInteger(spend) || spend < 0) fail('SOURCE_METRIC');
       sum.spend += spend;
-      for (const metric of ['impressions', 'clicks']) {
+      for (const metric of additive) {
         const value = row?.metrics?.[metric];
         if (!/^(0|[1-9]\d*)$/u.test(String(value ?? ''))) fail('SOURCE_METRIC');
         sum[metric] += Number(value);
+      }
+      if (input.coreMetrics === true) {
+        sum.optimizationConversionMicros += currencyAmountToMicros(row?.metrics?.conversion, 'optimization conversion');
+        if (!/^(0|[1-9]\d*)$/u.test(String(row?.metrics?.reach ?? ''))) fail('SOURCE_METRIC');
       }
       if (!Object.values(sum).every(Number.isSafeInteger)) fail('SOURCE_METRIC');
     }
@@ -49,7 +54,8 @@ export async function proveTikTokAdsDailyGrains(input) {
   }
   return Object.freeze({ date, allStatuses: true, sampleOnly: false, grains: results,
     identityReconciled: Object.values(results).every(row => row.missingMasters + row.missingParents === 0),
-    totalsMatch: Object.fromEntries(['spend', 'impressions', 'clicks'].map(metric =>
+    coreMetrics: input.coreMetrics === true, reachAdditive: false,
+    totalsMatch: Object.fromEntries(Object.keys(totals.campaign).map(metric =>
       [metric, totals.campaign[metric] === totals.ad[metric]])),
   });
 }

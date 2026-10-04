@@ -3039,3 +3039,15 @@ Live preview/readback/replay and full gates pending. Historical Daily Creative r
   All five schema/capacity plans passed;previewrestoredfalse/Productionunchanged.
 - Gates:3561unit/24Workers/106Reportreliability,check882files/zero cycles/hygiene,
   productionaudit0,normal+isolateddryruns,diffcheck. ControlledPOST/readback/replay pending merge.
+
+
+### Implementation result — combined core metric source proof 2026-10-04
+
+GET-only core family uses exactfixed spend/impressions/clicks/reach/video_play_actions/
+video_watched_2s/video_watched_6s/conversion, fullSTATUS_ALL Campaign/ad_id_v2 pages.
+Independent cross-grain proof returns onlycounts/equality. Conversion decimal compared in
+integer micros; never purchase. Reach numeric day/entity proof only, never sum acrossgrains.
+Live c88a7a2d passed2025-09-01/2026-01-01/2026-06-01/2026-10-03 with every additive total
+exactlyequal, zero missingmasters/parents. Previewdisabled/Productionunchanged. No new metricwrites.
+Gates:39focused/3562unit/24Workers/106reliability/check/hygiene/normal+isolateddryrun;
+dependenciesunchanged with productionauditzero. Master sourcepost PR912 merged; controlled UAT next.

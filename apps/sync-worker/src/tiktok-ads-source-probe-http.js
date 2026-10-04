@@ -23,7 +23,7 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
       const capabilityDate = url.searchParams.get('date');
       const metrics = isCampaignProbe && url.searchParams.get('metrics') === 'full';
       const metricGrain = url.searchParams.get('grain') ?? 'ad';
-      const daily = isCampaignProbe && url.searchParams.get('daily') === 'full';
+      const daily = isCampaignProbe && ['full', 'core'].includes(url.searchParams.get('daily'));
       const inventory = isCampaignProbe && url.searchParams.get('inventory');
       const source = await loadTikTokAdsAuthorizedSource({
         request, env, dependencies,
@@ -48,7 +48,7 @@ export function createTikTokAdsSourceProbeHttpHandler(dependencies = {}) {
       const result = daily || metrics
         ? await (metrics ? proveTikTokAdsDailyMetrics : proveTikTokAdsDailyGrains)({ client: source.client, accessToken: source.accessToken,
           advertiserId: source.connection.externalAccountId, customerKey: source.runtime.config.customerKey,
-          accountKey: source.runtime.config.customerKey, date: capabilityDate, grain: metricGrain, db: env.MKT_STATE_DB })
+          accountKey: source.runtime.config.customerKey, date: capabilityDate, grain: metricGrain, coreMetrics: url.searchParams.get('daily') === 'core', db: env.MKT_STATE_DB })
         : inventory
         ? await inventoryProof(source, inventory)
         : capability
