@@ -360,3 +360,29 @@ function createD1(resolver) {
     },
   };
 }
+
+
+test('TikTok Top Ads uses independently complete Ad Coverage and never sums Campaign and Ad facts', async () => {
+  const day = '2026-10-01';
+  const coverage = dataset => ({ dataset_key: dataset, status: 'revisable', period_start: day, period_end: day,
+    expected_rows: 1, observed_rows: 1, failed_rows: 0 });
+  let adCoverage = true;
+  const db = createD1(sql => {
+    if (sql.includes('data_coverage_runs')) return [coverage('ads_daily_facts'), ...(adCoverage ? [coverage('ads_daily_facts_ad')] : [])];
+    if (sql.includes('ads_entity_state')) return [{ external_entity_id: 'true-ad', entity_name: 'Example', currency: 'THB' }];
+    return [fact({ key: 'campaign-fact', level: 'campaign', campaignId: 'campaign', breakdown: 'none', segment: 'none', metricDate: day,
+      spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null }),
+    fact({ key: 'ad-fact', level: 'ad', adId: 'true-ad', campaignId: 'campaign', breakdown: 'none', segment: 'none', metricDate: day,
+      spend: 1000000, impressions: 100, clicks: 10, conversions: null, value: null })];
+  });
+  const source = new D1AdsReportSource({ db, platform: 'tiktok_ads', rankingReportLevels: ['ad'],
+    rankingBreakdownFamily: 'none', rankingSegmentFamily: 'none', rankingCoverageDatasetKeys: ['ads_daily_facts_ad'] });
+  const query = { customerKey: 'demo', accountKey: 'demo', periodStart: day, periodEnd: day };
+  const result = await source.load(query);
+  assert.equal(result.metrics.spend_micros, 1000000);
+  assert.equal(result.topAds.length, 1); assert.equal(result.readSummary.rankingCoverageRate, 1);
+  assert.equal(result.readSummary.topAdsAvailability, 'available');
+  adCoverage = false; const partial = await source.load(query);
+  assert.equal(partial.metrics.data_status, 'revisable');
+  assert.deepEqual(partial.topAds, []); assert.equal(partial.readSummary.topAdsAvailability, 'partial');
+});

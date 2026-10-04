@@ -863,3 +863,9 @@ Campaign-only Lark projection filters its grain. No Report or schedule activatio
 Existing Daily projection accepts explicit Ad grain behind its own write gate, validates advertiser
 master/parents and independent D1 Ad coverage, retains 90-day cache/capacity guards and zero-diff
 readback. Ad projection writes Daily only; Campaign/master reconciliation remains separate.
+
+## TikTok Ads ranking coverage readiness — 2026-10-04
+
+Shared D1 Ads reader accepts explicit independent ranking coverage datasets. TikTok Top Ads
+remains unavailable until every ranking date reconciles with Ad facts; Campaign summary stays
+independent and is never added to Ad totals. Default TikTok adapter remains planned.
