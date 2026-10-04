@@ -61,9 +61,9 @@ export async function projectTikTokAdsCampaignSummary(input) {
     // Preview แสดงแผนพร้อม enum ที่ต้องเพิ่ม แต่ไม่มี schema mutation จนทุกแถว/capacity ผ่าน
     const repository = Object.create(input.repository);
     if (monthOptionNeeded && typeof input.repository.getTableFields === 'function') {
-      repository.getTableFields = async () => fields.map(field => field.fieldName === 'period_month_th'
+      Object.defineProperty(repository, 'getTableFields', { value: async () => fields.map(field => field.fieldName === 'period_month_th'
         ? { ...field, property: { ...field.property, options: [...(field.property?.options ?? []), { name: label }] } }
-        : field);
+        : field) });
     }
     const result = await materializeCampaignSummaryPeriods({ ...input, repository, tableId, now,
       periods: [{ periodStart, periodEnd }], beforeWriteChunk,
