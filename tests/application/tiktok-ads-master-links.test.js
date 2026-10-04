@@ -56,9 +56,9 @@ test('links campaign to group, group to Ad, and every proved Smart+ Creative; re
   const f = fixture();
   const first = await reconcileTikTokAdsMasterLinks(f);
   assert.deepEqual(first, { adGroups: 1, ads: 1, creativeLinks: 1, updated: 2 });
-  assert.deepEqual(f.records.get('groups')[0].fields.campaign_link, { link_record_ids: ['recCampaign'] });
-  assert.deepEqual(f.records.get('ads')[0].fields.ad_group_link, { link_record_ids: ['recGroup'] });
-  assert.deepEqual(f.records.get('ads')[0].fields.creative_links, { link_record_ids: ['recCreativeA', 'recCreativeB'] });
+  assert.deepEqual(f.records.get('groups')[0].fields.campaign_link, ['recCampaign']);
+  assert.deepEqual(f.records.get('ads')[0].fields.ad_group_link, ['recGroup']);
+  assert.deepEqual(f.records.get('ads')[0].fields.creative_links, ['recCreativeA', 'recCreativeB']);
   const replay = await reconcileTikTokAdsMasterLinks(f);
   assert.equal(replay.updated, 0);
   assert.equal(f.writes.length, 2);
@@ -79,6 +79,6 @@ test('removes stale Creative association when current source no longer proves th
   const result = await reconcileTikTokAdsMasterLinks(f);
   assert.equal(result.creativeLinks, 0);
   assert.equal(result.updated, 1);
-  assert.deepEqual(f.records.get('ads')[0].fields.creative_links, { link_record_ids: [] });
+  assert.deepEqual(f.records.get('ads')[0].fields.creative_links, []);
   assert.equal((await reconcileTikTokAdsMasterLinks(f)).updated, 0);
 });

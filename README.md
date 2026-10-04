@@ -3,8 +3,9 @@
 TikTok Ads master and base Daily history are live-proved: 398 dates from2025-09-01,
 5,746Campaign rows /16,945trueAd rows. Customer Lark90day cache has5,743TikTokDaily rows
 and14monthly Summary buckets /396Campaign-month rows, all readback/replay passed.
-Supported metric/event enrichment, relationships, Report/AI writes and automatic sync still require
-completion and live admission. See [current task](docs/current-task.md) and [full completion contract](docs/tasks/tiktok-ads-full-completion-20261003.md).
+Core metric enrichment and 1/3/7/30-day Reports have live readback. Current master links now connect
+261 Ad Groups and 1,078 Ads, with zero-change replay. AI admission and the actual automatic Queue cycle
+still require validation. See [current task](docs/current-task.md) and [full completion contract](docs/tasks/tiktok-ads-full-completion-20261003.md).
 
 ## Instagram token renewal
 

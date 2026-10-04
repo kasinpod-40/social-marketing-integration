@@ -1,3 +1,9 @@
+## 2026-10-04 — TikTok Ads Lark association live repair
+
+- Normalize empty Lark association `{}` and populated `link_record_ids` on readback; write record-ID string arrays, the shape proven by a controlled single-record Lark update.
+- Reconciled all 261 Ad Group and 1,078 true Ad links from verified D1 master state; 1,077 Ads have proved current Creative links. Live replay wrote zero changes.
+- Preview URL was restored disabled, and the active Production Worker deployment remained unchanged. Queue schedule still requires exact live UAT.
+
 ## 2026-10-04 — TikTok Ads current master relations
 
 - Link current Ad Groups, true Ads and all proved Creative children by real Lark record IDs.

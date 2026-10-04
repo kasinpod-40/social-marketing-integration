@@ -160,3 +160,27 @@ test('preserves URL display text during comparison so custom labels do not updat
     text: 'เปิดวิดีโอ',
   });
 });
+
+test('treats an empty Lark association object as an empty link, but rejects malformed nonempty links', () => {
+  const linkFields = [{ fieldName: 'ads_ad_group_key', type: 1 }, { fieldName: 'campaign_link', type: 18 }];
+  const [record] = normalizeExistingRecordsForComparison([{
+    recordId: 'recGroup',
+    fields: { ads_ad_group_key: 'group-1', campaign_link: {} },
+  }], linkFields, { tableId: 'tbl_groups', incomingFieldNames: ['ads_ad_group_key', 'campaign_link'] });
+  assert.deepEqual(record.fields.campaign_link, []);
+  assert.deepEqual(serializeRowsForLark([{
+    ads_ad_group_key: 'group-1', campaign_link: { link_record_ids: ['recCampaign'] },
+  }], linkFields, { tableId: 'tbl_groups', keyField: 'ads_ad_group_key' })[0].campaign_link,
+  ['recCampaign']);
+  const [linked] = normalizeExistingRecordsForComparison([{
+    recordId: 'recGroup', fields: { campaign_link: { link_record_ids: ['recCampaign'] } },
+  }], linkFields, { tableId: 'tbl_groups', incomingFieldNames: ['campaign_link'] });
+  assert.deepEqual(linked.fields.campaign_link, ['recCampaign']);
+  const [arrayReadback] = normalizeExistingRecordsForComparison([{
+    recordId: 'recGroup', fields: { campaign_link: [{ id: 'recCampaign' }] },
+  }], linkFields, { tableId: 'tbl_groups', incomingFieldNames: ['campaign_link'] });
+  assert.deepEqual(arrayReadback.fields.campaign_link, ['recCampaign']);
+  assert.throws(() => normalizeExistingRecordsForComparison([{
+    recordId: 'recGroup', fields: { ads_ad_group_key: 'group-1', campaign_link: { unexpected: true } },
+  }], linkFields, { tableId: 'tbl_groups', incomingFieldNames: ['campaign_link'] }), /expected unique linked record IDs/);
+});
