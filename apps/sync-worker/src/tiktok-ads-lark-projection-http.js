@@ -25,6 +25,7 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
     try {
       let date;
       let month;
+      let days = 1;
       let grain = 'campaign';
       let runtime;
       const source = await loadTikTokAdsAuthorizedSource({ request, env, dependencies: {
@@ -44,7 +45,9 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
             }
             date = requireDateOnly(url.searchParams.get('date'));
             grain = url.searchParams.get('grain') ?? 'campaign';
-            return ['campaign', 'ad'].includes(grain) && url.searchParams.size === (url.searchParams.has('grain') ? 2 : 1);
+            days = url.searchParams.has('days') ? Number(url.searchParams.get('days')) : 1;
+            return ['campaign', 'ad'].includes(grain) && Number.isInteger(days) && days >= 1 && days <= 7
+              && url.searchParams.size === 1 + Number(url.searchParams.has('grain')) + Number(url.searchParams.has('days'));
           } catch { return false; }
         },
       });
@@ -59,7 +62,7 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
       const projector = summary ? dependencies.projectSummary ?? projectTikTokAdsCampaignSummary
         : dependencies.project ?? projectTikTokAdsDailyLark;
       const result = await projector({
-        date, month, grain, adWriteEnabled: env.MKT_TIKTOK_ADS_AD_LARK_WRITE_ENABLED === 'true', db: env.MKT_STATE_DB, customerKey: source.runtime.config.customerKey,
+        date, month, days, grain, adWriteEnabled: env.MKT_TIKTOK_ADS_AD_LARK_WRITE_ENABLED === 'true', db: env.MKT_STATE_DB, customerKey: source.runtime.config.customerKey,
         accountKey: source.runtime.config.customerKey, advertiserId: source.connection.externalAccountId,
         currency: source.connection.providerMetadata?.currency, timezone: source.connection.providerMetadata?.timezone,
         execute: request.method === 'POST', writeEnabled: (summary ? env.MKT_TIKTOK_ADS_SUMMARY_WRITE_ENABLED : env.MKT_TIKTOK_ADS_LARK_WRITE_ENABLED) === 'true',
