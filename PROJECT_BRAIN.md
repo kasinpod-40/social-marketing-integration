@@ -1995,3 +1995,12 @@ from the frozen Worker infrastructure, and direct assignment threw a TypeError. 
 and Summary wrappers now define own methods explicitly; new frozen-repository tests cover both.
 That terminal UAT attempt must not be blindly redriven. A fresh operation and completed readback
 are required before schedule admission.
+
+The fresh TikTok Ads Production Queue UAT for period end 2026-10-03 completed all 42 units
+with `{status:success,units:42}`, 42 Queue attempts, zero DLQ and 16 Campaign/41 true-Ad
+D1 facts for that date. It included current masters, seven-day independent source parity,
+D1 and Lark Daily, monthly Summary and four Report windows. This satisfies the previously
+pending live-account UAT gate for TikTok Ads; catalog promotion to `verified` is now reviewed.
+The failed first operation remains an isolated forensic terminal. Schedule activation and an
+observed automatic cycle are still required; AI capability follows the separately proved
+provider contract and must not invent purchase/value metrics.
