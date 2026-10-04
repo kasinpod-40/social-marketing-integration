@@ -200,6 +200,7 @@ it('scoped TikTok monthly Summary reconciles real D1, excludes Ad/other platform
       return { created: rows.length };
     }, updateMany: async () => { throw Error('Unexpected update'); },
   };
+  Object.freeze(repository);
   const projectInput = { ...input, execute: false, writeEnabled: true, month: '2026-10',
     now: Date.parse('2026-10-02T06:00:00Z'), tables: { mktAdsCampaignSummary: 'summary' },
     repository, syncEngine: new TableSyncEngine(), client: {

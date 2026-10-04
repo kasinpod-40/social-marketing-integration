@@ -1989,3 +1989,9 @@ repair used the already verified D1 entities, translating D1 customer-key identi
 advertiser-ID identities before matching. The diagnostic endpoint is not part of release code.
 Core Lark 90-day Daily cache and 14 monthly Summary buckets also passed full readback and replay.
 Automatic Queue cycle and AI admission remain open.
+The first controlled TikTok Ads Queue UAT on 2026-10-04 reached master reconciliation but
+terminated before its first checkpoint: `Object.create` inherited a read-only repository method
+from the frozen Worker infrastructure, and direct assignment threw a TypeError. The scoped master
+and Summary wrappers now define own methods explicitly; new frozen-repository tests cover both.
+That terminal UAT attempt must not be blindly redriven. A fresh operation and completed readback
+are required before schedule admission.

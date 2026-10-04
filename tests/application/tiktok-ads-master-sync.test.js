@@ -78,6 +78,7 @@ test('scoped snapshot preserves Rich text keys and rejects foreign destination o
       ...(tableId==='campaigns'?{ads_campaign_key:record.fields.ads_campaign_key[0].text}:{})}}));},
     async createMany(){throw Error('preview must not write');},async updateMany(){throw Error('preview must not write');},
   };
+  Object.freeze(f.input.repository);
   const preview=await runTikTokAdsMasterSync(f.input);
   assert.equal(preview.tables.find(table=>table.dataset==='campaigns').created,0);
   assert.equal(preview.tables.find(table=>table.dataset==='campaigns').skipped,1);

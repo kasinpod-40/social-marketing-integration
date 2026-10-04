@@ -73,7 +73,7 @@ async function reconcile(input) {
     || FIELDS.some(field => stored.get(row.entity_key)[field] !== row[field]));
   const scopedRepository = Object.create(input.repository);
   if (typeof input.repository.searchRecords === 'function') {
-    scopedRepository.listByFieldValues = async (tableId, keyField) => {
+    Object.defineProperty(scopedRepository, 'listByFieldValues', { value: async (tableId, keyField) => {
       const type = { ads_account_key: 'account', ads_campaign_key: 'campaign', ads_ad_group_key: 'ad_group',
         ads_ad_key: 'ad', ads_creative_key: 'creative' }[keyField];
       const prefix = `tiktok_ads:${input.advertiserId}:${type}:`;
@@ -88,7 +88,7 @@ async function reconcile(input) {
         || !record.fields[keyField]?.startsWith(prefix))) fail('LARK_STORED_IDENTITY_CONFLICT');
       // คืน scoped snapshot ให้ sync engine normalize Rich text และตรวจ duplicate โดยไม่ใช้ String(object)
       return records;
-    };
+    } });
   }
   const nullRepository = createExplicitNullUpdateRepository({ repository: scopedRepository,
     fieldNames: ['external_creative_id'] });

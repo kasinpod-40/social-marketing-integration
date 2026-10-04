@@ -1,3 +1,9 @@
+## 2026-10-04 — TikTok Ads Queue frozen repository repair
+
+- The first controlled Queue UAT reached master reconciliation but terminated before any unit checkpoint because the Worker repository is frozen and a scoped wrapper assigned an inherited read-only method.
+- Define own scoped methods for master Lark lookup and Summary month-option planning; unit and Workers-runtime regressions now use frozen repository fixtures.
+- Keep TikTok schedule disabled until a fresh Queue UAT completes and replays without writes.
+
 ## 2026-10-04 — TikTok Ads Lark association live repair
 
 - Normalize empty Lark association `{}` and populated `link_record_ids` on readback; write record-ID string arrays, the shape proven by a controlled single-record Lark update.
