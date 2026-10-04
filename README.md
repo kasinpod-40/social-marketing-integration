@@ -584,3 +584,12 @@ YouTube one-year history uses the opt-in `youtube_d1_year_v1` programme on the e
 operator. It preserves previously observed content/date facts and records Provider omissions as null with
 partial Coverage. Source cumulative days follow YouTube/Pacific; they are not exact Bangkok-midnight snapshots.
 Historical Lark writes remain deferred.
+
+### TikTok Ads controlled Report admission
+
+Operator `/operator/tiktok-ads/report?days=1|3|7|30&date=YYYY-MM-DD` ตรวจ Campaign summary
+และ true Ad ranking ทั้งช่วงหลักและช่วงเปรียบเทียบก่อนเขียน โดยต้องมี Coverage และ core metrics
+ครบทุกวัน POST ต้องเปิด `MKT_TIKTOK_ADS_REPORT_WRITE_ENABLED=true` อย่างชัดเจน และตรวจอ่าน
+Lark กลับครบทุกตาราง ข้อมูล Conversion หมายถึง optimization event; Reach ของช่วงรวมเป็น N/A
+เพราะไม่สามารถบวก distinct audience ข้ามวันได้ Default adapter ยังเป็น planned จนผ่าน live UAT
+และการเปิด schedule ที่ตรวจทานแล้ว

@@ -182,6 +182,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
   ];
   const plans = {};
   for (const entry of planEntries) {
+    if (input.verifyReadback === true) await input.assertLockActive?.();
     plans[entry.name] = await syncEngine.planByKey({
       repository: entry.repository,
       tableId: entry.tableId,
@@ -195,7 +196,20 @@ export async function writeDashboardMaterializationToLark(input = {}) {
       beforeWriteChunk: typeof input.assertLockActive === 'function' ? input.assertLockActive : undefined,
     });
   }
+  let readback = null;
+  if (input.verifyReadback === true) {
+    for (const entry of planEntries) {
+      await input.assertLockActive?.();
+      const checked = await syncEngine.planByKey({ repository: entry.repository,
+        tableId: entry.tableId, keyField: entry.keyField, rows: entry.rows });
+      if (checked.duplicateInputRows || checked.createRows.length || checked.updateRows.length) {
+        throw new Error('Report Lark readback did not reconcile');
+      }
+    }
+    readback = Object.freeze({ reconciled: true, tables: planEntries.length });
+  }
   return Object.freeze({
+    ...(readback ? { readback } : {}),
     reportId: row.report_id,
     platform: payload.platformScope,
     capability: payload.capability,

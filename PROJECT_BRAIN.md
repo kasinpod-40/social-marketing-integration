@@ -1959,3 +1959,13 @@ dependenciesunchanged with productionauditzero. Master sourcepost PR912 merged; 
   base downgrade fail. Lark core evidence readback/replay tested; Report/TopAds reach forcednull.
   Live full398daycross-grainGETpreflight running (firstURL404 propagation retried, cleanupverified).
   No new core metrics writes yet; existing master/history/Lark/Summary delivered remainverified.
+
+
+### Implementation result — gated TikTok Report continuation 2026-10-04
+
+Full398daycoregrainparity passed,796DailyGETpreflight running; no core writes before completeplan.
+Report registry gets explicitfixedTikTokadmission only (defaultplannedpreserved), Campaignsummary/
+trueAdTopAds with independentCoverage and v2formula. SharedReportworker rejects TikTok when gateoff;
+controlledoperatorGET/POST1/3/7/30 reusesexistingprocessor andfullLarkreadback. Previewreturns
+counts/availability only; noQueue/notification/schedule. TikTok sourcewatermark includesallfactrevisions
+anddayCoverage rather thanonelexicalmaximum. Tests/fullgates/liveReportUAT pending.

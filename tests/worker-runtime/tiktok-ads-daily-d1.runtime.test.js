@@ -116,9 +116,9 @@ it('Campaign and true Ad grains coexist with separate Coverage, full parent read
   expect((await runTikTokAdsDailyD1Sync(campaign)).written).toBe(0);
   expect((await runTikTokAdsDailyD1Sync(ad)).written).toBe(0);
   const enriched = { ...ad, coreMetrics: true, coreMetricWriteEnabled: true, client: {
-    async listAllStatusDailyReport({ metricFamily }) {
+    async listAllStatusDailyReport({ metricFamily, grain }) {
       expect(metricFamily).toBe('core');
-      return { totalCount: 1, pageCount: 1, rows: [{ dimensions: { ad_id_v2: '33', stat_time_day: '2026-10-01' },
+      return { totalCount: 1, pageCount: 1, rows: [{ dimensions: { [grain === 'ad' ? 'ad_id_v2' : 'campaign_id']: grain === 'ad' ? '33' : '11', stat_time_day: '2026-10-01' },
         metrics: { spend: '1.23', impressions: '10', clicks: '2', reach: '8', conversion: '1.50',
           video_play_actions: '9', video_watched_2s: '7', video_watched_6s: '2' } }] };
     },
@@ -131,6 +131,21 @@ it('Campaign and true Ad grains coexist with separate Coverage, full parent read
   await expect(runTikTokAdsDailyD1Sync(ad)).rejects.toMatchObject({ code: 'TIKTOK_ADS_METRIC_DOWNGRADE_REFUSED' });
   await expect(runTikTokAdsDailyD1Sync({ ...enriched, coreMetricWriteEnabled: false }))
     .rejects.toMatchObject({ code: 'TIKTOK_ADS_CORE_METRIC_WRITE_DISABLED' });
+  await runTikTokAdsDailyD1Sync({ ...enriched, grain: 'campaign', syncRunId: 'campaign-core' });
+  const { createD1ReportRegistry } = await import('../../apps/sync-worker/src/tiktok-d1-aware-report-job-router.js');
+  const { generateDashboardReportMaterialization } = await import('../../packages/application/src/use-cases/generate-dashboard-report-materialization.js');
+  const { D1ReportMaterializationReader } = await import('../../packages/connectors/src/d1-report-materialization-reader.js');
+  const reportInput = { registry: createD1ReportRegistry(env.MKT_STATE_DB, { tikTokAdsReady: true }),
+    materializationStore: base.historyStore, customerKey: base.customerKey, accountKey: base.accountKey,
+    platformScope: 'tiktok_ads', reportSettingKey: 'test-tiktok-1d', periodKind: 'rolling_days', windowDays: 1,
+    periodEnd: base.date, comparisonMode: 'none', generatedAt: Date.parse('2026-10-02T00:00:00Z'), timeZone: base.timezone };
+  const report = await generateDashboardReportMaterialization(reportInput);
+  expect(report.topAds).toHaveLength(1);
+  expect(report.topAds[0]).toMatchObject({ external_ad_id: '33', spend_micros: 1230000,
+    conversions: 1.5, video_views: 9, reach: null, external_creative_id: null });
+  const read = await new D1ReportMaterializationReader({ db: env.MKT_STATE_DB }).readById(report.reportId);
+  expect(read.payload.platformScope).toBe('tiktok_ads'); expect(read.payload.topAds).toHaveLength(1);
+  expect((await generateDashboardReportMaterialization(reportInput)).reportId).toBe(report.reportId);
   const facts = (await env.MKT_STATE_DB.prepare("SELECT report_level, external_entity_id, external_campaign_id, external_ad_group_id, external_ad_id, external_creative_id FROM ads_daily_facts WHERE account_key='daily_grains' ORDER BY report_level").all()).results;
   expect(facts).toEqual([
     { report_level: 'ad', external_entity_id: '33', external_campaign_id: '11', external_ad_group_id: '22', external_ad_id: '33', external_creative_id: null },

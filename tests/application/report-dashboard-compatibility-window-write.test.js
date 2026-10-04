@@ -111,3 +111,20 @@ test('non-Integration Workspace Metric rows retain Select text and no private mi
   assert.equal(Object.hasOwn(metricPlan.rows[0], LEGACY_WINDOW), false);
   assert.equal(metricPlan.rows[0].window_days, '3');
 });
+
+
+test('optional Report readback verifies every prepared table and rejects drift after writes', async () => {
+  for (const drift of [false, true]) {
+    let written = false; let renewals = 0;
+    const promise = writeDashboardMaterializationToLark({
+      reader: { readById: async () => materialization(3) }, repository: {}, reportId: 'report-1',
+      customerProfile: 'chemistry_k', verifyReadback: true, assertLockActive: async () => { renewals++; },
+      tables: { mktReportSnapshots: 'snapshot', mktReportMetricValues: 'metric' },
+      syncEngine: { planByKey: async input => ({ ...input, duplicateInputRows: 0,
+        createRows: written && !drift ? [] : input.rows, updateRows: [], skipped: written ? input.rows.length : 0 }),
+      executePlan: async () => { written = true; return { created: 1 }; } },
+    });
+    if (drift) await assert.rejects(promise, /readback/);
+    else { assert.equal((await promise).readback.reconciled, true); assert.equal(renewals, 4); }
+  }
+});

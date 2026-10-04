@@ -3068,3 +3068,22 @@ Full gates/liveenrichment preflight/UAT pending. NoReport/scheduleactivationyet.
   base downgrade fail. Lark core evidence readback/replay tested; Report/TopAds reach forcednull.
   Live full398daycross-grainGETpreflight running (firstURL404 propagation retried, cleanupverified).
   No new core metrics writes yet; existing master/history/Lark/Summary delivered remainverified.
+
+
+### Implementation result — gated TikTok Report continuation 2026-10-04
+
+Full398daycoregrainparity passed,796DailyGETpreflight running; no core writes before completeplan.
+Report registry gets explicitfixedTikTokadmission only (defaultplannedpreserved), Campaignsummary/
+trueAdTopAds with independentCoverage and v2formula. SharedReportworker rejects TikTok when gateoff;
+controlledoperatorGET/POST1/3/7/30 reusesexistingprocessor andfullLarkreadback. Previewreturns
+counts/availability only; noQueue/notification/schedule. TikTok sourcewatermark includesallfactrevisions
+anddayCoverage rather thanonelexicalmaximum. Tests/fullgates/liveReportUAT pending.
+
+- Report admission gates passed: 39 focused tests, 3,570 unit tests, 24 real Workers tests,
+  106 Report reliability tests, architecture/hygiene check, normal and isolated dry runs.
+  Dependency graph unchanged; production audit remains zero. Real Workers proof generates
+  a persisted TikTok Report with true Ad ranking and core conversion/video metrics, verifies
+  checksum and stable replay; Reach remains null for period aggregates.
+  Full core GET preflight completed 796/796 units, 22,691 rows over 398 dates.
+  Preview restored disabled and active Production deployment unchanged. Live core UAT and
+  historical enrichment are next; live Report writes and automatic daily closure remain pending.
