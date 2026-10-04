@@ -3143,5 +3143,17 @@ current Creative records, including multi-asset Smart+ parents. A missing/foreig
 schema fails before link writes; each bounded update has exact fresh readback and zero-change replay.
 When a current Creative relation disappears, the one-way link is explicitly cleared. These links
 represent current master relationships, not historical Daily attribution. Shared serializer accepts
-only Lark one-way-association type 18 with unique record IDs in link_record_ids, following the official
-Base record contract. Focused tests pass, full gates and live Lark UAT pending before release.
+only Lark one-way-association type 18 with unique record IDs. Live single-record proof showed Lark accepts a string array for type 18
+while GET returns `link_record_ids`; an empty cell returns `{}`. The shared serializer now
+normalizes these read shapes and emits the proven string array. A bounded stored-master UAT
+validated 7,043 D1 entities and customer ownership, translated D1 customer-key stable keys
+to Lark advertiser-ID keys, then linked 261 Ad Groups and 1,078 Ads (1,077 with current
+Creative assets). The first pass updated 1,338 rows; one link was already set by the
+single-record probe. Fresh readback passed and the immediate replay updated zero rows.
+Preview was restored disabled and active Production deployment remained unchanged.
+Historical D1 core facts (398 days/22,691 rows), Lark 90-day cache (5,743 rows), 14 monthly
+Summary buckets (396 rows), and controlled 1/3/7/30-day Reports passed live readback.
+Queue automatic cycle and AI admission remain required before overall completion.
+Release gates for this serializer repair: architecture/hygiene check passed (885 source files,
+zero cycles), 3,584 unit tests, 25 real Workers tests, 107 Report reliability tests,
+production dependency audit zero vulnerabilities, both deploy dry-runs and diff check passed.

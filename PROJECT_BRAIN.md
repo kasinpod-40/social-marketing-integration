@@ -1982,4 +1982,10 @@ remain required; Production traffic and schedule admission are unchanged.
 
 TikTok Ads current master links use verified Lark one-way-association record IDs and bounded
 master reconciliation. They attach all proved Smart+ Creative children while leaving historical
-Daily Creative attribution null. Live relation UAT remains pending; source/history facts are unaffected.
+Daily Creative attribution null. Live relation UAT passed with the Lark wire format `[record_id]`:
+261 Ad Group links, 1,078 true Ad links, 1,077 proved current Creative links, and zero-change replay.
+The source inventory can intermittently reject a new full snapshot; the controlled one-off relation
+repair used the already verified D1 entities, translating D1 customer-key identities to Lark
+advertiser-ID identities before matching. The diagnostic endpoint is not part of release code.
+Core Lark 90-day Daily cache and 14 monthly Summary buckets also passed full readback and replay.
+Automatic Queue cycle and AI admission remain open.
