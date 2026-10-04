@@ -23,6 +23,8 @@ const FIXED_NUMBER_FORMATTER_PRECISIONS = Object.freeze({
   '0.0000': 4,
   '1,000': 0,
   '1,000.00': 2,
+  // เปอร์เซ็นต์ 2 ตำแหน่งแสดง ratio ที่มี precision 4 ตำแหน่ง; D1 เก็บ source exact เหมือนเดิม
+  '0.00%': 4,
 });
 
 /**

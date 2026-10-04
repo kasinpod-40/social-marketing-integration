@@ -54,6 +54,7 @@ test('projection preview is read-only; write/replay reconcile exact advertiser k
   const preview = await projectTikTokAdsDailyLark(f.input);
   assert.equal(preview.tables[1].created, 1);
   assert.deepEqual(f.calls, []);
+  assert.deepEqual(preview.changedFields, [{}, {}]);
   const result = await projectTikTokAdsDailyLark({ ...f.input, execute: true });
   assert.equal(result.reconciled, true);
   const row = f.records.get('daily')[0].fields;

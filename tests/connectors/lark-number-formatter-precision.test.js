@@ -20,6 +20,7 @@ test('parses only explicit fixed-decimal Lark number formatters', () => {
   assert.equal(readFixedNumberFormatterPrecision('1,000.00'), 2);
   assert.equal(readFixedNumberFormatterPrecision('#,##0.00'), 2);
   assert.equal(readFixedNumberFormatterPrecision('0.0%'), null);
+  assert.equal(readFixedNumberFormatterPrecision('0.00%'), 4);
   assert.equal(readFixedNumberFormatterPrecision('0.00000'), null);
   assert.equal(readFixedNumberFormatterPrecision('1,000.000'), null);
   assert.equal(readFixedNumberFormatterPrecision('currency'), null);
@@ -129,3 +130,44 @@ function createRepository(existingCoverageRate) {
     },
   };
 }
+
+
+test('two-decimal percent formatter keeps fraction units and stable replay precision', async () => {
+  const percentFields = [
+    { fieldName: 'key', type: 1 },
+    { fieldName: 'video_view_rate', type: 2, property: { formatter: '0.00%' } },
+  ];
+  const repository = {
+    ...createRepository(0),
+    async prepareRows(tableId, rows, context) {
+      return serializeRowsForLark(rows, percentFields, { tableId, keyField: context.keyField });
+    },
+    async listByFieldValues() {
+      return [{ recordId: 'rec-one', fields: { key: 'one', video_view_rate: 0.833333333333333 } }];
+    },
+    async prepareExistingRecords(tableId, records, context) {
+      return normalizeExistingRecordsForComparison(records, percentFields, {
+        tableId, incomingFieldNames: context.incomingFieldNames,
+      });
+    },
+  };
+  const [serialized] = await repository.prepareRows('tbl', [{ key: 'one', video_view_rate: 5 / 6 }], { keyField: 'key' });
+  assert.equal(serialized.video_view_rate, 0.8333);
+  const engine = new TableSyncEngine();
+  const same = await engine.planByKey({ repository, tableId: 'tbl', keyField: 'key',
+    rows: [{ key: 'one', video_view_rate: 5 / 6 }] });
+  assert.equal(same.skipped, 1);
+  assert.equal(same.updateRows.length, 0);
+  const changed = await engine.planByKey({ repository, tableId: 'tbl', keyField: 'key',
+    rows: [{ key: 'one', video_view_rate: 0.8332 }] });
+  assert.equal(changed.updateRows.length, 1);
+  assert.deepEqual(changed.changedFieldCounts, { video_view_rate: 1 });
+  const [zero, missing] = serializeRowsForLark([
+    { key: 'zero', video_view_rate: 0 }, { key: 'missing', video_view_rate: null },
+  ], percentFields, { tableId: 'tbl', keyField: 'key' });
+  assert.equal(zero.video_view_rate, 0);
+  assert.equal(Object.hasOwn(missing, 'video_view_rate'), false);
+  assert.equal(canonicalizeNumberForLarkFormatter(1.234567, {
+    fieldName: 'unproved', property: { formatter: '0.0%' },
+  }), 1.234567);
+});
