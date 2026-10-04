@@ -43,11 +43,13 @@ test('daily router executes one unit per delivery, preserves identity and follow
  assert.equal((await processTikTokAdsDailyJob(f.input,f.dependencies)).replayed,true);
  assert.equal(f.calls.filter(x=>x.kind!=='credential').length,count);
 });
-test('disabled business gate, unknown schema and Production readiness reject before credential access',async()=>{
+test('disabled business gate and unknown schema reject before credential access; verified Production runs',async()=>{
  for(const flag of TIKTOK_ADS_DAILY_REQUIRED_FLAGS){const f=fixture();f.input.env[flag]='false';await assert.rejects(processTikTokAdsDailyJob(f.input,f.dependencies));assert.equal(f.calls.length,0);}
  const f=fixture();await assert.rejects(processTikTokAdsDailyJob({...f.input,job:{body:{...f.input.job.body,schemaVersion:2}}},f.dependencies));assert.equal(f.calls.length,0);
  f.input.env.MKT_ENV='production';f.input.env.MKT_CUSTOMER_PROFILE='chemistry_k';
- await assert.rejects(processTikTokAdsDailyJob(f.input,f.dependencies),e=>e.code==='MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING');assert.equal(f.calls.length,0);
+ const result=await processTikTokAdsDailyJob(f.input,f.dependencies);
+ assert.equal(result.continuationRequired,true);
+ assert.equal(f.calls.some(call=>call.kind==='master'),true);
 });
 test('failed cross-grain proof never reaches D1 or sends another unit',async()=>{
  const f=fixture();await processTikTokAdsDailyJob(f.input,f.dependencies);

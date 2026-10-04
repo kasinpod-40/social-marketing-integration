@@ -65,9 +65,9 @@ const CONNECTOR_CATALOG = Object.freeze({
     key: CONNECTOR_KEYS.TIKTOK_ADS, displayName: 'TikTok Ads', capability: 'paid_ads',
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_TIKTOK_ADS_ENABLED', requiredRuntimeFields: ['accountKey'],
-    largeAccount: createLargeAccountReadiness({ status: LARGE_ACCOUNT_STATUS.DEV_READY,
+    largeAccount: createLargeAccountReadiness({ status: LARGE_ACCOUNT_STATUS.VERIFIED,
       primaryEntity: 'ads', minimumFixtureItems: 1000,
-      gates: Object.fromEntries(LARGE_ACCOUNT_REQUIRED_GATES.map(gate => [gate, gate !== 'liveAccountUat'])) }),
+      gates: Object.fromEntries(LARGE_ACCOUNT_REQUIRED_GATES.map(gate => [gate, true])) }),
   }),
   [CONNECTOR_KEYS.META_ADS]: freezeDefinition({
     key: CONNECTOR_KEYS.META_ADS,
