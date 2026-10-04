@@ -316,3 +316,18 @@ test('Smart+ full metadata uses smart_plus_ad_id rather than legacy creative ide
   assert.equal(result.rows[0].creativeItems, 2);
   assert.deepEqual(result.rows[0].creativeIds, ['202', '303']);
 });
+
+
+test('complete daily STATUS_ALL uses only the approved true Ad dimension and refuses arbitrary grains', async () => {
+  const calls = [];
+  const client = createClient(async url => { calls.push(new URL(url));
+    return Response.json({ code: 0, data: { list: [], page_info: { total_number: 0, total_page: 1 } } }); });
+  for (const grain of ['campaign', 'ad']) {
+    await client.listAllStatusDailyReport({ grain, advertiserId: '123', accessToken: 'private', date: '2026-10-02' });
+  }
+  assert.deepEqual(JSON.parse(calls[1].searchParams.get('dimensions')), ['ad_id_v2', 'stat_time_day']);
+  assert.equal(JSON.parse(calls[1].searchParams.get('filtering'))[0].field_name, 'ad_status');
+  assert.match(calls[0].searchParams.get('filtering'), /STATUS_ALL/u);
+  await assert.rejects(client.listAllStatusDailyReport({ grain: 'creative' }));
+  assert.equal(calls.length, 2);
+});

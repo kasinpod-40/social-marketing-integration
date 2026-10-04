@@ -843,3 +843,11 @@ docs/archive/CHANGELOG-before-facebook-observed-aggregation-live-rollout-2026-08
 ```
 
 That archive includes every active entry from the prior Changelog and its existing pointer to the immutable pre-2026-07-25 archive. New entries continue in this active `CHANGELOG.md`.
+
+## TikTok Ads master live / daily grain proof — 2026-10-04
+
+Master #902 live UAT completed: Account1 /Campaign228 /AdGroup261 /trueAds1078 /Creative5179,
+D1/Lark full readback passed and replay zero business changes. Production traffic unchanged.
+GET-only complete STATUS_ALL Campaign/ad_id_v2 daily proof added with bounded pagination,
+exact stored advertiser/parents and independent base totals; metric/Report/schedule remain gated
+until live source reconciliation and full downstream UAT pass.

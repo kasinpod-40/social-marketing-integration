@@ -173,6 +173,32 @@ export class TikTokAdsApiClient {
       urlForPage: page => this.#campaignDailyReportUrl(advertiserId, date, page, REPORT_PAGE_SIZE) });
   }
 
+  /** รายวันทุกสถานะ: true Ad ใช้ ad_id_v2 เท่านั้น; ไม่รวม Creative grain กับ Ads */
+  async listAllStatusDailyReport(input = {}) {
+    const grains = { campaign: ['AUCTION_CAMPAIGN', 'campaign_id', 'campaign_status'],
+      ad: ['AUCTION_AD', 'ad_id_v2', 'ad_status'] };
+    if (!Object.hasOwn(grains, input.grain)) throw new TypeError('Unsupported TikTok Ads daily grain');
+    const [level, dimension, statusField] = grains[input.grain];
+    const advertiserId = requireDigits(input.advertiserId, 'advertiserId');
+    const date = requireIsoDate(input.date);
+    return this.#listCampaignRows({ accessToken: requireText(input.accessToken, 'accessToken'),
+      prefix: 'TIKTOK_ADS_ALL_STATUS_DAILY', maxPages: 100, concurrency: 4, urlForPage: page => {
+        const url = new URL(`${this.baseUrl}/report/integrated/get/`);
+        url.searchParams.set('advertiser_id', advertiserId);
+        url.searchParams.set('report_type', 'BASIC');
+        url.searchParams.set('data_level', level);
+        url.searchParams.set('dimensions', JSON.stringify([dimension, 'stat_time_day']));
+        url.searchParams.set('metrics', JSON.stringify(['spend', 'impressions', 'clicks']));
+        url.searchParams.set('filtering', JSON.stringify([{ field_name: statusField,
+          filter_type: 'IN', filter_value: JSON.stringify(['STATUS_ALL']) }]));
+        url.searchParams.set('start_date', date);
+        url.searchParams.set('end_date', date);
+        url.searchParams.set('page', String(page));
+        url.searchParams.set('page_size', String(REPORT_PAGE_SIZE));
+        return url;
+      } });
+  }
+
   /** อ่าน Campaign metadata ครบทุกหน้าก่อน enrich; ไม่อนุมานว่าแถวที่ไม่คืนมาถูกลบ */
   async listCampaignMetadata(input = {}) {
     const accessToken = requireText(input.accessToken, 'accessToken');
