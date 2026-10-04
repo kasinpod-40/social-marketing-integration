@@ -77,3 +77,15 @@ test('standalone projection hydrates non-secret config after auth/query guard an
   assert.equal((await handle(request())).status, 200);
   assert.deepEqual(calls, ['hydrate', 'source_runtime']);
 });
+
+
+test('Ad projection requires its separate write gate and rejects unapproved grain before hydration', async () => {
+  const f = setup(); const query = 'date=2026-10-02&grain=ad';
+  const enabled = { ...env, MKT_TIKTOK_ADS_LARK_WRITE_ENABLED: 'true' };
+  assert.equal((await f.handle({ ...request('POST', query), env: enabled })).status, 409);
+  assert.equal((await f.handle(request('GET', 'date=2026-10-02&grain=creative'))).status, 400);
+  assert.equal(f.calls.length, 0);
+  assert.equal((await f.handle({ ...request('POST', query), env: { ...enabled,
+    MKT_TIKTOK_ADS_AD_LARK_WRITE_ENABLED: 'true' } })).status, 200);
+  assert.equal(f.calls[0].grain, 'ad'); assert.equal(f.calls[0].adWriteEnabled, true);
+});

@@ -2904,3 +2904,17 @@ source missing prior keys refuses writes; retry/replay retain stable facts. Test
   Runtime proves both grains coexist, exact parent IDs and separate coverage markers, zero fact-write
   replay per grain, missing true-Ad master rejection and corruption readback refusal. Controlled
   one-day POST/readback/replay and full historical STATUS_ALL reconciliation remain next.
+
+### Implementation result — true Ad Lark Daily continuation 2026-10-04
+
+Extend existing Lark projection for explicit Ad grain, exact master/parent revalidation and
+independent Ad Coverage. Daily only for Ad (master already reconciled), shared canonical daily keys,
+all-field/zero-diff readback, explicit null unavailable metrics, cache90days/capacity17000.
+Separate Ad Lark admission flag; Campaign projection behavior preserved. Tests/live schema/UAT pending.
+
+- Ad Lark schema live GET passed: Daily46fields; entity_type supports `ad`, platform/ad_channel
+  support tiktok_ads and required base/parent fields present. Preview setting restored false; traffic unchanged.
+- Gates passed: 16 focused, 3,549 unit, 22 Workers runtime, 106 Report reliability, check/hygiene,
+  audit zero vulnerabilities, normal and isolated deploy dry-run. Live Ad projection UAT pending
+  reviewed merge and prerequisite Ad daily D1 UAT. Earlier daily POST409 wrote nothing: baseline
+  has neither D1 nor multi-grain binding; isolated candidate needs both explicit approved gates.

@@ -34,7 +34,7 @@ export function createTikTokAdsLarkSchemaHttpHandler(dependencies = {}) {
         fields: fields.map(field => ({ name: field.fieldName, type: Number(field.type), primary: field.isPrimary === true,
           tiktokOptionPresent: (field.property?.options ?? []).some(option => option.name === 'tiktok_ads'),
           campaignOptionPresent: (field.property?.options ?? []).some(option => option.name === 'campaign'),
-          requiredOptions: Object.fromEntries(['active','paused','removed','unknown','video','customer','customer_owned','client','developer','integration_workspace','connected','selectable'].map(name => [name,
+          requiredOptions: Object.fromEntries(['ad','image','active','paused','removed','unknown','video','customer','customer_owned','client','developer','integration_workspace','connected','selectable'].map(name => [name,
             (field.property?.options ?? []).some(option => option.name === name)])) })),
       }, { status: 200, headers });
     } catch (error) {

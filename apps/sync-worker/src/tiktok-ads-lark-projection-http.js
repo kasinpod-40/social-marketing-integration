@@ -21,6 +21,7 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
     let stage = 'authorized_source';
     try {
       let date;
+      let grain = 'campaign';
       let runtime;
       const source = await loadTikTokAdsAuthorizedSource({ request, env, dependencies: {
         ...dependencies,
@@ -34,19 +35,21 @@ export function createTikTokAdsLarkProjectionHttpHandler(dependencies = {}) {
         validateRequest: () => {
           try {
             date = requireDateOnly(url.searchParams.get('date'));
-            return url.searchParams.size === 1;
+            grain = url.searchParams.get('grain') ?? 'campaign';
+            return ['campaign', 'ad'].includes(grain) && url.searchParams.size === (url.searchParams.has('grain') ? 2 : 1);
           } catch { return false; }
         },
       });
       if (source.status !== 200) return json({ ok: false }, { status: source.status, headers });
-      if (request.method === 'POST' && env.MKT_TIKTOK_ADS_LARK_WRITE_ENABLED !== 'true') {
+      if (request.method === 'POST' && (env.MKT_TIKTOK_ADS_LARK_WRITE_ENABLED !== 'true'
+        || (grain === 'ad' && env.MKT_TIKTOK_ADS_AD_LARK_WRITE_ENABLED !== 'true'))) {
         return json({ ok: false, code: 'TIKTOK_ADS_LARK_WRITE_DISABLED' }, { status: 409, headers });
       }
       stage = 'lark_client';
       const client = (dependencies.createLarkClient ?? createLarkBitableClientFromEnv)(runtime);
       stage = 'projection';
       const result = await (dependencies.project ?? projectTikTokAdsDailyLark)({
-        date, db: env.MKT_STATE_DB, customerKey: source.runtime.config.customerKey,
+        date, grain, adWriteEnabled: env.MKT_TIKTOK_ADS_AD_LARK_WRITE_ENABLED === 'true', db: env.MKT_STATE_DB, customerKey: source.runtime.config.customerKey,
         accountKey: source.runtime.config.customerKey, advertiserId: source.connection.externalAccountId,
         currency: source.connection.providerMetadata?.currency, timezone: source.connection.providerMetadata?.timezone,
         execute: request.method === 'POST', writeEnabled: env.MKT_TIKTOK_ADS_LARK_WRITE_ENABLED === 'true',
