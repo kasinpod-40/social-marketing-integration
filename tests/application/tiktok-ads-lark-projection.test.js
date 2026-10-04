@@ -40,7 +40,7 @@ function fixture() {
     tables: { mktAdsCampaigns: 'campaigns', mktAdsDaily: 'daily' }, repository, syncEngine: new TableSyncEngine(),
     client: { appToken: 'test', async requestBitableJson() { return { data: { total: state.total } }; } },
     db: { prepare(sql) { return { bind() { return {
-      async all() { return { results: sql.includes('data_coverage_runs') ? state.coverage : state.facts }; },
+      async all() { return { results: sql.includes('data_coverage_runs') ? state.coverage : sql.includes('SELECT entity_type') ? state.masters : state.facts }; },
       async first() { return { active_locks: state.active }; },
     }; } }; } },
     lockStore: { async acquire() { calls.push('acquire'); return { acquired: state.acquired }; },
@@ -141,4 +141,33 @@ test('update clears unproved metrics and readback mismatch cannot report success
   assert.equal(f.records.get('daily')[0].fields.actual_roas, null);
   f.state.drift = true;
   await assert.rejects(projectTikTokAdsDailyLark({ ...f.input, execute: true }), { code: 'TIKTOK_ADS_LARK_READBACK_MISMATCH' });
+});
+
+
+test('true Ad projection uses separate Coverage/key with proved parents and no Campaign writes; replay is unchanged', async () => {
+  const f = fixture();
+  const input = { ...f.input, grain: 'ad', adWriteEnabled: true, execute: true };
+  Object.assign(f.state.facts[0], { report_level: 'ad', entity_type: 'ad', external_entity_id: '678',
+    external_ad_id: '678', external_ad_group_id: '567' });
+  f.state.masters = [
+    { entity_type: 'campaign', external_entity_id: '456', source_account_id: '123' },
+    { entity_type: 'ad_group', external_entity_id: '567', source_account_id: '123', parent_campaign_id: '456' },
+    { entity_type: 'ad', external_entity_id: '678', source_account_id: '123', parent_campaign_id: '456', parent_ad_group_id: '567' },
+  ];
+  const originalPrepare = input.db.prepare;
+  input.db.prepare = sql => { if (sql.includes('data_coverage_runs')) {
+    const original = originalPrepare(sql); return { bind(...args) { assert.equal(args[2], 'ads_daily_facts_ad'); return original.bind(...args); } };
+  } return originalPrepare(sql); };
+  const result = await projectTikTokAdsDailyLark(input);
+  assert.equal(result.reconciled, true); assert.equal(result.tables.length, 1);
+  assert.equal(f.records.get('campaigns').length, 0);
+  const row = f.records.get('daily')[0].fields;
+  assert.equal(row.ads_daily_key, 'tiktok_ads:123:ad:678:2026-10-02');
+  assert.equal(row.external_ad_id, '678'); assert.equal(row.external_ad_group_id, '567');
+  assert.equal(row.external_campaign_id, '456');
+  assert.deepEqual((await projectTikTokAdsDailyLark(input)).tables, [{ rows: 1, created: 0, updated: 0, skipped: 1 }]);
+  await assert.rejects(projectTikTokAdsDailyLark({ ...input, adWriteEnabled: false }), { code: 'TIKTOK_ADS_AD_LARK_WRITE_DISABLED' });
+  f.calls.length = 0; f.state.masters[2].parent_ad_group_id = '999';
+  await assert.rejects(projectTikTokAdsDailyLark(input), { code: 'TIKTOK_ADS_LARK_AD_PARENT_CONFLICT' });
+  assert.deepEqual(f.calls, ['acquire', 'release']);
 });

@@ -1,5 +1,6 @@
+import { loadTikTokAdsDailyMasters } from './prove-tiktok-ads-daily-grains.js';
 import { createAdsDailyRow, createAdsEntityKey } from '../../../domain/src/entities/ads.js';
-import { requireDateOnly } from '../../../shared/src/date/date-only.js';
+import { requireDateOnly, todayInTimeZone } from '../../../shared/src/date/date-only.js';
 import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 import { createExplicitNullUpdateRepository } from '../../../sync-engine/src/explicit-null-update-repository.js';
 import { assertMktAdsMaintenanceIdle, countLarkRecords } from '../use-cases/mkt-ads-post-sync-maintenance.js';
@@ -10,7 +11,10 @@ const NULL_FIELDS = ['external_ad_group_id', 'external_ad_id', 'external_creativ
 
 /** ส่งเฉพาะวันปิดใน cache 90 วันจาก D1; ทุกตารางผ่าน Plan ก่อนเขียน และอ่านกลับทุกค่า */
 export async function projectTikTokAdsDailyLark(input) {
-  if (!input.execute) return project(input);
+  const grain = input.grain ?? 'campaign';
+  if (!['campaign', 'ad'].includes(grain)) fail('TIKTOK_ADS_LARK_GRAIN_INVALID');
+  if (!input.execute) return project({ ...input, grain });
+  if (grain === 'ad' && input.adWriteEnabled !== true) fail('TIKTOK_ADS_AD_LARK_WRITE_DISABLED');
   if (input.writeEnabled !== true) fail('TIKTOK_ADS_LARK_WRITE_DISABLED');
   await assertMktAdsMaintenanceIdle({ db: input.db, now: input.now ?? Date.now() });
   const lockKey = `tiktok_ads:lark_projection:${input.accountKey}`;
@@ -31,31 +35,32 @@ async function project(input) {
   const date = requireDateOnly(input.date, { label: 'TikTok Ads projection date' });
   const now = input.now ?? Date.now();
   const timezone = input.timezone;
-  const parts = new Intl.DateTimeFormat('en', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
-    .formatToParts(new Date(now));
-  const part = type => parts.find(value => value.type === type).value;
-  const today = `${part('year')}-${part('month')}-${part('day')}`;
+  const today = todayInTimeZone(timezone, new Date(now));
   const age = (Date.parse(today) - Date.parse(date)) / 86_400_000;
   if (age < 1 || age > 90) fail('TIKTOK_ADS_LARK_DATE_OUTSIDE_CACHE');
   const { db, customerKey, accountKey, advertiserId } = input;
+  const grain = input.grain ?? 'campaign';
+  const maxRows = grain === 'ad' ? 10000 : MAX_ROWS;
   const result = await db.prepare(`SELECT f.*, e.entity_name AS campaign_name, e.status AS campaign_status,
       e.objective AS campaign_objective, e.source_account_id AS metadata_account_id
     FROM ads_daily_facts f LEFT JOIN ads_entity_state e ON e.customer_key = f.customer_key
       AND e.platform = f.platform AND e.account_key = f.account_key AND e.entity_type = 'campaign'
       AND e.external_entity_id = f.external_campaign_id
-    WHERE f.customer_key = ? AND f.platform = 'tiktok_ads' AND f.account_key = ? AND f.metric_date = ? AND f.report_level = 'campaign' LIMIT 501`)
-    .bind(customerKey, accountKey, date).all();
+    WHERE f.customer_key = ? AND f.platform = 'tiktok_ads' AND f.account_key = ? AND f.metric_date = ? AND f.report_level = ? LIMIT ?`)
+    .bind(customerKey, accountKey, date, grain, maxRows + 1).all();
   const facts = result?.results ?? [];
   const coverageResult = await db.prepare(`SELECT * FROM data_coverage_runs
     WHERE customer_key = ? AND platform = 'tiktok_ads' AND account_key = ?
-      AND dataset_key = 'ads_daily_facts' AND period_start = ? AND period_end = ? LIMIT 2`)
-    .bind(customerKey, accountKey, date, date).all();
+      AND dataset_key = ? AND period_start = ? AND period_end = ? LIMIT 2`)
+    .bind(customerKey, accountKey, grain === 'ad' ? 'ads_daily_facts_ad' : 'ads_daily_facts', date, date).all();
   const coverage = coverageResult?.results ?? [];
-  if (facts.length > MAX_ROWS || new Set(facts.map(row => row.external_entity_id)).size !== facts.length
+  if (facts.length > maxRows || new Set(facts.map(row => row.external_entity_id)).size !== facts.length
     || facts.some(row => row.source_account_id !== advertiserId
-      || (row.metadata_account_id != null && row.metadata_account_id !== advertiserId) || row.report_level !== 'campaign'
-      || row.entity_type !== 'campaign' || row.breakdown_key !== 'none' || row.segment_key !== 'none'
-      || row.external_campaign_id !== row.external_entity_id || row.currency !== input.currency
+      || (row.metadata_account_id != null && row.metadata_account_id !== advertiserId) || row.report_level !== grain
+      || row.entity_type !== grain || row.breakdown_key !== 'none' || row.segment_key !== 'none'
+      || (grain === 'campaign' && row.external_campaign_id !== row.external_entity_id)
+      || (grain === 'ad' && (row.external_ad_id !== row.external_entity_id
+        || !/^\d+$/u.test(row.external_campaign_id ?? '') || !/^\d+$/u.test(row.external_ad_group_id ?? ''))) || row.currency !== input.currency
       || row.account_timezone !== timezone || row.metric_date !== date
       || row.spend_micros === null || row.impressions === null || row.clicks === null
       || !/^\d+$/u.test(row.external_entity_id))) fail('TIKTOK_ADS_LARK_FACT_IDENTITY_CONFLICT');
@@ -63,8 +68,21 @@ async function project(input) {
     || !['complete', 'revisable', 'no_data_confirmed'].includes(coverage[0].status)
     || coverage[0].expected_rows !== facts.length || coverage[0].observed_rows !== facts.length
     || (coverage[0].status === 'no_data_confirmed' && facts.length !== 0)) fail('TIKTOK_ADS_LARK_COVERAGE_INCOMPLETE');
+  if (grain === 'ad') {
+    const masters = await loadTikTokAdsDailyMasters(input);
+    if (facts.some(row => {
+      const ad = masters.get(`ad:${row.external_ad_id}`);
+      const group = masters.get(`ad_group:${row.external_ad_group_id}`);
+      return !ad || !group || !masters.has(`campaign:${row.external_campaign_id}`)
+        || ad.parent_campaign_id !== row.external_campaign_id
+        || ad.parent_ad_group_id !== row.external_ad_group_id
+        || group.parent_campaign_id !== row.external_campaign_id;
+    })) fail('TIKTOK_ADS_LARK_AD_PARENT_CONFLICT');
+  }
   const daily = facts.map(row => createAdsDailyRow({ platform: 'tiktok_ads', accountId: advertiserId,
-    entityType: 'campaign', externalEntityId: row.external_entity_id, externalCampaignId: row.external_campaign_id,
+    entityType: grain, externalEntityId: row.external_entity_id, externalCampaignId: row.external_campaign_id,
+    externalAdGroupId: grain === 'ad' ? row.external_ad_group_id : null,
+    externalAdId: grain === 'ad' ? row.external_ad_id : null,
     metricDate: date, sourceTimezone: timezone, adChannel: 'tiktok_ads', currency: row.currency,
     spendMicros: row.spend_micros, impressions: row.impressions, clicks: row.clicks,
     // Conversion/revenue/reach ยังไม่ผ่าน source contract จึงไม่อ่านค่าที่ปะปนมาจากภายนอก
@@ -79,7 +97,7 @@ async function project(input) {
   }));
   const dailyRepository = createExplicitNullUpdateRepository({ repository: input.repository, fieldNames: NULL_FIELDS });
   const specs = [
-    { tableId: input.tables.mktAdsCampaigns, keyField: 'ads_campaign_key', rows: campaigns, repository: input.repository },
+    ...(grain === 'campaign' ? [{ tableId: input.tables.mktAdsCampaigns, keyField: 'ads_campaign_key', rows: campaigns, repository: input.repository }] : []),
     { tableId: input.tables.mktAdsDaily, keyField: 'ads_daily_key', rows: daily, repository: dailyRepository },
   ];
   const plans = [];
@@ -89,7 +107,7 @@ async function project(input) {
     plans.push(plan);
   }
   const recordsBefore = await countLarkRecords(input.client, input.tables.mktAdsDaily);
-  if (recordsBefore + plans[1].createRows.length > 17_000) fail('TIKTOK_ADS_LARK_CACHE_CAPACITY');
+  if (recordsBefore + plans.at(-1).createRows.length > 17_000) fail('TIKTOK_ADS_LARK_CACHE_CAPACITY');
   const counts = plans.map(plan => ({ rows: plan.inputRows, created: plan.createRows.length,
     updated: plan.updateRows.length, skipped: plan.skipped }));
   if (!input.execute) return { mode: 'preview', date, facts: facts.length, recordsBefore, tables: counts };

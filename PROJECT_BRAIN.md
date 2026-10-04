@@ -1862,3 +1862,9 @@ until live source reconciliation and full downstream UAT pass.
 Adds separately gated STATUS_ALL Campaign and true Ad daily D1 writes to the existing writer.
 Exact parent/master checks, independent Ad coverage, full-field readback and stable-key replay;
 Campaign-only Lark projection filters its grain. No Report or schedule activation in this slice.
+
+## TikTok Ads true Ad Lark Daily — 2026-10-04
+
+Existing Daily projection accepts explicit Ad grain behind its own write gate, validates advertiser
+master/parents and independent D1 Ad coverage, retains 90-day cache/capacity guards and zero-diff
+readback. Ad projection writes Daily only; Campaign/master reconciliation remains separate.
