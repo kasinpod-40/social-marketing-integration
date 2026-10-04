@@ -1979,3 +1979,7 @@ TikTok Ads core history and controlled Report live readback are complete for 398
 Report windows. Core Lark rate readback needs formatter-aware ratio precision: live GET fixed preview
 skips all 35 one-day Ad rows. Core Lark/Summary backfill, relationships, AI and actual automatic Queue cycle
 remain required; Production traffic and schedule admission are unchanged.
+
+TikTok Ads current master links use verified Lark one-way-association record IDs and bounded
+master reconciliation. They attach all proved Smart+ Creative children while leaving historical
+Daily Creative attribution null. Live relation UAT remains pending; source/history facts are unaffected.

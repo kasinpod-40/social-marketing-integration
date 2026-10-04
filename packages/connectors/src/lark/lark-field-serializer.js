@@ -12,6 +12,7 @@ const LARK_FIELD_TYPES = Object.freeze({
   DATE_TIME: 5,
   CHECKBOX: 7,
   URL: 15,
+  ONE_WAY_LINK: 18,
 });
 
 const OMIT_FIELD = Symbol('omit-field');
@@ -136,6 +137,8 @@ function serializeValue(value, field, context) {
       return serializeCheckbox(value, field.fieldName, context);
     case LARK_FIELD_TYPES.URL:
       return serializeUrl(value, field.fieldName, context);
+    case LARK_FIELD_TYPES.ONE_WAY_LINK:
+      return serializeRecordLinks(value, field.fieldName, context);
     default:
       throw fieldError(context, field.fieldName, `unsupported writable Lark field type ${field.type}`);
   }
@@ -143,6 +146,9 @@ function serializeValue(value, field, context) {
 
 /** Normalize ค่าที่อ่านจาก Lark ให้ตรงกับ Serializer ฝั่งเขียน */
 function normalizeExistingValue(value, field, context) {
+  if ((value === undefined || value === null || value === '') && field.type === LARK_FIELD_TYPES.ONE_WAY_LINK) {
+    return Object.freeze({ link_record_ids: Object.freeze([]) });
+  }
   if (value === undefined || value === null || value === '') return OMIT_FIELD;
 
   try {
@@ -174,6 +180,8 @@ function normalizeExistingValue(value, field, context) {
         const existingText = readLarkText(value, { allowNull: true, label: field.fieldName });
         return Object.freeze({ link, text: optionalText(existingText) ?? link });
       }
+      case LARK_FIELD_TYPES.ONE_WAY_LINK:
+        return serializeRecordLinks(value, field.fieldName, context);
       default:
         throw fieldError(context, field.fieldName, `unsupported comparable Lark field type ${field.type}`);
     }
@@ -181,6 +189,16 @@ function normalizeExistingValue(value, field, context) {
     if (error?.code === 'LARK_PREFLIGHT_FAILED') throw error;
     throw fieldError(context, field.fieldName, error instanceof Error ? error.message : 'invalid existing value');
   }
+}
+
+/** Lark One-way Association ใช้ record IDs จริงใน link_record_ids; จัดลำดับเพื่อ replay คงที่ */
+function serializeRecordLinks(value, fieldName, context) {
+  const ids = value?.link_record_ids;
+  if (!Array.isArray(ids) || ids.length > 500 || ids.some(id => typeof id !== 'string' || !/^rec[A-Za-z0-9_-]+$/u.test(id))
+    || new Set(ids).size !== ids.length) {
+    throw fieldError(context, fieldName, 'expected unique linked record IDs');
+  }
+  return Object.freeze({ link_record_ids: Object.freeze([...ids].sort()) });
 }
 
 /** Serialize URL ให้เป็น {link,text} ตาม Contract ของ Lark */

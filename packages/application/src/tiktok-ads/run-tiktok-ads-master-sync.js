@@ -121,7 +121,87 @@ async function reconcile(input) {
     const plan = await input.syncEngine.planByKey(spec);
     if (plan.createRows.length || plan.updateRows.length || plan.skipped !== spec.rows.length) retry('LARK_READBACK_MISMATCH');
   }
-  return { ...result, reconciled: true };
+  const relations = await (input.reconcileLinks ?? reconcileTikTokAdsMasterLinks)({ ...input, repository: scopedRepository });
+  return { ...result, relations, reconciled: true };
+}
+
+/** ผูก current master ด้วย Lark record ID จริง; ไม่อ้างเป็น historical Creative attribution */
+export async function reconcileTikTokAdsMasterLinks(input) {
+  const sources = [
+    ['campaigns', 'mktAdsCampaigns', 'ads_campaign_key', 'campaign'],
+    ['adGroups', 'mktAdsAdGroups', 'ads_ad_group_key', 'ad_group'],
+    ['ads', 'mktAdsAds', 'ads_ad_key', 'ad'],
+    ['creatives', 'mktAdsCreatives', 'ads_creative_key', 'creative'],
+  ];
+  const recordMaps = {};
+  for (const [collection, table, keyField, type] of sources) {
+    await input.beforeWriteChunk();
+    const rows = await input.repository.searchRecords(input.tables[table], {
+      filter: { conjunction: 'and', conditions: [{ field_name: keyField, operator: 'contains',
+        value: [`tiktok_ads:${input.advertiserId}:${type}:`] }] },
+      pageSize: 500, maxPages: 34, maxItems: 17_000,
+    });
+    const normalized = await input.repository.prepareExistingRecords(input.tables[table], rows,
+      { incomingFieldNames: [keyField, 'platform', 'account_id'] });
+    const map = new Map();
+    for (const record of normalized) {
+      if (record.fields.platform !== 'tiktok_ads' || record.fields.account_id !== input.advertiserId
+        || !record.fields[keyField]?.startsWith(`tiktok_ads:${input.advertiserId}:${type}:`)
+        || map.has(record.fields[keyField]) || !/^rec[A-Za-z0-9_-]+$/u.test(record.recordId ?? '')) fail('LINK_OWNER_OR_ID_CONFLICT');
+      map.set(record.fields[keyField], record.recordId);
+    }
+    if (input.snapshot.canonical[collection].some(row => !map.has(row[keyField]))) fail('LINK_TARGET_MISSING');
+    recordMaps[collection] = map;
+  }
+  const groupById = new Map(input.snapshot.canonical.adGroups.map(row => [row.external_ad_group_id,
+    recordMaps.adGroups.get(row.ads_ad_group_key)]));
+  const campaignById = new Map(input.snapshot.canonical.campaigns.map(row => [row.external_campaign_id,
+    recordMaps.campaigns.get(row.ads_campaign_key)]));
+  const creativeById = new Map(input.snapshot.canonical.creatives.map(row => [row.external_creative_id,
+    recordMaps.creatives.get(row.ads_creative_key)]));
+  const adCreatives = new Map();
+  for (const row of input.snapshot.entities) {
+    if (row.entity_type !== 'creative' || !row.parent_ad_id) continue;
+    const ids = adCreatives.get(row.parent_ad_id) ?? new Set();
+    ids.add(row.external_entity_id); adCreatives.set(row.parent_ad_id, ids);
+  }
+  const groupRows = input.snapshot.canonical.adGroups.map(row => ({ ads_ad_group_key: row.ads_ad_group_key,
+    campaign_link: { link_record_ids: [campaignById.get(row.external_campaign_id)] } }));
+  const adRows = input.snapshot.canonical.ads.map(row => {
+    const fields = { ads_ad_key: row.ads_ad_key,
+      ad_group_link: { link_record_ids: [groupById.get(row.external_ad_group_id)] } };
+    const creativeIds = new Set(adCreatives.get(row.external_ad_id) ?? []);
+    if (row.external_creative_id) creativeIds.add(row.external_creative_id);
+    fields.creative_links = { link_record_ids: [...creativeIds].map(id => creativeById.get(id)) };
+    return fields;
+  });
+  if (groupRows.some(row => !row.campaign_link.link_record_ids[0])
+    || adRows.some(row => !row.ad_group_link.link_record_ids[0]
+      || row.creative_links?.link_record_ids.some(id => !id))) fail('LINK_TARGET_MISSING');
+  const linkSpecs = [
+    { tableId: input.tables.mktAdsAdGroups, keyField: 'ads_ad_group_key', rows: groupRows, repository: input.repository },
+    { tableId: input.tables.mktAdsAds, keyField: 'ads_ad_key', rows: adRows, repository: input.repository },
+  ];
+  for (const [table, names] of [['mktAdsAdGroups', ['campaign_link']], ['mktAdsAds', ['ad_group_link', 'creative_links']]]) {
+    const fields = await input.repository.getTableFields(input.tables[table]);
+    if (names.some(name => !fields.some(field => field.fieldName === name && Number(field.type) === 18))) fail('LINK_SCHEMA_INVALID');
+  }
+  const plans = [];
+  for (const spec of linkSpecs) {
+    await input.beforeWriteChunk();
+    const plan = await input.syncEngine.planByKey(spec);
+    if (plan.createRows.length || plan.duplicateInputRows) fail('LINK_IDENTITY_CONFLICT');
+    plans.push(plan);
+  }
+  for (const plan of plans) await input.syncEngine.executePlan(plan, { beforeWriteChunk: input.beforeWriteChunk });
+  for (const spec of linkSpecs) {
+    await input.beforeWriteChunk();
+    const plan = await input.syncEngine.planByKey(spec);
+    if (plan.createRows.length || plan.updateRows.length || plan.skipped !== spec.rows.length) retry('LINK_READBACK_MISMATCH');
+  }
+  return { adGroups: groupRows.length, ads: adRows.length,
+    creativeLinks: adRows.filter(row => row.creative_links.link_record_ids.length > 0).length,
+    updated: plans.reduce((total, plan) => total + plan.updateRows.length, 0) };
 }
 function fail(code) { throw permanentError('TikTok Ads master preflight failed', { code: `TIKTOK_ADS_MASTER_${code}` }); }
 function retry(code) { throw transientError('TikTok Ads master reconciliation failed', { code: `TIKTOK_ADS_MASTER_${code}` }); }
