@@ -2918,3 +2918,17 @@ Separate Ad Lark admission flag; Campaign projection behavior preserved. Tests/l
   audit zero vulnerabilities, normal and isolated deploy dry-run. Live Ad projection UAT pending
   reviewed merge and prerequisite Ad daily D1 UAT. Earlier daily POST409 wrote nothing: baseline
   has neither D1 nor multi-grain binding; isolated candidate needs both explicit approved gates.
+
+### Implementation result — Report ranking Coverage preparation 2026-10-04
+
+One-day STATUS_ALL D1 live UAT passed 2026-10-03 Campaign15/Ad35, full fields readback,
+second POST zero fact writes both grains; previews restoredfalse and active traffic unchanged.
+Full history398days/two grains preflight running with durable local checkpoint; writes start only
+after all source dates pass. Report reader preparation adds explicitly selected independent Ad
+Coverage for Top Ads, suppresses rankings until every Ad date completes, preserves Campaign
+summary and planned adapter. No Report writes/schedule activation in this preparation.
+
+- Report preparation gates passed: 9 focused reader tests, 3,550 unit, 22 Workers runtime,
+  106 Report reliability, check/hygiene, audit zero vulnerabilities, deploy dry-run. Dedicated
+  regression proves summary spend remains one grain and missing Ad Coverage suppresses Top Ads
+  while independently complete Campaign summary remains valid. Adapter remains planned.

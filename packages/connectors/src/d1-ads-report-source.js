@@ -26,6 +26,8 @@ export class D1AdsReportSource {
       'coverageDatasetKeys',
       { allowEmpty: false },
     );
+    this.rankingCoverageDatasetKeys = input.rankingCoverageDatasetKeys == null ? []
+      : requireTextList(input.rankingCoverageDatasetKeys, 'rankingCoverageDatasetKeys', { allowEmpty: false });
     this.summaryReportLevels = requireTextList(
       input.summaryReportLevels
         ?? (input.summaryReportLevel ? [input.summaryReportLevel] : contract.summaryReportLevels),
@@ -73,14 +75,15 @@ export class D1AdsReportSource {
     const dailyCoverage = this.platform === 'tiktok_ads';
     const coverageDays = Math.round((Date.parse(periodEnd) - Date.parse(periodStart)) / 86_400_000) + 1;
     if (dailyCoverage && coverageDays > 400) throw invalidQuery('TikTok Ads report period exceeds 400 days');
+    const dailyDatasetKeys = [...new Set([...this.coverageDatasetKeys, ...this.rankingCoverageDatasetKeys])];
     const [factRows, coverageRead] = await Promise.all([
       queryLevels.length === 0 ? Promise.resolve([]) : this.#all(
         factSql(queryLevels.length),
         [customerKey, this.platform, accountKey, ...queryLevels, periodStart, periodEnd, factLimit + 1],
       ),
       dailyCoverage ? this.#all(
-        dailyCoverageSql(this.coverageDatasetKeys.length),
-        [customerKey, this.platform, accountKey, ...this.coverageDatasetKeys, periodStart, periodEnd, coverageDays + 1],
+        dailyCoverageSql(dailyDatasetKeys.length),
+        [customerKey, this.platform, accountKey, ...dailyDatasetKeys, periodStart, periodEnd, coverageDays * dailyDatasetKeys.length + 1],
       ) : this.#first(
         coverageSql(this.coverageDatasetKeys.length),
         [customerKey, this.platform, accountKey, ...this.coverageDatasetKeys],
@@ -106,9 +109,17 @@ export class D1AdsReportSource {
     const summaryRows = summarySelection.rows;
     const rankingRows = rankingSelection.rows;
     const coverage = dailyCoverage
-      ? reconcileDailyCoverage(coverageRead, summaryRows, periodStart, coverageDays)
+      ? reconcileDailyCoverage(coverageRead.filter(row => this.coverageDatasetKeys.includes(row.dataset_key)), summaryRows, periodStart, coverageDays)
       : coverageRead;
 
+    // TikTok Top Ads ต้องมี Ad Coverage ของทุกวัน ไม่ใช้ Campaign completion marker
+    const rankingCoverage = dailyCoverage && this.rankingReportLevels.length > 0
+      ? reconcileDailyCoverage(coverageRead.filter(row => this.rankingCoverageDatasetKeys.includes(row.dataset_key)),
+        rankingRows, periodStart, coverageDays) : coverage;
+    const rankingCoverageStatus = normalizeCoverageStatus(rankingCoverage?.status);
+    const rankingCoverageRate = calculateCoverageRate(rankingCoverage);
+    const rankingAdmitted = !dailyCoverage || this.rankingReportLevels.length === 0
+      || (this.rankingCoverageDatasetKeys.length > 0 && rankingCoverageRate === 1);
     const entityIds = [...new Set(rankingRows.map(entityIdentity).filter(Boolean))].sort();
     const entityIdChunks = chunkValues(entityIds, MAX_ENTITY_IDS_PER_QUERY);
     const entityRows = [];
@@ -128,15 +139,15 @@ export class D1AdsReportSource {
       coverageStatus,
       coverageRate,
     });
-    const topAds = this.rankingReportLevels.length === 0
+    const topAds = this.rankingReportLevels.length === 0 || !rankingAdmitted
       ? Object.freeze([])
       : buildTopAds({
         rows: rankingRows,
         entityById,
         platform: this.platform,
         reportLevel: rankingSelection.reportLevel ?? this.rankingReportLevels[0],
-        coverageStatus,
-        coverageRate,
+        coverageStatus: rankingCoverageStatus,
+        coverageRate: rankingCoverageRate,
         limit: topAdsLimit,
       });
 
@@ -160,9 +171,10 @@ export class D1AdsReportSource {
         entityRows: entityRows.length,
         entityQueryCount: entityIdChunks.length,
         entityQueryMaxIds: MAX_ENTITY_IDS_PER_QUERY,
-        topAdsAvailability: this.rankingReportLevels.length === 0 ? 'not_observed' : 'available',
+        topAdsAvailability: this.rankingReportLevels.length === 0 ? 'not_observed' : rankingAdmitted ? 'available' : 'partial',
         coverageStatus,
         coverageRate,
+        ...(dailyCoverage && this.rankingReportLevels.length > 0 ? { rankingCoverageStatus, rankingCoverageRate } : {}),
         coverageRunId: coverage?.coverage_run_id ?? null,
         ...(dailyCoverage ? { expectedCoverageDays: coverageDays, coveredDays: coverage.covered_days } : {}),
         sourceWatermark: coverage?.source_watermark ?? latestRevision([...summaryRows, ...rankingRows]),
