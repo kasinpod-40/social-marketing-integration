@@ -126,3 +126,64 @@ it('Campaign and true Ad grains coexist with separate Coverage, full parent read
     return { totalCount: 1, rows: [{ dimensions: { ad_id_v2: '999', stat_time_day: '2026-10-01' }, metrics: { spend: '1', impressions: '1', clicks: '1' } }] }; } } })).rejects.toMatchObject({ code: 'TIKTOK_ADS_DAILY_MASTER_MISSING' });
   expect((await env.MKT_STATE_DB.prepare("SELECT COUNT(*) AS n FROM ads_daily_facts WHERE account_key='daily_grains'").first()).n).toBe(2);
 });
+
+it('scoped TikTok monthly Summary reconciles real D1, excludes Ad/other platform and replays zero writes', async () => {
+  const { projectTikTokAdsCampaignSummary } = await import('../../packages/application/src/tiktok-ads/project-tiktok-ads-campaign-summary.js');
+  const { createAdsFactKey } = await import('../../packages/application/src/storage/marketing-history-contract.js');
+  const { TableSyncEngine } = await import('../../packages/sync-engine/src/table-sync-engine.js');
+  await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
+  const historyStore = new D1MarketingHistoryStore({ db: env.MKT_STATE_DB });
+  const input = { customerKey: 'summary_runtime', accountKey: 'summary_runtime', advertiserId: '123',
+    currency: 'THB', timezone: 'Asia/Bangkok', date: '2026-10-01',
+    syncRunId: 'tiktok_ads:summary_runtime:2026-10-01',
+    accessToken: 'test-only', businessWriteEnabled: true, db: env.MKT_STATE_DB, historyStore,
+    lockStore: new D1ReliabilityStore({ db: env.MKT_STATE_DB }),
+    client: { listCampaignDailyReport: async () => ({ rows: [{ dimensions: { campaign_id: '456',
+      stat_time_day: '2026-10-01' }, metrics: { spend: '12.34', impressions: '100', clicks: '4' } }],
+    totalCount: 1, pageCount: 1 }) },
+  };
+  await runTikTokAdsDailyD1Sync(input);
+  const fact = await env.MKT_STATE_DB.prepare("SELECT * FROM ads_daily_facts WHERE customer_key='summary_runtime'").first();
+  for (const overrides of [
+    { report_level: 'ad', entity_type: 'ad', external_entity_id: '789', external_ad_id: '789', external_ad_group_id: '777' },
+    { platform: 'google_ads' },
+  ]) {
+    const row = { ...fact, ...overrides, spend_micros: 999000000 };
+    row.ads_fact_key = createAdsFactKey(row);
+    await historyStore.writeMetaD1Operations([{ kind: 'ads_daily', row }]);
+  }
+  const records = []; let writes = 0;
+  const fields = [
+    { fieldName: 'platform', type: 3, property: { options: [{ name: 'tiktok_ads' }] } },
+    { fieldName: 'period_month_th', type: 3, fieldId: 'month', property: { options: [] } },
+  ];
+  const repository = {
+    getTableFields: async () => fields,
+    prepareRows: async (_table, rows) => rows.map(row => Object.fromEntries(Object.entries(row).filter(([, value]) => value != null))),
+    prepareExistingRecords: async (_table, rows) => rows,
+    listByFieldValues: async () => records,
+    createMany: async (_table, rows, options) => {
+      await options.beforeChunk(); writes += rows.length;
+      records.push(...rows.map((row, index) => ({ recordId: `row-${index}`, fields: row })));
+      return { created: rows.length };
+    }, updateMany: async () => { throw Error('Unexpected update'); },
+  };
+  const projectInput = { ...input, execute: false, writeEnabled: true, month: '2026-10',
+    now: Date.parse('2026-10-02T06:00:00Z'), tables: { mktAdsCampaignSummary: 'summary' },
+    repository, syncEngine: new TableSyncEngine(), client: {
+      appToken: 'test', listFields: async () => structuredClone(fields),
+      updateField: async ({ field }) => { fields[1].property = structuredClone(field.property); },
+      requestBitableJson: async () => ({ data: { total: records.length } }),
+    },
+  };
+  expect(await projectTikTokAdsCampaignSummary(projectInput)).toMatchObject({ campaigns: 1, created: 1, monthOptionNeeded: true });
+  expect(fields[1].property.options).toHaveLength(0); expect(writes).toBe(0);
+  expect((await projectTikTokAdsCampaignSummary({ ...projectInput, execute: true })).readback.reconciled).toBe(true);
+  expect(records[0].fields).toMatchObject({ spend: 12.34, impressions: 100, clicks: 4, platform: 'tiktok_ads' });
+  expect(fields[1].property.options).toHaveLength(1); expect(writes).toBe(1);
+  expect(await projectTikTokAdsCampaignSummary({ ...projectInput, execute: true })).toMatchObject({ created: 0, updated: 0, skipped: 1 });
+  expect(writes).toBe(1);
+  await env.MKT_STATE_DB.prepare("UPDATE data_coverage_runs SET failed_rows=1 WHERE customer_key='summary_runtime'").run();
+  await expect(projectTikTokAdsCampaignSummary({ ...projectInput, execute: true })).rejects.toMatchObject({ code: 'TIKTOK_ADS_SUMMARY_COVERAGE_INCOMPLETE' });
+  expect(writes).toBe(1);
+});

@@ -875,3 +875,9 @@ independent and is never added to Ad totals. Default TikTok adapter remains plan
 GET-only bounded true-Ad metric families inspect all rows against base identities and approved
 masters. Returns only supported/presence/numeric/zero/nonzero counts. No event/value writes or
 Report/schedule admission follows from field presence alone.
+
+## TikTok Ads exact monthly Summary — 2026-10-04
+
+- Prepare one scoped monthly Campaign projection through the shared Summary writer; independent Ad facts never add to Campaign totals.
+- Require complete closed-day Coverage and exact account/parent/currency identity, all-schema/capacity plan, renewable lease and zero-diff readback.
+- GET previews missing Thai month options without mutation; POST adds only the proved month after the complete plan passes.

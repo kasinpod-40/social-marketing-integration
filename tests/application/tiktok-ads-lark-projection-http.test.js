@@ -89,3 +89,23 @@ test('Ad projection requires its separate write gate and rejects unapproved grai
     MKT_TIKTOK_ADS_AD_LARK_WRITE_ENABLED: 'true' } })).status, 200);
   assert.equal(f.calls[0].grain, 'ad'); assert.equal(f.calls[0].adWriteEnabled, true);
 });
+
+test('monthly Summary route has separate admission and exact mapped Summary table', async () => {
+  const f = setup();
+  f.dependencies.hydrate = async env => ({ ...env, LARK_TABLE_MKT_ADS_CAMPAIGN_SUMMARY: 'tblSummary' });
+  f.dependencies.projectSummary = async input => { f.calls.push(input); return { campaigns: 1 }; };
+  const handle = createTikTokAdsLarkProjectionHttpHandler(f.dependencies);
+  const make = (method, query, enabled = false) => {
+    const req = new Request(`https://example.test/operator/tiktok-ads/campaign-summary?${query}`,
+      { method, headers: { authorization: 'Bearer operator-private' } });
+    return { request: req, url: new URL(req.url), env: { ...env, MKT_TIKTOK_ADS_SUMMARY_WRITE_ENABLED: String(enabled) } };
+  };
+  assert.equal((await handle(make('GET', 'month=2026-13'))).status, 400);
+  assert.equal((await handle(make('POST', 'month=2026-09'))).status, 409);
+  assert.equal((await handle(make('GET', 'month=2026-09&account=other'))).status, 400);
+  const response = await handle(make('POST', 'month=2026-09', true));
+  assert.equal(response.status, 200); assert.equal(f.calls[0].month, '2026-09');
+  assert.deepEqual(f.calls[0].tables, { mktAdsCampaignSummary: 'tblSummary' });
+  assert.equal(f.calls[0].writeEnabled, true);
+  assert.doesNotMatch(await response.text(), /private|tblSummary|1234567890123456789/u);
+});
