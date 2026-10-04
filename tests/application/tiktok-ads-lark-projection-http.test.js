@@ -109,3 +109,13 @@ test('monthly Summary route has separate admission and exact mapped Summary tabl
   assert.equal(f.calls[0].writeEnabled, true);
   assert.doesNotMatch(await response.text(), /private|tblSummary|1234567890123456789/u);
 });
+
+test('projection admits only bounded integer ranges and preserves advertiser scope', async () => {
+  const f = setup();
+  for (const value of ['0', '8', '1.5', 'bad']) {
+    assert.equal((await f.handle(request('GET', `date=2026-10-01&grain=ad&days=${value}`))).status, 400);
+  }
+  assert.equal(f.calls.length, 0);
+  assert.equal((await f.handle(request('GET', 'date=2026-10-01&grain=ad&days=7'))).status, 200);
+  assert.equal(f.calls[0].days, 7); assert.equal(f.calls[0].grain, 'ad');
+});

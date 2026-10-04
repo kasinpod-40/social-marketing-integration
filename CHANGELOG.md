@@ -881,3 +881,8 @@ Report/schedule admission follows from field presence alone.
 - Prepare one scoped monthly Campaign projection through the shared Summary writer; independent Ad facts never add to Campaign totals.
 - Require complete closed-day Coverage and exact account/parent/currency identity, all-schema/capacity plan, renewable lease and zero-diff readback.
 - GET previews missing Thai month options without mutation; POST adds only the proved month after the complete plan passes.
+
+## TikTok Ads bounded Daily ranges — 2026-10-04
+
+- Project1..7closed days per request using exact per-day Coverage and entity/day keys; deduplicate Campaign masters across dates.
+- Renew lease before schema/readback plans; preserve independent grain flags and90day/capacity bounds.

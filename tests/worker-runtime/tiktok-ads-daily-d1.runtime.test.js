@@ -187,3 +187,36 @@ it('scoped TikTok monthly Summary reconciles real D1, excludes Ad/other platform
   await expect(projectTikTokAdsCampaignSummary({ ...projectInput, execute: true })).rejects.toMatchObject({ code: 'TIKTOK_ADS_SUMMARY_COVERAGE_INCOMPLETE' });
   expect(writes).toBe(1);
 });
+
+it('bounded Lark range queries real D1 with exact per-day Coverage and distinct canonical dates', async () => {
+  const { projectTikTokAdsDailyLark } = await import('../../packages/application/src/tiktok-ads/project-tiktok-ads-daily-lark.js');
+  await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
+  const base = { customerKey: 'range_runtime', accountKey: 'range_runtime', advertiserId: '123',
+    currency: 'THB', timezone: 'Asia/Bangkok', accessToken: 'test-only', businessWriteEnabled: true,
+    db: env.MKT_STATE_DB, historyStore: new D1MarketingHistoryStore({ db: env.MKT_STATE_DB }),
+    lockStore: new D1ReliabilityStore({ db: env.MKT_STATE_DB }),
+  };
+  for (const date of ['2026-10-01', '2026-10-02']) {
+    await runTikTokAdsDailyD1Sync({ ...base, date, syncRunId: `tiktok_ads:range_runtime:${date}`,
+      client: { listCampaignDailyReport: async () => ({ rows: [{ dimensions: { campaign_id: '456', stat_time_day: date },
+        metrics: { spend: '12.34', impressions: '100', clicks: '4' } }], totalCount: 1, pageCount: 1 }) },
+    });
+  }
+  const plans = [];
+  const input = { ...base, date: '2026-10-01', days: 2, now: Date.parse('2026-10-03T06:00:00Z'),
+    execute: false, repository: {}, tables: { mktAdsCampaigns: 'campaigns', mktAdsDaily: 'daily' },
+    client: { appToken: 'test', requestBitableJson: async () => ({ data: { total: 0 } }) },
+    syncEngine: { planByKey: async spec => {
+      plans.push(spec); return { inputRows: spec.rows.length, createRows: spec.rows, updateRows: [], skipped: 0, duplicateInputRows: 0 };
+    } },
+  };
+  expect(await projectTikTokAdsDailyLark(input)).toMatchObject({ facts: 2, days: 2, periodEnd: '2026-10-02' });
+  expect(plans[0].rows).toHaveLength(1);
+  expect(plans[1].rows.map(row => row.ads_daily_key)).toEqual([
+    'tiktok_ads:123:campaign:456:2026-10-01', 'tiktok_ads:123:campaign:456:2026-10-02',
+  ]);
+  await env.MKT_STATE_DB.prepare("DELETE FROM data_coverage_runs WHERE customer_key='range_runtime' AND period_start='2026-10-02'").run();
+  plans.length = 0;
+  await expect(projectTikTokAdsDailyLark(input)).rejects.toMatchObject({ code: 'TIKTOK_ADS_LARK_COVERAGE_INCOMPLETE' });
+  expect(plans).toHaveLength(0);
+});

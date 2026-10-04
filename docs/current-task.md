@@ -2964,3 +2964,19 @@ remains unchanged. Separate Summary admission; no Summary/Report/schedule claim 
   check882files/zero cycles/hygiene, audit zero production vulnerabilities, deploy dry-run.
   Real D1 regression proves Campaign-only aggregation excludes Ad/Google rows, month preview
   no mutation, POST exact readback, zero-change replay and incomplete Coverage rejection.
+
+### Implementation result — bounded TikTok Lark Daily ranges 2026-10-04
+
+Daily projection accepts1..7closed dates per request within the existing90day cache. Every date
+has independent exact Coverage/count proof, including no_data_confirmed days; entity+day keys
+remain unique, Campaign masters are deduplicated across days. Both grains retain existing gates,
+schema/capacity plan, full-field readback and replay. Lease renews before plans/readbacks as well
+as mutation chunks. This reduces repeated Lark scans during authorized cache backfill.
+
+- Range gates passed16focused /3,557unit /24Workers /106Reportreliability,
+  check882files/zero cycles/hygiene, production audit zero (dependencies unchanged), normal and
+  isolated dry-run. Real D1 range query proves exact two-day keys, one Campaign master and
+  missing-day Coverage rejection before any Lark plan. Summary #908 merged after both CI passed.
+- Full history write phase completed398days/two grains,22,691source facts; full independent
+  source-to-D1 readback still running. Summary live preview passed2025-09(26Campaign rows)
+  and2026-10(17Campaign rows);14month controlled POST/readback/replay running.

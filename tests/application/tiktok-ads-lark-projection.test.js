@@ -8,7 +8,7 @@ function fixture() {
     external_entity_id: '456', external_campaign_id: '456', report_level: 'campaign', entity_type: 'campaign',
     metric_date: '2026-10-02', breakdown_key: 'none', segment_key: 'none', account_timezone: 'Asia/Bangkok',
     currency: 'THB', spend_micros: 12_340_000, impressions: 1000, clicks: 10 }];
-  const coverage = [{ completed_at: 1, failed_rows: 0, status: 'revisable', expected_rows: 1, observed_rows: 1 }];
+  const coverage = [{ period_start: '2026-10-02', period_end: '2026-10-02', completed_at: 1, failed_rows: 0, status: 'revisable', expected_rows: 1, observed_rows: 1 }];
   const records = new Map([['campaigns', []], ['daily', []]]);
   const calls = [];
   const state = { facts, coverage, total: 100, active: 0, acquired: true, renewed: true, failDaily: false, drift: false };
@@ -170,4 +170,29 @@ test('true Ad projection uses separate Coverage/key with proved parents and no C
   f.calls.length = 0; f.state.masters[2].parent_ad_group_id = '999';
   await assert.rejects(projectTikTokAdsDailyLark(input), { code: 'TIKTOK_ADS_LARK_AD_PARENT_CONFLICT' });
   assert.deepEqual(f.calls, ['acquire', 'release']);
+});
+
+test('bounded range reconciles every day, including confirmed empty day, and deduplicates Campaign masters', async () => {
+  const f = fixture(); const first = { ...f.state.facts[0], metric_date: '2026-10-01' };
+  f.state.facts = [first, { ...first, metric_date: '2026-10-02' }];
+  f.state.coverage = ['2026-10-01', '2026-10-02', '2026-10-03'].map((date, index) => ({
+    period_start: date, period_end: date, completed_at: 1, failed_rows: 0,
+    status: index === 2 ? 'no_data_confirmed' : 'revisable', expected_rows: index === 2 ? 0 : 1,
+    observed_rows: index === 2 ? 0 : 1,
+  }));
+  const input = { ...f.input, date: '2026-10-01', days: 3, now: Date.parse('2026-10-04T06:00:00Z'), execute: true };
+  const result = await projectTikTokAdsDailyLark(input);
+  assert.equal(result.periodEnd, '2026-10-03'); assert.equal(result.facts, 2);
+  assert.equal(f.records.get('campaigns').length, 1); assert.equal(f.records.get('daily').length, 2);
+  assert.deepEqual(f.records.get('daily').map(record => record.fields.ads_daily_key), [
+    'tiktok_ads:123:campaign:456:2026-10-01', 'tiktok_ads:123:campaign:456:2026-10-02',
+  ]);
+  assert.deepEqual((await projectTikTokAdsDailyLark(input)).tables.map(row => [row.created, row.updated, row.skipped]),
+    [[0, 0, 1], [0, 0, 2]]);
+  for (const mutate of [() => f.state.coverage.pop(), () => f.state.facts[0].metric_date = '2026-10-01x']) {
+    mutate(); f.calls.length = 0;
+    await assert.rejects(projectTikTokAdsDailyLark(input));
+    assert.equal(f.calls.some(call => call.startsWith('create:') || call.startsWith('update:')), false);
+  }
+  await assert.rejects(projectTikTokAdsDailyLark({ ...input, days: 8 }), { code: 'TIKTOK_ADS_LARK_RANGE_INVALID' });
 });

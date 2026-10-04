@@ -1889,3 +1889,11 @@ Summary now reuses shared Paid period writer with optional exact platform/accoun
 GET preview, bounded one-month closed-day Coverage/parent proof, capacity/schema preflight, renewable
 lease, Thai month option preparation and all-field readback/replay. Default other-channel maintenance
 remains unchanged. Separate Summary admission; no Summary/Report/schedule claim before live UAT.
+
+### Implementation result — bounded TikTok Lark Daily ranges 2026-10-04
+
+Daily projection accepts1..7closed dates per request within the existing90day cache. Every date
+has independent exact Coverage/count proof, including no_data_confirmed days; entity+day keys
+remain unique, Campaign masters are deduplicated across days. Both grains retain existing gates,
+schema/capacity plan, full-field readback and replay. Lease renews before plans/readbacks as well
+as mutation chunks. This reduces repeated Lark scans during authorized cache backfill.
