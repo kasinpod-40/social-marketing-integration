@@ -4,6 +4,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 const SAFE_OPERATION_ID = /^[a-z0-9][a-z0-9_-]{0,95}$/u;
 
 const STABLE_OPERATION_CONTRACTS = new Map([
+  [JOB_TYPES.TIKTOK_ADS_DAILY_SYNC, Object.freeze({ prefix: 'tiktok_ads', operationIdPattern: SAFE_OPERATION_ID })],
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP, Object.freeze({ prefix: 'tiktok' })],
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER, Object.freeze({ prefix: 'tiktok' })],
   [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS, Object.freeze({ prefix: 'google_ads' })],
@@ -275,6 +276,7 @@ function optionalText(value) {
 
 function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
+  if (type.startsWith('tiktok.ads.')) return 'tiktok_ads';
   if (type.startsWith('report.')) return 'tiktok';
   if (type.startsWith('google.ads.')) return 'google_ads';
   if (type.startsWith('meta.ads.')) return 'meta_ads';

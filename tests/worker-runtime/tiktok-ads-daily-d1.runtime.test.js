@@ -251,3 +251,32 @@ it('bounded Lark range queries real D1 with exact per-day Coverage and distinct 
   await expect(projectTikTokAdsDailyLark(input)).rejects.toMatchObject({ code: 'TIKTOK_ADS_LARK_COVERAGE_INCOMPLETE' });
   expect(plans).toHaveLength(0);
 });
+
+
+it('durable daily units resume after Queue send failure and terminal replay in real Workers D1', async () => {
+  const { D1ResumableWorkStore } = await import('../../packages/sync-engine/src/d1-resumable-work-store.js');
+  const { buildTikTokAdsDailyPlan, runTikTokAdsDailyWork } = await import('../../packages/application/src/tiktok-ads/run-tiktok-ads-daily-work.js');
+  await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
+  const now=Date.parse('2026-10-04T12:00:00Z');
+  const plan=buildTikTokAdsDailyPlan({periodEnd:'2026-10-03',timezone:'Asia/Bangkok',now});
+  const store=new D1ResumableWorkStore({db:env.MKT_STATE_DB,now:()=>now});
+  const executed=[],sent=[];
+  const input={plan,store,accountKey:'daily-test',periodEnd:'2026-10-03',jobType:'tiktok.ads.daily.sync',
+    operation:{workKey:'tiktok_ads:daily-runtime',generation:now,originalRequestedAt:now},
+    runUnit:async(unit,fence)=>{await fence();executed.push(unit.index);},
+    enqueueContinuation:async()=>{throw Error('send failed after checkpoint');}};
+  await expect(runTikTokAdsDailyWork(input)).rejects.toThrow('send failed');
+  expect(executed).toEqual([0]);
+  expect((await store.loadPhase({workKey:input.operation.workKey,phase:'daily_unit_0'})).complete).toBe(true);
+  input.enqueueContinuation=async index=>{sent.push(index);};
+  expect((await runTikTokAdsDailyWork(input)).replayedUnit).toBe(true);
+  expect(executed).toEqual([0]);
+  for(let index=1;index<plan.length;index++)await runTikTokAdsDailyWork({...input,unitIndex:index});
+  expect(executed.length).toBe(plan.length);
+  expect((await runTikTokAdsDailyWork(input)).replayed).toBe(true);
+  expect(sent.length).toBe(plan.length-1);
+  const state=await env.MKT_STATE_DB.prepare('SELECT lifecycle_status, completion_json FROM sync_work_runs WHERE work_key=?').bind(input.operation.workKey).first();
+  expect(state.lifecycle_status).toBe('completed');
+  expect(JSON.parse(state.completion_json)).toEqual({status:'success',units:plan.length});
+  expect((await env.MKT_STATE_DB.prepare('SELECT COUNT(*) AS n FROM sync_work_phases WHERE work_key=?').bind(input.operation.workKey).first()).n).toBe(0);
+});

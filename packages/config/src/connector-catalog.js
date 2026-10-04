@@ -19,6 +19,7 @@ export const CONNECTOR_KEYS = Object.freeze({
   FACEBOOK: 'facebook',
   INSTAGRAM: 'instagram',
   META_ADS: 'meta_ads',
+  TIKTOK_ADS: 'tiktok_ads',
   GOOGLE_ADS: 'google_ads',
   YOUTUBE: 'youtube',
   WOOCOMMERCE: 'woocommerce',
@@ -59,6 +60,14 @@ const CONNECTOR_CATALOG = Object.freeze({
     featureFlagEnv: 'MKT_CONNECTOR_INSTAGRAM_ENABLED',
     requiredRuntimeFields: ['accountKey'],
     largeAccount: verifiedLargeAccount('posts', 2000),
+  }),
+  [CONNECTOR_KEYS.TIKTOK_ADS]: freezeDefinition({
+    key: CONNECTOR_KEYS.TIKTOK_ADS, displayName: 'TikTok Ads', capability: 'paid_ads',
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
+    featureFlagEnv: 'MKT_CONNECTOR_TIKTOK_ADS_ENABLED', requiredRuntimeFields: ['accountKey'],
+    largeAccount: createLargeAccountReadiness({ status: LARGE_ACCOUNT_STATUS.DEV_READY,
+      primaryEntity: 'ads', minimumFixtureItems: 1000,
+      gates: Object.fromEntries(LARGE_ACCOUNT_REQUIRED_GATES.map(gate => [gate, gate !== 'liveAccountUat'])) }),
   }),
   [CONNECTOR_KEYS.META_ADS]: freezeDefinition({
     key: CONNECTOR_KEYS.META_ADS,

@@ -32,6 +32,7 @@ export const QUEUE_ROLES = Object.freeze({
 });
 
 const STABLE_RESUMABLE_WORK_JOB_TYPES = new Set([
+  JOB_TYPES.TIKTOK_ADS_DAILY_SYNC,
   JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
   JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
   JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
@@ -474,6 +475,7 @@ function requireMessageId(value) {
 
 function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
+  if (type.startsWith('tiktok.ads.')) return 'tiktok_ads';
   if (type.startsWith('report.')) return 'tiktok';
   const prefix = type.split('.')[0];
   return new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'chatwoot']).has(prefix)

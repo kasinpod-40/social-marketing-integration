@@ -70,3 +70,17 @@ test('post and upgraded Creative namespace collisions fail before any write', as
   Object.assign(input.inventories.ad.rows[2], { videoId: null, postId: '30', adFormat: 'SINGLE_VIDEO' });
   await assert.rejects(buildTikTokAdsMasterWriteSet(input), { code: 'TIKTOK_ADS_MASTER_DUPLICATE_ENTITY' });
 });
+
+
+test('large manual inventory preserves 1078 true Ads and stable reusable Creative identities', async () => {
+  const input=fixture();
+  const row=(kind,id,extra={})=>({kind,id,name:'Example',status:'ENABLE',campaignId:'11',adGroupId:'21',imageIds:[],...extra});
+  input.inventories={ campaign:{rows:[row('campaign','11',{automationType:'MANUAL'})],totalCount:1},
+    ad_group:{rows:[row('ad_group','21')],totalCount:1},smart_ad:{rows:[],totalCount:0},
+    ad:{rows:Array.from({length:1078},(_,i)=>row('ad',String(10000+i),{videoId:`video-${i}`})),totalCount:1078} };
+  const first=await buildTikTokAdsMasterWriteSet(input);
+  const replay=await buildTikTokAdsMasterWriteSet({...input,now:200,syncRunId:'replay'});
+  assert.equal(first.canonical.ads.length,1078);assert.equal(first.canonical.creatives.length,1078);
+  assert.equal(new Set(first.canonical.ads.map(row=>row.ads_ad_key)).size,1078);
+  assert.deepEqual(first.entities.map(row=>row.metadata_hash),replay.entities.map(row=>row.metadata_hash));
+});

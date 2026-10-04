@@ -1969,3 +1969,7 @@ trueAdTopAds with independentCoverage and v2formula. SharedReportworker rejects 
 controlledoperatorGET/POST1/3/7/30 reusesexistingprocessor andfullLarkreadback. Previewreturns
 counts/availability only; noQueue/notification/schedule. TikTok sourcewatermark includesallfactrevisions
 anddayCoverage rather thanonelexicalmaximum. Tests/fullgates/liveReportUAT pending.
+
+TikTok Ads daily Queue implementation uses existing business runners and D1 resumable Work;
+technical/large-fixture gates pass with one unit per delivery. Readiness is dev_ready only;
+exact Production Queue UAT and real automatic cycle remain pending, schedule stays disabled.

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
   PRIMARY_SCHEDULE_CRON,
   YOUTUBE_SCHEDULE_CRON,
@@ -454,3 +455,20 @@ function reportRuntimeEnv(overrides = {}) {
     ...overrides,
   };
 }
+
+
+test('TikTok Ads daily schedule admits one stable closed-day intent only with all business gates', async () => {
+  const { TIKTOK_ADS_DAILY_REQUIRED_FLAGS } = await import('../../apps/sync-worker/src/tiktok-ads-daily-job-router.js');
+  const env = { DEFAULT_TIMEZONE: 'Asia/Bangkok', MKT_SCHEDULE_TIKTOK_ADS_ENABLED: 'true',
+    ...Object.fromEntries(TIKTOK_ADS_DAILY_REQUIRED_FLAGS.map(flag=>[flag,'true'])) };
+  const event = { cron: PRIMARY_SCHEDULE_CRON, scheduledTime: Date.parse('2026-10-03T20:30:00Z') };
+  const jobs = buildScheduledJobs({env,event}).filter(job=>job.type===JOB_TYPES.TIKTOK_ADS_DAILY_SYNC);
+  assert.equal(jobs.length,1); assert.equal(jobs[0].periodEnd,'2026-10-03');
+  assert.equal(jobs[0].unitIndex,0); assert.equal(jobs[0].workKey,'tiktok_ads:tiktok-ads-daily-20261003');
+  assert.equal(buildScheduledJobs({env,event:{...event,scheduledTime:event.scheduledTime+300000}})
+    .some(job=>job.type===JOB_TYPES.TIKTOK_ADS_DAILY_SYNC),false);
+  for(const flag of TIKTOK_ADS_DAILY_REQUIRED_FLAGS) assert.throws(()=>buildScheduledJobs({env:{...env,[flag]:'false'},event}),
+    error=>error.code==='MKT_SCHEDULE_CONFIG_INVALID');
+  assert.equal(buildScheduledJobs({env:{...env,MKT_SCHEDULE_TIKTOK_ADS_ENABLED:'false'},event})
+    .some(job=>job.type===JOB_TYPES.TIKTOK_ADS_DAILY_SYNC),false);
+});
